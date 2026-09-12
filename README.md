@@ -12,10 +12,16 @@ Tencent realtime ASR, a DeepSeek (or any OpenAI-compatible) backend and MiniMax
 T2A and it is a production-shaped voice service.
 
 ```
-git clone <this repo> && cd golive
-make run-mock          # http://localhost:8080 — open it and talk
+./start.sh             # http://localhost:8080 — open it and talk
+./start.sh real        # the same, against Tencent + DeepSeek + MiniMax
 make demo              # drive a turn from the CLI, interrupt it, save the audio
 ```
+
+`start.sh` rebuilds from source when a Go toolchain is present and otherwise
+uses the prebuilt binary for your platform in `bin/`, so the project runs as
+shipped on a machine with no Go installed. **[TESTING.md](TESTING.md)** is the
+hands-on guide: what to try, how to read the log, and what to tune when it
+feels wrong.
 
 ---
 
@@ -87,6 +93,9 @@ Package map:
 | `internal/provider/{tencent,deepseek,minimax,mock}` | Adapters |
 | `cmd/golive` | The service |
 | `cmd/golivectl` | CLI harness: stream audio in, save audio out, interrupt on cue |
+| `web/` | The browser demo, served at `/` — a single self-contained page |
+| `configs/` | JSON profiles: `mock.json` (no credentials) and the real stack |
+| `bin/` | Prebuilt binaries for shipping (gitignored; `make dist` fills it) |
 
 ---
 
@@ -253,7 +262,11 @@ on a conversational cadence, connection setup dominates time-to-first-audio.
 ```
 make test     # unit + wire-level integration, all on mock providers
 make race     # the same under -race; the engine is heavily concurrent
+make dist     # cross-compile bin/ for darwin-arm64, darwin-amd64, linux-amd64
 ```
+
+[TESTING.md](TESTING.md) covers driving it by hand. Below is what the automated
+suite pins down.
 
 What the suite actually pins down, beyond "it compiles":
 
@@ -285,7 +298,10 @@ any waveform viewer.
 ## Operational notes
 
 * **Build environments without a module proxy.** `GOPROXY=direct GOSUMDB=off`
-  fetches straight from the source hosts. The Makefile sets both.
+  fetches straight from the source hosts. The Makefile and `start.sh` set both.
+* **Shipping it.** `make dist` fills `bin/` with binaries for macOS (both
+  architectures) and Linux amd64; the whole directory then runs anywhere those
+  platforms are, with or without Go.
 * **Put an authenticating proxy in front of it.** The WebSocket accepts any
   origin, because a voice session carries no ambient credentials and the demo
   page needs it. That is a deliberate choice, not an oversight to inherit.

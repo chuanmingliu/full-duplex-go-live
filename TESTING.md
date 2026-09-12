@@ -1,0 +1,150 @@
+# Testing golive
+
+```bash
+./start.sh
+```
+
+`start.sh` rebuilds from source when a Go toolchain is present, and otherwise
+falls back to the prebuilt binary for your platform in `bin/` — so this works
+on a machine with no Go installed.
+
+Then open **http://localhost:8080** and click **Connect & talk**.
+
+The browser will ask for microphone permission. `localhost` counts as a secure
+origin, so this works over plain HTTP — you do not need TLS.
+
+---
+
+## What to try, and what to watch
+
+The page shows four channel lamps: **listen · transcribe · think · speak**.
+
+1. **Say something, then stop.** listen and transcribe light while you talk;
+   think lights when the turn is delegated; speak lights when audio comes back.
+   "first audio" in the stat row is time from your speech ending to the first
+   syllable out.
+
+2. **Talk over the assistant while it is speaking.** This is the one that
+   matters. **listen and speak light at the same time** — a half-duplex cascade
+   cannot do that. Playback cuts, and the transcript row for that turn is
+   rewritten to only the part you actually heard, with a red note saying how
+   many milliseconds landed. That truncated prefix is what goes into
+   conversation history; the rest never happened as far as the model is
+   concerned.
+
+3. **Tick "backchannel" and keep talking for ~3 seconds.** The assistant says
+   "嗯" while you still hold the floor — speak and listen lit together again,
+   this time without an interruption.
+
+4. **Mute mid-turn.** The listen lamp goes out but the session stays up;
+   unmuting is instant because the channel was never torn down.
+
+On mock providers the recognizer always "hears" the same sentence, revealed
+progressively as you talk, and the reply is a fixed long paragraph — deliberately
+long so there is something to interrupt.
+
+---
+
+## Reading the log
+
+Everything goes to the terminal and to `golive.log`. One turn looks like this:
+
+```
+listen: utterance opened      start_ms=0 active_ms=200 barge_in=false noise_floor_db=-60
+asr: stream opened            provider=tencent run=1 item=user_1
+asr: partial                  run=1 text=你好，帮我查
+asr: final                    run=1 text=你好，帮我查一下明天的天气 elapsed_ms=1980
+think: delegating             turn=item_1 target=responses reason=final_transcript history_messages=0
+think: first token            turn=item_1 provider=deepseek model=deepseek-chat ms=310
+speak: tts session opened     provider=minimax rate=16000 ms=240
+speak: first audio for segment turn=item_1 chars=11 ms=180
+speak: segment synthesized    turn=item_1 text=好的，我听到你说 audio_ms=1210 ms=190
+speak: turn truncated         turn=item_1 played_ms=1904 emitted_ms=2210 heard_text=好的，我听到你说…
+barge-in: generation invalidated generation=2
+```
+
+What each prefix tells you:
+
+| Prefix | Read it for |
+| --- | --- |
+| `listen:` | Did the VAD hear you at all? `noise_floor_db` is the adaptive floor; if it sits near your speech level, the mic is too hot or the room too loud. `barge_in=true` means it opened while the assistant held the floor. |
+| `asr:` | Partial hypotheses as they arrive, and `elapsed_ms` on the final — the recognizer's real latency. |
+| `think:` | Which turn was delegated and why (`final_transcript`, `speculative`, `revision`), then time to first token. `history_messages` is how much context went with it. |
+| `speak:` | Per-segment synthesis time. `chars=11 ms=180` on the first segment is your real time-to-first-syllable. |
+| `speak: turn truncated` | `played_ms` vs `emitted_ms`, and `heard_text` — the exact prefix that entered history. |
+| `server event` | The full JSON of every outbound protocol event. Audio chunks are counted, not printed, or they would bury everything. |
+
+`grep` is your friend:
+
+```bash
+grep -E 'listen:|asr:|think:|speak:' golive.log     # the turn pipeline only
+grep 'truncated' golive.log                          # every interruption
+grep 'server event' golive.log                       # replay the protocol stream
+```
+
+---
+
+## Without a browser
+
+`golivectl` drives a session from the terminal, which is the only sane way to
+test timing repeatably — it can interrupt at an exact millisecond.
+
+```bash
+./bin/golivectl \
+    -speak-ms 2200 \
+    -barge-in-at 1400 \
+    -record session.wav \
+    -v
+```
+
+It streams synthetic voiced audio at real time, waits 1400 ms after the first
+assistant audio, then talks over it. `session.wav` is stereo — your input on the
+left, the assistant on the right — so the overlap is visible in any waveform
+viewer. `-v` prints every server event.
+
+(Without a Go toolchain, use the platform-suffixed binary instead:
+`./bin/golivectl-darwin-arm64`.)
+
+Useful flags: `-in yourfile.wav` to send real speech, `-rate 8000|16000|24000`,
+`-delegation client`, `-asr/-llm/-tts` to override providers per session.
+
+---
+
+## Switching to the real providers
+
+```bash
+cp .env.example .env.local
+# fill in: DEEPSEEK_API_KEY, TENCENT_ASR_{APP_ID,SECRET_ID,SECRET_KEY},
+#          MINIMAX_TTS_API_KEY, MINIMAX_TTS_VOICE_ID
+./start.sh real
+```
+
+The server constructs all three providers at boot, so a missing credential
+fails immediately and names the variable rather than dying on the first caller.
+
+Two things that commonly bite on first contact:
+
+* **MiniMax host.** `api.minimaxi.com` for mainland-platform keys,
+  `api.minimax.io` for global ones. The wrong one authenticates fine and then
+  fails at `task_start`.
+* **`MINIMAX_TTS_VOICE_ID` has no default.** Without it, session start is
+  refused with a message saying so.
+
+---
+
+## Tuning, once you hear it
+
+In `configs/tencent-deepseek-minimax.json`:
+
+| If it feels like… | Change |
+| --- | --- |
+| It cuts me off mid-sentence | raise `vad.min_silence_ms` (380 → 600) |
+| It takes too long to start replying | lower `vad.min_silence_ms`, or lower `duplex.speculative_stable_ms` |
+| First syllable is slow | lower `duplex.stream_first_chunk_chars` (8 → 5) |
+| It interrupts itself through the speaker | raise `vad.barge_in_margin_db` (6 → 12) |
+| It ignores me when I interrupt | lower `vad.barge_in_margin_db`, or `vad.barge_in_min_speech_ms` |
+| Audio stutters on a bad network | raise `duplex.playback_lead_ms` (300 → 600) |
+
+Leave `duplex.playback_paced` on. Turning it off makes the service look faster
+and quietly breaks truncation accounting — history starts recording sentences
+nobody heard.
