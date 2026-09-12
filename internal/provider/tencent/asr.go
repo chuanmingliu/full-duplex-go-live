@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -141,6 +142,11 @@ func (a *ASR) Open(ctx context.Context, opts provider.ASROptions) (provider.ASRS
 		}
 		return nil, fmt.Errorf("tencent asr: dial failed: %w", err)
 	}
+
+	slog.Debug("tencent asr: connected",
+		"engine", a.Engine,
+		"voice_id", voiceID,
+		"rate", opts.SampleRate)
 
 	s := &stream{
 		conn:    conn,

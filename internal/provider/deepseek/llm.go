@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -149,6 +150,7 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	httpReq.Header.Set("Authorization", "Bearer "+l.APIKey)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
+	started := time.Now()
 	resp, err := l.HTTP.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("llm: request failed: %w", err)
@@ -162,6 +164,12 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		return nil, fmt.Errorf("llm: %s returned HTTP %d: %s",
 			l.BaseURL, resp.StatusCode, summarizeError(snippet))
 	}
+
+	slog.Debug("llm: stream open",
+		"base_url", l.BaseURL,
+		"model", model,
+		"messages", len(msgs),
+		"ms", time.Since(started).Milliseconds())
 
 	out := make(chan provider.LLMDelta, 64)
 	go func() {

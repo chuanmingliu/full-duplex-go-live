@@ -34,6 +34,9 @@ type Session struct {
 	conn *websocket.Conn
 	cfg  config.Config
 	log  *slog.Logger
+	// baseLog has no session attribute. The engine adds its own, and handing
+	// it s.log instead would stamp every engine line with session= twice.
+	baseLog *slog.Logger
 
 	id  string
 	out chan []byte
@@ -52,8 +55,10 @@ type Session struct {
 	started bool
 	config  live.SessionConfig
 
-	newEngine EngineFactory
-	closeMsg  atomic.Pointer[string]
+	newEngine   EngineFactory
+	closeMsg    atomic.Pointer[string]
+	audioEvents atomic.Int64
+	audioOut    atomic.Int64
 }
 
 // SessionOptions configure a new session.
@@ -79,6 +84,7 @@ func NewSession(opts SessionOptions) *Session {
 		conn:      opts.Conn,
 		cfg:       opts.Cfg,
 		log:       log.With("session", opts.ID),
+		baseLog:   log,
 		id:        opts.ID,
 		out:       make(chan []byte, 512),
 		stopRead:  make(chan struct{}),
@@ -131,6 +137,7 @@ func (s *Session) Emit(event any) {
 		s.log.Error("marshalling server event", "err", err)
 		return
 	}
+	s.logOutbound(data)
 	select {
 	case s.out <- data:
 	default:
@@ -142,6 +149,32 @@ func (s *Session) Emit(event any) {
 
 // finish ends the read loop. The writer keeps running until Serve has queued
 // session.closed.
+// logOutbound records what went out. Audio deltas are counted rather than
+// printed — at 40 ms a chunk they would be 25 lines a second and would bury the
+// events you actually want to read — and the full JSON of everything else is
+// logged at debug so a session transcript can be replayed from the log alone.
+func (s *Session) logOutbound(data []byte) {
+	if !s.log.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	var env live.Envelope
+	if json.Unmarshal(data, &env) != nil {
+		return
+	}
+	if env.Type == live.ServerOutputAudioDelta {
+		n := s.audioOut.Add(1)
+		if n%50 == 1 {
+			s.log.Debug("server audio", "chunks", n)
+		}
+		return
+	}
+	body := string(data)
+	if len(body) > 600 {
+		body = body[:600] + "…"
+	}
+	s.log.Debug("server event", "type", env.Type, "json", body)
+}
+
 func (s *Session) finish() {
 	s.stopReadOnce.Do(func() { close(s.stopRead) })
 }
@@ -242,6 +275,17 @@ func (s *Session) handleEvent(ctx context.Context, data []byte) error {
 	s.mu.Lock()
 	started := s.started
 	s.mu.Unlock()
+
+	// Audio append is logged at its own level: one line per 20 ms frame would
+	// bury everything else, so it is counted rather than printed.
+	if eventType == live.ClientInputAudioAppend {
+		n := s.audioEvents.Add(1)
+		if n%250 == 1 {
+			s.log.Debug("client audio", "frames", n, "bytes", len(data))
+		}
+	} else {
+		s.log.Debug("client event", "type", eventType, "event_id", eventID, "bytes", len(data))
+	}
 
 	if !started && eventType != live.ClientSessionStart {
 		s.Emit(live.NewError("invalid_request_error", "session_not_started",
@@ -398,7 +442,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		LLM:  llm,
 		TTS:  tts,
 		Emit: s.Emit,
-		Log:  s.log,
+		Log:  s.baseLog,
 	})
 	engine.Start(ctx)
 

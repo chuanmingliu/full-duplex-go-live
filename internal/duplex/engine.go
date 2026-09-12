@@ -438,6 +438,12 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.userSince = time.Now()
 		e.watch.Reset()
 		e.specTurn = nil
+		e.log.Debug("listen: utterance opened",
+			"start_ms", d.StartMS,
+			"active_ms", int(d.ActiveMS),
+			"barge_in", d.BargeIn,
+			"noise_floor_db", round1(e.vad.NoiseFloorDB()),
+			"assistant_speaking", e.speaking.Load())
 		e.deps.Emit(live.SpeechEvent{
 			Envelope: live.Envelope{Type: live.ExtSpeechStarted},
 			StartMS:  d.StartMS,
@@ -455,6 +461,10 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		if e.asrRun != nil {
 			e.asrRun.endMS = d.EndMS
 		}
+		e.log.Debug("listen: snapshot",
+			"samples", len(d.Snapshot),
+			"active_ms", int(d.ActiveMS),
+			"end_ms", d.EndMS)
 
 	case audio.DecisionStopped:
 		e.userOpen = false
@@ -462,6 +472,11 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		if e.asrRun != nil {
 			e.asrRun.endMS = d.EndMS
 		}
+		e.log.Debug("listen: utterance closed",
+			"start_ms", d.StartMS,
+			"end_ms", d.EndMS,
+			"active_ms", int(d.ActiveMS),
+			"barge_in", d.BargeIn)
 		e.deps.Emit(live.SpeechEvent{
 			Envelope: live.Envelope{Type: live.ExtSpeechStopped},
 			StartMS:  d.StartMS,
@@ -513,6 +528,11 @@ func (e *Engine) openASR(startMS int64) {
 		openedAt: time.Now(),
 	}
 	e.asrRun = run
+	e.log.Debug("asr: stream opened",
+		"provider", e.deps.ASR.Name(),
+		"run", run.id,
+		"item", run.itemID,
+		"start_ms", startMS)
 
 	go func(id uint64, s provider.ASRStream) {
 		for res := range s.Results() {
@@ -579,6 +599,14 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	if text == "" && !ev.res.Final {
 		return
 	}
+	if ev.res.Final {
+		e.log.Debug("asr: final",
+			"run", run.id,
+			"text", text,
+			"elapsed_ms", time.Since(run.openedAt).Milliseconds())
+	} else if text != run.lastText {
+		e.log.Debug("asr: partial", "run", run.id, "text", text)
+	}
 	e.emitInputTranscript(run, text, ev.res.Final)
 
 	if ev.res.Final {
@@ -625,7 +653,7 @@ func (e *Engine) startSpeculativeTurn(text string) {
 	}
 	turn := e.tracker.Begin(text, true)
 	e.specTurn = turn
-	e.log.Debug("speculating", "turn", turn.ID, "text", text)
+	e.log.Debug("think: speculating on a stable partial", "turn", turn.ID, "text", text)
 	e.beginGeneration(turn, "speculative")
 }
 
@@ -647,10 +675,13 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 			// final transcript costs nothing. This is the whole point of
 			// speculating.
 			e.tracker.Commit(spec.ID, spec.Revision)
+			e.log.Debug("think: speculation held; keeping the audio already in flight",
+				"turn", spec.ID, "text", text)
 			e.specTurn = nil
 			return
 		}
-		e.log.Debug("speculation missed", "guess", spec.Transcript, "final", text)
+		e.log.Debug("think: speculation missed; regenerating",
+			"turn", spec.ID, "guess", spec.Transcript, "final", text)
 		e.abortSpeech()
 		revised := e.tracker.Revise(spec.ID, text, true)
 		e.specTurn = nil
@@ -673,6 +704,13 @@ func (e *Engine) beginGeneration(turn *Turn, reason string) {
 		return
 	}
 	target := e.opts.Delegation
+	e.log.Debug("think: delegating",
+		"turn", turn.ID,
+		"revision", turn.Revision,
+		"target", target,
+		"reason", reason,
+		"transcript", turn.Transcript,
+		"history_messages", len(e.history))
 	e.deps.Emit(live.DelegationCreatedEvent{
 		Envelope: live.Envelope{Type: live.ServerDelegationCreated},
 		Delegation: live.Delegation{
@@ -732,6 +770,8 @@ func (e *Engine) runBackend(turn *Turn, msgs []provider.Message) {
 
 	pipe := e.newSpeechPipe(turn)
 	var full strings.Builder
+	started := time.Now()
+	firstToken := true
 
 	for d := range deltas {
 		if !e.tracker.IsCurrent(turn) {
@@ -755,6 +795,14 @@ func (e *Engine) runBackend(turn *Turn, msgs []provider.Message) {
 			continue
 		}
 		turn.MarkFirstToken()
+		if firstToken {
+			firstToken = false
+			e.log.Debug("think: first token",
+				"turn", turn.ID,
+				"provider", e.deps.LLM.Name(),
+				"model", e.opts.Cfg.BackendModel,
+				"ms", time.Since(started).Milliseconds())
+		}
 		full.WriteString(d.Text)
 		e.emitOutputTranscript(turn, d.Text)
 		e.deps.Emit(live.ResponseEventEnvelope{
@@ -766,6 +814,10 @@ func (e *Engine) runBackend(turn *Turn, msgs []provider.Message) {
 	}
 
 	turn.AppendResponse(full.String())
+	e.log.Debug("think: backend complete",
+		"turn", turn.ID,
+		"chars", len([]rune(full.String())),
+		"ms", time.Since(started).Milliseconds())
 	pipe.Close()
 }
 
@@ -897,6 +949,7 @@ func (p *speechPipe) speak(text string) bool {
 		return false
 	}
 
+	segStarted := time.Now()
 	chunks, err := stream.Synthesize(p.ctx, text)
 	if err != nil {
 		p.e.log.Error("tts synthesize failed", "err", err)
@@ -913,6 +966,9 @@ func (p *speechPipe) speak(text string) bool {
 		Text:     text,
 	})
 
+	var pcmBytes int
+	firstChunk := true
+
 	for chunk := range chunks {
 		if p.ctx.Err() != nil || !p.e.tracker.IsCurrent(p.turn) {
 			return false
@@ -928,6 +984,14 @@ func (p *speechPipe) speak(text string) bool {
 		pcm, err := audio.ResamplePCM16(chunk.PCM, stream.SampleRate(), p.e.opts.ClientRate)
 		if err != nil {
 			continue
+		}
+		pcmBytes += len(pcm)
+		if firstChunk {
+			firstChunk = false
+			p.e.log.Debug("speak: first audio for segment",
+				"turn", p.turn.ID,
+				"chars", len([]rune(text)),
+				"ms", time.Since(segStarted).Milliseconds())
 		}
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
@@ -946,6 +1010,11 @@ func (p *speechPipe) speak(text string) bool {
 		Revision: p.turn.Revision,
 		Text:     text,
 	})
+	p.e.log.Debug("speak: segment synthesized",
+		"turn", p.turn.ID,
+		"text", text,
+		"audio_ms", int(float64(pcmBytes)/float64(audio.BytesPerSample)/float64(p.e.opts.ClientRate)*1000),
+		"ms", time.Since(segStarted).Milliseconds())
 	return true
 }
 
@@ -958,6 +1027,7 @@ func (e *Engine) ttsSession() (provider.TTSStream, error) {
 	if e.deps.TTS == nil {
 		return nil, fmt.Errorf("duplex: no TTS provider configured")
 	}
+	opened := time.Now()
 	stream, err := e.deps.TTS.Open(e.ctx, provider.TTSOptions{
 		SampleRate: provider.PipelineRate,
 		Voice:      e.opts.Voice,
@@ -967,6 +1037,11 @@ func (e *Engine) ttsSession() (provider.TTSStream, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.log.Debug("speak: tts session opened",
+		"provider", e.deps.TTS.Name(),
+		"rate", stream.SampleRate(),
+		"voice", e.opts.Voice,
+		"ms", time.Since(opened).Milliseconds())
 	e.ttsStream = stream
 	return stream, nil
 }
@@ -992,9 +1067,9 @@ func (e *Engine) abortSpeech() {
 // interrupt is barge-in: stop generating, stop speaking, and let the
 // truncation callback fix history.
 func (e *Engine) interrupt() {
-	e.gen.Bump()
+	gen := e.gen.Bump()
 	e.abortSpeech()
-	e.log.Debug("barge-in")
+	e.log.Debug("barge-in: generation invalidated", "generation", gen)
 }
 
 func (e *Engine) emitAudio(itemID string, pcm []byte) {
@@ -1014,6 +1089,11 @@ func (e *Engine) onSpeakingChanged(speaking bool) {
 }
 
 func (e *Engine) onTruncated(r TruncationReport) {
+	e.log.Info("speak: turn truncated",
+		"turn", r.TurnID,
+		"played_ms", r.PlayedMS,
+		"emitted_ms", r.TotalMS,
+		"heard_text", r.SpokenText)
 	e.deps.Emit(live.AudioTruncatedEvent{
 		Envelope: live.Envelope{Type: live.ExtAudioTruncated},
 		ItemID:   r.TurnID,
@@ -1025,6 +1105,7 @@ func (e *Engine) onTruncated(r TruncationReport) {
 }
 
 func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
+	e.log.Debug("speak: turn complete", "turn", turnID, "audio_ms", totalMS, "chars", len([]rune(text)))
 	e.recordTurn(turnID, text)
 	e.post(func() {
 		turn := e.tracker.Current()
@@ -1124,6 +1205,8 @@ func (e *Engine) maybeBackchannel() {
 	e.lastBC = time.Now()
 	e.bcSeq++
 	phrase := d.BackchannelPhrases[rand.Intn(len(d.BackchannelPhrases))]
+	e.log.Debug("backchannel: acknowledging while the user holds the floor",
+		"text", phrase, "user_talking_ms", time.Since(e.userSince).Milliseconds())
 
 	turn := &Turn{
 		ID:         fmt.Sprintf("bc_%d", e.bcSeq),
@@ -1198,6 +1281,10 @@ func normalizeForCompare(s string) string {
 		b.WriteRune(r)
 	}
 	return strings.ToLower(b.String())
+}
+
+func round1(v float64) float64 {
+	return float64(int(v*10)) / 10
 }
 
 func encodeBase64(pcm []byte) string {

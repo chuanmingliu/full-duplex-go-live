@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -161,6 +162,7 @@ func (s *stream) connect(ctx context.Context) error {
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+s.tts.APIKey)
 
+	dialStarted := time.Now()
 	conn, resp, err := dialer.DialContext(ctx, s.tts.Endpoint, header)
 	if err != nil {
 		if resp != nil {
@@ -181,6 +183,13 @@ func (s *stream) connect(ctx context.Context) error {
 		}
 	}
 	s.touch()
+	slog.Debug("minimax tts: task started",
+		"endpoint", s.tts.Endpoint,
+		"model", s.tts.Model,
+		"voice", s.voice,
+		"rate", s.rate,
+		"speed", s.speed,
+		"ms", time.Since(dialStarted).Milliseconds())
 	return nil
 }
 
