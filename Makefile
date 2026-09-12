@@ -12,7 +12,7 @@ BIN := bin
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64
 
-.PHONY: all build test race vet fmt run run-mock demo dist clean tidy
+.PHONY: all build test race vet fmt run run-mock demo bench dist clean tidy
 
 all: vet test build
 
@@ -20,6 +20,7 @@ build:
 	@mkdir -p $(BIN)
 	go build -o $(BIN)/golive ./cmd/golive
 	go build -o $(BIN)/golivectl ./cmd/golivectl
+	go build -o $(BIN)/golivebench ./cmd/golivebench
 
 test:
 	go test ./...
@@ -48,6 +49,14 @@ run-mock: build
 demo: build
 	$(BIN)/golivectl -speak-ms 2200 -barge-in-at 1400 -record session.wav
 
+## bench: A/B this service against an OpenAI Realtime stack. See BENCHMARK.md.
+## Override CASCADE= to point at yours; CLIPS= to use real recordings.
+CASCADE ?= ws://127.0.0.1:8765/v1/realtime
+CLIPS   ?=
+bench: build
+	$(BIN)/golivebench -a golive=ws://127.0.0.1:8080/v1/live -b cascade=$(CASCADE) \
+		$(if $(CLIPS),-clips "$(CLIPS)",) -runs 12 -warmup 2 -v -md bench.md -json bench.json
+
 ## dist: cross-compile every shipped platform into bin/, so ./start.sh works
 ## without Go. Run this before packaging the project for someone else.
 dist:
@@ -55,12 +64,12 @@ dist:
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "  building $$os/$$arch"; \
-		GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" \
-			-o $(BIN)/golive-$$os-$$arch ./cmd/golive; \
-		GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" \
-			-o $(BIN)/golivectl-$$os-$$arch ./cmd/golivectl; \
+		for c in golive golivectl golivebench; do \
+			GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" \
+				-o $(BIN)/$$c-$$os-$$arch ./cmd/$$c; \
+		done; \
 	done
 	@ls -lh $(BIN)
 
 clean:
-	rm -rf $(BIN) *.wav golive.log
+	rm -rf $(BIN) *.wav golive.log bench.md bench.json

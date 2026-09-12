@@ -20,8 +20,9 @@ make demo              # drive a turn from the CLI, interrupt it, save the audio
 `start.sh` rebuilds from source when a Go toolchain is present and otherwise
 uses the prebuilt binary for your platform in `bin/`, so the project runs as
 shipped on a machine with no Go installed. **[TESTING.md](TESTING.md)** is the
-hands-on guide: what to try, how to read the log, and what to tune when it
-feels wrong.
+hands-on guide — what to try, how to read the log, what to tune when it feels
+wrong — and **[BENCHMARK.md](BENCHMARK.md)** covers measuring response latency
+and comparing against another stack.
 
 ---
 
@@ -93,6 +94,7 @@ Package map:
 | `internal/provider/{tencent,deepseek,minimax,mock}` | Adapters |
 | `cmd/golive` | The service |
 | `cmd/golivectl` | CLI harness: stream audio in, save audio out, interrupt on cue |
+| `cmd/golivebench` | A/B latency harness; drives this service and an OpenAI Realtime one |
 | `web/` | The browser demo, served at `/` — a single self-contained page |
 | `configs/` | JSON profiles: `mock.json` (no credentials) and the real stack |
 | `bin/` | Prebuilt binaries for shipping (gitignored; `make dist` fills it) |
@@ -143,7 +145,7 @@ written for `gpt-live-1` works unchanged.
 | `golive.speech.started` / `.stopped` | VAD turn boundaries, with a `barge_in` flag. |
 | `golive.output_audio.truncated` | `played_ms`, `total_ms` and the exact text the listener heard before the cut. |
 | `golive.backchannel` | A short acknowledgement was spoken during your turn. |
-| `golive.turn.metrics` | Per-stage latency for one turn. |
+| `golive.turn.metrics` | Per-stage latency for one turn, every stage measured from VAD close — including `first_audio_out_ms`, the only latency a caller experiences. |
 
 Two protocol details are worth calling out because they are easy to get wrong:
 

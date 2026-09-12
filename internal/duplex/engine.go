@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -97,6 +98,8 @@ type Engine struct {
 	muted       bool
 	userOpen    bool
 	userSince   time.Time
+	speechEndAt time.Time
+	speechEndMS int64
 	asrRun      *asrRun
 	asrSeq      uint64
 	watch       *StabilityWatch
@@ -116,6 +119,8 @@ type Engine struct {
 
 	ttsMu     sync.Mutex
 	ttsStream provider.TTSStream
+
+	latencies []int64
 
 	inputMS  atomic.Int64
 	outputMS atomic.Int64
@@ -225,6 +230,9 @@ func (e *Engine) Close() {
 		}
 		e.player.Close()
 		e.wg.Wait()
+		// After wg.Wait: the loop goroutine is the only writer of e.latencies
+		// and it has exited, so reading the slice here needs no lock.
+		e.latencySummary()
 		e.ttsMu.Lock()
 		if e.ttsStream != nil {
 			_ = e.ttsStream.Close()
@@ -468,6 +476,14 @@ func (e *Engine) handleDecision(d audio.Decision) {
 
 	case audio.DecisionStopped:
 		e.userOpen = false
+		// The origin for every latency this turn will report. A speculative
+		// turn is already running by now, so it is stamped here rather than at
+		// creation.
+		e.speechEndAt = time.Now()
+		e.speechEndMS = d.EndMS
+		if turn := e.tracker.Current(); turn != nil {
+			turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
+		}
 		e.writeASR(d.Snapshot)
 		if e.asrRun != nil {
 			e.asrRun.endMS = d.EndMS
@@ -702,6 +718,9 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 func (e *Engine) beginGeneration(turn *Turn, reason string) {
 	if len([]rune(turn.Transcript)) < e.opts.Cfg.Duplex.DelegateMinChars {
 		return
+	}
+	if !e.speechEndAt.IsZero() {
+		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
 	}
 	target := e.opts.Delegation
 	e.log.Debug("think: delegating",
@@ -1074,6 +1093,12 @@ func (e *Engine) interrupt() {
 
 func (e *Engine) emitAudio(itemID string, pcm []byte) {
 	e.outputMS.Add(int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
+	// The first byte on the wire is the moment the caller stops waiting, so it
+	// is stamped here rather than when synthesis produced it — the paced player
+	// sits between the two.
+	if turn := e.tracker.Current(); turn != nil && turn.ID == itemID {
+		turn.MarkFirstAudioOut()
+	}
 	e.deps.Emit(live.OutputAudioDelta{
 		Envelope: live.Envelope{Type: live.ServerOutputAudioDelta},
 		ItemID:   itemID,
@@ -1102,6 +1127,14 @@ func (e *Engine) onTruncated(r TruncationReport) {
 		Text:     r.SpokenText,
 	})
 	e.recordTurn(r.TurnID, r.SpokenText)
+	e.post(func() {
+		turn := e.tracker.Current()
+		if turn == nil || turn.ID != r.TurnID {
+			return
+		}
+		turn.MarkCompleted()
+		e.emitMetrics(turn, r.PlayedMS, true)
+	})
 }
 
 func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
@@ -1113,7 +1146,7 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 			return
 		}
 		turn.MarkCompleted()
-		e.emitMetrics(turn, totalMS)
+		e.emitMetrics(turn, totalMS, false)
 	})
 	e.deps.Emit(live.Usage{
 		Envelope: live.Envelope{Type: live.ServerUsageUpdated},
@@ -1157,26 +1190,75 @@ func (e *Engine) trimHistory() {
 	}
 }
 
-func (e *Engine) emitMetrics(turn *Turn, totalMS int64) {
+// emitMetrics reports one turn's stage latencies, all measured from the moment
+// the user stopped talking.
+//
+// A speculative turn can legitimately report a negative first-token time: the
+// backend started before the user finished, which is exactly what speculation
+// buys. The sign is information, not an error, so it is not clamped.
+func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	tm := turn.Timings()
+	origin := tm.SpeechEndAt
+	if origin.IsZero() {
+		origin = tm.StartedAt
+	}
 	ms := func(t time.Time) int64 {
-		if t.IsZero() || tm.StartedAt.IsZero() {
+		if t.IsZero() || origin.IsZero() {
 			return 0
 		}
-		return t.Sub(tm.StartedAt).Milliseconds()
+		return t.Sub(origin).Milliseconds()
 	}
-	e.deps.Emit(live.TurnMetricsEvent{
+
+	ev := live.TurnMetricsEvent{
 		Envelope:        live.Envelope{Type: live.ExtTurnMetrics},
 		TurnID:          turn.ID,
 		Revision:        turn.Revision,
 		Speculative:     turn.Speculative,
+		SpeechEndMS:     tm.SpeechEndMS,
 		ASRFinalMS:      ms(tm.TranscriptFinal),
 		LLMFirstTokenMS: ms(tm.FirstToken),
 		TTSFirstAudioMS: ms(tm.FirstAudio),
-		LLMCompleteMS:   ms(tm.CompletedAt),
-		EndToEndMS:      ms(tm.CompletedAt),
+		FirstAudioOutMS: ms(tm.FirstAudioOut),
+		TurnCompleteMS:  ms(tm.CompletedAt),
 		OutputAudioMS:   totalMS,
-	})
+		Truncated:       truncated,
+	}
+	e.deps.Emit(ev)
+
+	if !truncated && !tm.FirstAudioOut.IsZero() {
+		e.latencies = append(e.latencies, ev.FirstAudioOutMS)
+	}
+	// INFO, not DEBUG: the response latency is the one number worth seeing in a
+	// default-level log.
+	e.log.Info("turn: response latency",
+		"turn", turn.ID,
+		"first_audio_out_ms", ev.FirstAudioOutMS,
+		"asr_final_ms", ev.ASRFinalMS,
+		"llm_first_token_ms", ev.LLMFirstTokenMS,
+		"tts_first_audio_ms", ev.TTSFirstAudioMS,
+		"speculative", turn.Speculative,
+		"truncated", truncated)
+}
+
+// latencySummary reports the session's response latencies once, at close.
+// Median and p95 rather than a mean: one slow cold-start turn drags a mean
+// enough to hide what every other turn actually did.
+func (e *Engine) latencySummary() {
+	if len(e.latencies) == 0 {
+		return
+	}
+	v := append([]int64(nil), e.latencies...)
+	sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
+	at := func(q float64) int64 {
+		i := int(q * float64(len(v)-1))
+		return v[i]
+	}
+	e.log.Info("session: response latency summary",
+		"turns", len(v),
+		"min_ms", v[0],
+		"p50_ms", at(0.5),
+		"p95_ms", at(0.95),
+		"max_ms", v[len(v)-1])
 }
 
 // --- backchannel channel ---

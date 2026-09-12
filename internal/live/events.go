@@ -353,19 +353,41 @@ type AudioTruncatedEvent struct {
 }
 
 // TurnMetricsEvent is golive.turn.metrics: per-stage latency for one turn.
+//
+// Every stage figure is measured from the same origin — the moment the VAD
+// decided the user had stopped talking — because that is the instant the caller
+// starts waiting. Measuring from turn creation instead flatters a speculative
+// turn (which starts before the user finishes, so its stages appear to take
+// negative time) and makes runs incomparable across engines.
 type TurnMetricsEvent struct {
 	Envelope
-	TurnID          string `json:"turn_id"`
-	Revision        int    `json:"revision"`
-	Speculative     bool   `json:"speculative,omitempty"`
-	VADCloseMS      int64  `json:"vad_close_ms,omitempty"`
-	ASRFinalMS      int64  `json:"asr_final_ms,omitempty"`
-	LLMFirstTokenMS int64  `json:"llm_first_token_ms,omitempty"`
-	LLMCompleteMS   int64  `json:"llm_complete_ms,omitempty"`
-	TTSFirstAudioMS int64  `json:"tts_first_audio_ms,omitempty"`
-	FirstAudioOutMS int64  `json:"first_audio_out_ms,omitempty"`
-	EndToEndMS      int64  `json:"end_to_end_ms,omitempty"`
-	OutputAudioMS   int64  `json:"output_audio_ms,omitempty"`
+	TurnID      string `json:"turn_id"`
+	Revision    int    `json:"revision"`
+	Speculative bool   `json:"speculative,omitempty"`
+
+	// SpeechEndMS is the session-relative clock at VAD close: the origin every
+	// other figure here is relative to.
+	SpeechEndMS int64 `json:"speech_end_ms"`
+
+	// ASRFinalMS is speech end to the final transcript.
+	ASRFinalMS int64 `json:"asr_final_ms"`
+	// LLMFirstTokenMS is speech end to the backend's first token. Negative when
+	// speculation started the turn before the user stopped — which is the point
+	// of speculating, so the sign is meaningful, not an error.
+	LLMFirstTokenMS int64 `json:"llm_first_token_ms"`
+	// TTSFirstAudioMS is speech end to the first synthesized PCM.
+	TTSFirstAudioMS int64 `json:"tts_first_audio_ms"`
+
+	// FirstAudioOutMS is speech end to the first audio byte actually written to
+	// the client. This is the headline: the only latency a caller experiences.
+	FirstAudioOutMS int64 `json:"first_audio_out_ms"`
+	// TurnCompleteMS is speech end to the last audio byte of the turn.
+	TurnCompleteMS int64 `json:"turn_complete_ms"`
+	// OutputAudioMS is how much audio the turn produced.
+	OutputAudioMS int64 `json:"output_audio_ms"`
+	// Truncated marks a turn the user cut short; its figures describe a partial
+	// answer and should be excluded from latency aggregates.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // ChannelStateEvent is golive.channel.state: which simulated duplex channels

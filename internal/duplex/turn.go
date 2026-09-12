@@ -84,18 +84,24 @@ type Turn struct {
 
 	mu              sync.Mutex
 	startedAt       time.Time
+	speechEndAt     time.Time
+	speechEndMS     int64
 	transcriptFinal time.Time
 	firstToken      time.Time
 	firstAudio      time.Time
+	firstAudioOut   time.Time
 	completedAt     time.Time
 }
 
 // Timings is a consistent snapshot of a turn's milestones.
 type Timings struct {
 	StartedAt       time.Time
+	SpeechEndAt     time.Time
+	SpeechEndMS     int64
 	TranscriptFinal time.Time
 	FirstToken      time.Time
 	FirstAudio      time.Time
+	FirstAudioOut   time.Time
 	CompletedAt     time.Time
 }
 
@@ -105,12 +111,33 @@ func (t *Turn) Timings() Timings {
 	defer t.mu.Unlock()
 	return Timings{
 		StartedAt:       t.startedAt,
+		SpeechEndAt:     t.speechEndAt,
+		SpeechEndMS:     t.speechEndMS,
 		TranscriptFinal: t.transcriptFinal,
 		FirstToken:      t.firstToken,
 		FirstAudio:      t.firstAudio,
+		FirstAudioOut:   t.firstAudioOut,
 		CompletedAt:     t.completedAt,
 	}
 }
+
+// MarkSpeechEnd records when the user stopped talking, which is the origin for
+// every latency this turn reports. It is set once: a turn that began
+// speculatively is stamped when speech actually ends, and one begun from a
+// final transcript inherits the VAD's timestamp at creation.
+func (t *Turn) MarkSpeechEnd(at time.Time, sessionMS int64) {
+	t.mu.Lock()
+	if t.speechEndAt.IsZero() {
+		t.speechEndAt = at
+		t.speechEndMS = sessionMS
+	}
+	t.mu.Unlock()
+}
+
+// MarkFirstAudioOut records the first audio byte written to the client. This
+// is deliberately the wire moment, not the synthesis moment: the paced player
+// may hold audio back, and the caller hears the wire.
+func (t *Turn) MarkFirstAudioOut() { t.stampOnce(&t.firstAudioOut) }
 
 // MarkTranscriptFinal records when the final transcript landed.
 func (t *Turn) MarkTranscriptFinal() { t.stamp(&t.transcriptFinal) }
