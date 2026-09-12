@@ -1,0 +1,425 @@
+package duplex
+
+import (
+	"sync"
+	"time"
+
+	"github.com/chuanmingliu/golive/internal/audio"
+)
+
+// SegKind discriminates the items on the speak channel.
+type SegKind int
+
+const (
+	// SegAudio carries PCM to emit.
+	SegAudio SegKind = iota
+	// SegBegin announces the text whose audio is about to stream, so a cut
+	// landing mid-segment can still report what was heard.
+	SegBegin
+	// SegMark closes the segment opened by SegBegin.
+	SegMark
+	// SegEnd closes the turn.
+	SegEnd
+)
+
+// Segment is one item on the speak channel.
+type Segment struct {
+	Kind     SegKind
+	Gen      uint64
+	TurnID   string
+	Revision int
+	Text     string
+	PCM      []byte
+}
+
+// TruncationReport describes how a turn was cut short.
+type TruncationReport struct {
+	TurnID   string
+	PlayedMS int64
+	TotalMS  int64
+	// SpokenText is the prefix of the turn the user actually heard. This, not
+	// the full generated text, is what belongs in conversation history.
+	SpokenText string
+}
+
+// PlayerConfig tunes the output channel.
+type PlayerConfig struct {
+	// Rate is the client's PCM rate; audio is converted before it is queued.
+	Rate int
+	// ChunkMS is the size of one session.output_audio.delta.
+	ChunkMS int
+	// Paced sends audio in roughly real time instead of as fast as the socket
+	// drains.
+	Paced bool
+	// LeadMS is how far ahead of the notional playhead the server may run,
+	// absorbing network jitter without losing truncation accuracy.
+	LeadMS int
+}
+
+// Player is the speak channel. It owns one goroutine, emits audio at roughly
+// real time, and knows at every instant how much of the assistant's turn the
+// user has actually heard.
+//
+// That last property is why pacing is on by default. Without it the whole
+// answer lands in the client's buffer the moment it is generated, and "the user
+// interrupted 900 ms in" becomes unanswerable on the server: history would
+// record sentences nobody heard, and the next turn would be reasoning from a
+// conversation that did not happen. Pacing costs nothing in perceived latency —
+// the first chunk still leaves as soon as it exists — and buys correct history.
+type Player struct {
+	cfg        PlayerConfig
+	emit       func(itemID string, pcm []byte)
+	onSpeaking func(bool)
+	onTruncate func(TruncationReport)
+	onTurnDone func(turnID string, totalMS int64, text string)
+
+	mu     sync.Mutex
+	cond   *sync.Cond
+	queue  []Segment
+	closed bool
+
+	activeTurn  string
+	turnStarted time.Time
+	playhead    time.Time
+	emittedMS   float64
+	spoken      []spokenSpan
+	pendingText string
+	pendingFrom float64
+	speaking    bool
+}
+
+type spokenSpan struct {
+	text  string
+	endMS float64
+}
+
+// NewPlayer builds a player. emit is called for each outbound audio chunk.
+func NewPlayer(cfg PlayerConfig, emit func(itemID string, pcm []byte)) *Player {
+	if cfg.ChunkMS <= 0 {
+		cfg.ChunkMS = 40
+	}
+	if cfg.LeadMS <= 0 {
+		cfg.LeadMS = 300
+	}
+	if cfg.Rate <= 0 {
+		cfg.Rate = 24000
+	}
+	p := &Player{cfg: cfg, emit: emit}
+	p.cond = sync.NewCond(&p.mu)
+	return p
+}
+
+// OnSpeaking registers a callback for speak-channel transitions. It is invoked
+// with the player's lock held, so it must not call back into the player.
+func (p *Player) OnSpeaking(f func(bool)) { p.onSpeaking = f }
+
+// OnTruncate registers a callback for interrupted turns.
+func (p *Player) OnTruncate(f func(TruncationReport)) { p.onTruncate = f }
+
+// OnTurnDone registers a callback for turns that finished uninterrupted.
+func (p *Player) OnTurnDone(f func(turnID string, totalMS int64, text string)) { p.onTurnDone = f }
+
+// Run drives the player until Close. It blocks; start it on its own goroutine.
+func (p *Player) Run(gen *Generation) {
+	for {
+		p.mu.Lock()
+		for len(p.queue) == 0 && !p.closed {
+			p.setSpeakingLocked(false)
+			p.cond.Wait()
+		}
+		if p.closed {
+			p.setSpeakingLocked(false)
+			p.mu.Unlock()
+			return
+		}
+		seg := p.queue[0]
+		p.queue = p.queue[1:]
+		p.mu.Unlock()
+
+		if !gen.Valid(seg.Gen) {
+			continue
+		}
+		switch seg.Kind {
+		case SegBegin:
+			p.beginSegment(seg)
+		case SegMark:
+			p.markSegment(seg)
+		case SegEnd:
+			p.finishTurn(seg)
+		default:
+			p.playAudio(gen, seg)
+		}
+	}
+}
+
+// Enqueue adds an item to the speak channel.
+func (p *Player) Enqueue(seg Segment) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return
+	}
+	p.queue = append(p.queue, seg)
+	p.cond.Signal()
+}
+
+// Interrupt cuts the current turn. The caller must bump the generation first so
+// upstream producers stop; this clears the queue and reports, through
+// OnTruncate, exactly how much the listener heard.
+func (p *Player) Interrupt() {
+	p.mu.Lock()
+	p.queue = nil
+	turnID := p.activeTurn
+	if turnID == "" {
+		p.setSpeakingLocked(false)
+		p.mu.Unlock()
+		return
+	}
+	playedMS := p.heardMSLocked()
+	totalMS := p.emittedMS
+	text := p.spokenPrefixLocked(playedMS)
+	p.resetTurnLocked()
+	p.setSpeakingLocked(false)
+	p.mu.Unlock()
+
+	if p.onTruncate != nil {
+		p.onTruncate(TruncationReport{
+			TurnID:     turnID,
+			PlayedMS:   int64(playedMS),
+			TotalMS:    int64(totalMS),
+			SpokenText: text,
+		})
+	}
+}
+
+// Close stops the player.
+func (p *Player) Close() {
+	p.mu.Lock()
+	p.closed = true
+	p.queue = nil
+	p.mu.Unlock()
+	p.cond.Broadcast()
+}
+
+// Speaking reports whether audio is currently going out.
+func (p *Player) Speaking() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.speaking
+}
+
+// PendingMS is how much emitted-but-not-yet-heard audio is outstanding.
+func (p *Player) PendingMS() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.activeTurn == "" {
+		return 0
+	}
+	remaining := p.emittedMS - p.heardMSLocked()
+	if remaining < 0 {
+		return 0
+	}
+	return int64(remaining)
+}
+
+func (p *Player) ensureTurnLocked(turnID string) {
+	if p.activeTurn == turnID {
+		return
+	}
+	p.resetTurnLocked()
+	p.activeTurn = turnID
+	p.turnStarted = time.Now()
+	p.playhead = p.turnStarted
+}
+
+func (p *Player) beginSegment(seg Segment) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ensureTurnLocked(seg.TurnID)
+	p.pendingText = seg.Text
+	p.pendingFrom = p.emittedMS
+}
+
+func (p *Player) markSegment(seg Segment) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.activeTurn != seg.TurnID {
+		return
+	}
+	text := p.pendingText
+	if seg.Text != "" {
+		text = seg.Text
+	}
+	if text != "" {
+		p.spoken = append(p.spoken, spokenSpan{text: text, endMS: p.emittedMS})
+	}
+	p.pendingText = ""
+	p.pendingFrom = p.emittedMS
+}
+
+func (p *Player) playAudio(gen *Generation, seg Segment) {
+	format := audio.PCM16(p.cfg.Rate)
+	chunkBytes := format.BytesForMS(p.cfg.ChunkMS)
+	if chunkBytes <= 0 {
+		chunkBytes = len(seg.PCM)
+	}
+	// Never split a sample in half.
+	chunkBytes -= chunkBytes % audio.BytesPerSample
+
+	p.mu.Lock()
+	p.ensureTurnLocked(seg.TurnID)
+	p.setSpeakingLocked(true)
+	p.mu.Unlock()
+
+	for off := 0; off < len(seg.PCM); off += chunkBytes {
+		if !gen.Valid(seg.Gen) {
+			return
+		}
+		end := off + chunkBytes
+		if end > len(seg.PCM) {
+			end = len(seg.PCM)
+		}
+		chunk := seg.PCM[off:end]
+
+		if p.cfg.Paced {
+			p.mu.Lock()
+			target := p.playhead.Add(-time.Duration(p.cfg.LeadMS) * time.Millisecond)
+			p.mu.Unlock()
+			if wait := time.Until(target); wait > 0 {
+				timer := time.NewTimer(wait)
+				<-timer.C
+				timer.Stop()
+				if !gen.Valid(seg.Gen) {
+					return
+				}
+			}
+		}
+
+		p.emit(seg.TurnID, chunk)
+
+		p.mu.Lock()
+		chunkMS := format.DurationMS(chunk)
+		p.emittedMS += chunkMS
+		p.playhead = p.playhead.Add(time.Duration(chunkMS*1000) * time.Microsecond)
+		p.mu.Unlock()
+	}
+}
+
+// finishTurn waits out the tail of a completed turn so the speak channel stays
+// "on" until the listener has actually heard the last chunk, then reports it.
+func (p *Player) finishTurn(seg Segment) {
+	p.mu.Lock()
+	if p.activeTurn != seg.TurnID {
+		p.mu.Unlock()
+		return
+	}
+	remaining := p.emittedMS - p.heardMSLocked()
+	totalMS := p.emittedMS
+	text := p.fullSpokenLocked()
+	p.mu.Unlock()
+
+	if p.cfg.Paced && remaining > 0 {
+		timer := time.NewTimer(time.Duration(remaining) * time.Millisecond)
+		<-timer.C
+		timer.Stop()
+	}
+
+	p.mu.Lock()
+	if p.activeTurn != seg.TurnID {
+		p.mu.Unlock()
+		return
+	}
+	p.resetTurnLocked()
+	p.setSpeakingLocked(false)
+	p.mu.Unlock()
+
+	if p.onTurnDone != nil {
+		p.onTurnDone(seg.TurnID, int64(totalMS), text)
+	}
+}
+
+func (p *Player) heardMSLocked() float64 {
+	if p.turnStarted.IsZero() {
+		return 0
+	}
+	if !p.cfg.Paced {
+		return p.emittedMS
+	}
+	heard := float64(time.Since(p.turnStarted).Milliseconds())
+	if heard > p.emittedMS {
+		heard = p.emittedMS
+	}
+	if heard < 0 {
+		heard = 0
+	}
+	return heard
+}
+
+// spokenPrefixLocked reconstructs the text the listener heard: whole segments
+// that finished before the cut, plus a proportional slice of the one that was
+// still playing. Character count is a crude proxy for duration, but it is
+// stable across scripts and far better than claiming the whole segment landed.
+func (p *Player) spokenPrefixLocked(playedMS float64) string {
+	var out string
+	var prevEnd float64
+	for _, span := range p.spoken {
+		if span.endMS <= playedMS {
+			out += span.text
+			prevEnd = span.endMS
+			continue
+		}
+		out += partialText(span.text, playedMS-prevEnd, span.endMS-prevEnd)
+		return out
+	}
+	if p.pendingText != "" && playedMS > p.pendingFrom {
+		out += partialText(p.pendingText, playedMS-p.pendingFrom, p.emittedMS-p.pendingFrom)
+	}
+	return out
+}
+
+func partialText(text string, playedMS, totalMS float64) string {
+	if totalMS <= 0 || playedMS <= 0 {
+		return ""
+	}
+	frac := playedMS / totalMS
+	if frac > 1 {
+		frac = 1
+	}
+	runes := []rune(text)
+	keep := int(float64(len(runes)) * frac)
+	if keep <= 0 {
+		return ""
+	}
+	return string(runes[:keep])
+}
+
+func (p *Player) fullSpokenLocked() string {
+	var out string
+	for _, span := range p.spoken {
+		out += span.text
+	}
+	if p.pendingText != "" {
+		out += p.pendingText
+	}
+	return out
+}
+
+func (p *Player) resetTurnLocked() {
+	p.activeTurn = ""
+	p.turnStarted = time.Time{}
+	p.playhead = time.Time{}
+	p.emittedMS = 0
+	p.spoken = nil
+	p.pendingText = ""
+	p.pendingFrom = 0
+}
+
+func (p *Player) setSpeakingLocked(state bool) {
+	if p.speaking == state {
+		return
+	}
+	p.speaking = state
+	if p.onSpeaking != nil {
+		p.onSpeaking(state)
+	}
+}

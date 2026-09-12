@@ -1,0 +1,5 @@
+/bin/
+*.wav
+.env
+.env.local
+.DS_Store

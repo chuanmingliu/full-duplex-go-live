@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>golive — full-duplex voice</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #262d36; --ink: #e6edf3;
+    --muted: #8b949e; --accent: #58a6ff; --user: #3fb950; --warn: #d29922;
+    --danger: #f85149; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .3px; font-weight: 650; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line); background: #21262d; color: var(--ink); cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  select, input[type=text] {
+    font: inherit; padding: 6px 9px; border-radius: 8px;
+    border: 1px solid var(--line); background: #0d1117; color: var(--ink);
+  }
+  label { color: var(--muted); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px 20px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+
+  /* Channel lamps: the whole point of the demo is watching listen and speak
+     light up at the same time. */
+  .channels { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lamp {
+    display: flex; align-items: center; gap: 7px; padding: 6px 11px;
+    border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted);
+  }
+  .lamp i { width: 8px; height: 8px; border-radius: 50%; background: #30363d; display: block; }
+  .lamp.on { color: var(--ink); border-color: currentColor; }
+  .lamp.on i { background: currentColor; box-shadow: 0 0 8px currentColor; }
+  .lamp.listen.on { color: var(--user); }
+  .lamp.transcribe.on, .lamp.think.on { color: var(--accent); }
+  .lamp.speak.on { color: var(--warn); }
+
+  .meter { height: 4px; background: #21262d; border-radius: 2px; overflow: hidden; margin-top: 10px; }
+  .meter div { height: 100%; width: 0; background: var(--user); transition: width 60ms linear; }
+
+  #transcript { height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; flex-direction: column; gap: 3px; }
+  .row .who { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .row.user .who { color: var(--user); }
+  .row.assistant .who { color: var(--warn); }
+  .row .text { white-space: pre-wrap; word-break: break-word; }
+  .row.partial .text { color: var(--muted); font-style: italic; }
+  .row .cut { color: var(--danger); font-size: 12px; }
+
+  #log { height: 46vh; overflow-y: auto; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #log div { border-bottom: 1px solid #1c2229; padding: 2px 0; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  #log div.ev-error { color: var(--danger); }
+  #log div.ev-cut { color: var(--warn); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 12px; }
+  .stat { background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>golive <span>— simulated full duplex</span></h1>
+  <button id="connect" class="primary">Connect &amp; talk</button>
+  <button id="mute" disabled>Mute</button>
+  <button id="hangup" disabled>Hang up</button>
+  <label>ASR <select id="asr"><option value="">default</option></select></label>
+  <label>LLM <select id="llm"><option value="">default</option></select></label>
+  <label>TTS <select id="tts"><option value="">default</option></select></label>
+  <label><input type="checkbox" id="backchannel"> backchannel</label>
+  <label><input type="checkbox" id="speculative" checked> speculative</label>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>Channels</h2>
+      <div class="channels">
+        <div class="lamp listen" id="lamp-listen"><i></i>listen</div>
+        <div class="lamp transcribe" id="lamp-transcribe"><i></i>transcribe</div>
+        <div class="lamp think" id="lamp-think"><i></i>think</div>
+        <div class="lamp speak" id="lamp-speak"><i></i>speak</div>
+      </div>
+      <div class="meter"><div id="level"></div></div>
+      <div class="stats">
+        <div class="stat"><b id="s-rate">—</b><span>session rate</span></div>
+        <div class="stat"><b id="s-first">—</b><span>first audio</span></div>
+        <div class="stat"><b id="s-cut">—</b><span>last cut at</span></div>
+        <div class="stat"><b id="s-out">0.0s</b><span>audio out</span></div>
+      </div>
+      <p class="note">Talk over the assistant while it is speaking — listen and speak
+        light up together, and the transcript records only the part you actually heard.</p>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Transcript</h2>
+      <div id="transcript"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Event stream</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// Audio plumbing.
+//
+// The microphone runs at the browser's rate and is downsampled to the session
+// rate before sending; output is queued into a scheduled playback chain so a
+// truncation actually cuts audio that has not been heard yet. Echo cancellation
+// and noise suppression are requested explicitly: without them, the assistant's
+// own voice comes back through the mic and the server reads it as a barge-in.
+// ---------------------------------------------------------------------------
+const SESSION_RATE = 24000;
+
+const ui = {
+  connect: document.getElementById('connect'),
+  mute: document.getElementById('mute'),
+  hangup: document.getElementById('hangup'),
+  asr: document.getElementById('asr'),
+  llm: document.getElementById('llm'),
+  tts: document.getElementById('tts'),
+  backchannel: document.getElementById('backchannel'),
+  speculative: document.getElementById('speculative'),
+  transcript: document.getElementById('transcript'),
+  log: document.getElementById('log'),
+  level: document.getElementById('level'),
+  lamps: {
+    listen: document.getElementById('lamp-listen'),
+    transcribe: document.getElementById('lamp-transcribe'),
+    think: document.getElementById('lamp-think'),
+    speak: document.getElementById('lamp-speak'),
+  },
+  stats: {
+    rate: document.getElementById('s-rate'),
+    first: document.getElementById('s-first'),
+    cut: document.getElementById('s-cut'),
+    out: document.getElementById('s-out'),
+  },
+};
+
+let ws = null, ctx = null, micStream = null, micNode = null, source = null;
+let muted = false, playhead = 0, outBytes = 0, speakStart = 0, firstAudioAt = 0, turnStart = 0;
+const rows = new Map();
+
+fetch('v1/live/providers').then(r => r.json()).then(p => {
+  const fill = (sel, names, selected) => {
+    for (const n of names || []) {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n + (n === selected ? ' (default)' : '');
+      sel.appendChild(o);
+    }
+  };
+  fill(ui.asr, p.asr, p.selected && p.selected.asr);
+  fill(ui.llm, p.llm, p.selected && p.selected.llm);
+  fill(ui.tts, p.tts, p.selected && p.selected.tts);
+}).catch(() => {});
+
+function log(text, cls) {
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = text;
+  ui.log.appendChild(div);
+  while (ui.log.childElementCount > 400) ui.log.removeChild(ui.log.firstChild);
+  ui.log.scrollTop = ui.log.scrollHeight;
+}
+
+function lamp(name, on) { ui.lamps[name].classList.toggle('on', !!on); }
+
+function row(id, who) {
+  let r = rows.get(id);
+  if (r) return r;
+  const el = document.createElement('div');
+  el.className = 'row ' + who + ' partial';
+  el.innerHTML = '<div class="who">' + who + '</div><div class="text"></div>';
+  ui.transcript.appendChild(el);
+  ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  r = { el, text: el.querySelector('.text') };
+  rows.set(id, r);
+  return r;
+}
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function bytesToB64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+// Linear downsample from the capture rate to the session rate, then PCM16.
+function toPCM16(samples, fromRate, toRate) {
+  const ratio = toRate / fromRate;
+  const n = Math.max(1, Math.round(samples.length * ratio));
+  const out = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const src = i / ratio;
+    const lo = Math.min(samples.length - 1, Math.floor(src));
+    const hi = Math.min(samples.length - 1, lo + 1);
+    const f = src - lo;
+    let v = samples[lo] * (1 - f) + samples[hi] * f;
+    v = Math.max(-1, Math.min(1, v));
+    out[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  return new Uint8Array(out.buffer);
+}
+
+function playPCM(bytes) {
+  if (!ctx) return;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const n = Math.floor(bytes.byteLength / 2);
+  const buf = ctx.createBuffer(1, n, SESSION_RATE);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 0x8000;
+
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  const now = ctx.currentTime;
+  if (playhead < now) playhead = now + 0.03;
+  src.start(playhead);
+  playhead += buf.duration;
+  pending.push(src);
+  src.onended = () => { const i = pending.indexOf(src); if (i >= 0) pending.splice(i, 1); };
+}
+
+// Scheduled-but-unplayed sources. A truncation stops these, which is what makes
+// a barge-in audible as an actual cut rather than a delayed one.
+let pending = [];
+function stopPlayback() {
+  for (const s of pending) { try { s.stop(); } catch (e) {} }
+  pending = [];
+  playhead = ctx ? ctx.currentTime : 0;
+}
+
+async function connect() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+    },
+  });
+
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(proto + location.host + '/v1/live');
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    log('· socket open');
+    send({
+      type: 'session.start',
+      event_id: 'start_1',
+      session: {
+        audio: { format: { type: 'audio/pcm', rate: SESSION_RATE } },
+        delegation: { type: 'responses' },
+        golive: {
+          asr: ui.asr.value || undefined,
+          llm: ui.llm.value || undefined,
+          tts: ui.tts.value || undefined,
+          backchannel: ui.backchannel.checked,
+          speculative: ui.speculative.checked,
+        },
+      },
+    });
+    startCapture();
+  };
+  ws.onmessage = (e) => handle(JSON.parse(e.data));
+  ws.onclose = () => { log('· socket closed'); teardown(); };
+  ws.onerror = () => log('! socket error', 'ev-error');
+
+  ui.connect.disabled = true;
+  ui.mute.disabled = false;
+  ui.hangup.disabled = false;
+}
+
+function startCapture() {
+  source = ctx.createMediaStreamSource(micStream);
+  // ScriptProcessor is deprecated but needs no separate worklet file, which
+  // keeps this demo a single page you can open from the server as-is.
+  micNode = ctx.createScriptProcessor(2048, 1, 1);
+  source.connect(micNode);
+  micNode.connect(ctx.destination); // required in some browsers to pump events
+
+  micNode.onaudioprocess = (e) => {
+    const input = e.inputBuffer.getChannelData(0);
+    let peak = 0;
+    for (let i = 0; i < input.length; i++) peak = Math.max(peak, Math.abs(input[i]));
+    ui.level.style.width = Math.min(100, peak * 180) + '%';
+
+    if (muted || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const pcm = toPCM16(input, ctx.sampleRate, SESSION_RATE);
+    send({ type: 'session.input_audio.append', audio: bytesToB64(pcm) });
+  };
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+function handle(ev) {
+  switch (ev.type) {
+    case 'session.started':
+      ui.stats.rate.textContent = ev.session.audio.format.rate + ' Hz';
+      log('← session.started ' + ev.session.id);
+      break;
+
+    case 'golive.channel.state':
+      lamp('listen', ev.listening);
+      lamp('transcribe', ev.transcribing);
+      lamp('think', ev.thinking);
+      lamp('speak', ev.speaking);
+      break;
+
+    case 'golive.speech.started':
+      turnStart = performance.now();
+      firstAudioAt = 0;
+      if (ev.barge_in) log('← barge-in detected', 'ev-cut');
+      break;
+
+    case 'session.input_transcript.delta': {
+      const r = row(ev.item_id, 'user');
+      r.text.textContent = ev.replace ? ev.content : r.text.textContent + ev.content;
+      if (ev.final) r.el.classList.remove('partial');
+      ui.transcript.scrollTop = ui.transcript.scrollHeight;
+      break;
+    }
+
+    case 'session.output_transcript.delta': {
+      const r = row(ev.item_id, 'assistant');
+      r.text.textContent += ev.content;
+      r.el.classList.remove('partial');
+      ui.transcript.scrollTop = ui.transcript.scrollHeight;
+      break;
+    }
+
+    case 'session.output_audio.delta': {
+      const bytes = b64ToBytes(ev.audio);
+      outBytes += bytes.byteLength;
+      ui.stats.out.textContent = (outBytes / 2 / SESSION_RATE).toFixed(1) + 's';
+      if (!firstAudioAt && turnStart) {
+        firstAudioAt = performance.now();
+        ui.stats.first.textContent = Math.round(firstAudioAt - turnStart) + ' ms';
+      }
+      playPCM(bytes);
+      break;
+    }
+
+    case 'golive.output_audio.truncated': {
+      stopPlayback();
+      ui.stats.cut.textContent = ev.played_ms + ' / ' + ev.total_ms + ' ms';
+      const r = rows.get(ev.item_id);
+      if (r) {
+        r.text.textContent = ev.text;
+        const cut = document.createElement('div');
+        cut.className = 'cut';
+        cut.textContent = '— interrupted after ' + ev.played_ms + ' ms; only this much entered history';
+        r.el.appendChild(cut);
+      }
+      log('← truncated at ' + ev.played_ms + 'ms of ' + ev.total_ms + 'ms', 'ev-cut');
+      break;
+    }
+
+    case 'golive.backchannel':
+      log('← backchannel: ' + ev.text);
+      break;
+
+    case 'session.delegation.created':
+      log('← delegation ' + ev.delegation.id + ' (' + ev.delegation.reason + ') ' + ev.delegation.transcript);
+      break;
+
+    case 'golive.turn.metrics':
+      log('← metrics ' + JSON.stringify(ev));
+      break;
+
+    case 'error':
+      log('! ' + ev.error.code + ': ' + ev.error.message, 'ev-error');
+      break;
+
+    case 'session.closed':
+      log('← session.closed (' + ev.reason + ')');
+      break;
+
+    default:
+      if (ev.type !== 'response.event') log('← ' + ev.type);
+  }
+}
+
+function teardown() {
+  ui.connect.disabled = false;
+  ui.mute.disabled = true;
+  ui.hangup.disabled = true;
+  Object.keys(ui.lamps).forEach(k => lamp(k, false));
+  if (micNode) { micNode.onaudioprocess = null; micNode.disconnect(); micNode = null; }
+  if (source) { source.disconnect(); source = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  stopPlayback();
+}
+
+ui.connect.onclick = () => connect().catch(err => log('! ' + err.message, 'ev-error'));
+ui.mute.onclick = () => {
+  muted = !muted;
+  ui.mute.textContent = muted ? 'Unmute' : 'Mute';
+  send({ type: muted ? 'session.input_audio.mute' : 'session.input_audio.unmute' });
+};
+ui.hangup.onclick = () => {
+  send({ type: 'session.close', event_id: 'bye' });
+  if (ws) ws.close();
+};
+</script>
+</body>
+</html>

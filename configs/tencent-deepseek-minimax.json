@@ -1,0 +1,65 @@
+{
+  "addr": ":8080",
+  "log_level": "info",
+  "web_root": "web",
+
+  "asr": "tencent",
+  "llm": "deepseek",
+  "tts": "minimax",
+
+  "model": "golive-1",
+  "language": "zh",
+  "speed": 1.2,
+  "client_rate": 24000,
+  "instructions": "你是一个语音助手，说话自然、语速从容。常规问题用一两句话答完。需要查询或要仔细推理的问题，先交给后端处理，不要凭空猜测结果。不要念出标点符号、列表符号或代码。",
+
+  "backend_model": "deepseek-chat",
+  "backend_base_url": "https://api.deepseek.com",
+  "temperature": 0.7,
+  "max_output_tokens": 512,
+  "disable_thinking": true,
+  "history_turns": 16,
+
+  "duplex": {
+    "backchannel": true,
+    "backchannel_after_ms": 2600,
+    "backchannel_every_ms": 4200,
+    "backchannel_phrases": ["嗯", "好的", "我在听"],
+
+    "speculative": true,
+    "speculative_stable_ms": 260,
+    "speculative_min_chars": 6,
+
+    "allow_barge_in": true,
+
+    "playback_chunk_ms": 40,
+    "playback_paced": true,
+    "playback_lead_ms": 300,
+
+    "stream_first_chunk_chars": 8,
+    "stream_min_chunk_chars": 24,
+    "stream_max_chunk_chars": 120,
+
+    "delegation_mode": "responses",
+    "delegate_min_chars": 1,
+
+    "session_max_seconds": 3600,
+    "idle_timeout_seconds": 300
+  },
+
+  "vad": {
+    "frame_ms": 20,
+    "min_speech_ms": 200,
+    "min_silence_ms": 380,
+    "speech_pad_ms": 240,
+    "max_speech_ms": 30000,
+    "snapshot_ms": 200,
+    "noise_floor_db": -60,
+    "max_noise_floor_db": -28,
+    "speech_margin_db": 10,
+    "max_zcr": 0.55,
+    "gap_tolerance_ms": 160,
+    "barge_in_margin_db": 6,
+    "barge_in_min_speech_ms": 320
+  }
+}
