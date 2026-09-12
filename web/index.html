@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>golive — full-duplex voice</title>
 <style>
   :root {
@@ -85,6 +86,8 @@
   <button id="connect" class="primary">Connect &amp; talk</button>
   <button id="mute" disabled>Mute</button>
   <button id="hangup" disabled>Hang up</button>
+  <button id="testsound">Test sound</button>
+  <label>Output <select id="sink"><option value="">system default</option></select></label>
   <label>ASR <select id="asr"><option value="">default</option></select></label>
   <label>LLM <select id="llm"><option value="">default</option></select></label>
   <label>TTS <select id="tts"><option value="">default</option></select></label>
@@ -108,9 +111,15 @@
         <div class="stat"><b id="s-first">—</b><span>first audio</span></div>
         <div class="stat"><b id="s-cut">—</b><span>last cut at</span></div>
         <div class="stat"><b id="s-out">0.0s</b><span>audio out</span></div>
+        <div class="stat"><b id="s-ctx">—</b><span>audio context</span></div>
       </div>
       <p class="note">Talk over the assistant while it is speaking — listen and speak
         light up together, and the transcript records only the part you actually heard.</p>
+      <p class="note"><b>Hear nothing?</b> Press <b>Test sound</b>. It pushes a tone through the
+        exact playback path the assistant's audio uses, so a silent tone means the tab or the
+        output device is the problem, not the service. On macOS, opening the microphone can flip a
+        Bluetooth headset into its low-quality call mode and silence playback — switch <b>Output</b>
+        to the built-in speakers if so.</p>
     </div>
     <div class="card" style="margin-top:16px">
       <h2>Transcript</h2>
@@ -140,6 +149,8 @@ const ui = {
   connect: document.getElementById('connect'),
   mute: document.getElementById('mute'),
   hangup: document.getElementById('hangup'),
+  testsound: document.getElementById('testsound'),
+  sink: document.getElementById('sink'),
   asr: document.getElementById('asr'),
   llm: document.getElementById('llm'),
   tts: document.getElementById('tts'),
@@ -159,6 +170,7 @@ const ui = {
     first: document.getElementById('s-first'),
     cut: document.getElementById('s-cut'),
     out: document.getElementById('s-out'),
+    ctx: document.getElementById('s-ctx'),
   },
 };
 
@@ -235,8 +247,53 @@ function toPCM16(samples, fromRate, toRate) {
   return new Uint8Array(out.buffer);
 }
 
+// ensureCtx creates the AudioContext on demand and keeps it running.
+//
+// A context can be left suspended by autoplay policy, and on macOS it can be
+// interrupted when the default output device changes — which happens exactly
+// when opening the microphone flips a Bluetooth headset into call mode. Both
+// produce scheduled audio that is simply never heard, with no error anywhere,
+// so the state is resumed on every use and shown in the stat row.
+async function ensureCtx() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.onstatechange = showCtxState;
+  }
+  if (ctx.state !== 'running') {
+    try { await ctx.resume(); } catch (e) { log('! audio context: ' + e.message, 'ev-error'); }
+  }
+  showCtxState();
+  return ctx;
+}
+
+function showCtxState() {
+  ui.stats.ctx.textContent = ctx ? ctx.state : '—';
+}
+
+// Chrome can route a page's audio to a chosen device; Safari cannot.
+async function populateSinks() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return; }
+  const outs = devices.filter(d => d.kind === 'audiooutput');
+  const keep = ui.sink.value;
+  ui.sink.innerHTML = '<option value="">system default</option>';
+  for (const d of outs) {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label || ('output ' + d.deviceId.slice(0, 6));
+    ui.sink.appendChild(o);
+  }
+  ui.sink.value = keep;
+  if (!(ctx && typeof ctx.setSinkId === 'function')) {
+    ui.sink.title = 'this browser cannot choose an output device; use the system output';
+  }
+}
+
 function playPCM(bytes) {
   if (!ctx) return;
+  // Cheap safety net: audio arrived but the context went to sleep.
+  if (ctx.state !== 'running') { ctx.resume().then(showCtxState).catch(() => {}); }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const n = Math.floor(bytes.byteLength / 2);
   const buf = ctx.createBuffer(1, n, SESSION_RATE);
@@ -264,8 +321,7 @@ function stopPlayback() {
 }
 
 async function connect() {
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  await ctx.resume();
+  await ensureCtx();
 
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -275,6 +331,9 @@ async function connect() {
       channelCount: 1,
     },
   });
+
+  // Device labels are only exposed once microphone permission is granted.
+  await populateSinks();
 
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host + '/v1/live');
@@ -429,6 +488,40 @@ function teardown() {
   if (source) { source.disconnect(); source = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   stopPlayback();
+}
+
+// A one-second tone through the same AudioContext, the same scheduling and the
+// same destination as the assistant's audio. If this is silent, nothing about
+// golive is at fault.
+ui.testsound.onclick = async () => {
+  await ensureCtx();
+  const n = SESSION_RATE;
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / 2400) * Math.min(1, (n - i) / 2400); // avoid clicks
+    pcm[i] = 0.35 * env * Math.sin((2 * Math.PI * 440 * i) / SESSION_RATE) * 0x7fff;
+  }
+  playPCM(new Uint8Array(pcm.buffer));
+  log('· test tone: 440 Hz for 1s through the playback path');
+};
+
+ui.sink.onchange = async () => {
+  await ensureCtx();
+  if (typeof ctx.setSinkId !== 'function') {
+    log('! this browser cannot choose an output device; change the system output', 'ev-error');
+    return;
+  }
+  try {
+    await ctx.setSinkId(ui.sink.value);
+    log('· output device set to ' + (ui.sink.options[ui.sink.selectedIndex].textContent));
+  } catch (e) {
+    log('! could not set output device: ' + e.message, 'ev-error');
+  }
+};
+
+populateSinks();
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', populateSinks);
 }
 
 ui.connect.onclick = () => connect().catch(err => log('! ' + err.message, 'ev-error'));

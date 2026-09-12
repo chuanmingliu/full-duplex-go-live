@@ -45,6 +45,37 @@ long so there is something to interrupt.
 
 ---
 
+## Hearing nothing
+
+Work down this list; each step rules out a layer rather than a guess.
+
+1. **Press "Test sound" on the page.** One second of 440 Hz through the exact
+   AudioContext, scheduler and destination the assistant's audio uses. Silent
+   tone → the tab or the output device is at fault and nothing below matters.
+2. **Check the "audio context" stat.** Anything but `running` means the browser
+   suspended playback. It is resumed automatically on every chunk, so a stuck
+   `suspended` points at autoplay policy or an interrupted device.
+3. **Check the "audio out" stat while talking.** Counting up means audio reached
+   the tab — the problem is downstream, in routing or volume.
+4. **Switch the "Output" picker to the built-in speakers.** On macOS, opening
+   the microphone can flip a Bluetooth headset into its call profile, which
+   silences playback with no error anywhere. This is the single most common
+   cause of "the CLI works but the browser is silent". Chrome can retarget the
+   page's audio; Safari cannot, so change the system output instead.
+5. **Bypass the browser entirely.** `golivectl` writes what the server actually
+   emitted, so `afplay check.wav` separates the service from the client in one
+   command:
+
+   ```bash
+   ./bin/golivectl -url ws://127.0.0.1:8080/v1/live -speak-ms 1800 -wait-ms 14000 -out check.wav
+   afplay check.wav
+   ```
+
+   Audible → the server and all three providers are fine; stay in the browser.
+   Silent → go to the log, below.
+
+---
+
 ## Reading the log
 
 Everything goes to the terminal and to `golive.log`. One turn looks like this:
