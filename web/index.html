@@ -78,6 +78,24 @@
   .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; font-weight: 600; }
   .stat span { font-size: 11px; color: var(--muted); }
   .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+  .cfg { border-bottom: 1px solid var(--line); background: var(--panel); padding: 16px 20px; }
+  .cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .field > label {
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink);
+    display: block;
+  }
+  textarea {
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 9px 11px; border-radius: 8px; resize: vertical; min-height: 78px;
+    border: 1px solid var(--line); background: #0d1117; color: var(--ink); width: 100%;
+  }
+  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 0; line-height: 1.5; }
+  .hint code { background: #0d1117; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .cfg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  #cfgtoggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
@@ -93,7 +111,33 @@
   <label>TTS <select id="tts"><option value="">default</option></select></label>
   <label><input type="checkbox" id="backchannel"> backchannel</label>
   <label><input type="checkbox" id="speculative" checked> speculative</label>
+  <button id="cfgtoggle" aria-expanded="false" aria-controls="cfg">Session config</button>
 </header>
+
+<section id="cfg" class="cfg" hidden>
+  <div class="cfg-grid">
+    <div class="field">
+      <label for="instructions">System prompt</label>
+      <textarea id="instructions" rows="5" spellcheck="false"
+        placeholder="loading the server default…"></textarea>
+      <p class="hint">Sent as <code>session.instructions</code> at session start. Leave empty to use
+        the server's. Keep it short — the conversational layer has a small context window, and
+        detailed procedure belongs in the backend prompt, not here.</p>
+    </div>
+    <div class="field">
+      <label for="greeting">Greeting</label>
+      <textarea id="greeting" rows="5" spellcheck="false"
+        placeholder="loading the server default…"></textarea>
+      <p class="hint">Spoken the moment the session opens, before you say anything. Empty means
+        the assistant waits to be spoken to. You can interrupt a greeting like any other turn.</p>
+    </div>
+  </div>
+  <div class="cfg-bar">
+    <button id="cfgdefault">Use server defaults</button>
+    <button id="cfgclear">Clear both</button>
+    <span class="hint" id="cfgstate">Saved in this browser. Takes effect on the next connect.</span>
+  </div>
+</section>
 
 <main>
   <section>
@@ -151,6 +195,13 @@ const ui = {
   hangup: document.getElementById('hangup'),
   testsound: document.getElementById('testsound'),
   sink: document.getElementById('sink'),
+  cfg: document.getElementById('cfg'),
+  cfgtoggle: document.getElementById('cfgtoggle'),
+  cfgdefault: document.getElementById('cfgdefault'),
+  cfgclear: document.getElementById('cfgclear'),
+  cfgstate: document.getElementById('cfgstate'),
+  instructions: document.getElementById('instructions'),
+  greeting: document.getElementById('greeting'),
   asr: document.getElementById('asr'),
   llm: document.getElementById('llm'),
   tts: document.getElementById('tts'),
@@ -178,7 +229,40 @@ let ws = null, ctx = null, micStream = null, micNode = null, source = null;
 let muted = false, playhead = 0, outBytes = 0, speakStart = 0, firstAudioAt = 0, turnStart = 0;
 const rows = new Map();
 
-fetch('v1/live/providers').then(r => r.json()).then(p => {
+// Session config lives in localStorage: it is a per-viewer convenience on a
+// page served from your own machine, not shared state. Every access is guarded
+// because a private window or blocked site data makes these throw.
+var STORE = 'golive.session.v1';
+var serverDefaults = { instructions: '', greeting: '' };
+
+function loadCfg() {
+  try {
+    var raw = localStorage.getItem(STORE);
+    if (!raw) return;
+    var v = JSON.parse(raw);
+    if (typeof v.instructions === 'string') ui.instructions.value = v.instructions;
+    if (typeof v.greeting === 'string') ui.greeting.value = v.greeting;
+  } catch (e) { /* no stored config; the placeholders explain the fallback */ }
+}
+
+function saveCfg() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify({
+      instructions: ui.instructions.value,
+      greeting: ui.greeting.value,
+    }));
+    ui.cfgstate.textContent = 'Saved. Takes effect on the next connect.';
+  } catch (e) {
+    ui.cfgstate.textContent = 'Could not save in this browser; the values still apply this session.';
+  }
+}
+
+fetch('v1/live/config').then(r => r.json()).then(p => {
+  if (p.defaults) {
+    serverDefaults = p.defaults;
+    ui.instructions.placeholder = p.defaults.instructions || '(server has no system prompt set)';
+    ui.greeting.placeholder = p.defaults.greeting || '(no greeting — the assistant waits for you)';
+  }
   const fill = (sel, names, selected) => {
     for (const n of names || []) {
       const o = document.createElement('option');
@@ -189,7 +273,12 @@ fetch('v1/live/providers').then(r => r.json()).then(p => {
   fill(ui.asr, p.asr, p.selected && p.selected.asr);
   fill(ui.llm, p.llm, p.selected && p.selected.llm);
   fill(ui.tts, p.tts, p.selected && p.selected.tts);
-}).catch(() => {});
+}).catch(() => {
+  ui.instructions.placeholder = '(could not reach the server)';
+  ui.greeting.placeholder = '(could not reach the server)';
+});
+
+loadCfg();
 
 function log(text, cls) {
   const div = document.createElement('div');
@@ -341,21 +430,34 @@ async function connect() {
 
   ws.onopen = () => {
     log('· socket open');
+    var prompt = ui.instructions.value.trim();
+    var greet = ui.greeting.value;
+    var golive = {
+      asr: ui.asr.value || undefined,
+      llm: ui.llm.value || undefined,
+      tts: ui.tts.value || undefined,
+      backchannel: ui.backchannel.checked,
+      speculative: ui.speculative.checked,
+    };
+    // Only send `greeting` when the box has been touched. Omitting it means
+    // "use the server's"; sending an empty string means "say nothing", and the
+    // two are different instructions.
+    if (greet.trim() !== '' || greetingCleared) golive.greeting = greet.trim();
+
     send({
       type: 'session.start',
       event_id: 'start_1',
       session: {
+        instructions: prompt || undefined,
         audio: { format: { type: 'audio/pcm', rate: SESSION_RATE } },
         delegation: { type: 'responses' },
-        golive: {
-          asr: ui.asr.value || undefined,
-          llm: ui.llm.value || undefined,
-          tts: ui.tts.value || undefined,
-          backchannel: ui.backchannel.checked,
-          speculative: ui.speculative.checked,
-        },
+        golive: golive,
       },
     });
+    if (prompt) log('· system prompt: ' + prompt.slice(0, 60) + (prompt.length > 60 ? '…' : ''));
+    if (golive.greeting !== undefined) {
+      log('· greeting: ' + (golive.greeting ? golive.greeting : '(suppressed)'));
+    }
     startCapture();
   };
   ws.onmessage = (e) => handle(JSON.parse(e.data));
@@ -523,6 +625,32 @@ populateSinks();
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   navigator.mediaDevices.addEventListener('devicechange', populateSinks);
 }
+
+// Tracks the difference between "never set a greeting" and "deliberately
+// emptied it", which the protocol distinguishes and a plain empty box cannot.
+var greetingCleared = false;
+
+ui.cfgtoggle.onclick = () => {
+  var open = ui.cfg.hidden;
+  ui.cfg.hidden = !open;
+  ui.cfgtoggle.setAttribute('aria-expanded', String(open));
+};
+ui.instructions.oninput = saveCfg;
+ui.greeting.oninput = () => { greetingCleared = ui.greeting.value.trim() === ''; saveCfg(); };
+ui.cfgdefault.onclick = () => {
+  ui.instructions.value = '';
+  ui.greeting.value = '';
+  greetingCleared = false;
+  saveCfg();
+  ui.cfgstate.textContent = 'Cleared — the server\'s prompt and greeting will be used.';
+};
+ui.cfgclear.onclick = () => {
+  ui.instructions.value = '';
+  ui.greeting.value = '';
+  greetingCleared = true;
+  saveCfg();
+  ui.cfgstate.textContent = 'Empty greeting sent explicitly — the assistant will not speak first.';
+};
 
 ui.connect.onclick = () => connect().catch(err => log('! ' + err.message, 'ev-error'));
 ui.mute.onclick = () => {

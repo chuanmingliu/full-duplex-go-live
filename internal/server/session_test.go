@@ -28,6 +28,9 @@ func newTestServer(t *testing.T) (*httptest.Server, config.Config) {
 	cfg.WebRoot = ""
 	cfg.Duplex.Backchannel = false
 	cfg.ClientRate = 16000
+	// Most tests assert on audio that a turn produced, so the unprompted
+	// greeting is off unless a test asks for one.
+	cfg.Greeting = ""
 
 	srv := NewServer(cfg, nil)
 	ts := httptest.NewServer(srv.Handler())
@@ -53,6 +56,7 @@ type reader struct {
 	errs   []live.ErrorEvent
 	audio  []byte
 	final  string
+	first  string
 	done   chan struct{}
 }
 
@@ -70,6 +74,9 @@ func startReader(conn *websocket.Conn) *reader {
 				continue
 			}
 			r.mu.Lock()
+			if r.first == "" {
+				r.first = env.Type
+			}
 			r.counts[env.Type]++
 			switch env.Type {
 			case live.ServerError:
@@ -115,6 +122,14 @@ func (r *reader) lastError() (live.ErrorEvent, bool) {
 		return live.ErrorEvent{}, false
 	}
 	return r.errs[len(r.errs)-1], true
+}
+
+// firstEventType is the very first event the server sent, which is how the
+// ordering guarantee around session.started is checked.
+func (r *reader) firstEventType() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.first
 }
 
 func (r *reader) finalTranscript() string {
@@ -342,3 +357,59 @@ func TestHealthAndProviderEndpoints(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionGreetingSpeaksFirst(t *testing.T) {
+	ts, cfg := newTestServer(t)
+	conn := dial(t, ts)
+	r := startReader(conn)
+
+	send(t, conn, live.SessionStartEvent{
+		Envelope: live.Envelope{Type: live.ClientSessionStart, EventID: "start"},
+		Session: live.SessionConfig{
+			Audio:  &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: cfg.ClientRate}},
+			Golive: &live.GoliveConfig{Greeting: strptr("早上好，这里是测试。")},
+		},
+	})
+
+	// No audio is sent at all: the assistant must speak unprompted.
+	await(t, "greeting audio", 5*time.Second, func() bool {
+		return r.audioBytes() > audio.PCM16(cfg.ClientRate).BytesForMS(200)
+	})
+	if r.count(live.ServerSessionStarted) == 0 {
+		t.Error("greeting arrived but session.started did not")
+	}
+	if got := r.firstEventType(); got != live.ServerSessionStarted {
+		t.Errorf("first event was %q; session.started must precede greeting audio, or the "+
+			"client does not yet know the audio format", got)
+	}
+	if r.count(live.ServerError) != 0 {
+		ev, _ := r.lastError()
+		t.Errorf("greeting produced an error: %+v", ev.Error)
+	}
+}
+
+func TestSessionEmptyGreetingSuppressesTheServerDefault(t *testing.T) {
+	ts, cfg := newTestServer(t)
+	conn := dial(t, ts)
+	r := startReader(conn)
+
+	send(t, conn, live.SessionStartEvent{
+		Envelope: live.Envelope{Type: live.ClientSessionStart, EventID: "start"},
+		Session: live.SessionConfig{
+			Audio: &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: cfg.ClientRate}},
+			// An explicit empty string, which must beat the server default
+			// rather than fall back to it.
+			Golive: &live.GoliveConfig{Greeting: strptr("")},
+		},
+	})
+	await(t, "session.started", 2*time.Second, func() bool {
+		return r.count(live.ServerSessionStarted) > 0
+	})
+
+	time.Sleep(900 * time.Millisecond)
+	if r.audioBytes() != 0 {
+		t.Errorf("an explicitly empty greeting still produced %d bytes of audio", r.audioBytes())
+	}
+}
+
+func strptr(s string) *string { return &s }

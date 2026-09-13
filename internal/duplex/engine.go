@@ -71,6 +71,8 @@ type Options struct {
 	Backchannel bool
 	Speculative bool
 	History     []provider.Message
+	// Greeting is spoken once the session is live, unprompted.
+	Greeting string
 }
 
 // Engine is one session's duplex orchestrator.
@@ -239,6 +241,30 @@ func (e *Engine) Close() {
 			e.ttsStream = nil
 		}
 		e.ttsMu.Unlock()
+	})
+}
+
+// Greet speaks the configured greeting, if any.
+//
+// It is a separate call rather than part of Start so the caller controls when
+// it happens: the greeting's audio must not reach the wire before the
+// session.started event that tells the client what format that audio is in.
+func (e *Engine) Greet() {
+	text := strings.TrimSpace(e.opts.Greeting)
+	if text == "" {
+		return
+	}
+	e.post(func() {
+		// A greeting is a real assistant turn: it can be interrupted, it is
+		// truncated honestly if it is, and it enters conversation history so
+		// the backend knows what was already said.
+		turn := e.tracker.Begin("", false)
+		e.log.Debug("speak: greeting", "turn", turn.ID, "text", text)
+		e.emitOutputTranscript(turn, text)
+		pipe := e.newSpeechPipe(turn)
+		pipe.Push(text)
+		pipe.Close()
+		turn.AppendResponse(text)
 	})
 }
 
@@ -1225,7 +1251,10 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	}
 	e.deps.Emit(ev)
 
-	if !truncated && !tm.FirstAudioOut.IsZero() {
+	// Only turns a caller actually waited for belong in the latency summary.
+	// A greeting or an unsolicited commentary has no speech-end origin, so its
+	// figures describe nothing anyone experienced as waiting.
+	if !truncated && !tm.FirstAudioOut.IsZero() && !tm.SpeechEndAt.IsZero() {
 		e.latencies = append(e.latencies, ev.FirstAudioOutMS)
 	}
 	// INFO, not DEBUG: the response latency is the one number worth seeing in a

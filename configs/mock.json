@@ -2,15 +2,13 @@
   "addr": ":8080",
   "log_level": "debug",
   "web_root": "web",
-
   "asr": "mock",
   "llm": "mock",
   "tts": "mock",
-
   "model": "golive-1",
+  "greeting": "你好，我是 golive 语音助手，有什么可以帮你的？",
   "language": "zh",
   "client_rate": 24000,
-
   "duplex": {
     "backchannel": false,
     "speculative": true,

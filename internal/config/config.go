@@ -29,11 +29,14 @@ type Config struct {
 	TTS string `json:"tts"`
 
 	// Session defaults
-	Model        string  `json:"model"`
-	Voice        string  `json:"voice"`
-	Instructions string  `json:"instructions"`
-	Language     string  `json:"language"`
-	Speed        float64 `json:"speed"`
+	Model        string `json:"model"`
+	Voice        string `json:"voice"`
+	Instructions string `json:"instructions"`
+	// Greeting is spoken as soon as a session opens, before the caller says
+	// anything. Empty means the assistant waits to be spoken to.
+	Greeting string  `json:"greeting"`
+	Language string  `json:"language"`
+	Speed    float64 `json:"speed"`
 	// ClientRate is the default PCM rate offered to clients that do not name
 	// one at session.start.
 	ClientRate int `json:"client_rate"`
@@ -220,6 +223,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Voice, "GOLIVE_VOICE")
 	setString(&c.Language, "GOLIVE_LANGUAGE")
 	setString(&c.Instructions, "GOLIVE_INSTRUCTIONS")
+	setString(&c.Greeting, "GOLIVE_GREETING")
 	setString(&c.BackendModel, "GOLIVE_BACKEND_MODEL")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")

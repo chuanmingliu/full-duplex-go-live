@@ -162,6 +162,11 @@ type GoliveConfig struct {
 	TTS string `json:"tts,omitempty"`
 	// Language hints the ASR engine ("zh", "en").
 	Language string `json:"language,omitempty"`
+	// Greeting is spoken the moment the session opens, before the caller says
+	// anything. A pointer so the three cases stay distinct: absent uses the
+	// server default, an empty string explicitly suppresses it, and any other
+	// value replaces it.
+	Greeting *string `json:"greeting,omitempty"`
 }
 
 // --- Client events ---

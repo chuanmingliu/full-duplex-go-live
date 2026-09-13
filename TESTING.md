@@ -45,6 +45,34 @@ long so there is something to interrupt.
 
 ---
 
+## Session config
+
+**Session config** in the header opens two fields, both saved in your browser and
+applied on the next connect:
+
+* **System prompt** — sent as `session.instructions`. Empty uses the server's,
+  shown as the placeholder. Keep it short: the conversational layer has a small
+  context window, and detailed procedure belongs in the backend prompt.
+* **Greeting** — spoken the moment the session opens, before you say anything.
+  Empty uses the server's; **Clear both** sends an explicit empty string, which
+  suppresses it so the assistant waits to be spoken to. The two are different
+  instructions and the protocol distinguishes them.
+
+A greeting is an ordinary assistant turn: you can talk over it, and it is
+truncated honestly if you do. It is excluded from the latency summary, because
+nobody was waiting for it.
+
+Server-side, both live in the profile so they apply to every client, not just
+the browser:
+
+```json
+{ "instructions": "…", "greeting": "你好，我是语音助手，有什么可以帮你的？" }
+```
+
+`GOLIVE_INSTRUCTIONS` and `GOLIVE_GREETING` override them.
+
+---
+
 ## Hearing nothing
 
 Work down this list; each step rules out a layer rather than a guess.

@@ -414,7 +414,13 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 	backchannel := s.cfg.Duplex.Backchannel
 	speculative := s.cfg.Duplex.Speculative
 	language := s.cfg.Language
+	greeting := s.cfg.Greeting
 	if g := ev.Session.Golive; g != nil {
+		// A pointer, so "" explicitly suppresses the server's greeting rather
+		// than falling back to it.
+		if g.Greeting != nil {
+			greeting = *g.Greeting
+		}
 		if g.Backchannel != nil {
 			backchannel = *g.Backchannel
 		}
@@ -436,6 +442,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		Delegation:   resolved.Delegation.Type,
 		Backchannel:  backchannel,
 		Speculative:  speculative,
+		Greeting:     greeting,
 		History:      history,
 	}, duplex.Deps{
 		ASR:  asr,
@@ -456,12 +463,18 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		"model", resolved.Model,
 		"rate", resolved.Audio.Format.Rate,
 		"delegation", resolved.Delegation.Type,
+		"greeting", greeting != "",
 		"asr", asrName, "llm", llmName, "tts", ttsName)
 
 	s.Emit(live.SessionStartedEvent{
 		Envelope: live.Envelope{Type: live.ServerSessionStarted},
 		Session:  resolved,
 	})
+
+	// Only after session.started is queued: a single writer goroutine drains
+	// the outbound channel in order, so greeting audio cannot reach the client
+	// before the event that tells it what format that audio is in.
+	engine.Greet()
 	return nil
 }
 

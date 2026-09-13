@@ -111,7 +111,7 @@ written for `gpt-live-1` works unchanged.
 
 | Event | Notes |
 | --- | --- |
-| `session.start` | Once per connection. Sets model, instructions, audio format, delegation mode. |
+| `session.start` | Once per connection. Sets model, instructions, greeting, audio format, delegation mode. |
 | `session.update` | Only `delegation.responses` may change. Model, voice, audio format and delegation type are fixed at startup. |
 | `session.input_audio.append` | `audio` is base64 PCM16 at the session rate. Binary frames are also accepted as a shortcut. |
 | `session.input_audio.mute` / `.unmute` | Stops consuming audio without tearing the listen channel down. |
@@ -226,6 +226,7 @@ Start from `.env.example`. The knobs that change how the thing feels:
 | `duplex.playback_lead_ms` | Jitter budget. Higher survives worse networks; lower makes cuts more precise. |
 | `duplex.stream_first_chunk_chars` | Smaller = earlier first syllable, slightly worse prosody. `8` is a good default for Chinese. |
 | `duplex.speculative_stable_ms` | How long a partial must stop changing before golive commits to guessing. Lower = faster and more wasted generations. |
+| `instructions` / `greeting` | The conversational prompt, and what the assistant says unprompted when a session opens. Both overridable per session; the demo page exposes them under **Session config**. |
 | `vad.barge_in_margin_db` | Raise if the assistant interrupts itself through a speakerphone. Browsers with AEC need very little. |
 | `vad.min_silence_ms` | How long a pause must be before the turn is considered over. The single biggest lever on "it cuts me off". |
 

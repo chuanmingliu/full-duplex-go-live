@@ -59,7 +59,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/live", s.handleLive)
 	mux.HandleFunc("/healthz", s.handleHealth)
-	mux.HandleFunc("/v1/live/providers", s.handleProviders)
+	mux.HandleFunc("/v1/live/providers", s.handleConfig)
+	mux.HandleFunc("/v1/live/config", s.handleConfig)
 
 	if s.cfg.WebRoot != "" {
 		if info, err := os.Stat(s.cfg.WebRoot); err == nil && info.IsDir() {
@@ -84,12 +85,22 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
+// handleConfig reports what a client may choose and what it gets if it chooses
+// nothing. The defaults are here so the demo page can show the real server
+// prompt and greeting as placeholders rather than inventing its own.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"asr":      provider.ASRNames(),
 		"llm":      provider.LLMNames(),
 		"tts":      provider.TTSNames(),
 		"selected": map[string]string{"asr": s.cfg.ASR, "llm": s.cfg.LLM, "tts": s.cfg.TTS},
+		"defaults": map[string]any{
+			"instructions": s.cfg.Instructions,
+			"greeting":     s.cfg.Greeting,
+			"model":        s.cfg.Model,
+			"language":     s.cfg.Language,
+			"rate":         s.cfg.ClientRate,
+		},
 	})
 }
 
