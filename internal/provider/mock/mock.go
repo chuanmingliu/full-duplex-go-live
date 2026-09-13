@@ -224,6 +224,22 @@ type TTS struct {
 	// Realtime paces synthesis to roughly speech speed. Off by default so
 	// tests run fast; the engine's own player provides playback pacing.
 	Realtime bool
+
+	mu       sync.Mutex
+	prewarms int
+}
+
+// Prewarms reports how many times any stream this TTS opened was prewarmed.
+func (t *TTS) Prewarms() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.prewarms
+}
+
+func (t *TTS) notePrewarm() {
+	t.mu.Lock()
+	t.prewarms++
+	t.mu.Unlock()
 }
 
 // NewTTS builds a mock synthesizer.
@@ -252,6 +268,15 @@ type ttsStream struct {
 }
 
 func (s *ttsStream) SampleRate() int { return s.rate }
+
+// Prewarm implements provider.Prewarmer. The mock has no connection to make, so
+// this only records that the engine asked — which is the part worth asserting:
+// a prewarm that stops being called is a silent latency regression, invisible
+// in every other test because the work still happens, just later.
+func (s *ttsStream) Prewarm(context.Context) error {
+	s.tts.notePrewarm()
+	return nil
+}
 
 func (s *ttsStream) Close() error { return nil }
 

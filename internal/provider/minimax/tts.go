@@ -229,6 +229,32 @@ func (s *stream) Synthesize(ctx context.Context, text string) (<-chan provider.T
 	return out, nil
 }
 
+// Prewarm implements provider.Prewarmer: it re-establishes the socket and
+// replays task_start so the next Synthesize is a single frame on a live
+// connection.
+//
+// The dial plus handshake is worth 150–300 ms against MiniMax, and it lands
+// squarely between the caller's last syllable and their first heard one — on
+// the first turn of a session, and again after any idle long enough for the
+// vendor to drop the task. Both are moments the engine can see coming.
+//
+// TryLock, not Lock: a synthesis in progress is proof the connection is already
+// warm, and a prewarm has no business queueing behind real work to discover it.
+func (s *stream) Prewarm(ctx context.Context) error {
+	if !s.busy.TryLock() {
+		return nil
+	}
+	defer s.busy.Unlock()
+	if s.isClosed() {
+		return fmt.Errorf("minimax tts: stream is closed")
+	}
+	if !s.needsReconnect() {
+		return nil
+	}
+	s.dropConn()
+	return s.connect(ctx)
+}
+
 func (s *stream) readAudio(ctx context.Context, out chan<- provider.TTSChunk) {
 	// MiniMax repeats the whole utterance in a trailing status=2 frame. Once
 	// incremental status=1 audio has been delivered, replaying it would double

@@ -168,6 +168,24 @@ type TTS interface {
 	Open(ctx context.Context, opts TTSOptions) (TTSStream, error)
 }
 
+// Prewarmer is an optional capability on a provider or a stream: make the
+// network path ready before anything is waiting on it.
+//
+// The motivation is that a cascade's first turn is systematically worse than
+// its others, and for an uninteresting reason — a TCP handshake, a TLS
+// handshake and a protocol greeting, all on the critical path between the
+// caller finishing their sentence and hearing a syllable. None of that needs to
+// be there: the engine knows a turn is coming as soon as the microphone opens,
+// which is a second or more of warning.
+//
+// Implementations must be safe to call at any time, including concurrently with
+// real work, and must be cheap when the path is already warm. A Prewarm that
+// fails is not an error the caller should surface: the work it was avoiding
+// simply happens later, on the critical path, exactly as it did before.
+type Prewarmer interface {
+	Prewarm(ctx context.Context) error
+}
+
 // --- Registry ---
 
 type registry struct {

@@ -68,6 +68,29 @@ func New(keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 // Name implements provider.LLM.
 func (l *LLM) Name() string { return "deepseek" }
 
+// Prewarm implements provider.Prewarmer: it opens a connection to the backend
+// and returns it to the idle pool, so the first completion of a session does
+// not pay a TCP and TLS handshake on the critical path.
+//
+// The request is deliberately worthless — a GET at the base URL, which every
+// OpenAI-compatible server answers with some 4xx — because the point is the
+// socket, not the response. No tokens are spent and no auth is required for the
+// connection to end up pooled. The body is drained rather than abandoned;
+// Go only reuses a connection whose response was read to completion.
+func (l *LLM) Prewarm(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.BaseURL+"/", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := l.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	return nil
+}
+
 type chatRequest struct {
 	Model       string            `json:"model"`
 	Messages    []chatMessage     `json:"messages"`

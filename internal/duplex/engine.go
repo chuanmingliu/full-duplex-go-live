@@ -229,6 +229,54 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
+	// The session has just opened and nobody is waiting on anything yet, which
+	// makes this the cheapest moment in the whole call to pay for handshakes.
+	e.prewarm("session open")
+}
+
+// prewarm opens the provider connections a turn is about to need, off the
+// critical path.
+//
+// A cascade's first turn is reliably its worst, and the reason is dull: TCP,
+// TLS and a protocol greeting to two vendors, all of it sitting between the
+// caller's last syllable and their first heard one. The engine gets ample
+// warning both times it matters — a session opens a second or more before
+// anyone speaks, and the microphone opens a second or more before a reply is
+// due — so the handshakes belong there instead.
+//
+// Failures are logged at debug and otherwise ignored. A prewarm that does not
+// work costs exactly what not prewarming cost: the connection is made later,
+// when it is needed.
+func (e *Engine) prewarm(reason string) {
+	warm := func(name string, p any) {
+		pw, ok := p.(provider.Prewarmer)
+		if !ok {
+			return
+		}
+		go func() {
+			started := time.Now()
+			if err := pw.Prewarm(e.ctx); err != nil {
+				e.log.Debug("prewarm failed; the connection will be made when it is needed",
+					"stage", name, "reason", reason, "err", err)
+				return
+			}
+			e.log.Debug("prewarm", "stage", name, "reason", reason,
+				"ms", time.Since(started).Milliseconds())
+		}()
+	}
+	warm("think", e.deps.LLM)
+	go func() {
+		// ttsSession dials on first use, so this both opens the session and
+		// warms it. It takes a lock a synthesis may hold, hence its own
+		// goroutine.
+		stream, err := e.ttsSession()
+		if err != nil {
+			e.log.Debug("prewarm failed; the connection will be made when it is needed",
+				"stage", "speak", "reason", reason, "err", err)
+			return
+		}
+		warm("speak", stream)
+	}()
 }
 
 // Close stops the engine and releases provider connections.
@@ -495,6 +543,11 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			BargeIn:  d.BargeIn,
 		})
 		e.yieldFloor(d.BargeIn)
+		// A reply to this is now inevitable, and is at least a second away.
+		// Anything reconnected here is a handshake the caller does not wait
+		// through — which matters most after an idle gap long enough for the
+		// synthesis task to have been dropped at the far end.
+		e.prewarm("utterance opened")
 		e.openASR(d.StartMS)
 		e.writeASR(d.Snapshot)
 		e.publishState()
@@ -1239,6 +1292,9 @@ func (e *Engine) resetTTS() {
 	if stream != nil {
 		e.log.Debug("speak: dropping the tts session after an interruption")
 		go func() { _ = stream.Close() }()
+		// The caller is mid-sentence and a reply to it is coming, so rebuild
+		// the connection now rather than at the first segment of that reply.
+		e.prewarm("tts reset")
 	}
 }
 

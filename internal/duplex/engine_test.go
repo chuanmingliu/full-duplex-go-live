@@ -765,6 +765,49 @@ func TestEngineSpeculatesInsideTheEndOfTurnPause(t *testing.T) {
 	})
 }
 
+// TestEnginePrewarmsBeforeTheCriticalPath pins the two moments the engine
+// pays for handshakes.
+//
+// This is a latency contract with no functional symptom: drop the prewarm calls
+// and every other test still passes, because the connections are made anyway —
+// just later, with the caller waiting. The only way it shows up is as a first
+// turn that is a few hundred milliseconds worse than the rest, which is exactly
+// the kind of regression that survives for months.
+func TestEnginePrewarmsBeforeTheCriticalPath(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Speculative = false
+	c := newCollector(cfg.ClientRate)
+
+	tts := mock.NewTTS()
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "prewarm",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+	}, Deps{
+		ASR:  mock.NewASR("你好帮我查一下明天的天气"),
+		LLM:  mock.NewLLM(),
+		TTS:  tts,
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.Start(ctx)
+	defer e.Close()
+
+	waitFor(t, "a prewarm at session open", 2*time.Second, func() bool {
+		return tts.Prewarms() > 0
+	})
+	atOpen := tts.Prewarms()
+
+	// The microphone opening is a second or more of warning that a reply is
+	// coming, and the moment an idle-dropped connection must be rebuilt.
+	speak(e, cfg.ClientRate, 700)
+	waitFor(t, "a prewarm when the utterance opens", 2*time.Second, func() bool {
+		return tts.Prewarms() > atOpen
+	})
+}
+
 // TestEngineDoesNotSpeculateWhileTheSpeakerIsStillTalking is the regression
 // test for the version that guessed on transcript churn alone.
 //
