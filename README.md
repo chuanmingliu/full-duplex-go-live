@@ -39,7 +39,7 @@ golive removes the gate and pays for it explicitly:
 | Duplex behaviour | How a real model does it | How golive does it |
 | --- | --- | --- |
 | Listening while speaking | One model, one audio stream | Listen path never pauses; the VAD raises its threshold during playback (`barge_in_margin_db`) so echo is not mistaken for speech |
-| Interrupting | The model yields the floor from prosody | Energy VAD + minimum-speech gate opens a barge-in, a generation counter invalidates everything in flight |
+| Interrupting | The model yields the floor from prosody | Energy VAD + minimum-speech gate opens a barge-in, a generation counter invalidates everything in flight; `duplex.on_new_query` picks between cutting mid-word, finishing the sentence, or queueing |
 | Knowing what you heard | Trivially, it is one process | The player paces output in real time and reports `played_ms` plus the exact spoken prefix |
 | Answering fast | No cascade to wait on | Speculative turns start from a stable partial transcript; a tiny first TTS segment gets a syllable out early |
 | "Mm-hmm" while you talk | Natural | A backchannel channel that synthesizes short phrases during your turn |
@@ -227,6 +227,7 @@ Start from `.env.example`. The knobs that change how the thing feels:
 | `duplex.stream_first_chunk_chars` | Smaller = earlier first syllable, slightly worse prosody. `8` is a good default for Chinese. |
 | `duplex.speculative_stable_ms` | How long a partial must stop changing before golive commits to guessing. Lower = faster and more wasted generations. |
 | `instructions` / `greeting` | The conversational prompt, and what the assistant says unprompted when a session opens. Both overridable per session; the demo page exposes them under **Session config**. |
+| `duplex.on_new_query` | `cut`, `finish_sentence` or `queue` — what happens to an answer still in flight when the caller speaks again. |
 | `vad.barge_in_margin_db` | Raise if the assistant interrupts itself through a speakerphone. Browsers with AEC need very little. |
 | `vad.min_silence_ms` | How long a pause must be before the turn is considered over. The single biggest lever on "it cuts me off". |
 

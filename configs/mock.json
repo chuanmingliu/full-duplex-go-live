@@ -13,6 +13,7 @@
     "backchannel": false,
     "speculative": true,
     "allow_barge_in": true,
+    "on_new_query": "cut",
     "playback_paced": true,
     "delegation_mode": "responses"
   }

@@ -58,9 +58,20 @@ applied on the next connect:
   suppresses it so the assistant waits to be spoken to. The two are different
   instructions and the protocol distinguishes them.
 
+* **On new query** — what happens to an answer still in flight when you start
+  speaking again. `cut` stops mid-word; `finish_sentence` completes the sentence
+  and then yields; `queue` says everything first, which is what a half-duplex
+  cascade does and is kept only for comparison.
+
 A greeting is an ordinary assistant turn: you can talk over it, and it is
 truncated honestly if you do. It is excluded from the latency summary, because
 nobody was waiting for it.
+
+To feel the difference in **On new query**, ask something that produces a long
+answer, wait until the assistant is a sentence or two in, and interrupt. Under
+`queue` you will hear the rest of the old answer before the new one — including
+in the silence between two sentences, which is the case that used to leak
+through regardless of the setting.
 
 Server-side, both live in the profile so they apply to every client, not just
 the browser:

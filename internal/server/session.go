@@ -415,7 +415,19 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 	speculative := s.cfg.Duplex.Speculative
 	language := s.cfg.Language
 	greeting := s.cfg.Greeting
+	onNewQuery := ""
 	if g := ev.Session.Golive; g != nil {
+		if g.OnNewQuery != "" {
+			switch g.OnNewQuery {
+			case "cut", "finish_sentence", "queue":
+				onNewQuery = g.OnNewQuery
+			default:
+				s.Emit(live.NewError("invalid_request_error", "invalid_on_new_query",
+					fmt.Sprintf("golive.on_new_query %q must be cut, finish_sentence or queue",
+						g.OnNewQuery), eventID))
+				return fmt.Errorf("live: bad on_new_query %q", g.OnNewQuery)
+			}
+		}
 		// A pointer, so "" explicitly suppresses the server's greeting rather
 		// than falling back to it.
 		if g.Greeting != nil {
@@ -443,6 +455,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		Backchannel:  backchannel,
 		Speculative:  speculative,
 		Greeting:     greeting,
+		OnNewQuery:   onNewQuery,
 		History:      history,
 	}, duplex.Deps{
 		ASR:  asr,
@@ -464,6 +477,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		"rate", resolved.Audio.Format.Rate,
 		"delegation", resolved.Delegation.Type,
 		"greeting", greeting != "",
+		"on_new_query", onNewQueryOr(onNewQuery, s.cfg.Duplex.OnNewQuery),
 		"asr", asrName, "llm", llmName, "tts", ttsName)
 
 	s.Emit(live.SessionStartedEvent{
@@ -625,6 +639,13 @@ func (s *Session) onAppend(data []byte, eventID string, apply func(*duplex.Engin
 	}
 	s.withEngine(func(e *duplex.Engine) { apply(e, ev) })
 	return nil
+}
+
+func onNewQueryOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func voiceOf(c live.SessionConfig) string {

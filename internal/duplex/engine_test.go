@@ -387,3 +387,123 @@ var _ = provider.PipelineRate
 func base64Decode(s string) ([]byte, error) {
 	return b64.StdEncoding.DecodeString(s)
 }
+
+// newSlowEngine spaces the synthesized segments far apart, which is what opens
+// the inter-segment gap these tests are about.
+func newSlowEngine(t *testing.T, cfg config.Config, c *collector) *Engine {
+	t.Helper()
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 45 * time.Millisecond
+
+	e := New(Options{
+		Cfg:         cfg,
+		SessionID:   "slow",
+		ClientRate:  cfg.ClientRate,
+		Delegation:  live.DelegationResponses,
+		Speculative: false,
+	}, Deps{
+		ASR:  mock.NewASR("你好帮我查一下明天的天气"),
+		LLM:  llm,
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	e.Start(ctx)
+	t.Cleanup(func() { e.Close(); cancel() })
+	return e
+}
+
+// waitForSegmentGap returns once the player has fallen silent between two
+// synthesized sentences while the answer is still in progress. That is the
+// window in which interruption used to be missed entirely.
+func waitForSegmentGap(t *testing.T, e *Engine, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !e.player.Speaking() && e.assistantHasFloor() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
+// TestEngineYieldsFloorInTheGapBetweenSegments is the regression test for the
+// bug this policy was built to fix: a new query arriving while the player is
+// momentarily idle between sentences left the stale answer running, so it
+// resumed and played ahead of the answer to what had just been asked.
+func TestEngineYieldsFloorInTheGapBetweenSegments(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.OnNewQuery = "cut"
+	c := newCollector(cfg.ClientRate)
+	e := newSlowEngine(t, cfg, c)
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "assistant audio", 6*time.Second, func() bool { return c.audioMS() > 200 })
+
+	if !waitForSegmentGap(t, e, 4*time.Second) {
+		t.Skip("never observed a gap between segments; timing-dependent")
+	}
+	if e.speaking.Load() {
+		t.Fatal("expected the player to be idle in the gap")
+	}
+
+	// The user asks something new in that silence.
+	speak(e, cfg.ClientRate, 900)
+
+	waitFor(t, "the stale answer to be cut", 4*time.Second, func() bool {
+		return c.count(live.ExtAudioTruncated) > 0
+	})
+}
+
+func TestEngineQueuePolicyLetsTheAnswerFinish(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.OnNewQuery = "queue"
+	c := newCollector(cfg.ClientRate)
+	e := newSlowEngine(t, cfg, c)
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "assistant audio", 6*time.Second, func() bool { return c.audioMS() > 200 })
+
+	speak(e, cfg.ClientRate, 900)
+	time.Sleep(600 * time.Millisecond)
+
+	if c.count(live.ExtAudioTruncated) != 0 {
+		t.Errorf("queue policy cut the answer short; it should let it run to the end")
+	}
+}
+
+// TestEngineFinishSentencePolicyCompletesTheSentence checks the polite middle
+// ground. Its truncation report is distinguishable from a hard cut: everything
+// emitted was heard, so played equals total.
+func TestEngineFinishSentencePolicyCompletesTheSentence(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.OnNewQuery = "finish_sentence"
+	c := newCollector(cfg.ClientRate)
+	e := newSlowEngine(t, cfg, c)
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "assistant audio", 6*time.Second, func() bool { return c.audioMS() > 200 })
+
+	speak(e, cfg.ClientRate, 900)
+
+	waitFor(t, "the sentence to be handed over", 6*time.Second, func() bool {
+		return c.count(live.ExtAudioTruncated) > 0
+	})
+	ev := c.find(func(a any) bool {
+		x, ok := a.(live.AudioTruncatedEvent)
+		return ok && x.Type == live.ExtAudioTruncated
+	}).(live.AudioTruncatedEvent)
+
+	if ev.PlayedMS != ev.TotalMS {
+		t.Errorf("finish_sentence reported %d of %d ms played; everything emitted was heard, "+
+			"so the two should match — a mismatch means the sentence was cut after all",
+			ev.PlayedMS, ev.TotalMS)
+	}
+	if ev.Text == "" {
+		t.Error("no spoken text reported; history would lose the sentence")
+	}
+}

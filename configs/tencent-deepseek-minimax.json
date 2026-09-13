@@ -30,6 +30,7 @@
     "speculative_stable_ms": 260,
     "speculative_min_chars": 6,
     "allow_barge_in": true,
+    "on_new_query": "cut",
     "playback_chunk_ms": 40,
     "playback_paced": true,
     "playback_lead_ms": 300,

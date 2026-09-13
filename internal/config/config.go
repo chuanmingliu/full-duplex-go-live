@@ -79,6 +79,22 @@ type DuplexConfig struct {
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
+	// OnNewQuery decides what happens to an answer still in flight when the
+	// user starts speaking again. The right choice is situational, which is
+	// why it is a setting rather than a constant:
+	//
+	//	cut             stop immediately, mid-word. Best for a fast assistant
+	//	                where the user expects to be able to redirect it.
+	//	finish_sentence let the sentence being spoken complete, then stop and
+	//	                answer the new query. Sounds composed, and is usually
+	//	                right on a phone line where cutting mid-word reads as a
+	//	                dropped call.
+	//	queue           say everything, then answer the new query. Almost never
+	//	                what a caller wants — it talks over them and answers a
+	//	                question they have moved past — but it is what a
+	//	                half-duplex cascade does, so it is available for
+	//	                comparison.
+	OnNewQuery string `json:"on_new_query"`
 
 	// PlaybackChunkMS is the size of each session.output_audio.delta.
 	PlaybackChunkMS int `json:"playback_chunk_ms"`
@@ -161,6 +177,7 @@ func Default() Config {
 			SpeculativeStableMS:   260,
 			SpeculativeMinChars:   6,
 			AllowBargeIn:          true,
+			OnNewQuery:            "cut",
 			PlaybackChunkMS:       40,
 			PlaybackPaced:         true,
 			PlaybackLeadMS:        300,
@@ -234,6 +251,7 @@ func (c *Config) applyEnv() {
 	setBool(&c.Duplex.Backchannel, "GOLIVE_BACKCHANNEL")
 	setBool(&c.Duplex.Speculative, "GOLIVE_SPECULATIVE")
 	setBool(&c.Duplex.AllowBargeIn, "GOLIVE_ALLOW_BARGE_IN")
+	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
 	setBool(&c.Duplex.PlaybackPaced, "GOLIVE_PLAYBACK_PACED")
 }
 
@@ -243,6 +261,12 @@ func (c *Config) Validate() error {
 	case 8000, 16000, 24000, 48000:
 	default:
 		return fmt.Errorf("config: client_rate %d is not one of 8000, 16000, 24000, 48000", c.ClientRate)
+	}
+	switch c.Duplex.OnNewQuery {
+	case "cut", "finish_sentence", "queue":
+	default:
+		return fmt.Errorf("config: on_new_query %q must be cut, finish_sentence or queue",
+			c.Duplex.OnNewQuery)
 	}
 	switch c.Duplex.DelegationMode {
 	case "client", "responses", "auto":

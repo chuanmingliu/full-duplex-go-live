@@ -162,6 +162,9 @@ type GoliveConfig struct {
 	TTS string `json:"tts,omitempty"`
 	// Language hints the ASR engine ("zh", "en").
 	Language string `json:"language,omitempty"`
+	// OnNewQuery overrides what happens to an in-flight answer when the user
+	// speaks again: "cut", "finish_sentence" or "queue".
+	OnNewQuery string `json:"on_new_query,omitempty"`
 	// Greeting is spoken the moment the session opens, before the caller says
 	// anything. A pointer so the three cases stay distinct: absent uses the
 	// server default, an empty string explicitly suppresses it, and any other

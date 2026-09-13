@@ -78,6 +78,13 @@ type Player struct {
 	queue  []Segment
 	closed bool
 
+	// graceTurn is a turn allowed to finish the sentence it is speaking even
+	// though its generation is already stale. It exists for the
+	// "finish_sentence" policy, where the assistant yields the floor politely
+	// rather than mid-word.
+	graceTurn  string
+	graceMarks int
+
 	activeTurn  string
 	turnStarted time.Time
 	playhead    time.Time
@@ -136,7 +143,7 @@ func (p *Player) Run(gen *Generation) {
 		p.queue = p.queue[1:]
 		p.mu.Unlock()
 
-		if !gen.Valid(seg.Gen) {
+		if !p.allowed(seg, gen) {
 			continue
 		}
 		switch seg.Kind {
@@ -150,6 +157,39 @@ func (p *Player) Run(gen *Generation) {
 			p.playAudio(gen, seg)
 		}
 	}
+}
+
+// allowed reports whether a queued item may still be played. Normally that
+// means its generation is current; a turn under grace is the one exception.
+func (p *Player) allowed(seg Segment, gen *Generation) bool {
+	if gen.Valid(seg.Gen) {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.graceTurn != "" && p.graceTurn == seg.TurnID
+}
+
+// Active reports whether the assistant still holds the floor: speaking now,
+// holding audio the listener has not reached yet, or with more queued behind it.
+//
+// This is the question to ask when the user starts a new query — not
+// Speaking(), which goes false in the gap between two synthesized sentences and
+// would let a stale answer resume over the new one.
+func (p *Player) Active() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.speaking || len(p.queue) > 0 || p.activeTurn != ""
+}
+
+// GraceFinishSegment lets turnID complete the sentence it is currently speaking
+// even once its generation goes stale, then drops the rest of it. Call it
+// before bumping the generation.
+func (p *Player) GraceFinishSegment(turnID string) {
+	p.mu.Lock()
+	p.graceTurn = turnID
+	p.graceMarks = 1
+	p.mu.Unlock()
 }
 
 // Enqueue adds an item to the speak channel.
@@ -169,6 +209,7 @@ func (p *Player) Enqueue(seg Segment) {
 func (p *Player) Interrupt() {
 	p.mu.Lock()
 	p.queue = nil
+	p.graceTurn = ""
 	turnID := p.activeTurn
 	if turnID == "" {
 		p.setSpeakingLocked(false)
@@ -242,8 +283,8 @@ func (p *Player) beginSegment(seg Segment) {
 
 func (p *Player) markSegment(seg Segment) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.activeTurn != seg.TurnID {
+		p.mu.Unlock()
 		return
 	}
 	text := p.pendingText
@@ -255,6 +296,38 @@ func (p *Player) markSegment(seg Segment) {
 	}
 	p.pendingText = ""
 	p.pendingFrom = p.emittedMS
+
+	if p.graceTurn != seg.TurnID {
+		p.mu.Unlock()
+		return
+	}
+	p.graceMarks--
+	if p.graceMarks > 0 {
+		p.mu.Unlock()
+		return
+	}
+
+	// The sentence is finished and the floor is handed over. Everything
+	// emitted has reached the client and will be heard, so this reports the
+	// whole of it as played rather than only the part the playhead has
+	// reached — nothing is being cut off.
+	p.graceTurn = ""
+	p.queue = nil
+	turnID := p.activeTurn
+	totalMS := p.emittedMS
+	spoken := p.fullSpokenLocked()
+	p.resetTurnLocked()
+	p.setSpeakingLocked(false)
+	p.mu.Unlock()
+
+	if p.onTruncate != nil {
+		p.onTruncate(TruncationReport{
+			TurnID:     turnID,
+			PlayedMS:   int64(totalMS),
+			TotalMS:    int64(totalMS),
+			SpokenText: spoken,
+		})
+	}
 }
 
 func (p *Player) playAudio(gen *Generation, seg Segment) {
@@ -272,7 +345,7 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 	p.mu.Unlock()
 
 	for off := 0; off < len(seg.PCM); off += chunkBytes {
-		if !gen.Valid(seg.Gen) {
+		if !p.allowed(seg, gen) {
 			return
 		}
 		end := off + chunkBytes
@@ -289,7 +362,7 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 				timer := time.NewTimer(wait)
 				<-timer.C
 				timer.Stop()
-				if !gen.Valid(seg.Gen) {
+				if !p.allowed(seg, gen) {
 					return
 				}
 			}
@@ -406,6 +479,8 @@ func (p *Player) fullSpokenLocked() string {
 
 func (p *Player) resetTurnLocked() {
 	p.activeTurn = ""
+	p.graceTurn = ""
+	p.graceMarks = 0
 	p.turnStarted = time.Time{}
 	p.playhead = time.Time{}
 	p.emittedMS = 0

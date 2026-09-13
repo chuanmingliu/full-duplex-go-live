@@ -97,6 +97,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"defaults": map[string]any{
 			"instructions": s.cfg.Instructions,
 			"greeting":     s.cfg.Greeting,
+			"on_new_query": s.cfg.Duplex.OnNewQuery,
 			"model":        s.cfg.Model,
 			"language":     s.cfg.Language,
 			"rate":         s.cfg.ClientRate,

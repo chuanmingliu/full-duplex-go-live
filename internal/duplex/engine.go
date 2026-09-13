@@ -73,6 +73,8 @@ type Options struct {
 	History     []provider.Message
 	// Greeting is spoken once the session is live, unprompted.
 	Greeting string
+	// OnNewQuery overrides the profile's interruption policy for this session.
+	OnNewQuery string
 }
 
 // Engine is one session's duplex orchestrator.
@@ -483,9 +485,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			StartMS:  d.StartMS,
 			BargeIn:  d.BargeIn,
 		})
-		if d.BargeIn && e.opts.Cfg.Duplex.AllowBargeIn {
-			e.interrupt()
-		}
+		e.yieldFloor(d.BargeIn)
 		e.openASR(d.StartMS)
 		e.writeASR(d.Snapshot)
 		e.publishState()
@@ -908,6 +908,9 @@ type speechPipe struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	once   sync.Once
+	// soft asks the pipe to stop after the sentence it is currently
+	// synthesizing, rather than abandoning it mid-word.
+	soft atomic.Bool
 }
 
 func (e *Engine) newSpeechPipe(turn *Turn) *speechPipe {
@@ -928,22 +931,41 @@ func (e *Engine) newSpeechPipe(turn *Turn) *speechPipe {
 	return p
 }
 
+// Push hands the pipe more text. Only the goroutine that owns the pipe calls
+// it, and it gives up the moment the pipe has stopped consuming — otherwise a
+// backend still streaming tokens into an abandoned turn would block forever.
 func (p *speechPipe) Push(text string) {
 	select {
 	case p.in <- text:
+	case <-p.done:
 	case <-p.ctx.Done():
 	}
 }
 
 // Close signals end of text; the pipe flushes and closes the turn.
+//
+// Only the producer closes the input channel. Abort and SoftStop are called
+// from the engine loop, a different goroutine, and closing from there raced the
+// producer straight into a send on a closed channel.
 func (p *speechPipe) Close() {
 	p.once.Do(func() { close(p.in) })
 }
 
 // Abort stops synthesis immediately and discards buffered text.
-func (p *speechPipe) Abort() {
-	p.cancel()
-	p.once.Do(func() { close(p.in) })
+func (p *speechPipe) Abort() { p.cancel() }
+
+// SoftStop finishes the sentence in flight and then stops, leaving the rest of
+// the answer unsaid.
+func (p *speechPipe) SoftStop() { p.soft.Store(true) }
+
+// alive reports whether the pipe is still producing.
+func (p *speechPipe) alive() bool {
+	select {
+	case <-p.done:
+		return false
+	default:
+		return true
+	}
 }
 
 func (p *speechPipe) run() {
@@ -954,19 +976,37 @@ func (p *speechPipe) run() {
 		MaxChunkChars:   p.e.opts.Cfg.Duplex.StreamMaxChunkChars,
 	})
 
-	for text := range p.in {
-		for _, ready := range seg.Push(text) {
-			if !p.speak(ready) {
-				return
+consume:
+	for {
+		if p.soft.Load() {
+			break
+		}
+		select {
+		case <-p.ctx.Done():
+			return
+		case text, ok := <-p.in:
+			if !ok {
+				break consume
+			}
+			for _, ready := range seg.Push(text) {
+				if !p.speak(ready) {
+					return
+				}
+				if p.soft.Load() {
+					break consume
+				}
 			}
 		}
 	}
-	if rest := seg.Flush(); rest != "" {
+	// A soft stop leaves the remaining text unsaid on purpose: the user has
+	// asked something else, and finishing the paragraph would be talking over
+	// them.
+	if rest := seg.Flush(); rest != "" && !p.soft.Load() {
 		if !p.speak(rest) {
 			return
 		}
 	}
-	if p.ctx.Err() == nil && p.e.tracker.IsCurrent(p.turn) {
+	if p.ctx.Err() == nil && (p.soft.Load() || p.e.tracker.IsCurrent(p.turn)) {
 		p.e.player.Enqueue(Segment{
 			Kind:     SegEnd,
 			Gen:      p.turn.Generation,
@@ -976,6 +1016,14 @@ func (p *speechPipe) run() {
 	}
 }
 
+// current reports whether this pipe may still produce. Under a soft stop the
+// turn is allowed to be stale: the player is holding a grace open for exactly
+// the sentence being synthesized here, and abandoning it now would cut the
+// word in half — which is the thing a soft stop exists to avoid.
+func (p *speechPipe) current() bool {
+	return p.e.tracker.IsCurrent(p.turn) || p.soft.Load()
+}
+
 // speak synthesizes one segment and streams it to the player. It returns false
 // when the turn has been superseded and the pipe should stop.
 func (p *speechPipe) speak(text string) bool {
@@ -983,7 +1031,7 @@ func (p *speechPipe) speak(text string) bool {
 	if text == "" {
 		return true
 	}
-	if p.ctx.Err() != nil || !p.e.tracker.IsCurrent(p.turn) {
+	if p.ctx.Err() != nil || !p.current() {
 		return false
 	}
 
@@ -1015,7 +1063,7 @@ func (p *speechPipe) speak(text string) bool {
 	firstChunk := true
 
 	for chunk := range chunks {
-		if p.ctx.Err() != nil || !p.e.tracker.IsCurrent(p.turn) {
+		if p.ctx.Err() != nil || !p.current() {
 			return false
 		}
 		if chunk.Err != nil {
@@ -1107,6 +1155,71 @@ func (e *Engine) abortSpeech() {
 		pipe.Abort()
 	}
 	e.player.Interrupt()
+}
+
+// policy is the configured response to a new query arriving mid-answer.
+func (e *Engine) policy() string {
+	p := e.opts.OnNewQuery
+	if p == "" {
+		p = e.opts.Cfg.Duplex.OnNewQuery
+	}
+	switch p {
+	case "cut", "finish_sentence", "queue":
+		return p
+	default:
+		return "cut"
+	}
+}
+
+// assistantHasFloor reports whether an answer is still in progress — speaking,
+// queued, or still being generated.
+//
+// This is deliberately broader than "audio is going out right now". The player
+// falls silent in the gap between two synthesized sentences, and keying
+// interruption on that moment alone was a real bug: start talking in such a gap
+// and the stale answer resumed afterwards, ahead of the answer to what you had
+// just asked.
+func (e *Engine) assistantHasFloor() bool {
+	if e.player.Active() {
+		return true
+	}
+	pipe := e.speech.Load()
+	return pipe != nil && pipe.alive()
+}
+
+// yieldFloor handles a new user utterance arriving while an answer is still in
+// flight. bargeIn says the VAD opened the utterance while audio was actually
+// going out, which is only used for reporting; the decision below rests on
+// whether the assistant still holds the floor at all.
+func (e *Engine) yieldFloor(bargeIn bool) {
+	if !e.opts.Cfg.Duplex.AllowBargeIn || !e.assistantHasFloor() {
+		return
+	}
+	switch e.policy() {
+	case "queue":
+		e.log.Debug("new query while answering: queueing behind the current answer",
+			"barge_in", bargeIn)
+	case "finish_sentence":
+		e.log.Debug("new query while answering: finishing the sentence, then yielding",
+			"barge_in", bargeIn)
+		e.softInterrupt()
+	default:
+		e.log.Debug("new query while answering: cutting the answer",
+			"barge_in", bargeIn, "speaking", e.speaking.Load())
+		e.interrupt()
+	}
+}
+
+// softInterrupt stops generating further sentences but lets the one already
+// being spoken finish. The generation is not bumped here: the player holds a
+// grace on that turn so the sentence survives the bump the new turn will make.
+func (e *Engine) softInterrupt() {
+	if turn := e.tracker.Current(); turn != nil {
+		e.player.GraceFinishSegment(turn.ID)
+	}
+	if pipe := e.speech.Load(); pipe != nil {
+		pipe.SoftStop()
+	}
 }
 
 // interrupt is barge-in: stop generating, stop speaking, and let the
