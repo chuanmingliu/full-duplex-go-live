@@ -223,14 +223,29 @@ func (p *Player) Interrupt() {
 	p.setSpeakingLocked(false)
 	p.mu.Unlock()
 
-	if p.onTruncate != nil {
-		p.onTruncate(TruncationReport{
-			TurnID:     turnID,
-			PlayedMS:   int64(playedMS),
-			TotalMS:    int64(totalMS),
-			SpokenText: text,
-		})
+	p.reportTruncation(TruncationReport{
+		TurnID:     turnID,
+		PlayedMS:   int64(playedMS),
+		TotalMS:    int64(totalMS),
+		SpokenText: text,
+	})
+}
+
+// reportTruncation forwards a truncation, unless there was nothing to truncate.
+//
+// A turn cancelled between being queued and producing its first chunk has an
+// active turn ID and no audio behind it. Reporting that as a truncation is how
+// a clean cancellation ended up in the log as "truncated at 0ms of 0ms", and
+// how a turn nobody heard emitted a full set of all-zero latencies — noise that
+// makes a real truncation harder to spot.
+func (p *Player) reportTruncation(r TruncationReport) {
+	if p.onTruncate == nil {
+		return
 	}
+	if r.TotalMS == 0 && r.SpokenText == "" {
+		return
+	}
+	p.onTruncate(r)
 }
 
 // Close stops the player.
@@ -320,14 +335,12 @@ func (p *Player) markSegment(seg Segment) {
 	p.setSpeakingLocked(false)
 	p.mu.Unlock()
 
-	if p.onTruncate != nil {
-		p.onTruncate(TruncationReport{
-			TurnID:     turnID,
-			PlayedMS:   int64(totalMS),
-			TotalMS:    int64(totalMS),
-			SpokenText: spoken,
-		})
-	}
+	p.reportTruncation(TruncationReport{
+		TurnID:     turnID,
+		PlayedMS:   int64(totalMS),
+		TotalMS:    int64(totalMS),
+		SpokenText: spoken,
+	})
 }
 
 func (p *Player) playAudio(gen *Generation, seg Segment) {
@@ -415,14 +428,12 @@ func (p *Player) finishTurn(seg Segment) {
 	p.mu.Unlock()
 
 	if graced {
-		if p.onTruncate != nil {
-			p.onTruncate(TruncationReport{
-				TurnID:     seg.TurnID,
-				PlayedMS:   int64(totalMS),
-				TotalMS:    int64(totalMS),
-				SpokenText: text,
-			})
-		}
+		p.reportTruncation(TruncationReport{
+			TurnID:     seg.TurnID,
+			PlayedMS:   int64(totalMS),
+			TotalMS:    int64(totalMS),
+			SpokenText: text,
+		})
 		return
 	}
 	if p.onTurnDone != nil {

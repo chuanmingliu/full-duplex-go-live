@@ -157,8 +157,20 @@ func (t *Turn) MarkFirstSegment() { t.stampOnce(&t.firstSegment) }
 // MarkFirstAudio records the first synthesized audio for this turn.
 func (t *Turn) MarkFirstAudio() { t.stampOnce(&t.firstAudio) }
 
-// MarkCompleted records when the turn finished.
-func (t *Turn) MarkCompleted() { t.stamp(&t.completedAt) }
+// MarkCompleted records when the turn finished, and reports whether this call
+// was the one that finished it. A turn can be handed to both completion paths —
+// a truncation report and a natural end arriving for the same playback turn —
+// and the false return is what keeps the second one from emitting a duplicate
+// set of metrics.
+func (t *Turn) MarkCompleted() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.completedAt.IsZero() {
+		return false
+	}
+	t.completedAt = time.Now()
+	return true
+}
 
 // AppendResponse accumulates generated text.
 func (t *Turn) AppendResponse(text string) {
@@ -342,6 +354,18 @@ func (w *StabilityWatch) Reset() {
 	w.lastText = ""
 	w.lastSeen = time.Time{}
 	w.fired = false
+}
+
+// Unsettle restarts the stability clock without clearing the fired flag.
+//
+// The caller uses this the moment the speaker is audibly talking again. It
+// means the window that matters is measured from the start of a pause, not
+// from the last hypothesis: a recognizer running a few hundred milliseconds
+// behind looks perfectly stable mid-sentence, and speculating on that prefix
+// is how nearly every guess ends up wrong.
+func (w *StabilityWatch) Unsettle() {
+	w.lastText = ""
+	w.lastSeen = time.Time{}
 }
 
 // Observe records a partial transcript and reports whether it has now been

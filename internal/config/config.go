@@ -87,8 +87,13 @@ type DuplexConfig struct {
 
 	// Speculative starts generation from a stable partial transcript.
 	Speculative bool `json:"speculative"`
-	// SpeculativeStableMS is how long a partial transcript must stop changing
-	// before it is trusted enough to speculate on.
+	// SpeculativeStableMS is how long the speaker must be audibly quiet, with
+	// the partial transcript unchanged throughout, before the backend is
+	// started early. It is measured from the first frame of the pause, so the
+	// head start it buys is vad.min_silence_ms minus this, plus however long
+	// the final transcript takes to arrive. Raise it if the log shows frequent
+	// "think: speculation missed"; below about 120 ms the recognizer has not
+	// caught up and the guess is a prefix.
 	SpeculativeStableMS int `json:"speculative_stable_ms"`
 	// SpeculativeMinChars avoids speculating on a one-word fragment.
 	SpeculativeMinChars int `json:"speculative_min_chars"`
@@ -214,7 +219,7 @@ func Default() Config {
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
 			Speculative:                true,
-			SpeculativeStableMS:        260,
+			SpeculativeStableMS:        180,
 			SpeculativeMinChars:        6,
 			AllowBargeIn:               true,
 			OnNewQuery:                 "cut",

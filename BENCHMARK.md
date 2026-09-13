@@ -140,6 +140,18 @@ making the cascade faster but **starting the backend earlier** — which is what
 speculation is for. And the silence threshold is the second largest term, which
 is worth remembering before tuning anything downstream of it.
 
+Those two rows are in fact one lever. Speculation fires `speculative_stable_ms`
+into the end-of-turn pause, so it spends the tail of the silence threshold
+running the backend instead of waiting — with the defaults, 200 ms of the 380,
+plus the ~100 ms the final transcript costs. The trigger is the pause the
+microphone hears, not a transcript that stopped changing: a recognizer running
+behind the speaker also stops changing, and a watch keyed on that fires
+mid-sentence on a prefix. When it did, nearly every speculative turn was
+immediately revised — `think: speculation missed` on almost every line — which
+is slower than not speculating at all, because the wasted generation still had
+to be cancelled. If you see that line often, raise `speculative_stable_ms`; if
+you see it almost never and TTFA is still high, lower it toward 120.
+
 `first_segment_ms` splits the third row: the gap from `llm_first_token_ms` to it
 is time spent waiting for a sentence boundary, and the gap from it to
 `tts_first_audio_ms` is the synthesis provider. A slow reply and a late comma

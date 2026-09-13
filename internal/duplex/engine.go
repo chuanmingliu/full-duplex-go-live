@@ -470,6 +470,10 @@ func (e *Engine) onAudio(pcm []byte) {
 		}
 		e.handleDecision(e.vad.Push(samples))
 	}
+	// Per frame, not per tick: the window between "gone quiet" and "turn over"
+	// is a couple of hundred milliseconds, and a 120 ms tick would spend most
+	// of the head start waiting to notice it was available.
+	e.maybeSpeculate()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {
@@ -537,7 +541,6 @@ func (e *Engine) handleDecision(d audio.Decision) {
 
 func (e *Engine) onTick() {
 	e.publishState()
-	e.maybeSpeculate()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
 
@@ -664,9 +667,9 @@ func (e *Engine) onASREvent(ev asrEvent) {
 		return
 	}
 	run.lastText = text
-	if e.opts.Speculative && e.watch.Observe(text, time.Now()) {
-		e.startSpeculativeTurn(text)
-	}
+	// Deliberately no speculation check here. Whether to guess depends on
+	// whether the speaker has paused, which is an acoustic question, so it is
+	// answered on the audio path in maybeSpeculate.
 }
 
 func (e *Engine) emitInputTranscript(run *asrRun, text string, final bool) {
@@ -694,15 +697,23 @@ func (e *Engine) emitInputTranscript(run *asrRun, text string, final bool) {
 	e.deps.Emit(delta)
 }
 
-// maybeSpeculate re-checks whether the partial transcript has settled.
+// maybeSpeculate decides whether to start the backend before the VAD has
+// finished waiting out the end of the turn.
 //
-// This runs on the tick, not only when a hypothesis arrives, and the
-// distinction is the whole feature. A transcript becomes stable exactly when
-// the recognizer stops sending — so evaluating stability only on arrival means
-// the check never runs during the silence that proves it. Speculation could
-// only ever fire if the provider happened to repeat itself, which Tencent does
-// not, so it never fired at all: every turn waited for the final transcript and
-// paid the backend's full time-to-first-token afterwards.
+// It runs on the audio path, once per frame, because the trigger is acoustic:
+// the speaker has gone quiet for a while but not yet long enough for
+// vad.min_silence_ms to close the utterance. That window — the difference
+// between speculative_stable_ms and min_silence_ms, plus however long the final
+// transcript takes to arrive — is the head start speculation buys, and it is
+// free whenever the guess holds.
+//
+// The earlier version triggered on a transcript that had stopped changing,
+// which sounds equivalent and is not. A recognizer running a few hundred
+// milliseconds behind the speaker also stops changing, so the watch fired
+// mid-utterance on a prefix, and almost every speculative turn was immediately
+// revised: the guess was not merely wrong, it was wrong by construction. Tying
+// the clock to a pause the microphone can actually hear fixes that, and
+// Unsettle restarts it the instant the speaker resumes.
 func (e *Engine) maybeSpeculate() {
 	if !e.opts.Speculative || e.waitingTool || e.muted {
 		return
@@ -711,6 +722,16 @@ func (e *Engine) maybeSpeculate() {
 	if run == nil || run.lastText == "" || e.watch.Fired() {
 		return
 	}
+	if e.vad.TrailingSilenceMS() <= 0 {
+		// Still talking. Anything the recognizer has emitted so far is a
+		// prefix, however settled it looks.
+		e.watch.Unsettle()
+		return
+	}
+	// One clock, started at the first frame of the pause: speculative_stable_ms
+	// is now "quiet for this long, with the transcript unchanged throughout".
+	// A hypothesis landing mid-pause restarts it, which is what we want — the
+	// recognizer catching up is exactly when the guess would have been wrong.
 	if e.watch.Observe(run.lastText, time.Now()) {
 		e.startSpeculativeTurn(run.lastText)
 	}
@@ -774,7 +795,13 @@ func (e *Engine) beginGeneration(turn *Turn, reason string) {
 	if len([]rune(turn.Transcript)) < e.opts.Cfg.Duplex.DelegateMinChars {
 		return
 	}
-	if !e.speechEndAt.IsZero() {
+	// Only stamp the origin when it belongs to this turn. While the utterance
+	// is still open — which is the case for every speculative turn — the
+	// engine's speechEndAt is the *previous* utterance's, and stamping it here
+	// dated the turn to the last thing the caller said. That is where
+	// llm_first_token_ms=16279 came from: a real number, measured from the
+	// wrong zero. A speculative turn is stamped when speech actually ends.
+	if !e.userOpen && !e.speechEndAt.IsZero() {
 		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
 	}
 	target := e.opts.Delegation
@@ -1350,7 +1377,9 @@ func (e *Engine) onTruncated(r TruncationReport) {
 		if turn == nil || turn.ID != r.TurnID {
 			return
 		}
-		turn.MarkCompleted()
+		if !turn.MarkCompleted() {
+			return
+		}
 		e.emitMetrics(turn, r.PlayedMS, true)
 	})
 }
@@ -1363,7 +1392,16 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 		if turn == nil || turn.ID != turnID {
 			return
 		}
-		turn.MarkCompleted()
+		// A superseded revision drains with nothing behind it, and its turn ID
+		// still matches the live revision. Letting that count as the turn's
+		// completion both published a set of all-zero latencies and, worse,
+		// consumed the one completion slot the real answer needed.
+		if totalMS == 0 {
+			return
+		}
+		if !turn.MarkCompleted() {
+			return
+		}
 		e.emitMetrics(turn, totalMS, false)
 	})
 	e.deps.Emit(live.Usage{

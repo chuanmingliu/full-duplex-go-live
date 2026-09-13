@@ -251,7 +251,8 @@ In `configs/tencent-deepseek-minimax.json`:
 | If it feels like… | Change |
 | --- | --- |
 | It cuts me off mid-sentence | raise `vad.min_silence_ms` (380 → 600) |
-| It takes too long to start replying | lower `vad.min_silence_ms`, or lower `duplex.speculative_stable_ms` |
+| It takes too long to start replying | lower `vad.min_silence_ms`, or lower `duplex.speculative_stable_ms` (keeping it well under `min_silence_ms` — the gap between them *is* the head start) |
+| `think: speculation missed` on nearly every turn | raise `duplex.speculative_stable_ms`: it is guessing before the recognizer has caught up, and each miss costs a cancelled generation |
 | First syllable is slow | lower `duplex.stream_first_chunk_chars` (8 → 5) |
 | It interrupts itself through the speaker | raise `vad.barge_in_margin_db` (6 → 12) |
 | It ignores me when I interrupt | lower `vad.barge_in_margin_db`, or `vad.barge_in_min_speech_ms` |

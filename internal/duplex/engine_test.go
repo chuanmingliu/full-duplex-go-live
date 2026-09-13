@@ -85,6 +85,21 @@ func (c *collector) audioMS() float64 {
 	return audio.PCM16(c.rate).DurationMS(c.audio)
 }
 
+// delegationReasons returns the reasons of every delegation, in order. Order is
+// the assertion that matters for speculation: a speculative delegation that
+// arrives after the final transcript bought nothing.
+func (c *collector) delegationReasons() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []string
+	for _, ev := range c.events {
+		if d, ok := ev.(live.DelegationCreatedEvent); ok {
+			out = append(out, d.Delegation.Reason)
+		}
+	}
+	return out
+}
+
 func (c *collector) find(match func(any) bool) any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -719,15 +734,47 @@ func TestEngineResetsTTSOnInterrupt(t *testing.T) {
 	})
 }
 
-// TestEngineSpeculatesWhenTheRecognizerGoesQuiet is the regression test for the
-// reason speculation never fired in production.
+// TestEngineSpeculatesInsideTheEndOfTurnPause covers what speculation is for:
+// starting the backend during the silence the VAD is still waiting out, so the
+// caller never pays the full time-to-first-token.
 //
-// The mock recognizer, like a real one, emits only when its hypothesis changes.
-// So the moment the transcript settles it stops sending — which is precisely
-// the moment speculation should start. Evaluating stability only on arrival
-// meant the check never ran during the silence that proved it, and every turn
-// paid the backend's full time-to-first-token after the final transcript.
-func TestEngineSpeculatesWhenTheRecognizerGoesQuiet(t *testing.T) {
+// The pause here is shorter than vad.min_silence_ms, so the utterance is still
+// open when the delegation must appear. If it appears only after the final
+// transcript, the head start was zero and the feature is doing nothing.
+func TestEngineSpeculatesInsideTheEndOfTurnPause(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Speculative = true
+	cfg.Duplex.SpeculativeStableMS = 200
+	cfg.Duplex.SpeculativeMinChars = 6
+	cfg.VAD.MinSilenceMS = 900 // a wide window, so the assertion is not a race
+	c := newCollector(cfg.ClientRate)
+	e, _ := newTestEngine(t, cfg, c)
+
+	speak(e, cfg.ClientRate, 1600)
+	go pause(e, cfg.ClientRate, 2000)
+
+	waitFor(t, "a speculative delegation", 2*time.Second, func() bool {
+		reasons := c.delegationReasons()
+		return len(reasons) > 0 && reasons[0] == "speculative"
+	})
+
+	// Audio must already be flowing before the VAD has closed the turn: that
+	// head start is the whole benefit.
+	waitFor(t, "audio inside the pause", 3*time.Second, func() bool {
+		return c.audioMS() > 150
+	})
+}
+
+// TestEngineDoesNotSpeculateWhileTheSpeakerIsStillTalking is the regression
+// test for the version that guessed on transcript churn alone.
+//
+// A recognizer emits only when its hypothesis changes, so it also falls silent
+// whenever it is running behind — which mid-sentence it usually is. Treating
+// that as "the speaker has finished" fired the watch on a prefix, and nearly
+// every speculative turn was immediately revised: a wasted generation, a
+// cancelled synthesis, and a turn that restarted from zero. Continuous speech
+// must produce no speculation at all.
+func TestEngineDoesNotSpeculateWhileTheSpeakerIsStillTalking(t *testing.T) {
 	cfg := testConfig()
 	cfg.Duplex.Speculative = true
 	cfg.Duplex.SpeculativeStableMS = 200
@@ -735,22 +782,18 @@ func TestEngineSpeculatesWhenTheRecognizerGoesQuiet(t *testing.T) {
 	c := newCollector(cfg.ClientRate)
 	e, _ := newTestEngine(t, cfg, c)
 
-	// Long enough that the hypothesis reaches its full length and then stops
-	// changing while the user is still talking.
+	// Far longer than the stability window: the hypothesis reaches full length
+	// early and then stops changing while the speaker keeps going.
 	speak(e, cfg.ClientRate, 2800)
 
-	waitFor(t, "a speculative delegation", 3*time.Second, func() bool {
-		return c.find(func(a any) bool {
-			d, ok := a.(live.DelegationCreatedEvent)
-			return ok && d.Delegation.Reason == "speculative"
-		}) != nil
-	})
+	for _, reason := range c.delegationReasons() {
+		if reason == "speculative" {
+			t.Fatal("speculated on a prefix while the speaker was still talking")
+		}
+	}
 
-	// Audio must already be flowing before the user has finished speaking:
-	// that head start is the entire benefit, and it is why the backend's
-	// time-to-first-token stops being visible to the caller.
-	waitFor(t, "audio while the user is still talking", 4*time.Second, func() bool {
-		return c.audioMS() > 150
-	})
 	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the turn to be delegated once speech ends", 3*time.Second, func() bool {
+		return len(c.delegationReasons()) > 0
+	})
 }

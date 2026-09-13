@@ -225,7 +225,7 @@ Start from `.env.example`. The knobs that change how the thing feels:
 | `duplex.playback_paced` | Off = burst audio at the client. Fast, but truncation accounting becomes meaningless. Leave it on. |
 | `duplex.playback_lead_ms` | Jitter budget. Higher survives worse networks; lower makes cuts more precise. |
 | `duplex.stream_first_chunk_chars` | Smaller = earlier first syllable, slightly worse prosody. `8` is a good default for Chinese. |
-| `duplex.speculative_stable_ms` | How long a partial must stop changing before golive commits to guessing. Lower = faster and more wasted generations. |
+| `duplex.speculative_stable_ms` | How long the caller must be audibly quiet, transcript unchanged, before golive starts the backend early. Measured from the first frame of the pause, so the head start is `vad.min_silence_ms` minus this. Lower = faster and more wasted generations; below ~120 ms the recognizer has not caught up and you are guessing on a prefix. |
 | `instructions` / `greeting` | The conversational prompt, and what the assistant says unprompted when a session opens. Both overridable per session; the demo page exposes them under **Session config**. |
 | `duplex.reset_tts_on_interrupt` | Drop the synthesis connection after every interruption. Only needed for a provider that cannot resynchronize an abandoned stream; see TESTING.md. |
 | `duplex.on_new_query` | `cut`, `finish_sentence` or `queue` — what happens to an answer still in flight when the caller speaks again. |

@@ -34,7 +34,7 @@
       "让我查一下"
     ],
     "speculative": true,
-    "speculative_stable_ms": 260,
+    "speculative_stable_ms": 180,
     "speculative_min_chars": 6,
     "allow_barge_in": true,
     "on_new_query": "cut",

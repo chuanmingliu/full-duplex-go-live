@@ -234,6 +234,20 @@ func (v *VAD) SetAssistantSpeaking(speaking bool) { v.speaking.Store(speaking) }
 // NoiseFloorDB exposes the adaptive floor for diagnostics.
 func (v *VAD) NoiseFloorDB() float64 { return v.noiseFloorDB }
 
+// TrailingSilenceMS reports how long the open utterance has been unvoiced, and
+// zero when no utterance is open.
+//
+// This is the acoustic evidence that the speaker has paused, and it is a far
+// better trigger for speculation than a transcript that stopped changing: a
+// recognizer goes quiet both when the speaker stops talking and when it is
+// merely behind, and only one of those is worth guessing on.
+func (v *VAD) TrailingSilenceMS() float64 {
+	if !v.open {
+		return 0
+	}
+	return v.silenceMS
+}
+
 // Reset drops any open utterance without emitting it.
 func (v *VAD) Reset() {
 	v.open = false
