@@ -237,6 +237,7 @@ func (s *stream) readAudio(ctx context.Context, out chan<- provider.TTSChunk) {
 
 	for {
 		if ctx.Err() != nil {
+			s.resync(ctx)
 			return
 		}
 		frame, err := s.recv(s.tts.ReceiveTimeout)
@@ -271,6 +272,7 @@ func (s *stream) readAudio(ctx context.Context, out chan<- provider.TTSChunk) {
 					sawIncremental = true
 				}
 				if !s.emit(ctx, out, provider.TTSChunk{PCM: pcm}) {
+					s.resync(ctx)
 					return
 				}
 			}
@@ -281,6 +283,60 @@ func (s *stream) readAudio(ctx context.Context, out chan<- provider.TTSChunk) {
 			return
 		}
 	}
+}
+
+// resync consumes the rest of an abandoned task so the connection can be
+// reused.
+//
+// This is the difference between a barge-in that works and one that appears to
+// work. The task is a single ordered stream: when the caller stops reading
+// mid-sentence, MiniMax keeps generating audio for text it has already been
+// given, and those frames stay in the socket. Reuse the connection without
+// draining them and the *next* task_continue reads the tail of the interrupted
+// sentence first — so the answer nobody wanted plays ahead of the answer to
+// what was just asked, with nothing in the server's own logs to show for it.
+//
+// The drain is bounded. A task that will not finish promptly is not worth
+// waiting for, so the connection is dropped and the next synthesis reconnects:
+// a reconnect costs a few hundred milliseconds once, while a desynchronized
+// stream is wrong on every turn that follows.
+func (s *stream) resync(ctx context.Context) {
+	conn := s.currentConn()
+	if conn == nil {
+		return
+	}
+	started := time.Now()
+	frames := 0
+	deadline := started.Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		frame, err := s.recv(remaining)
+		if err != nil {
+			slog.Debug("minimax tts: resync failed; reconnecting", "err", err, "frames", frames)
+			s.dropConn()
+			return
+		}
+		frames++
+		if frame.Event == "task_failed" ||
+			(frame.BaseResp != nil && frame.BaseResp.StatusCode != 0) {
+			s.dropConn()
+			return
+		}
+		if frame.IsFinal {
+			// Fully drained: the connection is back in a known state and the
+			// next sentence starts clean.
+			slog.Debug("minimax tts: resynced an abandoned task",
+				"discarded_frames", frames, "ms", time.Since(started).Milliseconds())
+			s.touch()
+			return
+		}
+	}
+	slog.Warn("minimax tts: abandoned task did not drain in time; reconnecting",
+		"frames", frames, "ms", time.Since(started).Milliseconds())
+	s.dropConn()
 }
 
 func (s *stream) emit(ctx context.Context, out chan<- provider.TTSChunk, chunk provider.TTSChunk) bool {

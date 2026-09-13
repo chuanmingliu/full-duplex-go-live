@@ -1149,6 +1149,19 @@ func (e *Engine) ttsSession() (provider.TTSStream, error) {
 	return stream, nil
 }
 
+// resetTTS closes the synthesis connection so the next turn opens a fresh one.
+// See Duplex.ResetTTSOnInterrupt for why this is sometimes worth a reconnect.
+func (e *Engine) resetTTS() {
+	e.ttsMu.Lock()
+	stream := e.ttsStream
+	e.ttsStream = nil
+	e.ttsMu.Unlock()
+	if stream != nil {
+		e.log.Debug("speak: dropping the tts session after an interruption")
+		go func() { _ = stream.Close() }()
+	}
+}
+
 // dropTTSSession discards a session that errored, so the next segment
 // reconnects rather than inheriting a broken socket.
 func (e *Engine) dropTTSSession(stream provider.TTSStream) {
@@ -1237,6 +1250,9 @@ func (e *Engine) softInterrupt() {
 func (e *Engine) interrupt() {
 	gen := e.gen.Bump()
 	e.abortSpeech()
+	if e.opts.Cfg.Duplex.ResetTTSOnInterrupt {
+		e.resetTTS()
+	}
 	e.log.Debug("barge-in: generation invalidated", "generation", gen)
 }
 

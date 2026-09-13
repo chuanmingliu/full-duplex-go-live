@@ -38,6 +38,7 @@
     "speculative_min_chars": 6,
     "allow_barge_in": true,
     "on_new_query": "cut",
+    "reset_tts_on_interrupt": false,
     "playback_chunk_ms": 40,
     "playback_paced": true,
     "playback_lead_ms": 300,

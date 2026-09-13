@@ -21,6 +21,7 @@
     "speculative": true,
     "allow_barge_in": true,
     "on_new_query": "cut",
+    "reset_tts_on_interrupt": false,
     "playback_paced": true,
     "delegation_mode": "responses",
     "max_append_chars": 1500

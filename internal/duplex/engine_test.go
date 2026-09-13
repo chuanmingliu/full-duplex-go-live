@@ -600,3 +600,117 @@ func TestEngineSkipsTheFillerOnAFastAnswer(t *testing.T) {
 		t.Error("the filler fired on a fast answer, where it can only delay the real reply")
 	}
 }
+
+// leakyTTS imitates a provider whose persistent connection is left
+// desynchronized by an abandoned synthesis: the next call replays the tail of
+// the interrupted sentence before the new one. That is exactly the failure a
+// real vendor stream produces after a barge-in, and no amount of care in the
+// engine can detect it — the audio arrives on the new turn's channel, correctly
+// formed and completely wrong.
+type leakyTTS struct {
+	mu    sync.Mutex
+	opens int
+}
+
+func (l *leakyTTS) Name() string { return "leaky" }
+
+func (l *leakyTTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	l.mu.Lock()
+	l.opens++
+	l.mu.Unlock()
+	rate := opts.SampleRate
+	if rate <= 0 {
+		rate = provider.PipelineRate
+	}
+	return &leakyStream{rate: rate}, nil
+}
+
+func (l *leakyTTS) openCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.opens
+}
+
+type leakyStream struct {
+	rate      int
+	abandoned bool
+}
+
+func (s *leakyStream) SampleRate() int { return s.rate }
+func (s *leakyStream) Close() error    { return nil }
+
+func (s *leakyStream) Synthesize(ctx context.Context, text string) (<-chan provider.TTSChunk, error) {
+	leak := s.abandoned
+	s.abandoned = false
+	out := make(chan provider.TTSChunk, 8)
+	go func() {
+		defer close(out)
+		if leak {
+			// The tail of the sentence nobody wanted.
+			select {
+			case out <- provider.TTSChunk{PCM: make([]byte, s.rate)}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		for i := 0; i < 8; i++ {
+			select {
+			case out <- provider.TTSChunk{PCM: make([]byte, s.rate/4)}:
+			case <-ctx.Done():
+				s.abandoned = true
+				return
+			}
+			select {
+			case <-time.After(60 * time.Millisecond):
+			case <-ctx.Done():
+				s.abandoned = true
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// TestEngineResetsTTSOnInterrupt covers the fallback for such a provider: with
+// the setting on, an interruption drops the session so the next turn cannot
+// inherit its state.
+func TestEngineResetsTTSOnInterrupt(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.OnNewQuery = "cut"
+	cfg.Duplex.ResetTTSOnInterrupt = true
+	c := newCollector(cfg.ClientRate)
+
+	tts := &leakyTTS{}
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 30 * time.Millisecond
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "leaky",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+	}, Deps{
+		ASR:  mock.NewASR("你好帮我查一下明天的天气"),
+		LLM:  llm,
+		TTS:  tts,
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.Start(ctx)
+	defer e.Close()
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "assistant audio", 6*time.Second, func() bool { return c.audioMS() > 200 })
+
+	opensBefore := tts.openCount()
+	speak(e, cfg.ClientRate, 900)
+	waitFor(t, "the interruption", 4*time.Second, func() bool {
+		return c.count(live.ExtAudioTruncated) > 0
+	})
+	pause(e, cfg.ClientRate, 700)
+
+	waitFor(t, "a fresh synthesis session", 5*time.Second, func() bool {
+		return tts.openCount() > opensBefore
+	})
+}

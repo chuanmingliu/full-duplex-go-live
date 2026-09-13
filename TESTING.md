@@ -90,6 +90,42 @@ the browser:
 
 ---
 
+## The interrupted sentence plays before the new answer
+
+Symptom: you cut the assistant off, ask something else, and hear the tail of the
+sentence you interrupted *before* the answer to what you just asked.
+
+If the server log shows `truncated at N ms of M ms` for the old turn, the engine
+did its job — it stopped generating and cleared its queue. The leftover is then
+coming from the synthesis provider, not from golive.
+
+A provider that holds one long-lived connection keeps generating audio for text
+it has already been given. Abandon a synthesis mid-sentence and those frames
+stay in the socket; reuse the connection without draining them and the *next*
+request reads the old tail first. The audio arrives on the new turn's channel,
+correctly formed and completely wrong, which is why nothing in the engine's own
+accounting looks amiss.
+
+The bundled MiniMax adapter drains an abandoned task before reusing the
+connection. Confirm it is working:
+
+```bash
+grep -E 'resynced an abandoned task|did not drain in time' golive.log
+```
+
+`resynced an abandoned task discarded_frames=N` is the healthy line. If you see
+`did not drain in time`, or you still hear the leak, force a clean connection
+after every interruption:
+
+```json
+{ "duplex": { "reset_tts_on_interrupt": true } }
+```
+
+That costs a reconnect on the turn after each barge-in — a few hundred
+milliseconds — which is why it is not the default.
+
+---
+
 ## Hearing nothing
 
 Work down this list; each step rules out a layer rather than a guess.

@@ -227,6 +227,7 @@ Start from `.env.example`. The knobs that change how the thing feels:
 | `duplex.stream_first_chunk_chars` | Smaller = earlier first syllable, slightly worse prosody. `8` is a good default for Chinese. |
 | `duplex.speculative_stable_ms` | How long a partial must stop changing before golive commits to guessing. Lower = faster and more wasted generations. |
 | `instructions` / `greeting` | The conversational prompt, and what the assistant says unprompted when a session opens. Both overridable per session; the demo page exposes them under **Session config**. |
+| `duplex.reset_tts_on_interrupt` | Drop the synthesis connection after every interruption. Only needed for a provider that cannot resynchronize an abandoned stream; see TESTING.md. |
 | `duplex.on_new_query` | `cut`, `finish_sentence` or `queue` — what happens to an answer still in flight when the caller speaks again. |
 | `vad.barge_in_margin_db` | Raise if the assistant interrupts itself through a speakerphone. Browsers with AEC need very little. |
 | `vad.min_silence_ms` | How long a pause must be before the turn is considered over. The single biggest lever on "it cuts me off". |

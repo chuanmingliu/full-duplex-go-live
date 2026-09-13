@@ -147,6 +147,15 @@ type TTSStream interface {
 	// Synthesize speaks one text segment. The returned channel yields audio
 	// chunks and closes when that segment is complete. Calls are sequential;
 	// the caller does not overlap them on a single stream.
+	//
+	// A call whose context is cancelled is abandoned mid-sentence, which is the
+	// normal outcome of a barge-in. An implementation holding a persistent
+	// connection MUST resynchronize before the next call: the vendor keeps
+	// generating audio for text it has already been given, and a stream left
+	// undrained delivers the tail of the interrupted sentence at the start of
+	// the next one. The caller cannot detect that — the audio arrives on the
+	// new turn's channel, correctly formed and completely wrong — so the
+	// obligation is here.
 	Synthesize(ctx context.Context, text string) (<-chan TTSChunk, error)
 	// SampleRate of the PCM16 chunks.
 	SampleRate() int

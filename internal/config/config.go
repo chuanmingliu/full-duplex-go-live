@@ -95,6 +95,16 @@ type DuplexConfig struct {
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
+	// ResetTTSOnInterrupt closes the synthesis connection whenever an answer is
+	// cut short, so the next turn starts on a fresh one.
+	//
+	// Belt and braces. A correct adapter resynchronizes its own stream after an
+	// abandoned call, and the bundled ones do; this exists for providers that
+	// cannot, where the alternative is the tail of the interrupted sentence
+	// playing at the start of the next answer. It costs a reconnect on the turn
+	// after every barge-in, so leave it off unless you hear that leak.
+	ResetTTSOnInterrupt bool `json:"reset_tts_on_interrupt"`
+
 	// OnNewQuery decides what happens to an answer still in flight when the
 	// user starts speaking again. The right choice is situational, which is
 	// why it is a setting rather than a constant:
@@ -203,6 +213,7 @@ func Default() Config {
 			SpeculativeMinChars:   6,
 			AllowBargeIn:          true,
 			OnNewQuery:            "cut",
+			ResetTTSOnInterrupt:   false,
 			PlaybackChunkMS:       40,
 			PlaybackPaced:         true,
 			PlaybackLeadMS:        300,
@@ -278,6 +289,7 @@ func (c *Config) applyEnv() {
 	setBool(&c.Duplex.Speculative, "GOLIVE_SPECULATIVE")
 	setBool(&c.Duplex.AllowBargeIn, "GOLIVE_ALLOW_BARGE_IN")
 	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
+	setBool(&c.Duplex.ResetTTSOnInterrupt, "GOLIVE_RESET_TTS_ON_INTERRUPT")
 	setBool(&c.Duplex.PlaybackPaced, "GOLIVE_PLAYBACK_PACED")
 }
 
