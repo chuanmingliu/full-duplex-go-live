@@ -1,0 +1,1135 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<title>Duplex Timeline</title>
+
+<style>
+/* ---------------------------------------------------------------------------
+   Dark-first: this is an instrument panel, so the bare :root carries the dark
+   palette and the light theme is the override. Both are complete token sets.
+   --------------------------------------------------------------------------- */
+:root {
+  --ground:   #0a1013;
+  --panel:    #111a1e;
+  --panel-2:  #0d1518;
+  --line:     #1d2b30;
+  --line-2:   #27383e;
+  --ink:      #dfe9e7;
+  --ink-dim:  #9fb2ae;
+  --muted:    #6f8783;
+
+  --listen:     #63e6a0;
+  --transcribe: #57d2e8;
+  --think:      #f2b134;
+  --speak:      #ff7a5c;
+  --cut:        #f4544a;
+  --wait:       #46606a;
+
+  --ghost:    #33474d;
+  --shadow:   0 1px 0 rgba(255,255,255,.03), 0 8px 24px rgba(0,0,0,.35);
+  --grid:     rgba(255,255,255,.055);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground:   #f4f7f6;
+    --panel:    #ffffff;
+    --panel-2:  #eef3f1;
+    --line:     #dde5e3;
+    --line-2:   #c6d4d1;
+    --ink:      #12201e;
+    --ink-dim:  #405652;
+    --muted:    #6b807c;
+
+    --listen:     #12915c;
+    --transcribe: #0f7f97;
+    --think:      #9a6a00;
+    --speak:      #cc4423;
+    --cut:        #c62f26;
+    --wait:       #9aacae;
+
+    --ghost:    #c3d0cd;
+    --shadow:   0 1px 0 rgba(255,255,255,.7), 0 8px 22px rgba(18,32,30,.08);
+    --grid:     rgba(18,32,30,.06);
+  }
+}
+
+:root[data-theme="light"] {
+  --ground:   #f4f7f6;
+  --panel:    #ffffff;
+  --panel-2:  #eef3f1;
+  --line:     #dde5e3;
+  --line-2:   #c6d4d1;
+  --ink:      #12201e;
+  --ink-dim:  #405652;
+  --muted:    #6b807c;
+
+  --listen:     #12915c;
+  --transcribe: #0f7f97;
+  --think:      #9a6a00;
+  --speak:      #cc4423;
+  --cut:        #c62f26;
+  --wait:       #9aacae;
+
+  --ghost:    #c3d0cd;
+  --shadow:   0 1px 0 rgba(255,255,255,.7), 0 8px 22px rgba(18,32,30,.08);
+  --grid:     rgba(18,32,30,.06);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Source Serif 4", Georgia, "Songti SC", serif;
+  font-size: 16.5px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-inline: 20px;
+  padding-block: 40px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+/* --- type ---------------------------------------------------------------- */
+h1, h2, h3, .ui { font-family: Archivo, "Helvetica Neue", Arial, sans-serif; }
+.mono, .lane-name, .val, .chip, button, select, .ev, .tick, .mark b { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+h1 {
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.05;
+  letter-spacing: -.022em;
+  font-weight: 700;
+  margin: 0;
+  text-wrap: balance;
+}
+h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+h3 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  margin: 0 0 6px;
+  color: var(--ink);
+}
+p { margin: 0 0 14px; max-width: 68ch; }
+p:last-child { margin-bottom: 0; }
+.lede { font-size: 19px; color: var(--ink-dim); max-width: 62ch; }
+em { color: var(--ink); font-style: italic; }
+code, .k {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .86em;
+  color: var(--transcribe);
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* --- header -------------------------------------------------------------- */
+header { display: flex; flex-direction: column; gap: 14px; }
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- the instrument ------------------------------------------------------ */
+.rig {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.rig-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+
+button {
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  padding: 7px 13px;
+  border-radius: 3px;
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+}
+button:hover:not(:disabled) { border-color: var(--listen); color: var(--listen); }
+button:disabled { opacity: .35; cursor: not-allowed; }
+button:focus-visible { outline: 2px solid var(--transcribe); outline-offset: 2px; }
+button.go { background: var(--listen); border-color: var(--listen); color: var(--ground); font-weight: 600; }
+button.go:hover:not(:disabled) { background: var(--listen); color: var(--ground); filter: brightness(1.08); }
+button.cut { border-color: var(--cut); color: var(--cut); }
+button.cut:hover:not(:disabled) { background: var(--cut); color: var(--ground); border-color: var(--cut); }
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.seg button { border: 0; border-radius: 0; }
+.seg button + button { border-left: 1px solid var(--line-2); }
+.seg button[aria-pressed="true"] { background: var(--transcribe); color: var(--ground); font-weight: 600; }
+.seg button[aria-pressed="true"]:hover { color: var(--ground); }
+
+.toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-dim);
+  cursor: pointer; user-select: none;
+}
+.toggle input { accent-color: var(--think); width: 14px; height: 14px; cursor: pointer; }
+.toggle.warm input { accent-color: var(--speak); }
+.spacer { flex: 1 1 auto; }
+
+.clock {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.clock b { color: var(--ink); font-weight: 500; }
+
+/* --- lanes --------------------------------------------------------------- */
+.lanes { padding: 16px 14px 6px; }
+
+.lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.lane-name {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.lane[data-on="1"] .lane-name { color: var(--c); }
+
+.track {
+  position: relative;
+  height: 30px;
+  background:
+    repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px 10%);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.blk {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  background: var(--c);
+  opacity: .92;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  color: var(--ground);
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 2px;
+}
+.blk.ghost {
+  background: repeating-linear-gradient(135deg, var(--ghost) 0 5px, transparent 5px 10px);
+  border: 1px dashed var(--ghost);
+  color: var(--muted);
+}
+.blk.wait {
+  background: repeating-linear-gradient(135deg, var(--wait) 0 3px, transparent 3px 7px);
+  border: 1px solid var(--wait);
+  color: var(--ink-dim);
+}
+.blk.killed { opacity: .26; }
+.blk.killed::after {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(135deg, rgba(0,0,0,.28) 0 3px, transparent 3px 6px);
+}
+
+.cutline {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--cut);
+  box-shadow: 0 0 8px var(--cut);
+}
+.playhead {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--ink);
+  opacity: .5;
+}
+
+/* Vertical event markers spanning every lane: the two instants the whole
+   latency argument turns on. */
+.marks { position: relative; height: 0; }
+.mark {
+  position: absolute;
+  top: -170px;
+  bottom: 0;
+  border-left: 1px dashed var(--m);
+  opacity: .8;
+  pointer-events: none;
+}
+.mark b {
+  position: absolute;
+  top: -16px;
+  left: 3px;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  color: var(--m);
+  white-space: nowrap;
+  background: var(--panel);
+  padding: 0 3px;
+}
+.mark.right b { left: auto; right: 3px; }
+
+.axis {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 2px;
+}
+.ticks { position: relative; height: 18px; }
+.tick {
+  position: absolute;
+  font-size: 10px;
+  color: var(--muted);
+  transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- readouts ------------------------------------------------------------ */
+.readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border-top: 1px solid var(--line);
+}
+.cell { background: var(--panel); padding: 11px 14px; }
+.cell .val {
+  display: block;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.cell .val.hot { color: var(--cut); }
+.cell .val.good { color: var(--listen); }
+.cell .lbl {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- transcript ---------------------------------------------------------- */
+.script {
+  border-top: 1px solid var(--line);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 116px;
+}
+.turn { display: flex; flex-direction: column; gap: 2px; }
+.turn .who {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+}
+.turn.user .who { color: var(--listen); }
+.turn.bot .who { color: var(--speak); }
+.turn .said { font-size: 16px; }
+.turn.partial .said { color: var(--muted); font-style: italic; }
+.turn .lost { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--cut); }
+.turn .note { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--cut); }
+
+.verdict {
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 13px 14px;
+  font-size: 14.5px;
+  color: var(--ink-dim);
+  min-height: 54px;
+}
+.verdict b { color: var(--ink); font-weight: 600; }
+
+/* --- prose sections ------------------------------------------------------ */
+section { display: flex; flex-direction: column; gap: 16px; }
+
+.experiments { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.xp {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--c, var(--line-2));
+  background: var(--panel);
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.xp .n {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--c);
+}
+.xp p { font-size: 14.5px; margin: 0; }
+.xp button { align-self: flex-start; margin-top: 2px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px; }
+
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+.tablewrap { overflow-x: auto; }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th {
+  font-family: Archivo, sans-serif; font-size: 11px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+}
+td.mono { font-size: 12.5px; color: var(--ink-dim); white-space: nowrap; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); display: block; }
+
+footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+@media (max-width: 620px) {
+  .lane, .axis { grid-template-columns: 60px minmax(0, 1fr); gap: 8px; }
+  .lane-name { font-size: 9.5px; }
+  body { font-size: 16px; }
+  .mark b { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">golive · internal/duplex</div>
+  <h1>Four channels, running at once</h1>
+  <p class="lede">A cascade of speech-to-text, a language model and text-to-speech is
+  half duplex by default: it stops listening while it speaks. This is the same cascade
+  with that gate removed — and the machinery that removing it makes necessary.
+  Press <b>Run a turn</b>, then interrupt it.</p>
+</header>
+
+<div class="rig">
+  <div class="rig-bar">
+    <button id="run" class="go ui">Run a turn</button>
+    <button id="interrupt" class="cut" disabled>Interrupt</button>
+    <button id="reset">Reset</button>
+    <div class="seg" role="group" aria-label="Engine mode">
+      <button id="m-golive" aria-pressed="true">golive</button>
+      <button id="m-half" aria-pressed="false">half duplex</button>
+    </div>
+    <label class="toggle" for="spec">
+      <input type="checkbox" id="spec" checked>
+      speculate
+    </label>
+    <label class="toggle warm" for="warm">
+      <input type="checkbox" id="warm" checked>
+      prewarm
+    </label>
+    <div class="spacer"></div>
+    <div class="clock">t <b id="clock">0000</b> ms · gen <b id="gen">1</b></div>
+  </div>
+
+  <div class="lanes" id="lanes">
+    <div class="lane" data-lane="listen"     style="--c: var(--listen)">
+      <div class="lane-name">listen</div><div class="track"></div>
+    </div>
+    <div class="lane" data-lane="transcribe" style="--c: var(--transcribe)">
+      <div class="lane-name">transcribe</div><div class="track"></div>
+    </div>
+    <div class="lane" data-lane="think"      style="--c: var(--think)">
+      <div class="lane-name">think</div><div class="track"></div>
+    </div>
+    <div class="lane" data-lane="speak"      style="--c: var(--speak)">
+      <div class="lane-name">speak</div><div class="track"></div>
+    </div>
+    <div class="axis"><div></div><div class="marks" id="marks"></div></div>
+    <div class="axis"><div></div><div class="ticks" id="ticks"></div></div>
+  </div>
+
+  <div class="readout">
+    <div class="cell"><span class="val" id="r-first">—</span><span class="lbl">first audio, from VAD close</span></div>
+    <div class="cell"><span class="val" id="r-played">—</span><span class="lbl">heard / emitted</span></div>
+    <div class="cell"><span class="val" id="r-spec">—</span><span class="lbl">head start</span></div>
+    <div class="cell"><span class="val" id="r-overlap">—</span><span class="lbl">listen ∩ speak</span></div>
+  </div>
+
+  <div class="script" id="script"></div>
+
+  <div class="verdict" id="verdict">
+    Idle. The lanes below the toolbar are the four concurrent channels inside one session.
+  </div>
+</div>
+
+<div class="legend">
+  <span style="--c: var(--listen)"><i class="sw"></i>listen — mic in, VAD</span>
+  <span style="--c: var(--wait)"><i class="sw"></i>hangover — waiting out the pause</span>
+  <span style="--c: var(--transcribe)"><i class="sw"></i>transcribe — streaming ASR</span>
+  <span style="--c: var(--think)"><i class="sw"></i>think — backend / delegation</span>
+  <span style="--c: var(--speak)"><i class="sw"></i>speak — TTS, paced out</span>
+  <span style="--c: var(--ghost)"><i class="sw"></i>not heard</span>
+</div>
+
+<section>
+  <h2>Four things to try</h2>
+  <div class="experiments">
+    <div class="xp" style="--c: var(--cut)">
+      <div class="n">Interrupt</div>
+      <p>Run a turn, and cut in while <em>speak</em> is lit. In golive the <em>listen</em> lane
+      lights on top of <em>speak</em> — both on, same instant. That overlap is the whole claim.</p>
+      <button data-demo="bargein">Run and interrupt at 900 ms</button>
+    </div>
+    <div class="xp" style="--c: var(--ghost)">
+      <div class="n">The same cut, half duplex</div>
+      <p>Now the input arrives while the floor is taken. It lands in a hatched block: audio that
+      existed and was never heard, because the listener was switched off.</p>
+      <button data-demo="deaf">Run the deaf version</button>
+    </div>
+    <div class="xp" style="--c: var(--think)">
+      <div class="n">Speculation</div>
+      <p>With it on, <em>think</em> starts inside the hatched hangover — during the silence the
+      VAD is still waiting out, before the turn is officially over. Clear the box and watch
+      <em>think</em> slide right, past <span class="mono">VAD close</span>.</p>
+      <button data-demo="spec">Run with it on</button>
+    </div>
+    <div class="xp" style="--c: var(--speak)">
+      <div class="n">Prewarm</div>
+      <p>The gap between <em>think</em> starting and <em>speak</em> lighting includes a socket to
+      the synthesis vendor. Clear <em>prewarm</em> to put that handshake back on the critical
+      path, where it used to live.</p>
+      <button data-demo="cold">Run it cold</button>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h3>Where the silence goes</h3>
+  <p>The two dashed markers are the whole latency argument. <b>Voice ends</b> is the last frame
+  of sound you made. <b>VAD close</b> is <span class="k">vad.min_silence_ms</span> later — 380 ms
+  of quiet before the engine is willing to believe you have finished, because anything shorter
+  cuts people off mid-thought. That 380 ms is pure hangover, and it used to be dead time.</p>
+  <p>Speculation spends it. <span class="k">speculative_stable_ms</span> into the pause, with the
+  transcript unchanged throughout, the backend starts on the partial — so by the time the VAD
+  closes the turn, the answer is already being written and, often, already being synthesized.
+  The service reports every stage from VAD close, which is why <span class="mono">first audio</span>
+  can legitimately come out negative: the first byte left before the turn officially ended.</p>
+  <p>The trigger is the pause, not a quiet recognizer, and that distinction was learned the
+  expensive way. An earlier build fired when the partial transcript stopped changing for
+  260 ms — which a recognizer running behind the speaker also does, mid-sentence. It guessed on
+  prefixes, and nearly every speculative turn was immediately revised: slower than not
+  speculating at all, because the wasted generation still had to be cancelled.</p>
+</section>
+
+<section>
+  <h3>Why interrupting forces the rest of the design</h3>
+  <p>Letting someone talk over the assistant sounds like a small feature. It is not — it
+  creates two problems that a half-duplex cascade never has to answer, and the answers are
+  most of the engine.</p>
+
+  <div class="pair">
+    <div>
+      <h3>Stopping four stages at once</h3>
+      <p>When the cut lands, an ASR stream, a language-model stream, a synthesis socket and a
+      playback queue are all in flight. Threading a cancellation through every provider call
+      would be invasive and slow; instead each stage records the <span class="k">generation</span>
+      it was born in, and a single counter increments. Work from an older generation is dropped
+      rather than raced. Watch <span class="mono">gen</span> in the toolbar when you interrupt —
+      the greyed-out blocks are work that finished and was thrown away.</p>
+    </div>
+    <div>
+      <h3>Knowing what was actually heard</h3>
+      <p>The model wrote a whole sentence; the listener heard the first two thirds of it. If the
+      whole sentence enters conversation history, every later turn reasons from words nobody
+      received. So output is <em>paced</em> — sent at roughly real time rather than dumped into
+      the client's buffer — which means the server can say how many milliseconds landed, and
+      trim the transcript to that prefix. The struck-through text after a cut is what gets
+      discarded.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What each lane costs in the real service</h2>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Stage</th><th>Measured</th><th>Set by</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Silence before the turn is considered over</td>
+          <td class="mono">380 ms</td>
+          <td><span class="k">vad.min_silence_ms</span> — the single biggest lever on “it cuts me off”</td>
+        </tr>
+        <tr>
+          <td>Quiet needed before guessing</td>
+          <td class="mono">180 ms</td>
+          <td><span class="k">speculative_stable_ms</span> — the gap to the row above <em>is</em> the head start</td>
+        </tr>
+        <tr>
+          <td>Backend first token</td>
+          <td class="mono">516 ms</td>
+          <td>DeepSeek, streaming chat completions — 47% of the total, and why speculation is the lever that matters</td>
+        </tr>
+        <tr>
+          <td>Synthesis socket, if cold</td>
+          <td class="mono">150–300 ms</td>
+          <td>MiniMax dial + <span class="mono">task_start</span> — now paid at session open and when the mic opens, not between your words and the reply</td>
+        </tr>
+        <tr>
+          <td>Characters in the first spoken segment</td>
+          <td class="mono">6</td>
+          <td><span class="k">stream_first_chunk_chars</span> — a deliberately tiny first segment buys an early syllable</td>
+        </tr>
+        <tr>
+          <td>Extra loudness needed to interrupt</td>
+          <td class="mono">+6 dB</td>
+          <td><span class="k">barge_in_margin_db</span> — echo suppression without a reference signal</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Figures from real sessions against Tencent ASR, DeepSeek and MiniMax. The timeline above
+  runs on the same shape, compressed slightly so a turn fits in eleven seconds.</p>
+</section>
+
+<section>
+  <h3>What this still isn’t</h3>
+  <p>A genuine full-duplex model hears prosody and decides to yield the floor from acoustics —
+  it knows you are winding down before you stop. Here, floor control is an energy threshold and
+  a pair of timers, and speculation infers your intent from a pause long enough to be
+  suspicious. That shows up as barge-in detected a beat late, and as a wrong guess whenever you
+  pause mid-thought rather than mid-turn. Both cost a cancelled generation, never a wrong
+  answer. The gap is real, and it is the honest reason this is called a simulation.</p>
+</section>
+
+<footer>
+  Timeline reproduces <span class="mono">internal/duplex</span> — generation counter, speculative
+  turn tracker and paced player. Interaction is simulated; the numbers are drawn from live
+  session logs.
+</footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var WINDOW = 11000;               // ms visible across a track
+  var lanes  = {};
+  var el = function (id) { return document.getElementById(id); };
+
+  document.querySelectorAll('.lane').forEach(function (l) {
+    lanes[l.dataset.lane] = { root: l, track: l.querySelector('.track') };
+  });
+
+  // --- timing model, compressed from a real session --------------------------
+  var T = {
+    userSpeech:   1800,   // how long the user makes sound
+    asrLag:        140,   // first partial after speech starts
+    minSilence:    380,   // vad.min_silence_ms — hangover before the turn closes
+    specStable:    180,   // speculative_stable_ms — quiet needed before guessing
+    asrTail:       120,   // final transcript, after the VAD closes the stream
+    firstToken:    460,   // backend latency
+    ttsWarm:       130,   // synthesis latency on a live socket
+    ttsCold:       300,   // ... and with a dial + task_start in front of it
+    msPerChar:      95,   // spoken duration
+    bargeMin:      320    // voiced audio required to open a barge-in
+  };
+
+  var USER_SAID = '帮我看看明天下午还有没有空档';
+  var REPLY     = '明天下午两点到四点是空的，要我先占住这个时间吗？';
+  var REPLY2    = '好的，那我先不占用，随时告诉我。';
+
+  var S = null;             // simulation state
+  var raf = null;
+
+  function blank() {
+    return {
+      t: 0, running: false, done: false, gen: 1,
+      mode: el('m-golive').getAttribute('aria-pressed') === 'true' ? 'golive' : 'half',
+      spec: el('spec').checked,
+      warm: el('warm').checked,
+      blocks: [], marks: [], cut: null, cutAt: null,
+      firstAudio: null, played: null, emitted: null, overlap: 0,
+      specGain: null, turns: [], verdict: null,
+      plan: null, second: null
+    };
+  }
+
+  // A block is {lane, from, to (null = still open), kind, label, gen}
+  function add(b) { b.gen = b.gen || S.gen; S.blocks.push(b); return b; }
+
+  function plan() {
+    var p = {};
+    p.voiceEnd    = T.userSpeech;                  // last frame of sound
+    p.vadClose    = p.voiceEnd + T.minSilence;     // turn officially over
+    p.asrStart    = T.asrLag;
+    p.asrEnd      = p.vadClose + T.asrTail;        // final transcript lands
+    p.tts         = S.warm ? T.ttsWarm : T.ttsCold;
+    // Speculation starts inside the hangover; without it, nothing starts until
+    // the final transcript.
+    p.specAt      = p.voiceEnd + T.specStable;
+    p.thinkStart  = (S.mode === 'golive' && S.spec) ? p.specAt : p.asrEnd;
+    p.speakStart  = p.thinkStart + T.firstToken + p.tts;
+    p.speakLen    = REPLY.length * T.msPerChar;
+    p.speakEnd    = p.speakStart + p.speakLen;
+    // What it would have been without speculating, for the head-start readout.
+    p.baseline    = p.asrEnd + T.firstToken + p.tts;
+    return p;
+  }
+
+  function layOutTurn() {
+    var p = S.plan;
+    add({ lane: 'listen',     from: 0, to: p.voiceEnd, kind: 'live', label: 'user speaking' });
+    add({ lane: 'listen',     from: p.voiceEnd, to: p.vadClose, kind: 'wait',
+          label: 'min_silence ' + T.minSilence + 'ms' });
+    add({ lane: 'transcribe', from: p.asrStart, to: p.asrEnd, kind: 'live', label: 'streaming ASR' });
+    add({ lane: 'think',      from: p.thinkStart, to: p.speakStart, kind: 'live',
+          label: (S.mode === 'golive' && S.spec) ? 'speculative' : 'backend' });
+    add({ lane: 'speak',      from: p.speakStart, to: p.speakEnd, kind: 'live',
+          label: S.warm ? 'TTS out' : 'TTS out (cold socket)' });
+    S.marks = [
+      { at: p.voiceEnd, label: 'voice ends', color: 'var(--listen)' },
+      { at: p.vadClose, label: 'VAD close',  color: 'var(--ink-dim)', right: true }
+    ];
+    if (S.mode === 'golive' && S.spec) {
+      S.marks.push({ at: p.specAt, label: 'speculate', color: 'var(--think)' });
+    }
+    // Every stage in the service is measured from VAD close, so this readout is
+    // too — and it goes negative when the guess got far enough ahead.
+    S.firstAudio = p.speakStart - p.vadClose;
+    S.specGain = (S.mode === 'golive' && S.spec) ? (p.baseline - p.speakStart) : 0;
+  }
+
+  function start() {
+    stop();
+    S = blank();
+    S.plan = plan();
+    S.running = true;
+    layOutTurn();
+
+    S.turns = [
+      { who: 'you', text: USER_SAID, partial: true },
+      { who: 'assistant', text: '', partial: true }
+    ];
+
+    setVerdict(S.mode === 'golive'
+      ? 'Running. <b>Interrupt</b> is live the moment <em>speak</em> lights.'
+      : 'Running as a half-duplex cascade: <em>listen</em> shuts off for the whole of <em>speak</em>.');
+
+    el('run').disabled = true;
+    el('reset').disabled = false;
+    tick();
+  }
+
+  function interrupt() {
+    if (!S || !S.running || S.cut !== null) return;
+    var now = S.t;
+    var sp = current('speak');
+    if (!sp) return;
+
+    if (S.mode === 'half') {
+      // The audio exists. Nobody is listening to it.
+      add({ lane: 'listen', from: now, to: Math.min(now + 1100, sp.to), kind: 'ghost', label: 'not heard' });
+      S.cut = 'ignored';
+      setVerdict('That input arrived while the floor was taken. A half-duplex cascade is not ' +
+        'listening then, so it is <b>never transcribed and never answered</b> — the hatched block is ' +
+        'audio that existed and went nowhere. The assistant talks to the end regardless.');
+      return;
+    }
+
+    // golive: listening the whole time, so the barge-in registers.
+    var opened = now;
+    var cutAt  = now + T.bargeMin;
+    add({ lane: 'listen', from: opened, to: cutAt + 700, kind: 'live', label: 'barge-in' });
+
+    S.cutAt = cutAt;
+    S.cut = 'pending';
+    S.pendingCut = { sp: sp, cutAt: cutAt };
+    setVerdict('Heard. Waiting out <span class="k">barge_in_min_speech_ms</span> (' + T.bargeMin +
+      ' ms) so a cough does not take the floor.');
+  }
+
+  function applyCut() {
+    var sp = S.pendingCut.sp, cutAt = S.pendingCut.cutAt;
+    var emitted = Math.round(sp.to - sp.from);
+    var played  = Math.round(cutAt - sp.from);
+
+    // Truncate the speak block; everything after is generated-and-discarded.
+    add({ lane: 'speak', from: cutAt, to: sp.to, kind: 'killed', label: 'discarded' });
+    sp.to = cutAt;
+
+    // The think lane is still producing for a turn that no longer exists.
+    var th = S.blocks.filter(function (b) { return b.lane === 'think' && b.kind === 'live'; }).pop();
+    if (th && th.to > cutAt) {
+      add({ lane: 'think', from: cutAt, to: th.to, kind: 'killed', label: 'cancelled' });
+      th.to = cutAt;
+    }
+
+    S.gen += 1;
+    S.played = played;
+    S.emitted = emitted;
+
+    var frac = Math.max(0, Math.min(1, played / emitted));
+    var keep = Math.round(REPLY.length * frac);
+    S.turns[1].heard = REPLY.slice(0, keep);
+    S.turns[1].lost  = REPLY.slice(keep);
+    S.turns[1].cut   = played;
+    S.turns[1].partial = false;
+
+    // A new turn begins from the interruption. The synthesis socket is already
+    // warm by now whatever the toggle says — it is the first turn that is cold.
+    var t2voiceEnd = cutAt + 700;
+    var t2think    = t2voiceEnd + T.minSilence + T.asrTail;
+    var t2speak    = t2think + T.firstToken + T.ttsWarm;
+    add({ lane: 'listen',     from: t2voiceEnd, to: t2voiceEnd + T.minSilence, kind: 'wait',
+          label: 'min_silence' });
+    add({ lane: 'transcribe', from: cutAt, to: t2think, kind: 'live', label: 'new turn' });
+    add({ lane: 'think',      from: t2think, to: t2speak, kind: 'live', label: 'backend' });
+    add({ lane: 'speak',      from: t2speak, to: t2speak + REPLY2.length * T.msPerChar, kind: 'live', label: 'TTS out' });
+    S.turns.push({ who: 'you', text: '不用了，先别占', partial: false });
+    S.turns.push({ who: 'assistant', text: '', partial: true, from: t2speak, full: REPLY2 });
+    S.second = { speakFrom: t2speak, full: REPLY2 };
+
+    S.cut = 'done';
+    setVerdict('Cut at <b>' + played + ' ms</b> of ' + emitted + ' ms emitted. Generation moved to <b>' +
+      S.gen + '</b>, so the synthesis and backend work still in flight was dropped rather than raced. ' +
+      'Only the black text — the part that reached you — enters conversation history.');
+  }
+
+  function current(lane) {
+    var out = null;
+    S.blocks.forEach(function (b) {
+      if (b.lane === lane && b.kind === 'live' && b.from <= S.t && b.to > S.t) out = b;
+    });
+    return out;
+  }
+
+  // --- render ----------------------------------------------------------------
+  function pct(ms) { return (Math.max(0, Math.min(WINDOW, ms)) / WINDOW) * 100; }
+
+  function draw() {
+    Object.keys(lanes).forEach(function (k) { lanes[k].track.innerHTML = ''; lanes[k].root.dataset.on = '0'; });
+
+    S.blocks.forEach(function (b) {
+      var to = (b.to === null ? S.t : Math.min(b.to, Math.max(b.from, S.t)));
+      if (to <= b.from) return;
+      var d = document.createElement('div');
+      d.className = 'blk' +
+        (b.kind === 'ghost' ? ' ghost' : '') +
+        (b.kind === 'wait' ? ' wait' : '') +
+        (b.kind === 'killed' ? ' killed' : '');
+      d.style.left = pct(b.from) + '%';
+      d.style.width = (pct(to) - pct(b.from)) + '%';
+      if ((to - b.from) > 900) d.textContent = b.label;
+      d.title = b.label + ' · ' + Math.round(b.from) + '–' + Math.round(b.to === null ? S.t : b.to) + ' ms';
+      lanes[b.lane].track.appendChild(d);
+      if (b.kind === 'live' && b.from <= S.t && (b.to === null || b.to > S.t)) lanes[b.lane].root.dataset.on = '1';
+    });
+
+    if (S.cutAt !== null && S.cut === 'done') {
+      ['speak', 'think'].forEach(function (k) {
+        var c = document.createElement('div');
+        c.className = 'cutline';
+        c.style.left = pct(S.cutAt) + '%';
+        lanes[k].track.appendChild(c);
+      });
+    }
+
+    Object.keys(lanes).forEach(function (k) {
+      var p = document.createElement('div');
+      p.className = 'playhead';
+      p.style.left = pct(S.t) + '%';
+      lanes[k].track.appendChild(p);
+    });
+
+    drawMarks();
+
+    el('clock').textContent = String(Math.round(S.t)).padStart(4, '0');
+    el('gen').textContent = S.gen;
+
+    var fa = el('r-first');
+    if (S.firstAudio === null) {
+      fa.textContent = '—';
+      fa.className = 'val';
+    } else {
+      var v = Math.round(S.firstAudio);
+      fa.textContent = (v < 0 ? '−' + Math.abs(v) : v) + ' ms';
+      fa.className = 'val' + (v < 0 ? ' good' : '');
+    }
+
+    if (S.played === null) {
+      el('r-played').textContent = '—';
+      el('r-played').classList.remove('hot');
+    } else {
+      el('r-played').textContent = S.played + ' / ' + S.emitted;
+      el('r-played').classList.add('hot');
+    }
+    el('r-spec').textContent = S.specGain === null ? '—' : (S.specGain > 0 ? '−' + Math.round(S.specGain) + ' ms' : 'none');
+    el('r-overlap').textContent = Math.round(S.overlap) + ' ms';
+
+    drawScript();
+  }
+
+  function drawMarks() {
+    var box = el('marks');
+    box.innerHTML = '';
+    S.marks.forEach(function (m) {
+      if (m.at > WINDOW) return;
+      var d = document.createElement('div');
+      d.className = 'mark' + (m.right ? ' right' : '');
+      d.style.left = pct(m.at) + '%';
+      d.style.setProperty('--m', m.color);
+      var b = document.createElement('b');
+      b.textContent = m.label;
+      d.appendChild(b);
+      box.appendChild(d);
+    });
+  }
+
+  function drawScript() {
+    var box = el('script');
+    box.innerHTML = '';
+    S.turns.forEach(function (t) {
+      var row = document.createElement('div');
+      row.className = 'turn ' + (t.who === 'you' ? 'user' : 'bot') + (t.partial ? ' partial' : '');
+      var who = document.createElement('div');
+      who.className = 'who';
+      who.textContent = t.who;
+      var said = document.createElement('div');
+      said.className = 'said';
+      if (t.heard !== undefined) {
+        said.textContent = t.heard;
+        var lost = document.createElement('span');
+        lost.className = 'lost';
+        lost.textContent = t.lost;
+        said.appendChild(lost);
+      } else {
+        said.textContent = t.text;
+      }
+      row.appendChild(who);
+      row.appendChild(said);
+      if (t.cut) {
+        var n = document.createElement('div');
+        n.className = 'note';
+        n.textContent = 'interrupted after ' + t.cut + ' ms — only the black text entered history';
+        row.appendChild(n);
+      }
+      box.appendChild(row);
+    });
+  }
+
+  function setVerdict(html) { el('verdict').innerHTML = html; }
+
+  // --- clock -----------------------------------------------------------------
+  var last = 0;
+  function tick(ts) {
+    if (!S.running) return;
+    if (!last) last = ts || performance.now();
+    var nowTs = ts || performance.now();
+    var dt = Math.min(70, nowTs - last);
+    last = nowTs;
+    S.t += dt;
+
+    if (S.cut === 'pending' && S.t >= S.pendingCut.cutAt) applyCut();
+
+    // Reveal the user's words as they are "recognised".
+    var tr = current('transcribe');
+    if (tr && S.turns[0].partial) {
+      var f = Math.max(0, Math.min(1, (S.t - S.plan.asrStart) / (S.plan.voiceEnd - S.plan.asrStart)));
+      S.turns[0].text = USER_SAID.slice(0, Math.round(USER_SAID.length * f));
+    }
+    if (S.t >= S.plan.asrEnd) { S.turns[0].text = USER_SAID; S.turns[0].partial = false; }
+
+    // Reveal the reply as it is spoken.
+    var sp = current('speak');
+    if (sp && S.turns[1].heard === undefined) {
+      var g = Math.max(0, Math.min(1, (S.t - S.plan.speakStart) / (S.plan.speakEnd - S.plan.speakStart)));
+      S.turns[1].text = REPLY.slice(0, Math.round(REPLY.length * g));
+      S.turns[1].partial = g < 1;
+    }
+    if (S.second && S.t >= S.second.speakFrom) {
+      var last2 = S.turns[S.turns.length - 1];
+      var h = Math.max(0, Math.min(1, (S.t - S.second.speakFrom) / (S.second.full.length * T.msPerChar)));
+      last2.text = S.second.full.slice(0, Math.round(S.second.full.length * h));
+      last2.partial = h < 1;
+    }
+
+    // Overlap is the headline claim: listening and speaking at the same instant.
+    var listening = !!current('listen');
+    if (listening && !!sp) S.overlap += dt;
+
+    el('interrupt').disabled = !(S.mode === 'half' ? !!sp : (!!sp && S.cut === null));
+
+    draw();
+
+    var end = S.blocks.reduce(function (m, b) { return Math.max(m, b.to === null ? S.t : b.to); }, 0);
+    if (S.t >= Math.min(WINDOW, end + 400)) { finish(); return; }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function finish() {
+    S.running = false;
+    S.done = true;
+    el('interrupt').disabled = true;
+    el('run').disabled = false;
+    S.turns.forEach(function (t) { t.partial = false; });
+    draw();
+    if (S.cut === null) {
+      setVerdict(S.mode === 'golive'
+        ? 'Turn complete, uninterrupted. First audio <b>' + Math.round(S.firstAudio) +
+          ' ms</b> after the VAD closed the turn' +
+          (S.specGain > 0 ? ', of which <b>' + Math.round(S.specGain) + ' ms</b> was bought by starting inside the pause.' : '.') +
+          ' Now run it again and press <b>Interrupt</b> while <em>speak</em> is lit.'
+        : 'Turn complete. Nothing here needs a generation counter or truncation accounting — ' +
+          'which is exactly why a half-duplex cascade is simpler, and why it cannot be interrupted.');
+    }
+  }
+
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null; last = 0;
+  }
+
+  // --- resting state: a finished turn, so the page shows what it does --------
+  function rest() {
+    stop();
+    S = blank();
+    S.plan = plan();
+    S.t = WINDOW;
+    layOutTurn();
+    S.turns = [
+      { who: 'you', text: USER_SAID, partial: false },
+      { who: 'assistant', text: REPLY, partial: false }
+    ];
+    el('interrupt').disabled = true;
+    el('run').disabled = false;
+    draw();
+    el('clock').textContent = '0000';
+  }
+
+  // --- ticks -----------------------------------------------------------------
+  (function ticks() {
+    var box = el('ticks');
+    for (var ms = 0; ms <= WINDOW; ms += 1000) {
+      var d = document.createElement('div');
+      d.className = 'tick';
+      d.style.left = pct(ms) + '%';
+      d.textContent = (ms / 1000) + 's';
+      box.appendChild(d);
+    }
+  })();
+
+  // --- wiring ----------------------------------------------------------------
+  el('run').addEventListener('click', start);
+  el('interrupt').addEventListener('click', interrupt);
+  el('reset').addEventListener('click', function () {
+    setVerdict('Reset. The lanes show a finished turn; press <b>Run a turn</b> to watch one happen.');
+    rest();
+  });
+
+  function setMode(mode) {
+    el('m-golive').setAttribute('aria-pressed', String(mode === 'golive'));
+    el('m-half').setAttribute('aria-pressed', String(mode === 'half'));
+    rest();
+    setVerdict(mode === 'golive'
+      ? 'golive: listening never stops. The bar for interrupting rises during playback instead.'
+      : 'Half duplex: the listener is switched off for the duration of <em>speak</em>. Nothing said then is heard.');
+  }
+  el('m-golive').addEventListener('click', function () { setMode('golive'); });
+  el('m-half').addEventListener('click', function () { setMode('half'); });
+
+  el('spec').addEventListener('change', function () {
+    rest();
+    setVerdict(el('spec').checked
+      ? 'Speculation on: <em>think</em> starts <b>' + T.specStable + ' ms</b> into the pause, while the VAD is ' +
+        'still waiting out <span class="k">min_silence_ms</span>. A wrong guess costs one cancelled generation.'
+      : 'Speculation off: nothing starts until the VAD closes the turn and the final transcript lands. ' +
+        'Watch <em>think</em> sit entirely to the right of <span class="mono">VAD close</span>.');
+  });
+
+  el('warm').addEventListener('change', function () {
+    rest();
+    setVerdict(el('warm').checked
+      ? 'Prewarmed: the synthesis socket was opened when the session started and again when the mic ' +
+        'opened, so <em>speak</em> only pays for the audio itself.'
+      : 'Cold: a dial and a <span class="mono">task_start</span> handshake now sit between the first ' +
+        'token and the first syllable. It is the first turn of a session that pays this — which is why ' +
+        'first turns used to feel worse than the rest.');
+  });
+
+  // Scripted demos from the cards.
+  document.querySelectorAll('[data-demo]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var kind = b.dataset.demo;
+      if (kind === 'spec') {
+        el('spec').checked = true;
+        setMode('golive');
+        start();
+        setVerdict('Speculation on. <em>think</em> lights inside the hatched hangover, before ' +
+          '<span class="mono">VAD close</span>. Clear the box and run it again: the ' +
+          '<span class="mono">head start</span> readout is the difference.');
+        return;
+      }
+      if (kind === 'cold') {
+        el('warm').checked = false;
+        setMode('golive');
+        start();
+        setVerdict('Cold socket. The gap between <em>think</em> and <em>speak</em> now carries a dial ' +
+          'and a handshake. Re-tick <em>prewarm</em> to move them off the critical path, where the ' +
+          'engine pays for them at session open instead.');
+        return;
+      }
+      setMode(kind === 'deaf' ? 'half' : 'golive');
+      start();
+      var fire = function () {
+        if (!S.running) return;
+        if (current('speak') && S.t > (S.plan.speakStart + 900)) { interrupt(); return; }
+        requestAnimationFrame(fire);
+      };
+      requestAnimationFrame(fire);
+    });
+  });
+
+  rest();
+  setVerdict('A finished turn, at rest. Press <b>Run a turn</b> to watch the four channels fill in ' +
+    'real time — then interrupt it while <em>speak</em> is lit.');
+})();
+</script>
