@@ -386,6 +386,14 @@ func (p *Player) finishTurn(seg Segment) {
 		p.mu.Unlock()
 		return
 	}
+	// A turn under grace ends here when the soft stop landed between segments,
+	// so no further mark was ever coming. It still ended early because the user
+	// spoke, so it is reported the same way as one that ran to a mark — a
+	// grace that resolved only on a mark would wait for one that never arrives.
+	graced := p.graceTurn == seg.TurnID
+	p.graceTurn = ""
+	p.graceMarks = 0
+
 	remaining := p.emittedMS - p.heardMSLocked()
 	totalMS := p.emittedMS
 	text := p.fullSpokenLocked()
@@ -406,6 +414,17 @@ func (p *Player) finishTurn(seg Segment) {
 	p.setSpeakingLocked(false)
 	p.mu.Unlock()
 
+	if graced {
+		if p.onTruncate != nil {
+			p.onTruncate(TruncationReport{
+				TurnID:     seg.TurnID,
+				PlayedMS:   int64(totalMS),
+				TotalMS:    int64(totalMS),
+				SpokenText: text,
+			})
+		}
+		return
+	}
 	if p.onTurnDone != nil {
 		p.onTurnDone(seg.TurnID, int64(totalMS), text)
 	}

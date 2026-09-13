@@ -88,6 +88,7 @@ type Turn struct {
 	speechEndMS     int64
 	transcriptFinal time.Time
 	firstToken      time.Time
+	firstSegment    time.Time
 	firstAudio      time.Time
 	firstAudioOut   time.Time
 	completedAt     time.Time
@@ -100,6 +101,7 @@ type Timings struct {
 	SpeechEndMS     int64
 	TranscriptFinal time.Time
 	FirstToken      time.Time
+	FirstSegment    time.Time
 	FirstAudio      time.Time
 	FirstAudioOut   time.Time
 	CompletedAt     time.Time
@@ -115,6 +117,7 @@ func (t *Turn) Timings() Timings {
 		SpeechEndMS:     t.speechEndMS,
 		TranscriptFinal: t.transcriptFinal,
 		FirstToken:      t.firstToken,
+		FirstSegment:    t.firstSegment,
 		FirstAudio:      t.firstAudio,
 		FirstAudioOut:   t.firstAudioOut,
 		CompletedAt:     t.completedAt,
@@ -144,6 +147,12 @@ func (t *Turn) MarkTranscriptFinal() { t.stamp(&t.transcriptFinal) }
 
 // MarkFirstToken records the first backend token, the think-channel latency.
 func (t *Turn) MarkFirstToken() { t.stampOnce(&t.firstToken) }
+
+// MarkFirstSegment records when the first speakable segment was handed to the
+// synthesizer. The gap from FirstToken to here is time spent waiting for a
+// sentence boundary; the gap from here to FirstAudio is the provider. Without
+// the split, a slow reply and a late comma look identical.
+func (t *Turn) MarkFirstSegment() { t.stampOnce(&t.firstSegment) }
 
 // MarkFirstAudio records the first synthesized audio for this turn.
 func (t *Turn) MarkFirstAudio() { t.stampOnce(&t.firstAudio) }

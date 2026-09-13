@@ -309,7 +309,11 @@ func TestEngineSpeculatesAndCommits(t *testing.T) {
 		return ok && d.Delegation.Reason == "speculative"
 	})
 	if ev == nil {
-		t.Skip("the recognizer never stabilised before the utterance closed; speculation is opportunistic")
+		// Not skipped. A recognizer goes quiet once its hypothesis settles, so
+		// "stable" and "no further events" are the same condition — if
+		// stability is only evaluated when an event arrives, speculation can
+		// never fire at all, and a skip here hides exactly that.
+		t.Fatal("no speculative delegation: the transcript settled and nothing acted on it")
 	}
 	waitFor(t, "assistant audio", 5*time.Second, func() bool { return c.audioMS() > 100 })
 }
@@ -713,4 +717,40 @@ func TestEngineResetsTTSOnInterrupt(t *testing.T) {
 	waitFor(t, "a fresh synthesis session", 5*time.Second, func() bool {
 		return tts.openCount() > opensBefore
 	})
+}
+
+// TestEngineSpeculatesWhenTheRecognizerGoesQuiet is the regression test for the
+// reason speculation never fired in production.
+//
+// The mock recognizer, like a real one, emits only when its hypothesis changes.
+// So the moment the transcript settles it stops sending — which is precisely
+// the moment speculation should start. Evaluating stability only on arrival
+// meant the check never ran during the silence that proved it, and every turn
+// paid the backend's full time-to-first-token after the final transcript.
+func TestEngineSpeculatesWhenTheRecognizerGoesQuiet(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Speculative = true
+	cfg.Duplex.SpeculativeStableMS = 200
+	cfg.Duplex.SpeculativeMinChars = 6
+	c := newCollector(cfg.ClientRate)
+	e, _ := newTestEngine(t, cfg, c)
+
+	// Long enough that the hypothesis reaches its full length and then stops
+	// changing while the user is still talking.
+	speak(e, cfg.ClientRate, 2800)
+
+	waitFor(t, "a speculative delegation", 3*time.Second, func() bool {
+		return c.find(func(a any) bool {
+			d, ok := a.(live.DelegationCreatedEvent)
+			return ok && d.Delegation.Reason == "speculative"
+		}) != nil
+	})
+
+	// Audio must already be flowing before the user has finished speaking:
+	// that head start is the entire benefit, and it is why the backend's
+	// time-to-first-token stops being visible to the caller.
+	waitFor(t, "audio while the user is still talking", 4*time.Second, func() bool {
+		return c.audioMS() > 150
+	})
+	pause(e, cfg.ClientRate, 700)
 }

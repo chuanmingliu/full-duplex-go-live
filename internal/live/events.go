@@ -383,6 +383,10 @@ type TurnMetricsEvent struct {
 	// speculation started the turn before the user stopped — which is the point
 	// of speculating, so the sign is meaningful, not an error.
 	LLMFirstTokenMS int64 `json:"llm_first_token_ms"`
+	// FirstSegmentMS is speech end to the first speakable segment reaching the
+	// synthesizer. FirstSegment minus FirstToken is time spent waiting for a
+	// sentence boundary; TTSFirstAudio minus FirstSegment is the provider.
+	FirstSegmentMS int64 `json:"first_segment_ms"`
 	// TTSFirstAudioMS is speech end to the first synthesized PCM.
 	TTSFirstAudioMS int64 `json:"tts_first_audio_ms"`
 

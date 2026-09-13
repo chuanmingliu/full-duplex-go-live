@@ -94,6 +94,17 @@ func (s *Segmenter) Push(delta string) []string {
 	return out
 }
 
+// FlushFirst emits whatever is buffered as the first segment, ignoring
+// punctuation. It exists so time-to-first-audio cannot be held hostage by a
+// reply that opens with a long unpunctuated clause.
+func (s *Segmenter) FlushFirst() string {
+	text := Normalize(string(s.buf))
+	s.buf = s.buf[:0]
+	s.depth = 0
+	s.first = false
+	return text
+}
+
 // Flush emits whatever is left, typically at end of turn.
 func (s *Segmenter) Flush() string {
 	text := Normalize(string(s.buf))

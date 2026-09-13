@@ -24,6 +24,8 @@
     "reset_tts_on_interrupt": false,
     "playback_paced": true,
     "delegation_mode": "responses",
-    "max_append_chars": 1500
+    "max_append_chars": 1500,
+    "stream_first_chunk_chars": 6,
+    "stream_first_chunk_deadline_ms": 220
   }
 }

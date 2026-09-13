@@ -537,6 +537,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 
 func (e *Engine) onTick() {
 	e.publishState()
+	e.maybeSpeculate()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
 
@@ -691,6 +692,28 @@ func (e *Engine) emitInputTranscript(run *asrRun, text string, final bool) {
 		return
 	}
 	e.deps.Emit(delta)
+}
+
+// maybeSpeculate re-checks whether the partial transcript has settled.
+//
+// This runs on the tick, not only when a hypothesis arrives, and the
+// distinction is the whole feature. A transcript becomes stable exactly when
+// the recognizer stops sending — so evaluating stability only on arrival means
+// the check never runs during the silence that proves it. Speculation could
+// only ever fire if the provider happened to repeat itself, which Tencent does
+// not, so it never fired at all: every turn waited for the final transcript and
+// paid the backend's full time-to-first-token afterwards.
+func (e *Engine) maybeSpeculate() {
+	if !e.opts.Speculative || e.waitingTool || e.muted {
+		return
+	}
+	run := e.asrRun
+	if run == nil || run.lastText == "" || e.watch.Fired() {
+		return
+	}
+	if e.watch.Observe(run.lastText, time.Now()) {
+		e.startSpeculativeTurn(run.lastText)
+	}
 }
 
 // --- think channel ---
@@ -986,6 +1009,15 @@ func (p *speechPipe) run() {
 		MaxChunkChars:   p.e.opts.Cfg.Duplex.StreamMaxChunkChars,
 	})
 
+	// The first segment normally waits for punctuation. On a reply that opens
+	// with a long clause it can wait a surprisingly long time, and every
+	// millisecond of it is silence the caller hears. This bounds the wait:
+	// once text has started arriving, whatever has accumulated is spoken by the
+	// deadline whether or not a boundary turned up.
+	var firstDeadline <-chan time.Time
+	deadline := time.Duration(p.e.opts.Cfg.Duplex.StreamFirstChunkDeadlineMS) * time.Millisecond
+	spoke := false
+
 consume:
 	for {
 		if p.soft.Load() {
@@ -994,11 +1026,31 @@ consume:
 		select {
 		case <-p.ctx.Done():
 			return
+		case <-firstDeadline:
+			firstDeadline = nil
+			if spoke {
+				continue
+			}
+			forced := seg.FlushFirst()
+			if forced == "" {
+				continue
+			}
+			p.e.log.Debug("speak: first segment flushed on deadline",
+				"turn", p.turn.ID, "chars", len([]rune(forced)), "ms", deadline.Milliseconds())
+			spoke = true
+			if !p.speak(forced) {
+				return
+			}
 		case text, ok := <-p.in:
 			if !ok {
 				break consume
 			}
+			if firstDeadline == nil && !spoke && deadline > 0 {
+				firstDeadline = time.After(deadline)
+			}
 			for _, ready := range seg.Push(text) {
+				spoke = true
+				firstDeadline = nil
 				if !p.speak(ready) {
 					return
 				}
@@ -1061,6 +1113,7 @@ func (p *speechPipe) speak(text string) bool {
 		return false
 	}
 
+	p.turn.MarkFirstSegment()
 	p.e.player.Enqueue(Segment{
 		Kind:     SegBegin,
 		Gen:      p.turn.Generation,
@@ -1382,6 +1435,7 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 		SpeechEndMS:     tm.SpeechEndMS,
 		ASRFinalMS:      ms(tm.TranscriptFinal),
 		LLMFirstTokenMS: ms(tm.FirstToken),
+		FirstSegmentMS:  ms(tm.FirstSegment),
 		TTSFirstAudioMS: ms(tm.FirstAudio),
 		FirstAudioOutMS: ms(tm.FirstAudioOut),
 		TurnCompleteMS:  ms(tm.CompletedAt),
@@ -1403,6 +1457,7 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 		"first_audio_out_ms", ev.FirstAudioOutMS,
 		"asr_final_ms", ev.ASRFinalMS,
 		"llm_first_token_ms", ev.LLMFirstTokenMS,
+		"first_segment_ms", ev.FirstSegmentMS,
 		"tts_first_audio_ms", ev.TTSFirstAudioMS,
 		"speculative", turn.Speculative,
 		"truncated", truncated)

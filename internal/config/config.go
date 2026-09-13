@@ -137,6 +137,11 @@ type DuplexConfig struct {
 	// segment. A short first segment buys a dramatically earlier first
 	// syllable; later segments should be longer for better prosody.
 	StreamFirstChunkChars int `json:"stream_first_chunk_chars"`
+	// StreamFirstChunkDeadlineMS bounds how long the first segment waits for a
+	// sentence boundary before being spoken anyway. Punctuation arrives when
+	// the model chooses; the caller's patience does not, and this is silence
+	// they are listening to. 0 disables the deadline.
+	StreamFirstChunkDeadlineMS int `json:"stream_first_chunk_deadline_ms"`
 	// StreamMinChunkChars is the floor for subsequent segments.
 	StreamMinChunkChars int `json:"stream_min_chunk_chars"`
 	// StreamMaxChunkChars force-flushes a segment that never hits punctuation.
@@ -201,30 +206,31 @@ func Default() Config {
 		DisableThinking: true,
 		HistoryTurns:    16,
 		Duplex: DuplexConfig{
-			Backchannel:           true,
-			BackchannelAfterMS:    2600,
-			BackchannelEveryMS:    4200,
-			BackchannelPhrases:    []string{"嗯", "好的", "我在听"},
-			HoldingFiller:         true,
-			HoldingFillerAfterMS:  1500,
-			HoldingFillerPhrases:  []string{"我看一下", "稍等一下", "让我查一下"},
-			Speculative:           true,
-			SpeculativeStableMS:   260,
-			SpeculativeMinChars:   6,
-			AllowBargeIn:          true,
-			OnNewQuery:            "cut",
-			ResetTTSOnInterrupt:   false,
-			PlaybackChunkMS:       40,
-			PlaybackPaced:         true,
-			PlaybackLeadMS:        300,
-			StreamFirstChunkChars: 8,
-			StreamMinChunkChars:   24,
-			StreamMaxChunkChars:   120,
-			DelegationMode:        "auto",
-			DelegateMinChars:      1,
-			MaxAppendChars:        1500,
-			SessionMaxSeconds:     3600,
-			IdleTimeoutSeconds:    300,
+			Backchannel:                true,
+			BackchannelAfterMS:         2600,
+			BackchannelEveryMS:         4200,
+			BackchannelPhrases:         []string{"嗯", "好的", "我在听"},
+			HoldingFiller:              true,
+			HoldingFillerAfterMS:       1500,
+			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
+			Speculative:                true,
+			SpeculativeStableMS:        260,
+			SpeculativeMinChars:        6,
+			AllowBargeIn:               true,
+			OnNewQuery:                 "cut",
+			ResetTTSOnInterrupt:        false,
+			PlaybackChunkMS:            40,
+			PlaybackPaced:              true,
+			PlaybackLeadMS:             300,
+			StreamFirstChunkChars:      6,
+			StreamFirstChunkDeadlineMS: 220,
+			StreamMinChunkChars:        24,
+			StreamMaxChunkChars:        120,
+			DelegationMode:             "auto",
+			DelegateMinChars:           1,
+			MaxAppendChars:             1500,
+			SessionMaxSeconds:          3600,
+			IdleTimeoutSeconds:         300,
 		},
 		VAD: VADProfile{
 			FrameMS:            20,

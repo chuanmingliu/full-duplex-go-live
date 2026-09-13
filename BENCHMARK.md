@@ -123,14 +123,37 @@ Two independent instruments agreeing to the millisecond is the reason to trust
 either. If that subtraction stops working, fix the measurement before believing
 any result it produces.
 
+## Where the time actually goes
+
+Stage figures from a real 110-second call against Tencent + DeepSeek + MiniMax,
+twelve turns, measured from VAD close:
+
+| stage | p50 | share |
+| --- | ---: | ---: |
+| backend time-to-first-token | 724 ms | 47% |
+| `vad.min_silence_ms` | 380 ms | 25% |
+| segmentation + synthesis | 335 ms | 22% |
+| ASR final | 102 ms | 7% |
+
+Two things follow. The backend dominates, so the lever that matters is not
+making the cascade faster but **starting the backend earlier** — which is what
+speculation is for. And the silence threshold is the second largest term, which
+is worth remembering before tuning anything downstream of it.
+
+`first_segment_ms` splits the third row: the gap from `llm_first_token_ms` to it
+is time spent waiting for a sentence boundary, and the gap from it to
+`tts_first_audio_ms` is the synthesis provider. A slow reply and a late comma
+look identical without that split, and they have opposite fixes.
+
 ## The service's own numbers
 
 Every turn emits `golive.turn.metrics`, all stages measured from VAD close:
 
 ```json
 {"type":"golive.turn.metrics","turn_id":"item_1","speech_end_ms":2180,
- "asr_final_ms":41,"llm_first_token_ms":516,"tts_first_audio_ms":1180,
- "first_audio_out_ms":1204,"turn_complete_ms":4106,"output_audio_ms":2902}
+ "asr_final_ms":41,"llm_first_token_ms":516,"first_segment_ms":690,
+ "tts_first_audio_ms":1180,"first_audio_out_ms":1204,
+ "turn_complete_ms":4106,"output_audio_ms":2902}
 ```
 
 `llm_first_token_ms` goes **negative** on a speculative turn, because the
