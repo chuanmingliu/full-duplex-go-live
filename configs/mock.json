@@ -11,10 +11,18 @@
   "client_rate": 24000,
   "duplex": {
     "backchannel": false,
+    "holding_filler": true,
+    "holding_filler_after_ms": 1500,
+    "holding_filler_phrases": [
+      "我看一下",
+      "稍等一下",
+      "让我查一下"
+    ],
     "speculative": true,
     "allow_barge_in": true,
     "on_new_query": "cut",
     "playback_paced": true,
-    "delegation_mode": "responses"
+    "delegation_mode": "responses",
+    "max_append_chars": 1500
   }
 }

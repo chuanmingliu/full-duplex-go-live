@@ -59,6 +59,17 @@ func (c *collector) emit(event any) {
 		c.counts[ev.Type]++
 	case live.ResponseEventEnvelope:
 		c.counts[ev.Type]++
+	case live.BackchannelEvent:
+		c.counts[ev.Type]++
+	case live.SessionStartedEvent:
+		c.counts[ev.Type]++
+	case live.SessionClosedEvent:
+		c.counts[ev.Type]++
+	default:
+		// An event type the collector does not know about is a gap in the
+		// harness, not something to swallow: an assertion on it would silently
+		// read zero forever.
+		c.counts["<uncounted>"]++
 	}
 }
 
@@ -505,5 +516,87 @@ func TestEngineFinishSentencePolicyCompletesTheSentence(t *testing.T) {
 	}
 	if ev.Text == "" {
 		t.Error("no spoken text reported; history would lose the sentence")
+	}
+}
+
+// slowBackend delays its first token, which is what the holding filler exists
+// to cover.
+type slowBackend struct{ delay time.Duration }
+
+func (s *slowBackend) Name() string { return "slow" }
+
+func (s *slowBackend) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	out := make(chan provider.LLMDelta, 8)
+	go func() {
+		defer close(out)
+		select {
+		case <-time.After(s.delay):
+		case <-ctx.Done():
+			return
+		}
+		for _, r := range "好的，已经查到了。" {
+			select {
+			case out <- provider.LLMDelta{Text: string(r)}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// TestEngineHoldsTheFloorWhileTheBackendWorks covers the behaviour a delegating
+// agent needs: the conversational layer keeps talking while the slow half runs
+// elsewhere, instead of going silent long enough to sound like a dropped call.
+func TestEngineHoldsTheFloorWhileTheBackendWorks(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.HoldingFiller = true
+	cfg.Duplex.HoldingFillerAfterMS = 300
+	cfg.Duplex.HoldingFillerPhrases = []string{"我看一下"}
+	c := newCollector(cfg.ClientRate)
+
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "filler",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+	}, Deps{
+		ASR:  mock.NewASR("明天的天气"),
+		LLM:  &slowBackend{delay: 2500 * time.Millisecond},
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.Start(ctx)
+	defer e.Close()
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+
+	waitFor(t, "a holding phrase while the backend works", 4*time.Second, func() bool {
+		return c.count(live.ExtBackchannel) > 0
+	})
+	// And audio for it, not merely the event.
+	waitFor(t, "filler audio", 3*time.Second, func() bool { return c.audioMS() > 100 })
+}
+
+// TestEngineSkipsTheFillerOnAFastAnswer guards the cost: the filler must not
+// fire on turns that were already going to answer quickly, where it would only
+// delay the real reply.
+func TestEngineSkipsTheFillerOnAFastAnswer(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.HoldingFiller = true
+	cfg.Duplex.HoldingFillerAfterMS = 1500
+	cfg.Duplex.HoldingFillerPhrases = []string{"我看一下"}
+	c := newCollector(cfg.ClientRate)
+	e, _ := newTestEngine(t, cfg, c)
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "assistant audio", 5*time.Second, func() bool { return c.audioMS() > 200 })
+
+	if c.count(live.ExtBackchannel) != 0 {
+		t.Error("the filler fired on a fast answer, where it can only delay the real reply")
 	}
 }

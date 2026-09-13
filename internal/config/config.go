@@ -69,6 +69,22 @@ type DuplexConfig struct {
 	// BackchannelPhrases are spoken at random.
 	BackchannelPhrases []string `json:"backchannel_phrases"`
 
+	// HoldingFiller keeps the conversation alive while the backend works.
+	//
+	// This is the behaviour that makes a delegating voice agent bearable: the
+	// conversational layer is supposed to keep talking to you while the slow
+	// part runs somewhere else, rather than going silent and leaving you
+	// wondering whether the call dropped. It costs one extra synthesis, and it
+	// can delay the real answer by however long the filler takes to
+	// synthesize, so the threshold below should sit above your normal
+	// time-to-first-audio — where it fires only on turns that were going to be
+	// slow anyway.
+	HoldingFiller bool `json:"holding_filler"`
+	// HoldingFillerAfterMS is how long backend work may run silently first.
+	HoldingFillerAfterMS int `json:"holding_filler_after_ms"`
+	// HoldingFillerPhrases are spoken at random.
+	HoldingFillerPhrases []string `json:"holding_filler_phrases"`
+
 	// Speculative starts generation from a stable partial transcript.
 	Speculative bool `json:"speculative"`
 	// SpeculativeStableMS is how long a partial transcript must stop changing
@@ -120,6 +136,12 @@ type DuplexConfig struct {
 	DelegationMode string `json:"delegation_mode"`
 	// DelegateMinChars is the shortest user turn worth sending to the backend.
 	DelegateMinChars int `json:"delegate_min_chars"`
+
+	// MaxAppendChars bounds one session.instructions/thinking/commentary
+	// append. gpt-live-1 documents a 500-token cap on instruction appends;
+	// without a tokenizer this is the character-count approximation of it, and
+	// it is generous enough that ordinary use never meets it.
+	MaxAppendChars int `json:"max_append_chars"`
 
 	// SessionMaxSeconds force-closes a session; 0 disables.
 	SessionMaxSeconds int `json:"session_max_seconds"`
@@ -173,6 +195,9 @@ func Default() Config {
 			BackchannelAfterMS:    2600,
 			BackchannelEveryMS:    4200,
 			BackchannelPhrases:    []string{"嗯", "好的", "我在听"},
+			HoldingFiller:         true,
+			HoldingFillerAfterMS:  1500,
+			HoldingFillerPhrases:  []string{"我看一下", "稍等一下", "让我查一下"},
 			Speculative:           true,
 			SpeculativeStableMS:   260,
 			SpeculativeMinChars:   6,
@@ -186,6 +211,7 @@ func Default() Config {
 			StreamMaxChunkChars:   120,
 			DelegationMode:        "auto",
 			DelegateMinChars:      1,
+			MaxAppendChars:        1500,
 			SessionMaxSeconds:     3600,
 			IdleTimeoutSeconds:    300,
 		},

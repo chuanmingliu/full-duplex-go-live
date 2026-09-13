@@ -67,6 +67,12 @@ A greeting is an ordinary assistant turn: you can talk over it, and it is
 truncated honestly if you do. It is excluded from the latency summary, because
 nobody was waiting for it.
 
+The assistant also **holds the floor while the backend works**: if a delegation
+runs longer than `duplex.holding_filler_after_ms` (1500 ms) with nothing being
+said, it says something short rather than going silent. Turn it off with
+`holding_filler: false` — it costs one extra synthesis and can delay a slow
+answer by however long the filler takes to speak.
+
 To feel the difference in **On new query**, ask something that produces a long
 answer, wait until the assistant is a sentence or two in, and interrupt. Under
 `queue` you will hear the rest of the old answer before the new one — including

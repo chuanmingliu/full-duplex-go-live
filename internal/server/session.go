@@ -637,6 +637,18 @@ func (s *Session) onAppend(data []byte, eventID string, apply func(*duplex.Engin
 		s.Emit(live.NewError("invalid_request_error", "empty_content", "content must not be empty", eventID))
 		return fmt.Errorf("live: empty append content")
 	}
+	// gpt-live-1 caps an instruction append at 500 tokens. Enforcing a bound
+	// matters more than matching it exactly: these appends go straight into a
+	// context window the conversational layer cannot afford to fill, and an
+	// application that pipes a whole document through one silently degrades
+	// every later turn instead of failing.
+	if max := s.cfg.Duplex.MaxAppendChars; max > 0 && len([]rune(ev.Content)) > max {
+		s.Emit(live.NewError("invalid_request_error", "content_too_long",
+			fmt.Sprintf("content is %d characters; the limit is %d. Summarize before appending: "+
+				"this goes into the conversational context window, not the backend's.",
+				len([]rune(ev.Content)), max), eventID))
+		return fmt.Errorf("live: append content too long")
+	}
 	s.withEngine(func(e *duplex.Engine) { apply(e, ev) })
 	return nil
 }

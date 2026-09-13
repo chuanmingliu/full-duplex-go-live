@@ -83,6 +83,31 @@ There is also a transcript check: if the two stacks heard *different words* on
 the same clip, they answered different questions, and the report says so. A
 latency comparison across different answers is much weaker than it looks.
 
+## Reference points
+
+Numbers worth knowing before you read your own, so you can tell "slow" from
+"normal for this architecture":
+
+| System | Turn-taking latency | Architecture |
+| --- | --- | --- |
+| Moshi | ~0.25 s | multi-stream, one model |
+| PersonaPlex | <0.2 s | multi-stream, one model |
+| gpt-live-1 | ~0.8 s | interleaved single sequence, delegating backend |
+| a cascade | its own VAD hangover, plus ASR + LLM + TTS in series | what golive is |
+
+The gpt-live-1 and Moshi figures come from Full-Duplex-Bench via [a third-party
+analysis][dissect]; OpenAI has not published them, and the measurement method is
+not the one used here, so treat them as the right order of magnitude rather than
+a directly comparable number.
+
+The useful implication is that ~0.8 s is what a purpose-built full-duplex model
+costs, and that a cascade's floor is its silence threshold plus three network
+round trips. If your measured p50 is far above the sum of the stage timings in
+`golive.turn.metrics`, the time is going somewhere other than the providers —
+look at pacing, connection reuse, and the VAD before blaming the model.
+
+[dissect]: https://desh2608.github.io/2026-09-11-dissecting-gpt-live/
+
 ## Cross-checking the harness
 
 The harness and the service measure from different origins on purpose, and the

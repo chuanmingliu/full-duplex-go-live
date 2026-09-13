@@ -113,9 +113,14 @@ type Engine struct {
 	instr       string
 	lastBC      time.Time
 	bcSeq       int
-	lastState   live.ChannelStateEvent
-	pendingTool map[string]pendingCall
-	waitingTool bool
+	// delegatedAt is when backend work for the current turn began, and is the
+	// clock the holding filler runs against.
+	delegatedAt   time.Time
+	delegatedTurn *Turn
+	filled        bool
+	lastState     live.ChannelStateEvent
+	pendingTool   map[string]pendingCall
+	waitingTool   bool
 
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
@@ -533,6 +538,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 func (e *Engine) onTick() {
 	e.publishState()
 	e.maybeBackchannel()
+	e.maybeHoldingFiller()
 
 	if max := e.opts.Cfg.Duplex.SessionMaxSeconds; max > 0 && time.Since(e.startAt) > time.Duration(max)*time.Second {
 		e.deps.Emit(live.SessionClosedEvent{
@@ -767,6 +773,10 @@ func (e *Engine) beginGeneration(turn *Turn, reason string) {
 		},
 	})
 	e.publishState()
+
+	e.delegatedAt = time.Now()
+	e.delegatedTurn = turn
+	e.filled = false
 
 	if target == live.DelegationClient {
 		// The application owns the work. It will answer with
@@ -1442,6 +1452,61 @@ func (e *Engine) maybeBackchannel() {
 		Text:     phrase,
 	})
 	go e.speakBackchannel(turn, phrase)
+}
+
+// maybeHoldingFiller says something short while the backend is still working.
+//
+// A delegating agent that goes silent for two seconds sounds like a dropped
+// call. The conversational layer is supposed to hold the floor while the slow
+// part runs elsewhere — that separation is the whole point of delegation, and
+// it only works if the front half keeps talking.
+//
+// It fires at most once per delegation, only when nothing else is being said,
+// only when the user is not talking (the backchannel above covers that case),
+// and only once the turn has gone quiet for longer than a normal answer takes.
+func (e *Engine) maybeHoldingFiller() {
+	d := e.opts.Cfg.Duplex
+	if !d.HoldingFiller || len(d.HoldingFillerPhrases) == 0 {
+		return
+	}
+	if e.filled || e.delegatedTurn == nil || e.delegatedAt.IsZero() {
+		return
+	}
+	if e.muted || e.userOpen || e.player.Active() {
+		return
+	}
+	turn := e.delegatedTurn
+	if !e.tracker.IsCurrent(turn) {
+		e.delegatedTurn = nil
+		return
+	}
+	// Once the turn has produced audio the wait is over, filler or not.
+	if !turn.Timings().FirstAudio.IsZero() {
+		e.delegatedTurn = nil
+		return
+	}
+	if time.Since(e.delegatedAt) < time.Duration(d.HoldingFillerAfterMS)*time.Millisecond {
+		return
+	}
+
+	e.filled = true
+	e.bcSeq++
+	phrase := d.HoldingFillerPhrases[rand.Intn(len(d.HoldingFillerPhrases))]
+	e.log.Debug("backchannel: holding the floor while the backend works",
+		"text", phrase,
+		"waiting_ms", time.Since(e.delegatedAt).Milliseconds(),
+		"turn", turn.ID)
+
+	filler := &Turn{
+		ID:         fmt.Sprintf("bc_%d", e.bcSeq),
+		Generation: e.gen.Current(),
+		State:      TurnCommitted,
+	}
+	e.deps.Emit(live.BackchannelEvent{
+		Envelope: live.Envelope{Type: live.ExtBackchannel},
+		Text:     phrase,
+	})
+	go e.speakBackchannel(filler, phrase)
 }
 
 // speakBackchannel bypasses the speech pipe: a backchannel must not disturb the

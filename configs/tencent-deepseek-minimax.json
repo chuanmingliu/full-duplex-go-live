@@ -26,6 +26,13 @@
       "好的",
       "我在听"
     ],
+    "holding_filler": true,
+    "holding_filler_after_ms": 1500,
+    "holding_filler_phrases": [
+      "我看一下",
+      "稍等一下",
+      "让我查一下"
+    ],
     "speculative": true,
     "speculative_stable_ms": 260,
     "speculative_min_chars": 6,
@@ -40,7 +47,8 @@
     "delegation_mode": "responses",
     "delegate_min_chars": 1,
     "session_max_seconds": 3600,
-    "idle_timeout_seconds": 300
+    "idle_timeout_seconds": 300,
+    "max_append_chars": 1500
   },
   "vad": {
     "frame_ms": 20,
