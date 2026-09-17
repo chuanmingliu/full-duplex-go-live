@@ -108,19 +108,37 @@ type Engine struct {
 	asrSeq      uint64
 	watch       *StabilityWatch
 	specTurn    *Turn
-	history     []provider.Message
-	instrMu     sync.RWMutex
-	instr       string
-	lastBC      time.Time
-	bcSeq       int
+	bcSet       *PhraseSet
+	echoWarned  bool
+	hold        *floorHold
+	// turnBeforeUtterance is whatever was already being said when the current
+	// utterance opened. It is not a candidate for this utterance's origin.
+	turnBeforeUtterance *Turn
+	history             []provider.Message
+	instrMu             sync.RWMutex
+	instr               string
+	lastBC              time.Time
+	bcSeq               int
+	// lastAck and lastFiller keep a phrase from being chosen twice running.
+	lastAck    string
+	lastFiller string
+	// fillerSinceAnswer counts holding fillers spoken since the caller last
+	// actually heard an answer. Above zero, another one is noise.
+	fillerSinceAnswer int
 	// delegatedAt is when backend work for the current turn began, and is the
 	// clock the holding filler runs against.
 	delegatedAt   time.Time
 	delegatedTurn *Turn
 	filled        bool
-	lastState     live.ChannelStateEvent
-	pendingTool   map[string]pendingCall
-	waitingTool   bool
+	// ttfa is what this session has actually observed between delegating and
+	// hearing audio, which is what decides whether a turn is running late.
+	ttfa rollingMS
+	// specWhy records why the last speculation check declined, so a turn that
+	// ends up waiting for the final transcript can say what stopped it.
+	specWhy     string
+	lastState   live.ChannelStateEvent
+	pendingTool map[string]pendingCall
+	waitingTool bool
 
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
@@ -207,6 +225,7 @@ func New(opts Options, deps Deps) *Engine {
 			time.Duration(opts.Cfg.Duplex.SpeculativeStableMS)*time.Millisecond,
 			opts.Cfg.Duplex.SpeculativeMinChars,
 		),
+		bcSet:       NewPhraseSet(opts.Cfg.Duplex.UserBackchannelPhrases),
 		pendingTool: map[string]pendingCall{},
 		startAt:     time.Now(),
 	}
@@ -520,7 +539,10 @@ func (e *Engine) onAudio(pcm []byte) {
 	}
 	// Per frame, not per tick: the window between "gone quiet" and "turn over"
 	// is a couple of hundred milliseconds, and a 120 ms tick would spend most
-	// of the head start waiting to notice it was available.
+	// of the head start waiting to notice it was available. The same argument
+	// applies to a hold that has run out — every millisecond late is a
+	// millisecond spent talking over someone.
+	e.expireHold()
 	e.maybeSpeculate()
 }
 
@@ -531,18 +553,27 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.userSince = time.Now()
 		e.watch.Reset()
 		e.specTurn = nil
+		e.specWhy = ""
+		// Remembered so the utterance's speech-end origin is not applied to
+		// whatever was already being said when it began.
+		e.turnBeforeUtterance = e.tracker.Current()
 		e.log.Debug("listen: utterance opened",
 			"start_ms", d.StartMS,
 			"active_ms", int(d.ActiveMS),
 			"barge_in", d.BargeIn,
 			"noise_floor_db", round1(e.vad.NoiseFloorDB()),
+			"echo_floor_db", round1(e.vad.EchoFloorDB()),
+			"echo_headroom_db", round1(e.vad.EchoFloorDB()-e.vad.NoiseFloorDB()),
 			"assistant_speaking", e.speaking.Load())
 		e.deps.Emit(live.SpeechEvent{
 			Envelope: live.Envelope{Type: live.ExtSpeechStarted},
 			StartMS:  d.StartMS,
 			BargeIn:  d.BargeIn,
 		})
-		e.yieldFloor(d.BargeIn)
+		e.warnIfEcho(d)
+		if !e.holdFloor(d.BargeIn) {
+			e.yieldFloor(d.BargeIn)
+		}
 		// A reply to this is now inevitable, and is at least a second away.
 		// Anything reconnected here is a handshake the caller does not wait
 		// through — which matters most after an idle gap long enough for the
@@ -564,12 +595,24 @@ func (e *Engine) handleDecision(d audio.Decision) {
 
 	case audio.DecisionStopped:
 		e.userOpen = false
+		if e.hold != nil {
+			// The final transcript is now imminent — closing the recognizer is
+			// what asks for it. Do not time out on the last leg.
+			e.hold.sawEvidence()
+		}
 		// The origin for every latency this turn will report. A speculative
 		// turn is already running by now, so it is stamped here rather than at
 		// creation.
 		e.speechEndAt = time.Now()
 		e.speechEndMS = d.EndMS
-		if turn := e.tracker.Current(); turn != nil {
+		// ...but only for a turn this utterance actually produced. A turn that
+		// was already live when the caller started talking belongs to an
+		// earlier utterance, or to none at all — the greeting is the clearest
+		// case, and it is how item_1 came to report first_segment_ms: -742.
+		// Stamping it dated audio that had already been spoken to a moment
+		// still in the future, so every figure came out negative. It is not
+		// waiting for anything the caller said, and it has no origin.
+		if turn := e.tracker.Current(); turn != nil && turn != e.turnBeforeUtterance {
 			turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
 		}
 		e.writeASR(d.Snapshot)
@@ -594,6 +637,8 @@ func (e *Engine) handleDecision(d audio.Decision) {
 
 func (e *Engine) onTick() {
 	e.publishState()
+	e.expireHold()
+	e.observeTTFA()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
 
@@ -689,6 +734,16 @@ func (e *Engine) onASREvent(ev asrEvent) {
 		return // a stale stream's result; the utterance it belongs to is gone
 	}
 	if ev.done {
+		// The recognizer finished the utterance without ever producing a word.
+		// Same conclusion as an empty final, reached by a provider that closes
+		// rather than sending one: there was no speech, so the assistant keeps
+		// the floor instead of waiting for the hold to time out and yielding to
+		// a noise.
+		if e.hold != nil && strings.TrimSpace(run.lastText) == "" {
+			e.log.Debug("listen: the recognizer ended with no words; keeping the floor",
+				"held_ms", time.Since(e.hold.started).Milliseconds())
+			e.hold = nil
+		}
 		if run.sendDone {
 			e.asrRun = nil
 		}
@@ -712,6 +767,13 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	} else if text != run.lastText {
 		e.log.Debug("asr: partial", "run", run.id, "text", text)
 	}
+	// Before anything else: if an interruption is being held pending the
+	// transcript, this is the evidence it was waiting for.
+	if e.hold != nil && e.judgeHold(text, ev.res.Final) {
+		run.lastText = text
+		return
+	}
+
 	e.emitInputTranscript(run, text, ev.res.Final)
 
 	if ev.res.Final {
@@ -772,19 +834,47 @@ func (e *Engine) maybeSpeculate() {
 		return
 	}
 	run := e.asrRun
-	if run == nil || run.lastText == "" || e.watch.Fired() {
+	if run == nil || run.lastText == "" {
+		e.specWhy = "no partial transcript yet"
+		return
+	}
+	if e.watch.Fired() {
+		return
+	}
+	// Tested against the partial itself, not against whether a floor hold is
+	// pending.
+	//
+	// The two are different questions — the hold decides whether to yield the
+	// floor, speculation decides whether to start the backend early — and
+	// keying this on the hold conflated them. In practice the hold releases on
+	// the first partial that cannot become an acknowledgement, so by the time
+	// the text is a question the hold is already gone and the old condition
+	// rarely bit; the case it did cover is this one, stated directly. It also
+	// catches an acknowledgement long enough to clear speculative_min_chars
+	// ("好的好的"), which the old form missed whenever no hold existed.
+	if e.bcSet.Matches(run.lastText) {
+		e.specWhy = "the partial so far is an acknowledgement, not a question"
+		return
+	}
+	if n := len([]rune(run.lastText)); n < e.opts.Cfg.Duplex.SpeculativeMinChars {
+		e.specWhy = fmt.Sprintf("partial is %d characters; speculative_min_chars is %d",
+			n, e.opts.Cfg.Duplex.SpeculativeMinChars)
 		return
 	}
 	if e.vad.TrailingSilenceMS() <= 0 {
 		// Still talking. Anything the recognizer has emitted so far is a
 		// prefix, however settled it looks.
 		e.watch.Unsettle()
+		e.specWhy = "the speaker never paused long enough before the turn closed"
 		return
 	}
 	// One clock, started at the first frame of the pause: speculative_stable_ms
 	// is now "quiet for this long, with the transcript unchanged throughout".
 	// A hypothesis landing mid-pause restarts it, which is what we want — the
 	// recognizer catching up is exactly when the guess would have been wrong.
+	e.specWhy = fmt.Sprintf(
+		"the pause never stayed quiet and unchanged for speculative_stable_ms (%d ms) before vad.min_silence_ms (%d ms) closed the turn",
+		e.opts.Cfg.Duplex.SpeculativeStableMS, e.opts.Cfg.VAD.MinSilenceMS)
 	if e.watch.Observe(run.lastText, time.Now()) {
 		e.startSpeculativeTurn(run.lastText)
 	}
@@ -839,6 +929,16 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 	turn := e.tracker.Begin(text, false)
 	turn.MarkTranscriptFinal()
 	e.specTurn = nil
+	// A turn that waited for the final transcript pays the backend's whole
+	// time-to-first-token where a speculative one would have spent it during
+	// the pause. When speculation is switched on and still never fires, that is
+	// worth one line rather than a silent loss — a real call showed every
+	// delegation arriving as final_transcript with nothing to say why.
+	if e.opts.Speculative && e.specWhy != "" {
+		e.log.Info("think: answered without speculating",
+			"turn", turn.ID, "reason", e.specWhy, "transcript", text)
+	}
+	e.specWhy = ""
 	e.beginGeneration(turn, "final_transcript")
 }
 
@@ -1185,7 +1285,23 @@ func (p *speechPipe) speak(text string) bool {
 	}
 
 	segStarted := time.Now()
-	chunks, err := stream.Synthesize(p.ctx, text)
+	// Its own context, cancelled on every exit from this function.
+	//
+	// The contract on TTSStream.Synthesize is that a caller who stops reading
+	// must cancel, so the provider can resynchronize its connection. This
+	// function has two early returns that used to violate that — the turn being
+	// superseded, and a chunk error — and p.ctx belongs to the whole turn, so
+	// it was still alive in exactly the case that mattered. The provider's
+	// reader then blocked forever writing into a channel nobody was draining,
+	// holding the lock that serializes synthesis on a persistent connection.
+	//
+	// The result is the symptom that prompted this: an answer's first segment
+	// plays, every later segment blocks in Synthesize, and the turn is heard as
+	// a fragment. It does not recover, because the connection is shared across
+	// turns — every answer after it is a fragment too.
+	segCtx, cancelSeg := context.WithCancel(p.ctx)
+	defer cancelSeg()
+	chunks, err := stream.Synthesize(segCtx, text)
 	if err != nil {
 		p.e.log.Error("tts synthesize failed", "err", err)
 		p.e.deps.Emit(live.NewError("server_error", "tts_error", err.Error(), ""))
@@ -1194,6 +1310,13 @@ func (p *speechPipe) speak(text string) bool {
 	}
 
 	p.turn.MarkFirstSegment()
+	// The answer is ready, so anything the assistant was saying to cover the
+	// wait has done its job. Left playing, a filler delays the very thing it
+	// was hiding — measured at nearly two seconds on a real turn.
+	if !IsBackchannel(p.turn.ID) && p.e.player.PreemptBackchannel() {
+		p.e.log.Debug("speak: cutting the filler short; the answer is ready",
+			"turn", p.turn.ID)
+	}
 	p.e.player.Enqueue(Segment{
 		Kind:     SegBegin,
 		Gen:      p.turn.Generation,
@@ -1237,6 +1360,48 @@ func (p *speechPipe) speak(text string) bool {
 			Revision: p.turn.Revision,
 			PCM:      pcm,
 		})
+	}
+
+	// Every check on the turn's liveness lives inside the loop body above, so a
+	// synthesis that produced no chunks at all skipped all of them and fell
+	// through to the mark. MiniMax returns exactly that channel — closed, empty,
+	// no error — when the segment's context is already cancelled: readAudio
+	// tests the context before its first recv. `audio_ms=0 ms=0` in the log is
+	// this case, and it appeared twice in one session.
+	if firstChunk {
+		// The text was announced and none of it was produced. Withdraw the
+		// announcement: the player counts pending text as spoken, because a
+		// segment cut off mid-flight really was partly heard, and this one was
+		// not heard at all.
+		//
+		// This runs before the liveness check below, and unconditionally. Only
+		// one of the player's two truncation paths can currently be reached
+		// with text left pending, so a superseded turn is safe today — but that
+		// is an argument about which branch runs, and the wrong sentence
+		// reaching history is what the whole mechanism exists to prevent. A
+		// stale SegAbandon is dropped by the player at no cost.
+		p.e.player.Enqueue(Segment{
+			Kind:     SegAbandon,
+			Gen:      p.turn.Generation,
+			TurnID:   p.turn.ID,
+			Revision: p.turn.Revision,
+		})
+	}
+	if p.ctx.Err() != nil || !p.current() {
+		return false
+	}
+	if firstChunk {
+		// Still the current turn, and still no audio: the provider accepted the
+		// text and delivered none of it. Drop the session so the next segment
+		// starts from a connection in a known state, and keep going — the rest
+		// of the answer is still worth attempting, and history now holds only
+		// the part the caller heard.
+		p.e.log.Warn("speak: the segment produced no audio, so it is not recorded as spoken",
+			"turn", p.turn.ID,
+			"text", text,
+			"ms", time.Since(segStarted).Milliseconds())
+		p.e.dropTTSSession(stream)
+		return true
 	}
 
 	p.e.player.Enqueue(Segment{
@@ -1344,6 +1509,205 @@ func (e *Engine) assistantHasFloor() bool {
 	}
 	pipe := e.speech.Load()
 	return pipe != nil && pipe.alive()
+}
+
+// floorHold is the state of a deferred interruption: the caller has started
+// making noise over the answer, and the engine is keeping the floor for a
+// moment while it finds out whether that noise was "嗯" or a question.
+type floorHold struct {
+	started time.Time
+	until   time.Time
+	hold    time.Duration
+	bargeIn bool
+}
+
+// sawEvidence extends the hold to its ceiling, and is called once the
+// recognizer has said something consistent with a backchannel.
+//
+// The two clocks here are different questions, and conflating them was a bug
+// worth recording. The short one asks *is this recognizer producing at all* — a
+// silent line must not buy licence to talk over someone. The long one is the
+// wait for a verdict, and the verdict is the final transcript, which cannot
+// arrive until the VAD has closed the turn: vad.min_silence_ms alone eats most
+// of the short window, and the speech before it eats the rest. Running the
+// short clock all the way to the verdict meant every acknowledgement timed out
+// and interrupted, and the feature did nothing whatsoever.
+//
+// The ceiling is what keeps the long clock honest. Two and a half seconds of
+// unbroken "acknowledgement" is not one, and a recognizer stuck re-sending a
+// stale hypothesis must not hold the floor forever.
+func (h *floorHold) sawEvidence() { h.until = h.started.Add(4 * h.hold) }
+
+// warnIfEcho says so, once, when barge-ins look like the assistant's own voice.
+//
+// The signature is specific enough to name. A barge-in that opens at exactly
+// barge_in_min_speech_ms is a signal sitting precisely on the bar rather than a
+// person starting to talk, whose energy overshoots it — and when that coincides
+// with a measured echo return well above the room, the caller is on a
+// speakerphone or has echo cancellation off, and the assistant is cutting
+// itself off. A real call showed active_ms=320 against the configured 320,
+// twice in a row, with noise_floor_db pinned at −60.
+//
+// Deliberately a warning rather than a behaviour. Energy alone cannot separate
+// steady echo from a steady voice at the same level; the engine's floor hold
+// handles the consequences by refusing to yield to an utterance with no words
+// in it, and the acoustic cure is a setting only the operator can judge.
+func (e *Engine) warnIfEcho(d audio.Decision) {
+	if e.echoWarned || !d.BargeIn {
+		return
+	}
+	atTheBar := int(d.ActiveMS) <= e.opts.Cfg.VAD.BargeInMinSpeechMS+int(e.vad.FrameMS())
+	headroom := e.vad.EchoFloorDB() - e.vad.NoiseFloorDB()
+	// 8 dB, not 10, because 10 missed the case this was written for: a later
+	// call barged in at active_ms=320 against the configured 320 — the bar
+	// exactly — with echo_floor_db=-50 over a noise floor of -59.6. Nine and a
+	// half decibels of the assistant's own voice coming back is not a quiet
+	// room, and the conjunction with atTheBar is what makes this specific;
+	// the headroom term only has to rule out a genuinely silent one.
+	if !atTheBar || headroom < 8 {
+		return
+	}
+	e.echoWarned = true
+	e.log.Warn("listen: this barge-in looks like the assistant's own voice returning",
+		"active_ms", int(d.ActiveMS),
+		"barge_in_min_speech_ms", e.opts.Cfg.VAD.BargeInMinSpeechMS,
+		"echo_floor_db", round1(e.vad.EchoFloorDB()),
+		"noise_floor_db", round1(e.vad.NoiseFloorDB()),
+		"hint", "raise vad.barge_in_margin_db (try 15-20), or enable echo cancellation on the client")
+}
+
+// holdFloor defers the decision to yield, and reports whether it did.
+//
+// Barge-in is acoustic: the VAD knows someone is talking long before anything
+// knows what they said. That is the right trade almost always — stopping
+// promptly is most of what makes an agent feel interruptible — but it cannot
+// tell a question from an acknowledgement, so a murmured "对" cuts the answer
+// dead. A full-duplex model would simply keep talking; lacking one, the engine
+// buys itself the few hundred milliseconds needed for the recognizer to say
+// which kind of speech this was.
+//
+// Nothing else changes: the utterance is recorded and transcribed exactly as
+// before. The only thing held back is the interruption.
+func (e *Engine) holdFloor(bargeIn bool) bool {
+	// A new utterance supersedes any hold left over from the last one, decided
+	// or not.
+	e.hold = nil
+	d := e.opts.Cfg.Duplex
+	// Deliberately not conditional on the phrase list. The hold began as
+	// "was that an acknowledgement", but the question it really answers is
+	// "was that speech at all", and that one matters with no list configured.
+	//
+	// A real call opened with the greeting being cut 768 ms in by an utterance
+	// that produced no transcript: the VAD heard something, the recognizer
+	// found no words in it, and the caller lost most of the greeting to a cough
+	// or to the assistant's own audio coming back through the speaker. It shows
+	// up as a speech.stopped with no delegation behind it, and an empty row in
+	// the transcript. barge_in_min_speech_ms had already passed it — acoustics
+	// alone cannot tell a door closing from a syllable, so the transcript has
+	// to be allowed to settle it.
+	if d.UserBackchannelHoldMS <= 0 {
+		return false
+	}
+	if !d.AllowBargeIn || !e.assistantHasFloor() {
+		return false
+	}
+	now := time.Now()
+	hold := time.Duration(d.UserBackchannelHoldMS) * time.Millisecond
+	e.hold = &floorHold{
+		started: now,
+		until:   now.Add(hold),
+		hold:    hold,
+		bargeIn: bargeIn,
+	}
+	e.log.Debug("listen: holding the floor while the transcript decides",
+		"barge_in", bargeIn, "hold_ms", d.UserBackchannelHoldMS)
+	return true
+}
+
+// judgeHold advances a deferred interruption on new transcript text, and
+// reports whether the utterance should be swallowed entirely.
+//
+// Three outcomes, and the interesting one is the middle:
+//
+//   - Still consistent with a backchannel: keep holding, keep talking.
+//   - Decisively not one: yield now. This is why the check runs on partials —
+//     "嗯，等一下" becomes an interruption at 等, not a second later when the
+//     final transcript lands. The first syllable no candidate starts with is
+//     all the evidence needed, and waiting for more would make the feature
+//     cost exactly what it was meant to save.
+//   - A backchannel, confirmed by the final transcript: the floor was never
+//     given up, and the utterance is dropped rather than answered. Replying
+//     "嗯?" to someone agreeing with you is its own kind of wrong.
+func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
+	if e.hold == nil {
+		return false
+	}
+	// No words in it. The VAD heard something and the recognizer found nothing
+	// to transcribe, which is a cough, a door, or the assistant's own voice
+	// returning through a speaker — and none of those is a reason to stop
+	// talking. Because the interruption was being held rather than performed,
+	// there is nothing to undo: the answer simply carries on.
+	//
+	// This is the whole value of deferring. An interrupt taken at the moment
+	// the VAD opens cannot be given back once the recognizer reports silence.
+	if final && strings.TrimSpace(text) == "" {
+		e.log.Debug("listen: no words in that; keeping the floor",
+			"held_ms", time.Since(e.hold.started).Milliseconds())
+		e.hold = nil
+		return true
+	}
+	if e.bcSet.CouldBecome(text) {
+		if !final {
+			// The recognizer is producing, and what it produces still looks
+			// like an acknowledgement. Wait for the verdict rather than for
+			// the much shorter is-anything-arriving window.
+			e.hold.sawEvidence()
+			return false
+		}
+		if e.bcSet.Matches(text) {
+			e.log.Debug("listen: backchannel, not an interruption; keeping the floor",
+				"text", text)
+			e.deps.Emit(live.InputBackchannelEvent{
+				Envelope: live.Envelope{Type: live.ExtInputBackchannel},
+				Text:     strings.TrimSpace(text),
+			})
+			e.hold = nil
+			return true
+		}
+		// Consistent with a prefix but never completed — an utterance that
+		// trailed off. Nothing was asked, but nothing says the caller meant to
+		// keep listening either, so yield and let the empty transcript be
+		// dropped downstream.
+	}
+	e.log.Debug("listen: not a backchannel; yielding the floor",
+		"text", text, "final", final)
+	e.releaseHold("transcript")
+	return false
+}
+
+// releaseHold gives up a deferred interruption and performs the yield it was
+// standing in for.
+func (e *Engine) releaseHold(reason string) {
+	h := e.hold
+	if h == nil {
+		return
+	}
+	e.hold = nil
+	e.log.Debug("listen: releasing the floor hold", "reason", reason)
+	e.yieldFloor(h.bargeIn)
+}
+
+// expireHold yields once the hold has run out of patience.
+//
+// The bound exists because a recognizer can simply not produce text — a noisy
+// line, a speaker too far from the microphone, a provider having a bad minute.
+// Continuing to talk over someone on the strength of no evidence is the worse
+// failure of the two, so silence resolves as an interruption.
+func (e *Engine) expireHold() {
+	if e.hold == nil || time.Now().Before(e.hold.until) {
+		return
+	}
+	e.releaseHold("hold expired without a decisive transcript")
 }
 
 // yieldFloor handles a new user utterance arriving while an answer is still in
@@ -1495,10 +1859,42 @@ func (e *Engine) recordTurn(turnID, spoken string) {
 	})
 }
 
+// trimHistory bounds what is sent to the backend, by turns and by size.
+//
+// The turn cap alone is not a bound on cost. history_turns: 16 is sixteen
+// exchanges whatever their length, and a sales agent's answers run to fifty
+// characters each while a caller's questions run to four — so the same setting
+// describes wildly different prompts, and the one it produces on a real call is
+// the expensive end. Since time-to-first-token tracks prompt size and nothing
+// else in this cascade comes close to it as a cost, the size needs its own
+// limit.
+//
+// Oldest first, and always in whole messages: half an exchange is worse than
+// none, because the model then reads an answer with no question or a question
+// with no answer and infers a conversation that did not happen.
 func (e *Engine) trimHistory() {
-	max := e.opts.Cfg.HistoryTurns * 2
-	if max > 0 && len(e.history) > max {
+	if max := e.opts.Cfg.HistoryTurns * 2; max > 0 && len(e.history) > max {
 		e.history = append([]provider.Message(nil), e.history[len(e.history)-max:]...)
+	}
+
+	maxChars := e.opts.Cfg.HistoryMaxChars
+	if maxChars <= 0 {
+		return
+	}
+	total := 0
+	for _, m := range e.history {
+		total += len([]rune(m.Content))
+	}
+	dropped := 0
+	for total > maxChars && len(e.history) > 1 {
+		total -= len([]rune(e.history[0].Content))
+		e.history = e.history[1:]
+		dropped++
+	}
+	if dropped > 0 {
+		e.history = append([]provider.Message(nil), e.history...)
+		e.log.Debug("think: history trimmed to fit history_max_chars",
+			"dropped_messages", dropped, "chars", total, "limit", maxChars)
 	}
 }
 
@@ -1603,7 +1999,7 @@ func (e *Engine) maybeBackchannel() {
 	}
 	e.lastBC = time.Now()
 	e.bcSeq++
-	phrase := d.BackchannelPhrases[rand.Intn(len(d.BackchannelPhrases))]
+	phrase := e.pickPhrase(d.BackchannelPhrases, &e.lastAck)
 	e.log.Debug("backchannel: acknowledging while the user holds the floor",
 		"text", phrase, "user_talking_ms", time.Since(e.userSince).Milliseconds())
 
@@ -1614,6 +2010,7 @@ func (e *Engine) maybeBackchannel() {
 	}
 	e.deps.Emit(live.BackchannelEvent{
 		Envelope: live.Envelope{Type: live.ExtBackchannel},
+		Kind:     live.BackchannelAck,
 		Text:     phrase,
 	})
 	go e.speakBackchannel(turn, phrase)
@@ -1628,7 +2025,20 @@ func (e *Engine) maybeBackchannel() {
 //
 // It fires at most once per delegation, only when nothing else is being said,
 // only when the user is not talking (the backchannel above covers that case),
-// and only once the turn has gone quiet for longer than a normal answer takes.
+// and only once the turn is running late.
+//
+// "Late" is measured against this session, not against the configured number,
+// and that distinction is the difference between a filler and a verbal tic. A
+// real call showed 稍等一下 before literally every answer, because the backend's
+// time-to-first-token had settled at about 2.1 s — a long system prompt will do
+// that — while holding_filler_after_ms was still the 1.5 s that suited a
+// different prompt. A filler that fires every turn is not covering an unusual
+// wait; it is just something the agent says now, and it costs a synthesis and
+// delays the real answer each time.
+//
+// So the configured threshold is a floor, and the second condition is that this
+// turn is slower than this session's own median. Until there are observations
+// to compare against, the floor is all there is.
 func (e *Engine) maybeHoldingFiller() {
 	d := e.opts.Cfg.Duplex
 	if !d.HoldingFiller || len(d.HoldingFillerPhrases) == 0 {
@@ -1650,16 +2060,56 @@ func (e *Engine) maybeHoldingFiller() {
 		e.delegatedTurn = nil
 		return
 	}
-	if time.Since(e.delegatedAt) < time.Duration(d.HoldingFillerAfterMS)*time.Millisecond {
+	waited := time.Since(e.delegatedAt)
+	if waited < time.Duration(d.HoldingFillerAfterMS)*time.Millisecond {
+		return
+	}
+	late, known := e.lateThreshold()
+	if !known {
+		// The first delegation of the session. Nothing has been measured, so
+		// there is no sense in which this wait is unusual — and the configured
+		// floor is a guess about a backend and a prompt this session has not
+		// yet exercised. Say nothing and find out.
+		//
+		// Settled for the whole delegation, not re-evaluated each tick: the
+		// only thing that adds an observation is an answer, which ends the
+		// turn.
+		e.filled = true
+		e.log.Debug("backchannel: holding filler suppressed; this session has no answer to compare against yet",
+			"turn", turn.ID,
+			"waited_ms", waited.Milliseconds())
+		return
+	}
+	if waited < late {
+		return
+	}
+	// At most one filler between real answers.
+	//
+	// The failure this prevents is the worst thing a filler can do. When the
+	// backend is slower than the caller's patience, every turn is superseded
+	// before it speaks and the only thing the caller ever hears is the filler:
+	// a real call went "让我查一下" — question — "让我查一下" — question —
+	// "让我查一下", three turns deep, with no answer at any point. Each filler
+	// was individually justified; together they were an agent that appeared to
+	// have nothing to say but that.
+	//
+	// One is a reassurance that work is happening. Three in a row is evidence
+	// it is not, and saying it again cannot help — the caller has already heard
+	// that promise and watched it go unkept.
+	if e.fillerSinceAnswer > 0 {
+		e.log.Debug("backchannel: holding filler suppressed; the last one was not followed by an answer",
+			"turn", turn.ID)
 		return
 	}
 
 	e.filled = true
+	e.fillerSinceAnswer++
 	e.bcSeq++
-	phrase := d.HoldingFillerPhrases[rand.Intn(len(d.HoldingFillerPhrases))]
+	phrase := e.pickPhrase(d.HoldingFillerPhrases, &e.lastFiller)
 	e.log.Debug("backchannel: holding the floor while the backend works",
 		"text", phrase,
-		"waiting_ms", time.Since(e.delegatedAt).Milliseconds(),
+		"waiting_ms", waited.Milliseconds(),
+		"session_p50_ms", e.ttfa.P50(),
 		"turn", turn.ID)
 
 	filler := &Turn{
@@ -1669,9 +2119,77 @@ func (e *Engine) maybeHoldingFiller() {
 	}
 	e.deps.Emit(live.BackchannelEvent{
 		Envelope: live.Envelope{Type: live.ExtBackchannel},
+		Kind:     live.BackchannelHoldingFiller,
 		Text:     phrase,
 	})
 	go e.speakBackchannel(filler, phrase)
+}
+
+// pickPhrase chooses at random but never twice running.
+//
+// Independent random choice from a three-item list repeats about a third of the
+// time, and a real call duly produced "让我查一下" three turns in a row. A human
+// filling a silence varies what they say; the same four syllables repeated is
+// how a caller works out they are talking to a machine that is stuck.
+func (e *Engine) pickPhrase(phrases []string, last *string) string {
+	if len(phrases) == 0 {
+		return ""
+	}
+	if len(phrases) == 1 {
+		*last = phrases[0]
+		return phrases[0]
+	}
+	for {
+		p := phrases[rand.Intn(len(phrases))]
+		if p != *last {
+			*last = p
+			return p
+		}
+	}
+}
+
+// lateThreshold is how long this turn must run before it counts as unusually
+// slow for this session, and whether that is knowable yet.
+//
+// The margin is generous on purpose. Firing a filler on a turn that is merely
+// average is the failure being fixed, and the cost of missing one is that the
+// caller hears a slightly longer silence — much cheaper than an agent that says
+// "稍等一下" every time it opens its mouth.
+//
+// One observation is enough to ask against, and waiting for three was the
+// defect. A short call never reaches three: with a backend that took about
+// three seconds on every turn — a long persona prompt will do that — the gate
+// stayed off for turns one, two and three and the filler fired on all of them.
+// The tic the gate exists to prevent simply moved to the start of the call,
+// which is the worst place for it. One sample of this session's real latency
+// says far more than a configured default that was chosen for a different
+// prompt.
+func (e *Engine) lateThreshold() (time.Duration, bool) {
+	if e.ttfa.N() == 0 {
+		return 0, false
+	}
+	return time.Duration(float64(e.ttfa.P50())*1.5) * time.Millisecond, true
+}
+
+// observeTTFA records how long the last delegation took to produce audio.
+//
+// Deliberately measured from delegation rather than from VAD close: it is the
+// backend-and-synthesis wait the filler exists to cover, and it excludes the
+// silence threshold, which no filler can help with.
+func (e *Engine) observeTTFA() {
+	turn := e.delegatedTurn
+	if turn == nil || e.delegatedAt.IsZero() {
+		return
+	}
+	first := turn.Timings().FirstAudio
+	if first.IsZero() {
+		return
+	}
+	e.ttfa.Add(first.Sub(e.delegatedAt).Milliseconds())
+	// An answer reached the caller, so the filler's promise was kept and the
+	// next slow turn may make it again.
+	e.fillerSinceAnswer = 0
+	e.delegatedTurn = nil
 }
 
 // speakBackchannel bypasses the speech pipe: a backchannel must not disturb the
@@ -1681,11 +2199,41 @@ func (e *Engine) speakBackchannel(turn *Turn, phrase string) {
 	if err != nil {
 		return
 	}
-	chunks, err := stream.Synthesize(e.ctx, phrase)
+	// Own context, for the same reason as speak: the loop below returns the
+	// moment the generation moves, and abandoning the channel without
+	// cancelling wedges the connection every other turn shares. Backchannels
+	// are abandoned often — a filler is superseded whenever the caller speaks
+	// again — so this is the call site that did the most damage.
+	bcCtx, cancelBC := context.WithCancel(e.ctx)
+	defer cancelBC()
+	chunks, err := stream.Synthesize(bcCtx, phrase)
 	if err != nil {
 		return
 	}
-	e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, Text: phrase})
+	// The floor may have been taken while this was synthesizing, in which case
+	// the player refuses it and there is nothing to say or to transcribe.
+	if !e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, Text: phrase}) {
+		e.log.Debug("backchannel: dropped; the answer took the floor while it was synthesizing",
+			"turn", turn.ID, "text", phrase)
+		return
+	}
+	// The caller hears this, so it belongs in the transcript.
+	//
+	// It was missing, and the gap was not cosmetic: a real call spoke four
+	// holding fillers — 稍等一下, 让我查一下, 我看一下, 让我查一下 — and the
+	// transcript showed none of them, so the written record of the call did not
+	// match the call. Worse, two of those fillers belonged to turns the caller
+	// interrupted before any answer arrived, which read in the transcript as
+	// two user questions in a row that the agent simply ignored, when what
+	// actually happened was the agent saying "one moment" and then being cut
+	// off.
+	//
+	// Conversation history is the separate question and keeps the opposite
+	// answer: recordTurn still drops bc_ turns, because a filler is not
+	// something the model should reason from. What was said aloud and what the
+	// model is told are two different records, and conflating them is what hid
+	// this.
+	e.emitOutputTranscript(turn, phrase)
 	for chunk := range chunks {
 		if chunk.Err != nil || !e.gen.Valid(turn.Generation) {
 			return

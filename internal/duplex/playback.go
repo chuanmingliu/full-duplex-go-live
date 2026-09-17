@@ -1,6 +1,7 @@
 package duplex
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,16 @@ const (
 	SegBegin
 	// SegMark closes the segment opened by SegBegin.
 	SegMark
+	// SegAbandon withdraws a SegBegin whose audio never arrived, so the
+	// announced text is not counted as spoken.
+	//
+	// It exists because the announcement has to come first. SegBegin is what
+	// claims the floor for an answer, and claiming it only once audio exists
+	// leaves a window in which a holding filler can take it mid-answer — the
+	// defect this player already carries a long comment about. So the text is
+	// announced up front and withdrawn here if the synthesis turns out to be
+	// silent, rather than never being announced.
+	SegAbandon
 	// SegEnd closes the turn.
 	SegEnd
 )
@@ -85,6 +96,12 @@ type Player struct {
 	graceTurn  string
 	graceMarks int
 
+	// dropTurn is a backchannel or filler whose remaining audio must not be
+	// emitted, because the answer it was covering for is now ready. It is not
+	// the generation counter's job: a filler's generation is perfectly valid,
+	// it has simply stopped being useful.
+	dropTurn string
+
 	activeTurn  string
 	turnStarted time.Time
 	playhead    time.Time
@@ -151,6 +168,8 @@ func (p *Player) Run(gen *Generation) {
 			p.beginSegment(seg)
 		case SegMark:
 			p.markSegment(seg)
+		case SegAbandon:
+			p.abandonSegment(seg)
 		case SegEnd:
 			p.finishTurn(seg)
 		default:
@@ -162,12 +181,58 @@ func (p *Player) Run(gen *Generation) {
 // allowed reports whether a queued item may still be played. Normally that
 // means its generation is current; a turn under grace is the one exception.
 func (p *Player) allowed(seg Segment, gen *Generation) bool {
+	p.mu.Lock()
+	if p.dropTurn != "" && p.dropTurn == seg.TurnID {
+		p.mu.Unlock()
+		return false
+	}
+	p.mu.Unlock()
 	if gen.Valid(seg.Gen) {
 		return true
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.graceTurn != "" && p.graceTurn == seg.TurnID
+}
+
+// IsBackchannel reports whether a turn ID belongs to an acknowledgement or a
+// holding filler rather than to an answer.
+func IsBackchannel(turnID string) bool { return strings.HasPrefix(turnID, "bc_") }
+
+// PreemptBackchannel cuts short an acknowledgement or holding filler that is
+// still playing, and reports whether there was one.
+//
+// A filler exists to cover a wait, and it stops being worth anything the moment
+// the wait is over. Left to finish, it does the opposite of its job: a real call
+// showed the answer synthesized at 3652 ms and not reaching the wire until
+// 5620 ms, because "我看一下" was still occupying the floor. Nearly two seconds
+// added by the thing meant to hide the delay.
+//
+// The cut is at the next chunk boundary, so at most one chunk of the filler is
+// lost, and a paced client still hears its buffered tail. Trailing off
+// mid-syllable because the answer arrived is what a person does anyway.
+//
+// No truncation is reported: a filler is not part of the conversation and must
+// not reach history, which is the same reason bc_ turns are skipped there.
+func (p *Player) PreemptBackchannel() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || !IsBackchannel(p.activeTurn) {
+		return false
+	}
+	id := p.activeTurn
+	p.dropTurn = id
+	kept := p.queue[:0]
+	for _, seg := range p.queue {
+		if seg.TurnID != id {
+			kept = append(kept, seg)
+		}
+	}
+	p.queue = kept
+	p.resetTurnLocked()
+	p.setSpeakingLocked(false)
+	p.cond.Signal()
+	return true
 }
 
 // Active reports whether the assistant still holds the floor: speaking now,
@@ -192,15 +257,63 @@ func (p *Player) GraceFinishSegment(turnID string) {
 	p.mu.Unlock()
 }
 
-// Enqueue adds an item to the speak channel.
-func (p *Player) Enqueue(seg Segment) {
+// Enqueue adds an item to the speak channel, and reports whether it was
+// accepted.
+//
+// A backchannel arriving after an answer has taken the floor is refused, and
+// that refusal is load-bearing rather than tidy-minded. maybeHoldingFiller
+// checks the floor is free before deciding to speak, but speakBackchannel then
+// synthesizes on its own goroutine, which takes a few hundred milliseconds —
+// ample time for the answer it was covering for to arrive and start playing. Its
+// audio then landed in the middle of that answer.
+//
+// The audible result is bad enough: "费用看方案。" — "让我查一下" — "您先看下微信…".
+// The invisible result is worse. Every turn switch resets the player's
+// per-turn accounting, so the answer's emittedMS restarted and its spoken spans
+// were dropped; a real call reported output_audio_ms: 801 for a forty-seven
+// character answer, and fed conversation history a five-character fragment of
+// what had actually been said. The model, believing it had never explained
+// itself, explained itself again on the next turn — which is exactly what that
+// call's transcript shows.
+//
+// So the floor belongs to an answer from its first segment to its last. A
+// backchannel may take a free floor, and PreemptBackchannel hands it back the
+// moment an answer needs it, but the two never overlap.
+func (p *Player) Enqueue(seg Segment) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
-		return
+		return false
+	}
+	if IsBackchannel(seg.TurnID) && (p.dropTurn == seg.TurnID || p.realTurnHoldsFloorLocked()) {
+		// Drop this one and everything else already queued for it, so a
+		// SegBegin that slipped in earlier cannot leave the turn half-open.
+		p.dropTurn = seg.TurnID
+		kept := p.queue[:0]
+		for _, q := range p.queue {
+			if q.TurnID != seg.TurnID {
+				kept = append(kept, q)
+			}
+		}
+		p.queue = kept
+		return false
 	}
 	p.queue = append(p.queue, seg)
 	p.cond.Signal()
+	return true
+}
+
+// realTurnHoldsFloorLocked reports whether an answer is playing or waiting to.
+func (p *Player) realTurnHoldsFloorLocked() bool {
+	if p.activeTurn != "" && !IsBackchannel(p.activeTurn) {
+		return true
+	}
+	for _, seg := range p.queue {
+		if !IsBackchannel(seg.TurnID) {
+			return true
+		}
+	}
+	return false
 }
 
 // Interrupt cuts the current turn. The caller must bump the generation first so
@@ -283,6 +396,11 @@ func (p *Player) ensureTurnLocked(turnID string) {
 		return
 	}
 	p.resetTurnLocked()
+	// dropTurn is deliberately not cleared here. Turn ids are unique for the
+	// life of a session — item_N and bc_N both come from monotonic counters —
+	// so a stale entry can never match a later turn, and keeping it means a
+	// dropped backchannel stays dropped even if one of its segments is still
+	// making its way through the queue.
 	p.activeTurn = turnID
 	p.turnStarted = time.Now()
 	p.playhead = p.turnStarted
@@ -293,6 +411,22 @@ func (p *Player) beginSegment(seg Segment) {
 	defer p.mu.Unlock()
 	p.ensureTurnLocked(seg.TurnID)
 	p.pendingText = seg.Text
+	p.pendingFrom = p.emittedMS
+}
+
+// abandonSegment drops the text announced by a SegBegin that produced no audio.
+//
+// fullSpokenLocked counts pendingText, because a segment cut off mid-flight did
+// reach the listener's ears in part. A segment that emitted nothing did not, and
+// leaving it pending puts a sentence the caller never heard into conversation
+// history — after which the model answers its own unheard sentence.
+func (p *Player) abandonSegment(seg Segment) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.activeTurn != seg.TurnID {
+		return
+	}
+	p.pendingText = ""
 	p.pendingFrom = p.emittedMS
 }
 

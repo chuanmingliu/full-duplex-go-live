@@ -18,7 +18,7 @@
   "disable_thinking": true,
   "history_turns": 16,
   "duplex": {
-    "backchannel": true,
+    "backchannel": false,
     "backchannel_after_ms": 2600,
     "backchannel_every_ms": 4200,
     "backchannel_phrases": [
@@ -26,7 +26,9 @@
       "好的",
       "我在听"
     ],
-    "holding_filler": true,
+    "user_backchannel_phrases": [],
+    "user_backchannel_hold_ms": 600,
+    "holding_filler": false,
     "holding_filler_after_ms": 1500,
     "holding_filler_phrases": [
       "我看一下",
@@ -35,7 +37,7 @@
     ],
     "speculative": true,
     "speculative_stable_ms": 180,
-    "speculative_min_chars": 6,
+    "speculative_min_chars": 4,
     "allow_barge_in": true,
     "on_new_query": "cut",
     "reset_tts_on_interrupt": false,

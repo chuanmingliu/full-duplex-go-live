@@ -3,6 +3,8 @@ package duplex
 import (
 	"context"
 	b64 "encoding/base64"
+	"io"
+	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -61,6 +63,8 @@ func (c *collector) emit(event any) {
 		c.counts[ev.Type]++
 	case live.BackchannelEvent:
 		c.counts[ev.Type]++
+	case live.InputBackchannelEvent:
+		c.counts[ev.Type]++
 	case live.SessionStartedEvent:
 		c.counts[ev.Type]++
 	case live.SessionClosedEvent:
@@ -98,6 +102,21 @@ func (c *collector) delegationReasons() []string {
 		}
 	}
 	return out
+}
+
+// outputTranscript reassembles what the assistant is recorded as having said
+// for one item. Locked, because the engine is still emitting.
+func (c *collector) outputTranscript(itemID string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var b strings.Builder
+	for _, ev := range c.events {
+		d, ok := ev.(live.TranscriptDelta)
+		if ok && d.Type == live.ServerOutputTranscriptDelta && d.ItemID == itemID {
+			b.WriteString(d.Content)
+		}
+	}
+	return b.String()
 }
 
 func (c *collector) find(match func(any) bool) any {
@@ -564,11 +583,55 @@ func (s *slowBackend) Stream(ctx context.Context, req provider.LLMRequest) (<-ch
 	return out, nil
 }
 
+// variableBackend takes a different amount of time on each turn, which is what
+// separates a wait worth covering from the way this session simply sounds.
+type variableBackend struct {
+	mu     sync.Mutex
+	delays []time.Duration
+	calls  int
+}
+
+func (v *variableBackend) Name() string { return "variable" }
+
+func (v *variableBackend) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	v.mu.Lock()
+	i := v.calls
+	v.calls++
+	if i >= len(v.delays) {
+		i = len(v.delays) - 1
+	}
+	delay := v.delays[i]
+	v.mu.Unlock()
+
+	out := make(chan provider.LLMDelta, 8)
+	go func() {
+		defer close(out)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return
+		}
+		for _, r := range "好的，已经查到了。" {
+			select {
+			case out <- provider.LLMDelta{Text: string(r)}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
 // TestEngineHoldsTheFloorWhileTheBackendWorks covers the behaviour a delegating
 // agent needs: the conversational layer keeps talking while the slow half runs
 // elsewhere, instead of going silent long enough to sound like a dropped call.
+//
+// The session has to have been quick first. A filler means "this is taking
+// longer than usual", and on the first delegation of a call there is no usual —
+// see TestHoldingFillerSaysNothingBeforeItKnowsWhatIsNormal.
 func TestEngineHoldsTheFloorWhileTheBackendWorks(t *testing.T) {
 	cfg := testConfig()
+	cfg.Duplex.Speculative = false
 	cfg.Duplex.HoldingFiller = true
 	cfg.Duplex.HoldingFillerAfterMS = 300
 	cfg.Duplex.HoldingFillerPhrases = []string{"我看一下"}
@@ -577,6 +640,65 @@ func TestEngineHoldsTheFloorWhileTheBackendWorks(t *testing.T) {
 	e := New(Options{
 		Cfg:        cfg,
 		SessionID:  "filler",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+	}, Deps{
+		ASR: mock.NewASR("明天的天气"),
+		LLM: &variableBackend{delays: []time.Duration{
+			50 * time.Millisecond, 50 * time.Millisecond, 2500 * time.Millisecond,
+		}},
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.Start(ctx)
+	defer e.Close()
+
+	for turn := 0; turn < 2; turn++ {
+		speak(e, cfg.ClientRate, 1200)
+		pause(e, cfg.ClientRate, 700)
+		waitFor(t, "a prompt answer", 8*time.Second, func() bool {
+			return c.count(live.ExtTurnMetrics) > turn
+		})
+	}
+	if n := c.count(live.ExtBackchannel); n != 0 {
+		t.Fatalf("%d filler(s) on turns the backend answered in 50 ms", n)
+	}
+
+	// Now one that takes fifty times as long as everything before it.
+	audioBefore := c.audioMS()
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+
+	waitFor(t, "a holding phrase while the backend works", 4*time.Second, func() bool {
+		return c.count(live.ExtBackchannel) > 0
+	})
+	// And audio for it, not merely the event.
+	waitFor(t, "filler audio", 3*time.Second, func() bool { return c.audioMS() > audioBefore+100 })
+}
+
+// TestHoldingFillerSaysNothingBeforeItKnowsWhatIsNormal is the regression test
+// for a filler that broke into the first exchange of a call.
+//
+// A real session: a 12k-character persona prompt put time-to-first-token at
+// about three seconds on every turn, holding_filler_after_ms was the default
+// 1.5 s, and the adaptive gate needed three observations before it would engage.
+// A short call never gets three. So the gate stayed off for turns one, two and
+// three and the filler fired on all of them — the tic it exists to prevent,
+// relocated to the start of the call, where it does the most damage. The caller
+// said 走走走 and heard 我看一下 back.
+//
+// A backend that is uniformly slow is a backend that is never unusually slow.
+func TestHoldingFillerSaysNothingBeforeItKnowsWhatIsNormal(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.HoldingFiller = true
+	cfg.Duplex.HoldingFillerAfterMS = 1500
+	cfg.Duplex.HoldingFillerPhrases = []string{"我看一下"}
+	c := newCollector(cfg.ClientRate)
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "uniform",
 		ClientRate: cfg.ClientRate,
 		Delegation: live.DelegationResponses,
 	}, Deps{
@@ -590,14 +712,17 @@ func TestEngineHoldsTheFloorWhileTheBackendWorks(t *testing.T) {
 	e.Start(ctx)
 	defer e.Close()
 
-	speak(e, cfg.ClientRate, 1200)
-	pause(e, cfg.ClientRate, 700)
-
-	waitFor(t, "a holding phrase while the backend works", 4*time.Second, func() bool {
-		return c.count(live.ExtBackchannel) > 0
-	})
-	// And audio for it, not merely the event.
-	waitFor(t, "filler audio", 3*time.Second, func() bool { return c.audioMS() > 100 })
+	for turn := 0; turn < 3; turn++ {
+		speak(e, cfg.ClientRate, 1200)
+		pause(e, cfg.ClientRate, 700)
+		waitFor(t, "the answer", 12*time.Second, func() bool {
+			return c.count(live.ExtTurnMetrics) > turn
+		})
+	}
+	if n := c.count(live.ExtBackchannel); n != 0 {
+		t.Errorf("%d filler(s) on a backend that is slow on every turn; none of those waits "+
+			"was unusual, and the first is the worst possible place to say so", n)
+	}
 }
 
 // TestEngineSkipsTheFillerOnAFastAnswer guards the cost: the filler must not
@@ -765,6 +890,752 @@ func TestEngineSpeculatesInsideTheEndOfTurnPause(t *testing.T) {
 	})
 }
 
+// silentASR is a recognizer that hears nothing at all: a noisy line, a far
+// microphone, a provider having a bad minute. It exists to prove the hold is
+// bounded — that the assistant does not get unlimited licence to keep talking
+// just because no evidence arrived.
+type silentASR struct{}
+
+func (silentASR) Name() string { return "silent" }
+
+func (silentASR) Open(ctx context.Context, _ provider.ASROptions) (provider.ASRStream, error) {
+	return &silentASRStream{results: make(chan provider.ASRResult)}, nil
+}
+
+type silentASRStream struct {
+	once    sync.Once
+	results chan provider.ASRResult
+}
+
+func (s *silentASRStream) Write([]byte) error                 { return nil }
+func (s *silentASRStream) Results() <-chan provider.ASRResult { return s.results }
+func (s *silentASRStream) CloseSend() error                   { s.stop(); return nil }
+func (s *silentASRStream) Close() error                       { s.stop(); return nil }
+func (s *silentASRStream) stop()                              { s.once.Do(func() { close(s.results) }) }
+
+// bcEngine builds an engine with the backchannel list active. A nil asr uses
+// the mock recognizer hearing `heard`.
+func bcEngine(t *testing.T, c *collector, asr provider.ASR, phrases []string, greeting string) *Engine {
+	t.Helper()
+	cfg := testConfig()
+	cfg.Duplex.Speculative = false
+	cfg.Duplex.AllowBargeIn = true
+	cfg.Duplex.OnNewQuery = "cut"
+	cfg.Duplex.UserBackchannelPhrases = phrases
+	// Deliberately shorter than vad.min_silence_ms, and that is the point. The
+	// final transcript cannot arrive until the VAD has closed the turn, so a
+	// hold that simply expires this long after the utterance opened can never
+	// see a verdict — which is exactly the bug this value reproduces. Only the
+	// distinction between "is anything arriving" and "what is the answer"
+	// makes these tests pass.
+	cfg.Duplex.UserBackchannelHoldMS = 200
+
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "backchannel",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+		Greeting:   greeting,
+	}, Deps{
+		ASR:  asr,
+		LLM:  llm,
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	e.Start(ctx)
+	t.Cleanup(func() { e.Close(); cancel() })
+	return e
+}
+
+// TestEngineKeepsTheFloorThroughAnAcknowledgement is the behaviour the whole
+// phrase list exists for: murmur agreement over the answer and the answer keeps
+// going.
+//
+// A full-duplex model does this natively, having learned that "嗯" is not a
+// request to stop. golive cannot hear the difference, so it holds the floor for
+// a moment and lets the recognizer settle it — and the assertion here is that
+// the murmur produces no truncation at all.
+func TestEngineKeepsTheFloorThroughAnAcknowledgement(t *testing.T) {
+	cfg := testConfig()
+	c := newCollector(cfg.ClientRate)
+	e := bcEngine(t, c, mock.NewASR("嗯"), []string{"嗯", "对", "好的"}, "")
+
+	speak(e, cfg.ClientRate, 900)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the assistant to take the floor", 5*time.Second, func() bool {
+		return c.audioMS() > 250
+	})
+
+	// Murmur over it.
+	speak(e, cfg.ClientRate, 500)
+	pause(e, cfg.ClientRate, 700)
+
+	waitFor(t, "the backchannel to be recognised", 4*time.Second, func() bool {
+		return c.count(live.ExtInputBackchannel) > 0
+	})
+	if n := c.count(live.ExtAudioTruncated); n != 0 {
+		t.Fatalf("an acknowledgement truncated the answer %d time(s); it must not interrupt", n)
+	}
+	// And it is not a question: nothing was delegated for it.
+	if reasons := c.delegationReasons(); len(reasons) != 1 {
+		t.Fatalf("delegations = %v; the acknowledgement must not be answered", reasons)
+	}
+}
+
+// TestEngineYieldsToRealSpeech is the other half, and the one that keeps the
+// feature honest. A phrase list that swallowed genuine interruptions would be a
+// far worse bug than the one it fixes.
+func TestEngineYieldsToRealSpeech(t *testing.T) {
+	cfg := testConfig()
+	c := newCollector(cfg.ClientRate)
+	// Begins with a listed phrase and continues — the case the incremental
+	// prefix check exists for.
+	e := bcEngine(t, c, mock.NewASR("嗯等一下我改主意了"), []string{"嗯", "对", "好的"}, "")
+
+	speak(e, cfg.ClientRate, 900)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the assistant to take the floor", 5*time.Second, func() bool {
+		return c.audioMS() > 250
+	})
+
+	speak(e, cfg.ClientRate, 900)
+	waitFor(t, "the interruption", 4*time.Second, func() bool {
+		return c.count(live.ExtAudioTruncated) > 0
+	})
+	if n := c.count(live.ExtInputBackchannel); n != 0 {
+		t.Fatalf("real speech was treated as a backchannel %d time(s)", n)
+	}
+}
+
+// TestEngineYieldsWhenTheTranscriptNeverArrives pins the failure direction.
+//
+// A recognizer that says nothing — a noisy line, a provider having a bad
+// minute — must not buy the assistant unlimited licence to keep talking. The
+// hold is bounded and expires toward yielding, because talking over someone is
+// worse than stopping for nothing.
+func TestEngineYieldsWhenTheTranscriptNeverArrives(t *testing.T) {
+	cfg := testConfig()
+	c := newCollector(cfg.ClientRate)
+	// A long greeting gives the assistant the floor without needing a turn,
+	// which a recognizer that hears nothing could never produce.
+	e := bcEngine(t, c, silentASR{}, []string{"嗯", "对"},
+		"你好，我是语音助手，今天有什么可以帮你的吗，随时打断我都可以")
+	e.Greet()
+
+	waitFor(t, "the greeting to start", 5*time.Second, func() bool {
+		return c.audioMS() > 250
+	})
+
+	speak(e, cfg.ClientRate, 1400)
+	waitFor(t, "the hold to expire and yield the floor", 4*time.Second, func() bool {
+		return c.count(live.ExtAudioTruncated) > 0
+	})
+	if n := c.count(live.ExtInputBackchannel); n != 0 {
+		t.Fatalf("silence was reported as a backchannel %d time(s); no evidence is not evidence", n)
+	}
+}
+
+// TestHoldingFillerFiresOnlyWhenATurnIsLateForThisSession is the regression
+// test for a filler that became a verbal tic.
+//
+// A real call showed 稍等一下 before literally every answer: the backend's
+// time-to-first-token had settled around 2.1 s under a long system prompt,
+// holding_filler_after_ms was still the 1.5 s that suited a shorter one, and so
+// the threshold was crossed on every single turn. A filler that always fires is
+// not covering an unusual wait — it is just something the agent says, and it
+// costs a synthesis and delays the real answer each time.
+func TestHoldingFillerFiresOnlyWhenATurnIsLateForThisSession(t *testing.T) {
+	e := &Engine{}
+	e.opts.Cfg.Duplex.HoldingFillerAfterMS = 1500
+
+	// Nothing observed yet: "late" has no meaning, and the caller must treat
+	// that as a reason to stay quiet rather than as a reason to fall back on
+	// the configured floor.
+	if _, known := e.lateThreshold(); known {
+		t.Fatal("lateThreshold claimed to know what is late before a single answer had been measured")
+	}
+
+	// One observation is enough, because three is more than a short call ever
+	// reaches. A session whose every turn takes about three seconds fired the
+	// filler on turns one, two and three while waiting for a third sample.
+	e.ttfa.Add(3000)
+	if _, known := e.lateThreshold(); !known {
+		t.Fatal("lateThreshold still did not know after an answer had been measured")
+	}
+	e.ttfa = rollingMS{}
+
+	// A backend that consistently takes about 2.1 s. Every one of those turns
+	// crosses the 1.5 s floor, which is exactly how the tic happened.
+	for _, ms := range []int64{2100, 2050, 2150, 2120} {
+		e.ttfa.Add(ms)
+	}
+	late, known := e.lateThreshold()
+	if !known {
+		t.Fatal("lateThreshold stayed unknown after four observations")
+	}
+	if late <= 2100*time.Millisecond {
+		t.Errorf("lateThreshold = %v; a typical 2.1s turn must not count as late", late)
+	}
+	// And a genuinely slow turn still must.
+	if late >= 4*time.Second {
+		t.Errorf("lateThreshold = %v; a turn twice the usual wait must still get a filler", late)
+	}
+}
+
+func TestRollingMSKeepsRecentHistory(t *testing.T) {
+	var r rollingMS
+	if r.N() != 0 || r.P50() != 0 {
+		t.Fatal("an empty window must report nothing rather than a made-up number")
+	}
+	r.Add(-1)
+	if r.N() != 0 {
+		t.Fatal("a negative duration is a clock artefact, not an observation")
+	}
+	for i := 1; i <= 20; i++ {
+		r.Add(int64(i * 100))
+	}
+	// The window is short on purpose: a backend's latency changes within a
+	// call, and a long window would still be describing the first few turns.
+	if r.N() > 8 {
+		t.Errorf("window held %d observations; it is meant to stay short", r.N())
+	}
+	if got := r.P50(); got < 1500 {
+		t.Errorf("P50 = %d; the window must have dropped the early, unrepresentative values", got)
+	}
+}
+
+// TestGreetingKeepsItsOwnOrigin is the regression test for negative latencies.
+//
+// A real call reported first_segment_ms: -742 and first_audio_out_ms: -480 on
+// the greeting. The numbers were real; the zero was wrong. The caller said
+// "好。" nine hundred milliseconds into a greeting that was already playing, and
+// the engine stamped that utterance's speech-end onto whatever turn was current
+// — which was the greeting. Audio already spoken was then dated to a moment
+// still in the future, so every figure came out negative.
+//
+// A turn the caller is not waiting for has no origin, and a turn already live
+// when they started talking belongs to an earlier utterance or to none.
+func TestGreetingKeepsItsOwnOrigin(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Speculative = false
+	c := newCollector(cfg.ClientRate)
+	e := bcEngine(t, c, mock.NewASR("好"), []string{"好", "嗯"},
+		"您好，我是保险管家小翠儿，看到您的爱车快到报价期了，给您来电做个报价")
+	e.Greet()
+
+	waitFor(t, "the greeting to start", 5*time.Second, func() bool {
+		return c.audioMS() > 300
+	})
+	// Talk over it, exactly as the caller did.
+	speak(e, cfg.ClientRate, 700)
+	pause(e, cfg.ClientRate, 700)
+
+	waitFor(t, "the greeting's metrics", 6*time.Second, func() bool {
+		return c.count(live.ExtTurnMetrics) > 0
+	})
+
+	ev := c.find(func(a any) bool {
+		m, ok := a.(live.TurnMetricsEvent)
+		return ok && m.TurnID == "item_1"
+	})
+	if ev == nil {
+		t.Fatal("no metrics for the greeting turn")
+	}
+	m := ev.(live.TurnMetricsEvent)
+	for name, v := range map[string]int64{
+		"first_segment_ms":   m.FirstSegmentMS,
+		"tts_first_audio_ms": m.TTSFirstAudioMS,
+		"first_audio_out_ms": m.FirstAudioOutMS,
+	} {
+		if v < 0 {
+			t.Errorf("%s = %d; the greeting was dated to a later utterance's speech end", name, v)
+		}
+	}
+}
+
+// TestFillerYieldsToTheAnswerItWasCovering is the regression test for a filler
+// that made the wait longer.
+//
+// A real turn synthesized its answer at 3652 ms and did not get it onto the
+// wire until 5620 ms, because 我看一下 was still occupying the floor. A filler
+// exists to cover a wait; one that outlives the wait is pure added delay, and
+// nearly two seconds of it.
+func TestFillerYieldsToTheAnswerItWasCovering(t *testing.T) {
+	var mu sync.Mutex
+	heard := map[string]int{}
+	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
+		func(id string, pcm []byte) {
+			mu.Lock()
+			heard[id] += len(pcm)
+			mu.Unlock()
+		})
+	bytesFor := func(id string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return heard[id]
+	}
+
+	var gen Generation
+	go p.Run(&gen)
+	defer p.Close()
+
+	// Nothing playing: there is nothing to preempt, and saying so matters —
+	// the engine calls this on every first segment.
+	if p.PreemptBackchannel() {
+		t.Fatal("preempted a filler that was not there")
+	}
+
+	// A filler takes the floor. Paced, and a second of audio, so there is a
+	// real tail to cut rather than a race with the run loop.
+	oneSecond := make([]byte, 2*24000)
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "bc_1", Text: "我看一下"})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "bc_1", PCM: oneSecond})
+	waitFor(t, "the filler to be heard", 2*time.Second, func() bool { return bytesFor("bc_1") > 0 })
+
+	if !p.PreemptBackchannel() {
+		t.Fatal("a playing filler was not preempted")
+	}
+	cut := bytesFor("bc_1")
+	if cut >= len(oneSecond) {
+		t.Fatal("the filler had already finished; nothing was actually cut")
+	}
+	waitFor(t, "the floor to be released", 2*time.Second, func() bool { return !p.Active() })
+
+	// And it stays cut: the rest of that second must never reach the wire.
+	time.Sleep(200 * time.Millisecond)
+	if now := bytesFor("bc_1"); now > cut {
+		t.Errorf("filler audio kept flowing after preemption: %d bytes then %d now", cut, now)
+	}
+
+	// An answer must never be preempted this way, whatever else is true.
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_9", Text: "明天下午两点"})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_9", PCM: oneSecond})
+	waitFor(t, "the answer to be heard", 2*time.Second, func() bool { return bytesFor("item_9") > 0 })
+	if p.PreemptBackchannel() {
+		t.Fatal("PreemptBackchannel cut a real answer; only bc_ turns may be dropped")
+	}
+}
+
+// TestSpokenFillersReachTheTranscript is the regression test for a written
+// record that did not match the call.
+//
+// A real call spoke four holding fillers — 稍等一下, 让我查一下, 我看一下,
+// 让我查一下 — and the transcript contained none of them. Two of those belonged
+// to turns the caller interrupted before any answer arrived, so the transcript
+// showed two user questions in a row with no reply, when what actually happened
+// was the agent saying "one moment" and then being cut off. The record read as
+// an agent ignoring its caller.
+//
+// What was said aloud and what the model is told are different records.
+// Conflating them is what hid this, so the test pins both directions.
+func TestSpokenFillersReachTheTranscript(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Backchannel = true
+	cfg.Duplex.BackchannelPhrases = []string{"我在听"}
+	c := newCollector(cfg.ClientRate)
+	e, _ := newTestEngine(t, cfg, c)
+
+	filler := &Turn{ID: "bc_1", Generation: e.gen.Current(), State: TurnCommitted}
+	e.speakBackchannel(filler, "稍等一下")
+
+	said := c.outputTranscript("bc_1")
+	if said != "稍等一下" {
+		t.Errorf("transcript for the filler = %q, want %q; the caller heard it, so the record must show it",
+			said, "稍等一下")
+	}
+
+	// The other direction: it must not become something the model reasons
+	// from. An agent that reads its own "one moment" back as conversation will
+	// answer it.
+	e.recordTurn("bc_1", "稍等一下")
+	done := make(chan struct{})
+	e.post(func() { close(done) })
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine loop did not drain")
+	}
+	for _, m := range e.history {
+		if strings.Contains(m.Content, "稍等一下") {
+			t.Fatal("a holding filler reached conversation history")
+		}
+	}
+}
+
+// TestAnswerOwnsTheFloorUntilItEnds is the regression test for the defect
+// behind an agent that repeated itself.
+//
+// maybeHoldingFiller checks the floor is free before deciding to speak, but
+// speakBackchannel then synthesizes on its own goroutine — a few hundred
+// milliseconds during which the answer it was covering for can arrive and start
+// playing. Its audio then landed mid-answer.
+//
+// The audible damage is obvious. The invisible damage is what actually hurt: a
+// turn switch resets the player's per-turn accounting, so the answer's
+// emittedMS restarted and its spoken spans were discarded. A real call reported
+// output_audio_ms: 801 for a forty-seven character answer and wrote a
+// five-character fragment into conversation history — after which the model,
+// with no record of having explained itself, explained itself again. Two
+// near-identical answers in one short call, and nothing in the log naming the
+// cause.
+func TestAnswerOwnsTheFloorUntilItEnds(t *testing.T) {
+	var mu sync.Mutex
+	heard := map[string]int{}
+	var doneID, doneText string
+	var doneMS int64
+
+	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
+		func(id string, pcm []byte) {
+			mu.Lock()
+			heard[id] += len(pcm)
+			mu.Unlock()
+		})
+	p.OnTurnDone(func(id string, ms int64, text string) {
+		mu.Lock()
+		doneID, doneMS, doneText = id, ms, text
+		mu.Unlock()
+	})
+
+	var gen Generation
+	go p.Run(&gen)
+	defer p.Close()
+
+	sec := make([]byte, 2*24000)
+	first, second := "费用看方案。", "您先看下微信服务通知。"
+
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_3", Text: first})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_3", PCM: sec})
+	p.Enqueue(Segment{Kind: SegMark, Gen: gen.Current(), TurnID: "item_3", Text: first})
+	waitFor(t, "the answer to take the floor", 3*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return heard["item_3"] > 0
+	})
+
+	// A filler whose synthesis began while the floor was free now arrives.
+	if p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "bc_1", Text: "让我查一下"}) {
+		t.Error("a filler was accepted while an answer held the floor")
+	}
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "bc_1", PCM: sec})
+	p.Enqueue(Segment{Kind: SegMark, Gen: gen.Current(), TurnID: "bc_1", Text: "让我查一下"})
+
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_3", Text: second})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_3", PCM: sec})
+	p.Enqueue(Segment{Kind: SegMark, Gen: gen.Current(), TurnID: "item_3", Text: second})
+	p.Enqueue(Segment{Kind: SegEnd, Gen: gen.Current(), TurnID: "item_3"})
+
+	waitFor(t, "the answer to finish", 15*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return doneID != ""
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if heard["bc_1"] != 0 {
+		t.Errorf("%d bytes of filler played inside the answer", heard["bc_1"])
+	}
+	// Two seconds were emitted and two seconds must be reported. Under-reporting
+	// here is what made a truncation-free turn look like a cut one.
+	if doneMS < 1900 {
+		t.Errorf("output_audio_ms = %d, want ~2000; the turn's accounting was reset mid-answer", doneMS)
+	}
+	// And the spoken text must be whole, because this is what reaches history.
+	if !strings.Contains(doneText, first) || !strings.Contains(doneText, second) {
+		t.Errorf("spoken text = %q; history would lose what the assistant actually said, "+
+			"and the model would repeat it", doneText)
+	}
+}
+
+// TestBackchannelHoldDoesNotBlockSpeculation pins that a pending floor hold —
+// created whenever the caller speaks over the assistant, which with a holding
+// filler playing is most turns — does not stop the backend being started early.
+//
+// Deciding whether to yield the floor and deciding whether to guess at an
+// answer are different questions, and a turn that waits for the final
+// transcript pays the backend's full time-to-first-token. On a 3 s backend that
+// is the difference between answering and being interrupted before answering.
+func TestBackchannelHoldDoesNotBlockSpeculation(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Speculative = true
+	cfg.Duplex.SpeculativeStableMS = 200
+	cfg.Duplex.SpeculativeMinChars = 4
+	cfg.VAD.MinSilenceMS = 900
+	cfg.Duplex.UserBackchannelPhrases = []string{"嗯", "啊", "好的"}
+	cfg.Duplex.UserBackchannelHoldMS = 600
+	c := newCollector(cfg.ClientRate)
+
+	// A question that opens with a listed acknowledgement, which is exactly the
+	// case the hold exists for — and must still be speculated on.
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := New(Options{
+		Cfg:         cfg,
+		SessionID:   "hold-vs-spec",
+		ClientRate:  cfg.ClientRate,
+		Delegation:  live.DelegationResponses,
+		Speculative: true,
+		Greeting:    "您好，我是车险管家小翠儿，看到您的爱车快到报价期了给您来电",
+	}, Deps{
+		ASR:  mock.NewASR("啊啊怎么了这是什么"),
+		LLM:  llm,
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	e.Start(ctx)
+	t.Cleanup(func() { e.Close(); cancel() })
+	e.Greet()
+	waitFor(t, "the greeting to hold the floor", 5*time.Second, func() bool {
+		return c.audioMS() > 200
+	})
+
+	// Talk over it. A hold is created, because the assistant has the floor.
+	speak(e, cfg.ClientRate, 1800)
+	go pause(e, cfg.ClientRate, 2000)
+
+	waitFor(t, "a speculative delegation", 3*time.Second, func() bool {
+		for _, r := range c.delegationReasons() {
+			if r == "speculative" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// TestSpeculationStillSkipsPlainAcknowledgements is the other half: the narrow
+// condition that is genuinely not worth guessing on.
+func TestSpeculationStillSkipsPlainAcknowledgements(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.SpeculativeMinChars = 2
+	e := &Engine{}
+	e.opts.Cfg = cfg
+	e.opts.Speculative = true
+	e.bcSet = NewPhraseSet([]string{"嗯", "好的"})
+	e.asrRun = &asrRun{lastText: "嗯嗯"}
+	e.watch = NewStabilityWatch(200*time.Millisecond, 2)
+
+	e.maybeSpeculate()
+	if e.specWhy == "" {
+		t.Fatal("a pure acknowledgement was treated as worth speculating on")
+	}
+	if !strings.Contains(e.specWhy, "acknowledgement") {
+		t.Errorf("specWhy = %q, want it to name the acknowledgement", e.specWhy)
+	}
+}
+
+// TestFillerDoesNotRepeatItself covers the other thing that call made obvious.
+//
+// Independent random choice from three phrases repeats about a third of the
+// time, and the call duly produced 让我查一下 on three turns running. A person
+// filling a silence varies what they say; the same four syllables repeated is
+// how a caller works out the machine is stuck.
+func TestFillerDoesNotRepeatItself(t *testing.T) {
+	e := &Engine{}
+	phrases := []string{"我看一下", "稍等一下", "让我查一下"}
+	prev := ""
+	for i := 0; i < 200; i++ {
+		got := e.pickPhrase(phrases, &e.lastFiller)
+		if got == prev {
+			t.Fatalf("phrase %q repeated on consecutive turns", got)
+		}
+		prev = got
+	}
+
+	// A single-phrase list has no choice, and must not spin looking for one.
+	e2 := &Engine{}
+	one := []string{"稍等"}
+	for i := 0; i < 3; i++ {
+		if got := e2.pickPhrase(one, &e2.lastFiller); got != "稍等" {
+			t.Fatalf("single-phrase list returned %q", got)
+		}
+	}
+	if got := e2.pickPhrase(nil, &e2.lastFiller); got != "" {
+		t.Errorf("empty list returned %q", got)
+	}
+}
+
+// TestOneFillerBetweenAnswers is the regression test for the worst thing a
+// holding filler can do.
+//
+// When the backend is slower than the caller's patience, every turn is
+// superseded before it speaks and the only thing the caller ever hears is the
+// filler. A real call went "让我查一下" — question — "让我查一下" — question —
+// "让我查一下", three turns deep, with no answer at any point. Each one was
+// individually justified by its own turn running long; together they were an
+// agent that appeared to have nothing to say but that.
+//
+// One filler is a reassurance that work is happening. The second, with no
+// answer in between, is evidence that it is not.
+func TestOneFillerBetweenAnswers(t *testing.T) {
+	e := &Engine{}
+	e.opts.Cfg.Duplex.HoldingFiller = true
+	e.opts.Cfg.Duplex.HoldingFillerAfterMS = 1
+	e.opts.Cfg.Duplex.HoldingFillerPhrases = []string{"我看一下", "稍等一下"}
+
+	// Nothing heard yet: a filler is allowed.
+	if e.fillerSinceAnswer != 0 {
+		t.Fatal("a fresh session already owes the caller an answer")
+	}
+	e.fillerSinceAnswer++ // as maybeHoldingFiller does when it speaks one
+
+	// The turn is then superseded without speaking, and the next slow turn must
+	// not repeat the promise.
+	if e.fillerSinceAnswer == 0 {
+		t.Fatal("a spoken filler was not counted")
+	}
+
+	// An answer reaching the caller clears it.
+	turn := &Turn{ID: "item_9"}
+	turn.MarkFirstAudio()
+	e.delegatedTurn = turn
+	e.delegatedAt = time.Now().Add(-time.Second)
+	e.observeTTFA()
+	if e.fillerSinceAnswer != 0 {
+		t.Error("an answer was heard but the filler budget was not restored")
+	}
+	// And the observation feeds the lateness threshold, so a session that never
+	// answers never learns what normal looks like — which is why the floor
+	// still applies.
+	if e.ttfa.N() != 1 {
+		t.Errorf("ttfa observations = %d, want 1", e.ttfa.N())
+	}
+}
+
+// TestHistoryIsBoundedBySizeNotJustTurns covers the largest single term in the
+// cascade.
+//
+// Two logs from the same machine, model and endpoint: a 79-character system
+// prompt gave a time-to-first-token of 259–546 ms, and a long persona prompt at
+// the same history_turns gave 2441–3385 ms. Prompt size is what the backend
+// charges for, and history_turns does not constrain it — sixteen exchanges can
+// be four hundred characters or four thousand.
+func TestHistoryIsBoundedBySizeNotJustTurns(t *testing.T) {
+	e := &Engine{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	e.opts.Cfg.HistoryTurns = 16
+	e.opts.Cfg.HistoryMaxChars = 100
+
+	long := strings.Repeat("字", 60)
+	for i := 0; i < 8; i++ {
+		e.history = append(e.history,
+			provider.Message{Role: provider.RoleUser, Content: "多少钱"},
+			provider.Message{Role: provider.RoleAssistant, Content: long})
+	}
+	// Sixteen messages is inside history_turns, so that cap alone changes
+	// nothing — which is the point.
+	before := len(e.history)
+	e.trimHistory()
+	if len(e.history) >= before {
+		t.Fatalf("history stayed at %d messages; the size limit did nothing", len(e.history))
+	}
+
+	total := 0
+	for _, m := range e.history {
+		total += len([]rune(m.Content))
+	}
+	if total > e.opts.Cfg.HistoryMaxChars {
+		t.Errorf("history is %d characters, limit is %d", total, e.opts.Cfg.HistoryMaxChars)
+	}
+	// The newest exchange must survive: dropping that would leave the model
+	// answering without the question.
+	if last := e.history[len(e.history)-1]; last.Content != long {
+		t.Error("trimming dropped from the wrong end; the newest turn must be kept")
+	}
+
+	// Zero disables it, for anyone who would rather pay the latency.
+	e2 := &Engine{log: e.log}
+	e2.opts.Cfg.HistoryTurns = 16
+	e2.opts.Cfg.HistoryMaxChars = 0
+	e2.history = append([]provider.Message(nil), e.history...)
+	e2.history = append(e2.history, provider.Message{Role: provider.RoleUser, Content: long})
+	n := len(e2.history)
+	e2.trimHistory()
+	if len(e2.history) != n {
+		t.Errorf("history_max_chars: 0 trimmed anyway (%d -> %d)", n, len(e2.history))
+	}
+}
+
+// TestNoiseDoesNotCostTheAssistantItsTurn is the regression test for a greeting
+// that played half and stopped.
+//
+// A real call cut the greeting 768 ms in, to an utterance that produced no
+// transcript at all: a speech.stopped with no delegation behind it, and an
+// empty row in the transcript. The VAD heard something; the recognizer found no
+// words in it. A cough, a door, or the assistant's own voice returning through
+// a speaker — barge_in_min_speech_ms had already let it through, because
+// acoustics cannot tell a door closing from a syllable.
+//
+// The transcript can tell them apart, and deferring the interrupt is what makes
+// that usable: an interrupt taken the moment the VAD opens cannot be given back
+// once the recognizer reports silence.
+func TestNoiseDoesNotCostTheAssistantItsTurn(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.AllowBargeIn = true
+	cfg.Duplex.OnNewQuery = "cut"
+	cfg.Duplex.Speculative = false
+	// Deliberately empty: this has nothing to do with acknowledgements, and
+	// must work for a deployment that configured no phrase list at all.
+	cfg.Duplex.UserBackchannelPhrases = nil
+	cfg.Duplex.UserBackchannelHoldMS = 600
+
+	c := newCollector(cfg.ClientRate)
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "noise",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+		Greeting:   "您好，我是众安保险的车险管家小翠儿，看到您的爱车快到报价期了给您来电做个最低的报价",
+	}, Deps{
+		ASR:  silentASR{}, // hears the noise, finds no words in it
+		LLM:  llm,
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	e.Start(ctx)
+	t.Cleanup(func() { e.Close(); cancel() })
+	e.Greet()
+
+	waitFor(t, "the greeting to start", 5*time.Second, func() bool {
+		return c.audioMS() > 250
+	})
+	before := c.audioMS()
+
+	// A noise loud enough to open the VAD, which the recognizer cannot
+	// transcribe.
+	speak(e, cfg.ClientRate, 500)
+	pause(e, cfg.ClientRate, 800)
+
+	// The greeting must still be going.
+	waitFor(t, "the greeting to keep playing through the noise", 6*time.Second, func() bool {
+		return c.audioMS() > before+400
+	})
+	if n := c.count(live.ExtAudioTruncated); n != 0 {
+		t.Errorf("the greeting was truncated %d time(s) by a noise that produced no words", n)
+	}
+	// And nothing the caller never said should appear as a turn.
+	if n := c.count(live.ServerDelegationCreated); n != 0 {
+		t.Errorf("%d delegation(s) for an utterance with no transcript", n)
+	}
+}
+
+func TestIsBackchannel(t *testing.T) {
+	for id, want := range map[string]bool{
+		"bc_1": true, "bc_42": true,
+		"item_1": false, "item_12": false, "": false,
+	} {
+		if got := IsBackchannel(id); got != want {
+			t.Errorf("IsBackchannel(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
+
 // TestEnginePrewarmsBeforeTheCriticalPath pins the two moments the engine
 // pays for handshakes.
 //
@@ -839,4 +1710,362 @@ func TestEngineDoesNotSpeculateWhileTheSpeakerIsStillTalking(t *testing.T) {
 	waitFor(t, "the turn to be delegated once speech ends", 3*time.Second, func() bool {
 		return len(c.delegationReasons()) > 0
 	})
+}
+
+// mutedTTS imitates the provider outcome behind `speak: segment synthesized …
+// audio_ms=0 ms=0`, which a real session log showed twice: Synthesize returns
+// successfully and its channel closes without a single frame of audio.
+//
+// MiniMax does exactly this. readAudio's first act is to check the context, and
+// on a cancelled one it abandons the task and returns — no chunk, no error, an
+// empty closed channel. The engine's chunk loop then never runs, which is the
+// trap: the supersession check lives inside the loop body, so a segment with no
+// audio skipped it and fell through to the closing mark.
+//
+// The mark is what puts the sentence into conversation history. An answer whose
+// later segments were silent therefore told the model it had said things the
+// caller never heard, and the next turn was generated as a continuation of
+// them. That is what a caller hears as an answer arriving in pieces.
+type mutedTTS struct {
+	mu   sync.Mutex
+	rate int
+	segs int
+}
+
+func (m *mutedTTS) Name() string { return "muted" }
+
+func (m *mutedTTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	rate := opts.SampleRate
+	if rate <= 0 {
+		rate = provider.PipelineRate
+	}
+	m.mu.Lock()
+	m.rate = rate
+	m.mu.Unlock()
+	return m, nil
+}
+
+func (m *mutedTTS) SampleRate() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rate <= 0 {
+		return provider.PipelineRate
+	}
+	return m.rate
+}
+
+func (m *mutedTTS) Close() error { return nil }
+
+func (m *mutedTTS) Synthesize(ctx context.Context, text string) (<-chan provider.TTSChunk, error) {
+	m.mu.Lock()
+	m.segs++
+	first := m.segs == 1
+	rate := m.rate
+	m.mu.Unlock()
+
+	out := make(chan provider.TTSChunk, 4)
+	go func() {
+		defer close(out)
+		// The first segment is audible so the failure is partial, which is what
+		// the log shows: the caller hears the opening and nothing after it.
+		if !first {
+			return
+		}
+		select {
+		case out <- provider.TTSChunk{PCM: make([]byte, rate)}: // one second
+		case <-ctx.Done():
+		}
+	}()
+	return out, nil
+}
+
+// TestSilentSegmentsDoNotEnterHistory is the regression test for that fall-through.
+func TestSilentSegmentsDoNotEnterHistory(t *testing.T) {
+	cfg := testConfig()
+	c := newCollector(cfg.ClientRate)
+	tts := &mutedTTS{}
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "muted",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+	}, Deps{
+		ASR:  mock.NewASR("明天的天气"),
+		LLM:  mock.NewLLM(),
+		TTS:  tts,
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.Start(ctx)
+	defer e.Close()
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+
+	waitFor(t, "every segment to be attempted", 8*time.Second, func() bool {
+		tts.mu.Lock()
+		defer tts.mu.Unlock()
+		return tts.segs >= 2
+	})
+	// Let the player drain and the turn be recorded.
+	waitFor(t, "the answer to finish", 8*time.Second, func() bool {
+		return !e.player.Active()
+	})
+	done := make(chan struct{})
+	e.post(func() { close(done) })
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine loop did not drain")
+	}
+
+	reply := mock.Reply("明天的天气")
+	audible := []rune(reply)
+	var said string
+	for _, m := range e.history {
+		if m.Role == provider.RoleAssistant {
+			said += m.Content
+		}
+	}
+	// Whatever was audible is a prefix of the reply; the point is that history
+	// must not run past the audio. One second of speech cannot cover a reply
+	// this long, so a history entry holding all of it is the bug.
+	if len([]rune(said)) >= len(audible) {
+		t.Errorf("history records %d characters of a %d-character reply, but only the first "+
+			"segment produced audio; the model would answer sentences the caller never heard\n  history: %q",
+			len([]rune(said)), len(audible), said)
+	}
+}
+
+// TestAbandonedSegmentIsNotReportedAsSpoken pins the player half of the silent
+// segment fix at the level where it matters: what OnTurnDone hands to history.
+//
+// The last segment is the one that catches a regression, because pendingText is
+// only counted when no mark follows it.
+func TestAbandonedSegmentIsNotReportedAsSpoken(t *testing.T) {
+	var mu sync.Mutex
+	var doneID, doneText string
+
+	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
+		func(id string, pcm []byte) {})
+	p.OnTurnDone(func(id string, ms int64, text string) {
+		mu.Lock()
+		doneID, doneText = id, text
+		mu.Unlock()
+	})
+
+	var gen Generation
+	go p.Run(&gen)
+	defer p.Close()
+
+	heard, silent := "费用看方案。", "您先看下微信服务通知。"
+	sec := make([]byte, 2*24000)
+
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_3", Text: heard})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_3", PCM: sec})
+	p.Enqueue(Segment{Kind: SegMark, Gen: gen.Current(), TurnID: "item_3", Text: heard})
+
+	// Announced, then synthesized to nothing.
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_3", Text: silent})
+	p.Enqueue(Segment{Kind: SegAbandon, Gen: gen.Current(), TurnID: "item_3"})
+	p.Enqueue(Segment{Kind: SegEnd, Gen: gen.Current(), TurnID: "item_3"})
+
+	waitFor(t, "the answer to finish", 15*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return doneID != ""
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(doneText, heard) {
+		t.Errorf("spoken text = %q; it must keep the segment that did play", doneText)
+	}
+	if strings.Contains(doneText, silent) {
+		t.Errorf("spoken text = %q; it contains a sentence that produced no audio, so the "+
+			"model would carry on from something the caller never heard", doneText)
+	}
+}
+
+// audioRuns returns the turn ids of the audio deltas in the order they went
+// out, collapsed to runs. ["item_1","item_2"] is one answer then the next;
+// ["item_1","item_2","item_1"] is two answers interleaved.
+func (c *collector) audioRuns() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []string
+	for _, ev := range c.events {
+		d, ok := ev.(live.OutputAudioDelta)
+		if !ok {
+			continue
+		}
+		if len(out) == 0 || out[len(out)-1] != d.ItemID {
+			out = append(out, d.ItemID)
+		}
+	}
+	return out
+}
+
+// TestOnNewQueryQueueDoesNotInterleave covers the policy the page describes as
+// "say everything first".
+//
+// The worry is structural: the player holds one FIFO queue and one active turn,
+// and under queue nothing stops the interrupted answer — so two pipes can be
+// pushing into the same queue at once. If the second answer's segments landed
+// between the first answer's, the two would interleave, and every turn switch
+// runs ensureTurnLocked, which resets the per-turn accounting and drops the
+// spoken spans of whichever answer was mid-flight.
+//
+// It holds up, including with a provider that serializes synthesis on one
+// connection the way a real one does (TestOnNewQueryQueueSaysEverything), and
+// this pins it.
+func TestOnNewQueryQueueDoesNotInterleave(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.OnNewQuery = "queue"
+	cfg.Duplex.Speculative = false
+	c := newCollector(cfg.ClientRate)
+	e, _ := newTestEngine(t, cfg, c)
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the first answer to be speaking", 6*time.Second, func() bool {
+		return len(c.audioRuns()) > 0
+	})
+
+	// Ask something else while it is still talking.
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the second answer", 10*time.Second, func() bool {
+		return len(c.audioRuns()) > 1
+	})
+	// Let both run to completion.
+	waitFor(t, "the floor to clear", 20*time.Second, func() bool {
+		return !e.player.Active()
+	})
+
+	runs := c.audioRuns()
+	seen := map[string]bool{}
+	for _, id := range runs {
+		if seen[id] {
+			t.Fatalf("audio order %v: %s came back after another answer had started; "+
+				"queue is supposed to finish one answer before beginning the next", runs, id)
+		}
+		seen[id] = true
+	}
+}
+
+// serialTTS models the one property of a real vendor stream that the mock does
+// not have: a single persistent connection that serializes synthesis, so two
+// turns speaking at once have to take turns through the same lock. It is the
+// shape in which "say everything first" is most likely to come apart.
+type serialTTS struct {
+	mu    sync.Mutex
+	rate  int
+	delay time.Duration
+
+	cmu   sync.Mutex
+	calls []string
+}
+
+func (s *serialTTS) Name() string { return "serial" }
+
+func (s *serialTTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	rate := opts.SampleRate
+	if rate <= 0 {
+		rate = provider.PipelineRate
+	}
+	s.rate = rate
+	return s, nil
+}
+
+func (s *serialTTS) SampleRate() int { return s.rate }
+func (s *serialTTS) Close() error    { return nil }
+
+func (s *serialTTS) spoken() []string {
+	s.cmu.Lock()
+	defer s.cmu.Unlock()
+	return append([]string(nil), s.calls...)
+}
+
+func (s *serialTTS) Synthesize(ctx context.Context, text string) (<-chan provider.TTSChunk, error) {
+	s.cmu.Lock()
+	s.calls = append(s.calls, text)
+	s.cmu.Unlock()
+
+	out := make(chan provider.TTSChunk, 4)
+	go func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer close(out)
+		select {
+		case <-time.After(s.delay):
+		case <-ctx.Done():
+			return
+		}
+		select {
+		case out <- provider.TTSChunk{PCM: make([]byte, s.rate/2)}:
+		case <-ctx.Done():
+		}
+	}()
+	return out, nil
+}
+
+// TestOnNewQueryQueueSaysEverything is the other half of the promise, and the
+// half that is easy to lose: not just that the answers do not interleave, but
+// that the interrupted one is finished rather than abandoned.
+//
+// newSpeechPipe aborts the previous pipe unconditionally, so if a turn's text
+// were still being synthesized when the next turn began, the rest of it would
+// never be spoken — and, because no generation is bumped and no truncation is
+// reported under queue, conversation history would still record the whole
+// answer as said. Synthesis here is slow enough that the first answer is still
+// in the provider when the second question arrives.
+func TestOnNewQueryQueueSaysEverything(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.OnNewQuery = "queue"
+	cfg.Duplex.Speculative = false
+	c := newCollector(cfg.ClientRate)
+	tts := &serialTTS{delay: 300 * time.Millisecond}
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "queue",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+	}, Deps{
+		ASR:  mock.NewASR("你好帮我查一下明天的天气"),
+		LLM:  llm,
+		TTS:  tts,
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.Start(ctx)
+	defer e.Close()
+
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the first answer to be speaking", 8*time.Second, func() bool {
+		return len(c.audioRuns()) > 0
+	})
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "the second answer", 15*time.Second, func() bool {
+		return len(c.audioRuns()) > 1
+	})
+	waitFor(t, "the floor to clear", 30*time.Second, func() bool { return !e.player.Active() })
+
+	// Every segment of the first answer reached the provider, and what the
+	// model generated is what the caller was given.
+	said := strings.Join(tts.spoken(), "")
+	first := c.outputTranscript("item_1")
+	if first == "" {
+		t.Fatal("the first answer produced no transcript at all")
+	}
+	if !strings.Contains(said, first) {
+		t.Errorf("the first answer was abandoned when the second question arrived.\n"+
+			"  generated: %q\n  synthesized: %q", first, said)
+	}
 }

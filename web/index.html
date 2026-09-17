@@ -64,6 +64,7 @@
   .row .who { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .row.user .who { color: var(--user); }
   .row.assistant .who { color: var(--warn); }
+  .row.filler .who, .row.filler .text { color: var(--muted); font-style: italic; }
   .row .text { white-space: pre-wrap; word-break: break-word; }
   .row.partial .text { color: var(--muted); font-style: italic; }
   .row .cut { color: var(--danger); font-size: 12px; }
@@ -72,6 +73,7 @@
   #log div { border-bottom: 1px solid #1c2229; padding: 2px 0; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
   #log div.ev-error { color: var(--danger); }
   #log div.ev-cut { color: var(--warn); }
+  #log div.ev-hold { color: var(--user); }
 
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 12px; }
   .stat { background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
@@ -136,6 +138,18 @@
         placeholder="loading the server default…"></textarea>
       <p class="hint">Spoken the moment the session opens, before you say anything. Empty means
         the assistant waits to be spoken to. You can interrupt a greeting like any other turn.</p>
+    </div>
+    <div class="field">
+      <label for="bcphrases">Backchannel words <span class="hint">— these don't interrupt</span></label>
+      <textarea id="bcphrases" rows="5" spellcheck="false"
+        placeholder="loading the server default…"></textarea>
+      <p class="hint">One per line, or comma-separated. Say one of these while the assistant is
+        talking and it <em>keeps talking</em> — the utterance is recognised, reported as
+        <code>golive.input_backchannel</code>, and dropped rather than answered.<br>
+        A real full-duplex model needs no list: it hears a murmur and knows to hold the floor.
+        This is the blunt stand-in. Anything not on the list still interrupts, and does so on the
+        first syllable that rules a backchannel out — "嗯，等一下" cuts in at 等.<br>
+        Empty the box to switch it off entirely, back to any-speech-interrupts.</p>
     </div>
     <div class="field">
       <label>On new query</label>
@@ -212,6 +226,7 @@ const ui = {
   sink: document.getElementById('sink'),
   cfg: document.getElementById('cfg'),
   cfgtoggle: document.getElementById('cfgtoggle'),
+  bcphrases: document.getElementById('bcphrases'),
   cfgdefault: document.getElementById('cfgdefault'),
   cfgclear: document.getElementById('cfgclear'),
   cfgstate: document.getElementById('cfgstate'),
@@ -259,7 +274,17 @@ function loadCfg() {
     if (typeof v.instructions === 'string') ui.instructions.value = v.instructions;
     if (typeof v.greeting === 'string') ui.greeting.value = v.greeting;
     if (typeof v.onNewQuery === 'string') ui.onnewquery.value = v.onNewQuery;
+    if (typeof v.bcPhrases === 'string') ui.bcphrases.value = v.bcPhrases;
+    if (typeof v.bcCleared === 'boolean') bcCleared = v.bcCleared;
   } catch (e) { /* no stored config; the placeholders explain the fallback */ }
+}
+
+// The box holds one phrase per line, but commas are what people actually type,
+// so both separate. Everything is trimmed and blanks dropped — a trailing
+// newline is not an instruction.
+function phraseList(text) {
+  return text.split(/[\n,、，]+/).map(function (s) { return s.trim(); })
+             .filter(function (s) { return s !== ''; });
 }
 
 function saveCfg() {
@@ -268,6 +293,8 @@ function saveCfg() {
       instructions: ui.instructions.value,
       greeting: ui.greeting.value,
       onNewQuery: ui.onnewquery.value,
+      bcPhrases: ui.bcphrases.value,
+      bcCleared: bcCleared,
     }));
     ui.cfgstate.textContent = 'Saved. Takes effect on the next connect.';
   } catch (e) {
@@ -283,6 +310,10 @@ fetch('v1/live/config').then(r => r.json()).then(p => {
     if (p.defaults.on_new_query) {
       ui.onnewquery.options[0].textContent = 'server default (' + p.defaults.on_new_query + ')';
     }
+    var bc = p.defaults.user_backchannel_phrases;
+    ui.bcphrases.placeholder = (bc && bc.length)
+      ? bc.join('\n')
+      : '(server has no backchannel words — any speech interrupts)';
   }
   const fill = (sel, names, selected) => {
     for (const n of names || []) {
@@ -316,13 +347,28 @@ function row(id, who) {
   let r = rows.get(id);
   if (r) return r;
   const el = document.createElement('div');
-  el.className = 'row ' + who + ' partial';
-  el.innerHTML = '<div class="who">' + who + '</div><div class="text"></div>';
+  // A bc_ item is an acknowledgement or a holding filler: really spoken, so it
+  // belongs in the transcript, but not an answer — labelling it keeps "one
+  // moment" from reading as the reply to the question.
+  const filler = who === 'assistant' && id.indexOf('bc_') === 0;
+  el.className = 'row ' + who + (filler ? ' filler' : '') + ' partial';
+  el.innerHTML = '<div class="who">' + (filler ? 'assistant · filler' : who) +
+    '</div><div class="text"></div>';
   ui.transcript.appendChild(el);
   ui.transcript.scrollTop = ui.transcript.scrollHeight;
   r = { el, text: el.querySelector('.text') };
   rows.set(id, r);
   return r;
+}
+
+// Item ids are only unique within one session: every socket restarts them at
+// item_1 / bc_1. Keeping the rows across a reconnect therefore appends the new
+// session's greeting to the old one's row, which reads as the assistant
+// stuttering rather than as two separate calls. Start the pane over instead.
+function resetTranscript() {
+  playingTurn = '';
+  rows.clear();
+  while (ui.transcript.firstChild) ui.transcript.removeChild(ui.transcript.firstChild);
 }
 
 function b64ToBytes(b64) {
@@ -400,8 +446,33 @@ async function populateSinks() {
   }
 }
 
-function playPCM(bytes) {
+// playPCM schedules one chunk, and enforces the one invariant the page can
+// check for itself: it is never playing two turns at once.
+//
+// The engine cuts an interrupted turn and reports it, and the truncation
+// handler drops what is already scheduled — that is the normal path and it
+// works. But scheduling is the client's own state, and the client is always
+// playing behind the server by up to duplex.playback_lead_ms. Anything that
+// leaves a turn's sources scheduled without a truncation arriving — a yield the
+// engine decided it did not need to report, a dropped event, a barge-in landing
+// in the gap between the last byte emitted and the last byte heard — is audible
+// as the previous answer continuing underneath the new one, which is exactly
+// how it was reported.
+//
+// So: audio for a new item_id means the old one is over, whatever else did or
+// did not arrive. A held floor does not trip this, because a hold produces no
+// new turn audio — that is what being held means.
+function playPCM(bytes, itemID) {
   if (!ctx) return;
+  if (itemID && playingTurn && itemID !== playingTurn) {
+    const dropped = pending.length;
+    stopPlayback();
+    if (dropped > 0) {
+      log('· dropped ' + dropped + ' scheduled chunk(s) of ' + playingTurn +
+        ': ' + itemID + ' has the floor now', 'ev-cut');
+    }
+  }
+  if (itemID) playingTurn = itemID;
   // Cheap safety net: audio arrived but the context went to sleep.
   if (ctx.state !== 'running') { ctx.resume().then(showCtxState).catch(() => {}); }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -424,6 +495,9 @@ function playPCM(bytes) {
 // Scheduled-but-unplayed sources. A truncation stops these, which is what makes
 // a barge-in audible as an actual cut rather than a delayed one.
 let pending = [];
+// The turn whose audio is currently scheduled, so playPCM can notice the floor
+// changing hands without waiting to be told.
+let playingTurn = '';
 function stopPlayback() {
   for (const s of pending) { try { s.stop(); } catch (e) {} }
   pending = [];
@@ -431,6 +505,7 @@ function stopPlayback() {
 }
 
 async function connect() {
+  resetTranscript();
   await ensureCtx();
 
   micStream = await navigator.mediaDevices.getUserMedia({
@@ -465,6 +540,11 @@ async function connect() {
     // "use the server's"; sending an empty string means "say nothing", and the
     // two are different instructions.
     if (greet.trim() !== '' || greetingCleared) golive.greeting = greet.trim();
+    // Same distinction for the backchannel list: an untouched box means "use
+    // the server's", while an emptied one means "no list at all — let anything
+    // interrupt". An empty array says the second out loud.
+    var phrases = phraseList(ui.bcphrases.value);
+    if (phrases.length > 0 || bcCleared) golive.user_backchannel_phrases = phrases;
 
     send({
       type: 'session.start',
@@ -479,6 +559,11 @@ async function connect() {
     if (prompt) log('· system prompt: ' + prompt.slice(0, 60) + (prompt.length > 60 ? '…' : ''));
     if (golive.greeting !== undefined) {
       log('· greeting: ' + (golive.greeting ? golive.greeting : '(suppressed)'));
+    }
+    if (golive.user_backchannel_phrases !== undefined) {
+      log('· backchannel words: ' + (golive.user_backchannel_phrases.length
+        ? golive.user_backchannel_phrases.join(' ')
+        : '(none — any speech interrupts)'));
     }
     startCapture();
   };
@@ -559,7 +644,7 @@ function handle(ev) {
         firstAudioAt = performance.now();
         ui.stats.first.textContent = Math.round(firstAudioAt - turnStart) + ' ms';
       }
-      playPCM(bytes);
+      playPCM(bytes, ev.item_id);
       break;
     }
 
@@ -579,7 +664,17 @@ function handle(ev) {
     }
 
     case 'golive.backchannel':
-      log('← backchannel: ' + ev.text);
+      // Two different behaviours share this event, and the distinction matters
+      // when reading a log: an acknowledgement is the assistant listening, a
+      // holding filler is the assistant covering a slow backend. One on every
+      // turn means the backend, not the conversation.
+      log(ev.kind === 'holding_filler'
+        ? '← holding filler (backend still working): ' + ev.text
+        : '← backchannel: ' + ev.text);
+      break;
+
+    case 'golive.input_backchannel':
+      log('← you said "' + ev.text + '" — kept the floor, not answered', 'ev-hold');
       break;
 
     case 'session.delegation.created':
@@ -651,6 +746,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
 // Tracks the difference between "never set a greeting" and "deliberately
 // emptied it", which the protocol distinguishes and a plain empty box cannot.
 var greetingCleared = false;
+var bcCleared = false;
 
 ui.cfgtoggle.onclick = () => {
   var open = ui.cfg.hidden;
@@ -660,19 +756,24 @@ ui.cfgtoggle.onclick = () => {
 ui.instructions.oninput = saveCfg;
 ui.onnewquery.onchange = saveCfg;
 ui.greeting.oninput = () => { greetingCleared = ui.greeting.value.trim() === ''; saveCfg(); };
+ui.bcphrases.oninput = () => { bcCleared = phraseList(ui.bcphrases.value).length === 0; saveCfg(); };
 ui.cfgdefault.onclick = () => {
   ui.instructions.value = '';
   ui.greeting.value = '';
+  ui.bcphrases.value = '';
   greetingCleared = false;
+  bcCleared = false;
   saveCfg();
-  ui.cfgstate.textContent = 'Cleared — the server\'s prompt and greeting will be used.';
+  ui.cfgstate.textContent = 'Cleared — the server\'s prompt, greeting and backchannel words will be used.';
 };
 ui.cfgclear.onclick = () => {
   ui.instructions.value = '';
   ui.greeting.value = '';
+  ui.bcphrases.value = '';
   greetingCleared = true;
+  bcCleared = true;
   saveCfg();
-  ui.cfgstate.textContent = 'Empty greeting sent explicitly — the assistant will not speak first.';
+  ui.cfgstate.textContent = 'Sent empty: no greeting, and any speech interrupts.';
 };
 
 ui.connect.onclick = () => connect().catch(err => log('! ' + err.message, 'ev-error'));

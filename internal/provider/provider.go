@@ -156,6 +156,17 @@ type TTSStream interface {
 	// the next one. The caller cannot detect that — the audio arrives on the
 	// new turn's channel, correctly formed and completely wrong — so the
 	// obligation is here.
+	//
+	// The caller's half of that bargain: stopping early means cancelling the
+	// context, not merely returning. Give each call its own cancellable
+	// context rather than sharing one across a turn, because the case that
+	// matters is precisely the one where the turn lives on and a single
+	// segment of it does not. A caller that walks away from the channel with
+	// the context still alive leaves the implementation writing into something
+	// nobody reads; on a persistent connection that blocks every later
+	// synthesis behind it, and the session is heard as one truncated answer
+	// after another. Implementations should survive it rather than deadlock,
+	// but only the caller can avoid it.
 	Synthesize(ctx context.Context, text string) (<-chan TTSChunk, error)
 	// SampleRate of the PCM16 chunks.
 	SampleRate() int

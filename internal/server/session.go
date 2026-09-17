@@ -411,12 +411,24 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		history = append(history, provider.Message{Role: role, Content: m.Content})
 	}
 
+	// A copy, so a per-session override never mutates the server's defaults for
+	// every other session.
+	cfg := s.cfg
 	backchannel := s.cfg.Duplex.Backchannel
 	speculative := s.cfg.Duplex.Speculative
 	language := s.cfg.Language
 	greeting := s.cfg.Greeting
 	onNewQuery := ""
 	if g := ev.Session.Golive; g != nil {
+		if g.UserBackchannelPhrases != nil {
+			phrases, err := validPhrases(*g.UserBackchannelPhrases)
+			if err != nil {
+				s.Emit(live.NewError("invalid_request_error", "invalid_backchannel_phrases",
+					err.Error(), eventID))
+				return err
+			}
+			cfg.Duplex.UserBackchannelPhrases = phrases
+		}
 		if g.OnNewQuery != "" {
 			switch g.OnNewQuery {
 			case "cut", "finish_sentence", "queue":
@@ -445,7 +457,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 	}
 
 	engine := s.newEngine(duplex.Options{
-		Cfg:          s.cfg,
+		Cfg:          cfg,
 		SessionID:    s.id,
 		ClientRate:   resolved.Audio.Format.Rate,
 		Instructions: resolved.Instructions,
@@ -651,6 +663,41 @@ func (s *Session) onAppend(data []byte, eventID string, apply func(*duplex.Engin
 	}
 	s.withEngine(func(e *duplex.Engine) { apply(e, ev) })
 	return nil
+}
+
+// maxBackchannelPhrases and maxBackchannelPhraseRunes bound what a session may
+// install. The list is a floor-control policy, not free-text: every entry is a
+// phrase the caller permanently loses the ability to interrupt with, so a long
+// list or a long entry is far more likely to be a mistake than an intention.
+const (
+	maxBackchannelPhrases     = 64
+	maxBackchannelPhraseRunes = 24
+)
+
+// validPhrases checks a client-supplied backchannel list. Blank entries are
+// dropped rather than rejected — they are what a textarea produces from a
+// trailing newline, and failing a session over one would be needlessly strict.
+func validPhrases(in []string) ([]string, error) {
+	out := make([]string, 0, len(in))
+	for _, p := range in {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if n := len([]rune(p)); n > maxBackchannelPhraseRunes {
+			return nil, fmt.Errorf(
+				"golive.user_backchannel_phrases: %q is %d characters; the limit is %d, because an "+
+					"entry this long is a sentence the caller can no longer interrupt with",
+				p, n, maxBackchannelPhraseRunes)
+		}
+		out = append(out, p)
+	}
+	if len(out) > maxBackchannelPhrases {
+		return nil, fmt.Errorf(
+			"golive.user_backchannel_phrases: %d entries; the limit is %d",
+			len(out), maxBackchannelPhrases)
+	}
+	return out, nil
 }
 
 func onNewQueryOr(a, b string) string {

@@ -50,12 +50,13 @@ const (
 // the seams of the simulated duplex engine so you can see what a real
 // full-duplex model would be doing internally.
 const (
-	ExtSpeechStarted  = "golive.speech.started"
-	ExtSpeechStopped  = "golive.speech.stopped"
-	ExtAudioTruncated = "golive.output_audio.truncated"
-	ExtTurnMetrics    = "golive.turn.metrics"
-	ExtBackchannel    = "golive.backchannel"
-	ExtChannelState   = "golive.channel.state"
+	ExtSpeechStarted    = "golive.speech.started"
+	ExtSpeechStopped    = "golive.speech.stopped"
+	ExtAudioTruncated   = "golive.output_audio.truncated"
+	ExtTurnMetrics      = "golive.turn.metrics"
+	ExtBackchannel      = "golive.backchannel"
+	ExtInputBackchannel = "golive.input_backchannel"
+	ExtChannelState     = "golive.channel.state"
 )
 
 // Close reasons carried on session.closed.
@@ -170,6 +171,15 @@ type GoliveConfig struct {
 	// server default, an empty string explicitly suppresses it, and any other
 	// value replaces it.
 	Greeting *string `json:"greeting,omitempty"`
+	// UserBackchannelPhrases are the things the caller may say without taking
+	// the floor — "嗯", "对", "uh huh". Hearing one while the assistant is
+	// speaking keeps the answer running instead of cutting it off.
+	//
+	// A pointer for the same reason as Greeting: absent means the server's
+	// list, and an explicitly empty list means no list at all, which restores
+	// the plain behaviour where any speech interrupts. Those are different
+	// instructions and a slice alone cannot tell them apart.
+	UserBackchannelPhrases *[]string `json:"user_backchannel_phrases,omitempty"`
 }
 
 // --- Client events ---
@@ -415,9 +425,37 @@ type ChannelStateEvent struct {
 	TurnID       string `json:"turn_id,omitempty"`
 }
 
-// BackchannelEvent is golive.backchannel: a short acknowledgement was spoken
-// while the user held the floor.
+// Backchannel kinds. Two quite different behaviours share one event, and a log
+// that does not distinguish them is misleading: "backchannel: 稍等一下" on every
+// turn reads as over-eager acknowledgement, when it is actually the assistant
+// covering a slow backend.
+const (
+	// BackchannelAck is a short acknowledgement spoken while the *user* is
+	// still talking — the audible half of full duplex.
+	BackchannelAck = "ack"
+	// BackchannelHoldingFiller is spoken while backend work runs, to keep a
+	// delegating agent from sounding like a dropped call.
+	BackchannelHoldingFiller = "holding_filler"
+)
+
+// BackchannelEvent is golive.backchannel: the assistant said something short
+// that is not part of an answer. Kind says which of the two it was.
 type BackchannelEvent struct {
+	Envelope
+	Kind string `json:"kind,omitempty"`
+	Text string `json:"text"`
+}
+
+// InputBackchannelEvent is golive.input_backchannel: the caller said something
+// that was heard, recognised as an acknowledgement, and deliberately not
+// treated as an interruption.
+//
+// It is emitted instead of the transcript delta and turn the utterance would
+// otherwise have produced, so a client that draws conversation history has one
+// event telling it that speech happened and was intentionally dropped. Without
+// it the caller appears to have said nothing at all, which is indistinguishable
+// from the recognizer having failed.
+type InputBackchannelEvent struct {
 	Envelope
 	Text string `json:"text"`
 }

@@ -2,6 +2,7 @@ package duplex
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -325,6 +326,46 @@ func (t *Tracker) IsCurrent(turn *Turn) bool {
 		cur.Revision == turn.Revision &&
 		cur.State != TurnAbandoned &&
 		t.gen.Valid(turn.Generation)
+}
+
+// rollingMS keeps the recent history of one duration, in milliseconds, so the
+// engine can ask what is normal *for this session* rather than what was normal
+// on the machine where a default was chosen.
+//
+// It is deliberately short. A backend's latency depends on the system prompt,
+// the conversation length and whatever the provider is doing this minute, all
+// of which change within a call; a long window would still be describing the
+// first few turns by the time it mattered.
+type rollingMS struct {
+	vals []int64
+	max  int
+}
+
+// Add records an observation.
+func (r *rollingMS) Add(ms int64) {
+	if ms < 0 {
+		return
+	}
+	if r.max == 0 {
+		r.max = 8
+	}
+	r.vals = append(r.vals, ms)
+	if len(r.vals) > r.max {
+		r.vals = r.vals[len(r.vals)-r.max:]
+	}
+}
+
+// N reports how many observations are held.
+func (r *rollingMS) N() int { return len(r.vals) }
+
+// P50 is the median, or zero with no observations.
+func (r *rollingMS) P50() int64 {
+	if len(r.vals) == 0 {
+		return 0
+	}
+	v := append([]int64(nil), r.vals...)
+	sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
+	return v[len(v)/2]
 }
 
 // StabilityWatch decides when a partial transcript has settled enough to

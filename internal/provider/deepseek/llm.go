@@ -25,10 +25,46 @@ import (
 
 func init() {
 	provider.RegisterLLM("deepseek", func() (provider.LLM, error) {
-		return New("DEEPSEEK_API_KEY", "https://api.deepseek.com", "deepseek-chat")
+		return NewNamed("deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com", "deepseek-chat")
 	})
 	provider.RegisterLLM("openai-compatible", func() (provider.LLM, error) {
-		return New("OPENAI_API_KEY", "https://api.openai.com", "gpt-4o-mini")
+		return NewNamed("openai", "OPENAI_API_KEY", "https://api.openai.com", "gpt-4o-mini")
+	})
+
+	// Cerebras. Wafer-scale inference, and the reason to care here is the one
+	// number this project keeps failing to move: time to first token. The
+	// backend is 2.4–3.4 s of a ~3.8 s answer under a long persona prompt, and
+	// nothing else in the cascade is within an order of magnitude of that.
+	//
+	// The default model is qwen-3.8-27b because it is the Qwen their own model
+	// catalogue, rate-limit page and quickstart all agree is on the shared
+	// endpoint. Gemma is real there — Cerebras have blogged about serving Gemma
+	// 4 31B — but the only exact id their docs give is google/gemma-4-31b-it,
+	// and that is on the *dedicated* endpoints, which use HuggingFace-style ids
+	// and which the docs do not say share this base URL. So it is a setting,
+	// not a default: GOLIVE_CEREBRAS_MODEL=google/gemma-4-31b-it with
+	// GOLIVE_CEREBRAS_BASE_URL pointed at whatever your dedicated instance
+	// gives you. Guessing an id here would fail at request time with something
+	// that reads like a bug in golive.
+	provider.RegisterLLM("cerebras", func() (provider.LLM, error) {
+		return NewNamed("cerebras", "CEREBRAS_API_KEY", "https://api.cerebras.ai", "qwen-3.8-27b")
+	})
+
+	// Inception Mercury: a diffusion language model rather than an
+	// autoregressive one, which is interesting here for the same reason —
+	// they publish ~1,100 tokens/s and quote a voice-agent turn at about
+	// 170 ms. Their API is OpenAI-shaped, so nothing below changes.
+	//
+	// One thing deliberately not exposed: the `diffusing: true` request flag.
+	// With it on, each chunk carries the *whole* answer as it is refined rather
+	// than the next piece of it, and every consumer in this engine appends —
+	// conversation history, the transcript, and the segmenter that cuts text
+	// into TTS segments. A replace-semantics stream cannot be spoken
+	// incrementally at all, since a sentence can change after it has been said.
+	// Supporting it means a Replace flag on LLMDelta and a segmenter that can
+	// retract, which is a real piece of work and not a flag.
+	provider.RegisterLLM("inception", func() (provider.LLM, error) {
+		return NewNamed("inception", "INCEPTION_API_KEY", "https://api.inceptionlabs.ai", "mercury-2.5")
 	})
 }
 
@@ -40,17 +76,40 @@ type LLM struct {
 	HTTP         *http.Client
 }
 
-// New builds a client, reading the key from keyEnv and allowing
-// GOLIVE_BACKEND_BASE_URL / GOLIVE_BACKEND_MODEL to override the defaults.
+// New builds a client under the shared GOLIVE_BACKEND_* overrides.
 func New(keyEnv, defaultBase, defaultModel string) (*LLM, error) {
+	return NewNamed("", keyEnv, defaultBase, defaultModel)
+}
+
+// NewNamed builds a client whose base URL and model can be set per provider.
+//
+// The package comment has always said registering this twice is how you run two
+// backends side by side, and with only GOLIVE_BACKEND_BASE_URL and
+// GOLIVE_BACKEND_MODEL that was not true: the second registration would inherit
+// the first one's overrides and quietly send Qwen's model id to DeepSeek. So
+// each provider gets its own pair — GOLIVE_CEREBRAS_MODEL, GOLIVE_INCEPTION_BASE_URL
+// — and the shared pair remains as the fallback, which keeps every existing
+// .env working unchanged.
+func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 	key, err := config.EnvRequired(keyEnv)
 	if err != nil {
 		return nil, err
 	}
+	// Most specific wins: this provider's own variable, then the shared one,
+	// then the built-in default. The other order would make the per-provider
+	// setting useless the moment GOLIVE_BACKEND_MODEL is set at all, which is
+	// the state most existing .env files are already in.
+	base := config.Env("GOLIVE_BACKEND_BASE_URL", defaultBase)
+	model := config.Env("GOLIVE_BACKEND_MODEL", defaultModel)
+	if name != "" {
+		prefix := "GOLIVE_" + strings.ToUpper(name) + "_"
+		base = config.Env(prefix+"BASE_URL", base)
+		model = config.Env(prefix+"MODEL", model)
+	}
 	return &LLM{
-		BaseURL:      strings.TrimRight(config.Env("GOLIVE_BACKEND_BASE_URL", defaultBase), "/"),
+		BaseURL:      strings.TrimRight(base, "/"),
 		APIKey:       key,
-		DefaultModel: config.Env("GOLIVE_BACKEND_MODEL", defaultModel),
+		DefaultModel: model,
 		HTTP: &http.Client{
 			// No overall timeout: a streaming completion is long-lived by
 			// design and the engine cancels through the context instead. The
@@ -110,6 +169,18 @@ type chatMessage struct {
 	Content    string `json:"content"`
 	Name       string `json:"name,omitempty"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
+}
+
+// promptChars totals the characters sent, which is the thing that predicts
+// time-to-first-token. Runes rather than bytes, because a Chinese prompt is
+// three bytes a character and the byte count would read as three times the
+// prompt it is.
+func promptChars(msgs []chatMessage) int {
+	n := 0
+	for _, m := range msgs {
+		n += len([]rune(m.Content))
+	}
+	return n
 }
 
 type chatChunk struct {
@@ -188,10 +259,23 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 			l.BaseURL, resp.StatusCode, summarizeError(snippet))
 	}
 
+	// prompt_chars, not just the message count, because size is what costs.
+	//
+	// Two logs from the same machine, model and endpoint, a day apart: a
+	// seventy-nine character system prompt gave a time-to-first-token of
+	// 259–546 ms, and a long persona prompt with the same history_turns gave
+	// 2441–3385 ms. Nothing else differed. That is five to seven times the
+	// latency, and it is the single largest term in the whole cascade — larger
+	// than the silence threshold, the recognizer and synthesis together.
+	//
+	// The message count alone hid it, because the count barely moved while the
+	// prompt behind it grew by an order of magnitude. Logging the size next to
+	// the latency it buys makes the trade visible on every turn.
 	slog.Debug("llm: stream open",
 		"base_url", l.BaseURL,
 		"model", model,
 		"messages", len(msgs),
+		"prompt_chars", promptChars(msgs),
 		"ms", time.Since(started).Milliseconds())
 
 	out := make(chan provider.LLMDelta, 64)

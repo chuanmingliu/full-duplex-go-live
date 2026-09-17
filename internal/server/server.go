@@ -95,12 +95,14 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"tts":      provider.TTSNames(),
 		"selected": map[string]string{"asr": s.cfg.ASR, "llm": s.cfg.LLM, "tts": s.cfg.TTS},
 		"defaults": map[string]any{
-			"instructions": s.cfg.Instructions,
-			"greeting":     s.cfg.Greeting,
-			"on_new_query": s.cfg.Duplex.OnNewQuery,
-			"model":        s.cfg.Model,
-			"language":     s.cfg.Language,
-			"rate":         s.cfg.ClientRate,
+			"instructions":             s.cfg.Instructions,
+			"greeting":                 s.cfg.Greeting,
+			"on_new_query":             s.cfg.Duplex.OnNewQuery,
+			"user_backchannel_phrases": s.cfg.Duplex.UserBackchannelPhrases,
+			"user_backchannel_hold_ms": s.cfg.Duplex.UserBackchannelHoldMS,
+			"model":                    s.cfg.Model,
+			"language":                 s.cfg.Language,
+			"rate":                     s.cfg.ClientRate,
 		},
 	})
 }

@@ -157,6 +157,70 @@ is time spent waiting for a sentence boundary, and the gap from it to
 `tts_first_audio_ms` is the synthesis provider. A slow reply and a late comma
 look identical without that split, and they have opposite fixes.
 
+## Is the synthesis provider holding your first syllable?
+
+`ttsprobe` measures time-to-first-audio from the synthesizer alone, with the
+rest of the cascade removed:
+
+```bash
+go run ./cmd/ttsprobe -compare-endpoints -runs 12
+```
+
+It exists because of a specific, checkable suspicion. MiniMax buffers text
+server-side and decides for itself when to synthesize: a segment ending in
+`。！？.!?` goes immediately, one ending in a comma accumulates, and one ending
+in nothing waits for a length limit or a silence window. golive deliberately
+cuts a six-character first segment to get a syllable out early — and six
+characters usually end in nothing. So the segment that exists purely to be fast
+is exactly the shape the server sits on, and `stream_first_chunk_chars` could be
+buying nothing, or costing.
+
+The probe sends the shapes a real turn produces — a bare `好的`, a holding
+filler, a complete sentence, a comma-ended fragment — and reports first-audio
+latency for each, alternating between configurations so warm-up and drift land
+on both. Read the per-text table first: if the unpunctuated rows are much slower
+than the complete sentence, the buffer is the problem and `task_flush` is the
+fix. If they are the same, server-side buffering is not where your time goes,
+and lowering `stream_first_chunk_chars` further is the wrong lever.
+
+**The two endpoints are not interchangeable.** `/ws/v1/t2a_v2` and
+`/ws/v1/t2a_v2_bidi` share auth, `task_start` and audio frames, but only the
+bidirectional one accepts `task_flush` and `task_cancel`. On the standard
+endpoint those come back as `2202 illegal event`. golive detects the mismatch
+and declines to send them, so the settings are inert rather than destructive —
+but inert is not the same as working, and `-compare-endpoints` is how you find
+out whether switching is worth anything on your account.
+
+## The prompt is probably your biggest number
+
+Two logs from one machine, one model (`deepseek-chat`), one endpoint, a day
+apart:
+
+| system prompt | `history_turns` | time to first token |
+| --- | ---: | ---: |
+| 79 characters, generic assistant | 16 | **259–546 ms** |
+| a full call-centre persona | 16 | **2441–3385 ms** |
+
+Nothing else differed. That is five to seven times the latency, and at the top
+of that range the prompt alone costs more than the silence threshold, the
+recognizer and synthesis put together. Every lever elsewhere in this document is
+worth tens to low hundreds of milliseconds; this one is worth seconds.
+
+It also has a second-order cost that does not show up in any single turn's
+metrics. When time-to-first-token exceeds the caller's patience, they repeat
+themselves — which supersedes the answer that was about to arrive, and the next
+turn starts from scratch. A real call went three questions deep with no answer
+at any point. No stage was slow enough to blame on its own.
+
+`llm: stream open` logs `prompt_chars` next to the latency it bought, because
+the message count hides this: the count barely moves while the prompt behind it
+grows by an order of magnitude. `history_max_chars` bounds history by size as
+well as by `history_turns`, since sixteen exchanges can be four hundred
+characters or four thousand.
+
+If your `llm_first_token_ms` is in the seconds, stop tuning the cascade and
+shorten the prompt.
+
 ## The service's own numbers
 
 Every turn emits `golive.turn.metrics`, all stages measured from VAD close:

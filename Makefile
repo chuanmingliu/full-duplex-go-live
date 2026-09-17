@@ -12,7 +12,7 @@ BIN := bin
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64
 
-.PHONY: all build test race vet fmt run run-mock demo bench dist clean tidy
+.PHONY: all build test race vet fmt run run-mock demo bench ttsprobe dist clean tidy
 
 all: vet test build
 
@@ -21,9 +21,15 @@ build:
 	go build -o $(BIN)/golive ./cmd/golive
 	go build -o $(BIN)/golivectl ./cmd/golivectl
 	go build -o $(BIN)/golivebench ./cmd/golivebench
+	go build -o $(BIN)/ttsprobe ./cmd/ttsprobe
 
+## test: the Go suite, plus the demo page's transcript bookkeeping. The page is
+## where a session is read, so a defect there is indistinguishable from one in
+## the engine — it needs a test even though it is not Go.
 test:
 	go test ./...
+	@command -v node >/dev/null 2>&1 && node web/transcript_test.mjs \
+		|| echo "skipping web/transcript_test.mjs: node is not installed"
 
 race:
 	go test -race ./...
@@ -57,6 +63,11 @@ bench: build
 	$(BIN)/golivebench -a golive=ws://127.0.0.1:8080/v1/live -b cascade=$(CASCADE) \
 		$(if $(CLIPS),-clips "$(CLIPS)",) -runs 12 -warmup 2 -v -md bench.md -json bench.json
 
+## ttsprobe: measure time-to-first-audio from the synthesis provider alone,
+## across both MiniMax endpoints. See BENCHMARK.md.
+ttsprobe: build
+	$(BIN)/ttsprobe -compare-endpoints -runs 12 -json ttsprobe.json
+
 ## dist: cross-compile every shipped platform into bin/, so ./start.sh works
 ## without Go. Run this before packaging the project for someone else.
 dist:
@@ -64,7 +75,7 @@ dist:
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "  building $$os/$$arch"; \
-		for c in golive golivectl golivebench; do \
+		for c in golive golivectl golivebench ttsprobe; do \
 			GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" \
 				-o $(BIN)/$$c-$$os-$$arch ./cmd/$$c; \
 		done; \

@@ -43,11 +43,15 @@ golive removes the gate and pays for it explicitly:
 | Knowing what you heard | Trivially, it is one process | The player paces output in real time and reports `played_ms` plus the exact spoken prefix |
 | Answering fast | No cascade to wait on | Speculative turns start from a stable partial transcript; a tiny first TTS segment gets a syllable out early |
 | "Mm-hmm" while you talk | Natural | A backchannel channel that synthesizes short phrases during your turn |
+| *You* say "mm-hmm" while it talks | Natural — it keeps going, having learned that a murmur is not a request to stop | It cannot hear the difference, so it is given a list: `duplex.user_backchannel_phrases`. Hearing one keeps the floor; the first syllable that rules them all out yields it |
 | Hard reasoning | Delegates to a backend model | The same delegation split, in both `responses` and `client` modes |
 
-The honest gap: floor control here is thresholds and timers, not acoustics. That
-shows up as occasional late barge-in detection and speculation that sometimes
-guesses wrong — both of which cost a cancelled generation, never a wrong answer.
+The honest gap: floor control here is thresholds, timers and a word list, not
+acoustics. A real model hears prosody — it knows "对" and "对?" are different
+acts, and that you are winding down before you stop. That shows up as occasional
+late barge-in detection, speculation that sometimes guesses wrong, and a
+backchannel list that judges by spelling. All of them cost a cancelled
+generation or a beat of delay, never a wrong answer.
 
 ---
 
@@ -145,6 +149,7 @@ written for `gpt-live-1` works unchanged.
 | `golive.speech.started` / `.stopped` | VAD turn boundaries, with a `barge_in` flag. |
 | `golive.output_audio.truncated` | `played_ms`, `total_ms` and the exact text the listener heard before the cut. |
 | `golive.backchannel` | A short acknowledgement was spoken during your turn. |
+| `golive.input_backchannel` | *You* said something that was heard, recognised as an acknowledgement, and deliberately not treated as an interruption. Emitted instead of the transcript and turn the utterance would otherwise have produced, so "heard and dropped on purpose" is distinguishable from "the recognizer failed". |
 | `golive.turn.metrics` | Per-stage latency for one turn, every stage measured from VAD close — including `first_audio_out_ms`, the only latency a caller experiences. |
 
 Two protocol details are worth calling out because they are easy to get wrong:
@@ -229,6 +234,8 @@ Start from `.env.example`. The knobs that change how the thing feels:
 | `instructions` / `greeting` | The conversational prompt, and what the assistant says unprompted when a session opens. Both overridable per session; the demo page exposes them under **Session config**. |
 | `duplex.reset_tts_on_interrupt` | Drop the synthesis connection after every interruption. Only needed for a provider that cannot resynchronize an abandoned stream; see TESTING.md. |
 | `duplex.on_new_query` | `cut`, `finish_sentence` or `queue` — what happens to an answer still in flight when the caller speaks again. |
+| `duplex.user_backchannel_phrases` | Things the caller can say without taking the floor — "嗯", "对", "uh huh". Hearing one keeps the answer running. Every entry is a phrase the caller can no longer interrupt with, so keep it to noises. Empty restores plain any-speech-interrupts. |
+| `duplex.user_backchannel_hold_ms` | How long the assistant may keep talking while the transcript decides what it just heard. Two questions, not one: whether it was an acknowledgement, and whether it was speech at all. An utterance the recognizer finds no words in — a cough, a door, the assistant's own voice through a speaker — never takes the floor, which is only possible because the interrupt is deferred rather than performed. Applies with no phrase list configured. Zero restores interrupt-on-sound. |
 | `vad.barge_in_margin_db` | Raise if the assistant interrupts itself through a speakerphone. Browsers with AEC need very little. |
 | `vad.min_silence_ms` | How long a pause must be before the turn is considered over. The single biggest lever on "it cuts me off". |
 
@@ -248,6 +255,34 @@ with the variable's name.
 | `openai-compatible` | LLM | `OPENAI_API_KEY`, same overrides |
 | `minimax` | TTS | `MINIMAX_TTS_API_KEY`, `MINIMAX_TTS_VOICE_ID` |
 | `mock` | all three | none |
+
+### Making the MiniMax voice sound less like a machine
+
+Four settings do most of the work, all in `.env.example`:
+
+* **`MINIMAX_TTS_PRONUNCIATION`** — the highest-value one for most deployments.
+  An agent says the same handful of proper nouns, product names and
+  initialisms hundreds of times a day, and mispronouncing them is the most
+  noticeable unnaturalness there is. Comma-separated `written/spoken` pairs.
+* **`MINIMAX_TTS_EMOTION`** — leave it *unset*. MiniMax then picks per
+  sentence, which reads as more natural across a call than pinning every
+  sentence to one mood. Set it only for an agent with a fixed register.
+* **`MINIMAX_TTS_CONTINUOUS_SOUND`** — the one real fluency-versus-latency
+  dial. golive cuts a deliberately tiny first segment to get a syllable out
+  early; continuous inference carries prosody across that seam so the sentence
+  sounds like one sentence, and costs latency because segments can no longer
+  synthesize concurrently. Off by default — answering late sounds worse than a
+  slightly flat first phrase. `speech-2.8` only.
+* **Paralinguistic tags** — `speech-2.8` speaks `(laughs)`, `(sighs)`,
+  `(breath)` and similar, and `<#0.4#>` inserts a pause in seconds. These go in
+  the text, so they belong in `instructions`, not here. Use them sparingly:
+  a laugh in the wrong place is far more jarring than no laugh at all.
+
+Two more are latency, not naturalness, and are on by default:
+`MINIMAX_TTS_CANCEL_ON_ABANDON` cancels an interrupted synthesis rather than
+draining it, and `MINIMAX_TTS_FLUSH_PARTIAL_SEGMENTS` stops the server sitting
+on a segment that has no sentence-ending punctuation — which is exactly the
+short first chunk and the holding fillers.
 
 Adding one is a file and an `init()`:
 

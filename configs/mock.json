@@ -11,7 +11,9 @@
   "client_rate": 24000,
   "duplex": {
     "backchannel": false,
-    "holding_filler": true,
+    "user_backchannel_phrases": [],
+    "user_backchannel_hold_ms": 600,
+    "holding_filler": false,
     "holding_filler_after_ms": 1500,
     "holding_filler_phrases": [
       "我看一下",

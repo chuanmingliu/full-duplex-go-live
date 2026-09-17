@@ -48,6 +48,17 @@ type Config struct {
 	MaxOutputTokens int     `json:"max_output_tokens"`
 	DisableThinking bool    `json:"disable_thinking"`
 	HistoryTurns    int     `json:"history_turns"`
+	// HistoryMaxChars bounds conversation history by size as well as by turns,
+	// because size is what the backend charges for in latency.
+	//
+	// Measured on one machine, one model, one endpoint: a 79-character system
+	// prompt produced a time-to-first-token of 259–546 ms, and a long persona
+	// prompt at the same history_turns produced 2441–3385 ms. That is the
+	// largest single term in the cascade — bigger than the silence threshold,
+	// the recognizer and synthesis put together — and history_turns does not
+	// constrain it, since sixteen exchanges can be four hundred characters or
+	// four thousand. Zero disables the limit.
+	HistoryMaxChars int `json:"history_max_chars"`
 
 	// Duplex engine
 	Duplex DuplexConfig `json:"duplex"`
@@ -68,6 +79,30 @@ type DuplexConfig struct {
 	BackchannelEveryMS int `json:"backchannel_every_ms"`
 	// BackchannelPhrases are spoken at random.
 	BackchannelPhrases []string `json:"backchannel_phrases"`
+
+	// UserBackchannelPhrases are the things the *caller* can say without taking
+	// the floor: "嗯", "对", "uh huh". Hearing one of these while the assistant
+	// is talking keeps the answer running instead of cutting it off.
+	//
+	// This is a stand-in for something a real full-duplex model does natively —
+	// it hears an acknowledgement in the same stream as everything else and
+	// keeps going, having learned that murmured agreement is not a request to
+	// stop. golive has no such model, so it is given a list instead. A blunt
+	// approximation, and deliberately a small one: every phrase here is a
+	// phrase the caller can no longer use to interrupt, so the list should
+	// contain noises, not words. Empty disables the behaviour entirely.
+	UserBackchannelPhrases []string `json:"user_backchannel_phrases"`
+	// UserBackchannelHoldMS is how long the assistant may keep talking while it
+	// waits to find out which kind of speech it just heard.
+	//
+	// The cost of the feature lives in this number. Barge-in is acoustic and
+	// immediate; recognizing what was said is neither, so a real interruption
+	// is delayed by however long the transcript takes to become decisive — up
+	// to this bound, after which the engine yields regardless. Most
+	// interruptions resolve far sooner, because the first syllable that no
+	// candidate starts with settles it. Talking over someone is worse than
+	// stopping for nothing, so the timeout fails toward yielding.
+	UserBackchannelHoldMS int `json:"user_backchannel_hold_ms"`
 
 	// HoldingFiller keeps the conversation alive while the backend works.
 	//
@@ -96,6 +131,14 @@ type DuplexConfig struct {
 	// caught up and the guess is a prefix.
 	SpeculativeStableMS int `json:"speculative_stable_ms"`
 	// SpeculativeMinChars avoids speculating on a one-word fragment.
+	//
+	// This can sit lower than it first appears, because its original job is now
+	// done better elsewhere. It existed to stop the engine generating an answer
+	// to "嗯" — but UserBackchannelPhrases catches those by name, and catches
+	// them whatever their length. What is left for this setting is genuinely
+	// short questions ("多少钱"), which are worth speculating on: a real call
+	// showed every delegation arriving as final_transcript, most of them
+	// blocked here, while the backend spent 2.1 s on each one.
 	SpeculativeMinChars int `json:"speculative_min_chars"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
@@ -210,17 +253,51 @@ func Default() Config {
 		MaxOutputTokens: 512,
 		DisableThinking: true,
 		HistoryTurns:    16,
+		HistoryMaxChars: 2000,
 		Duplex: DuplexConfig{
-			Backchannel:                true,
-			BackchannelAfterMS:         2600,
-			BackchannelEveryMS:         4200,
-			BackchannelPhrases:         []string{"嗯", "好的", "我在听"},
-			HoldingFiller:              true,
+			// Off by default, along with the holding filler and the floor
+			// hold below.
+			//
+			// All three were built to make a delegating agent feel less like a
+			// half-duplex cascade, and all three turned out to cost more in
+			// practice than they returned: an acknowledgement lands on top of
+			// the caller, a filler is heard as the agent having nothing to say,
+			// and the hold delays a real interruption by however long the
+			// recognizer takes to disagree. The phrase lists stay populated so
+			// switching any of them back on is one boolean, not a retyped list.
+			Backchannel:        false,
+			BackchannelAfterMS: 2600,
+			BackchannelEveryMS: 4200,
+			BackchannelPhrases: []string{"嗯", "好的", "我在听"},
+			// Empty by default, so any word the recognizer does hear takes
+			// the floor at once. Populating it is what makes "对" stop
+			// counting as an interruption; that is the part of this machinery
+			// that decides on the caller's behalf, and it stays opt-in.
+			//
+			// Suggested contents, since they are tedious to retype:
+			//   嗯 嗯嗯 哦 噢 啊 对 对对 是 是的 好 好的 行 懂了 知道了
+			//   ok okay mm mhm uh huh yeah yep right i see
+			UserBackchannelPhrases: nil,
+			// The hold itself stays on, and it is not the same feature.
+			//
+			// It arrived with the phrase list, but what it actually does is
+			// wait for the transcript before yielding the floor — and the case
+			// that matters has no phrase list in it at all. A cough, a door, or
+			// the assistant's own voice through a speakerphone opens the VAD,
+			// the recognizer finds no words, and without the hold the greeting
+			// is cut mid-name. TestNoiseDoesNotCostTheAssistantItsTurn cuts it
+			// at 您好，我是众安保险的车险管家小翠 with this at 0.
+			//
+			// The cost is paid only while the transcript is ambiguous: a real
+			// interruption releases it on the first word that no candidate
+			// starts with, which with an empty list is the first word.
+			UserBackchannelHoldMS:      600,
+			HoldingFiller:              false,
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
 			Speculative:                true,
 			SpeculativeStableMS:        180,
-			SpeculativeMinChars:        6,
+			SpeculativeMinChars:        4,
 			AllowBargeIn:               true,
 			OnNewQuery:                 "cut",
 			ResetTTSOnInterrupt:        false,

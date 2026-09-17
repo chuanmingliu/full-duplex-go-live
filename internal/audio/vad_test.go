@@ -154,3 +154,48 @@ func TestVADRaisesTheBarWhileAssistantSpeaks(t *testing.T) {
 		t.Fatal("a loud interruption during playback was not detected")
 	}
 }
+
+// TestEchoFloorMeasuresWhatComesBack pins the diagnostic that names the cause
+// of an assistant interrupting itself.
+//
+// The noise floor cannot learn the echo level, because of a trap in its own
+// rules: it adapts only on frames it believes are not speech, so once echo is
+// loud enough to read as voiced it stops feeding the floor, the floor never
+// rises to meet it, and the echo reads as voiced forever. A real call shows the
+// signature plainly — noise_floor_db pinned at -60 while barge-ins open at
+// active_ms=320 exactly, the configured minimum, over and over. Not somebody
+// starting to talk, whose energy overshoots the bar; a signal sitting precisely
+// on it.
+//
+// The echo floor measures it instead, and stays out of the voiced decision.
+// Energy alone cannot separate steady echo from a steady voice at the same
+// level, and every variant that tried either let the first burst through or
+// muted a caller talking over the assistant — much the worse failure. The
+// engine's floor hold is the fix; this is the number that tells an operator to
+// reach for barge_in_margin_db.
+func TestEchoFloorMeasuresWhatComesBack(t *testing.T) {
+	const rate = RatePipeline
+	cfg := DefaultVADConfig()
+	cfg.SampleRate = rate
+	v := NewVAD(cfg)
+
+	// Silence while we are not speaking teaches it nothing.
+	for _, d := range feed(v, quiet(rate, 400)) {
+		_ = d
+	}
+	if v.EchoFloorDB() != cfg.NoiseFloorDB {
+		t.Errorf("echo floor moved to %.1f dB while the assistant was silent", v.EchoFloorDB())
+	}
+
+	// Our own voice returning while we speak is what it measures.
+	v.SetAssistantSpeaking(true)
+	for i := 0; i < 10; i++ {
+		feed(v, append(tone(rate, 200, 0.02), quiet(rate, 100)...))
+	}
+	if v.EchoFloorDB() <= cfg.NoiseFloorDB {
+		t.Errorf("echo floor stayed at %.1f dB with echo present", v.EchoFloorDB())
+	}
+	if v.EchoFloorDB() > cfg.MaxNoiseFloorDB {
+		t.Errorf("echo floor ran past its bound: %.1f dB", v.EchoFloorDB())
+	}
+}
