@@ -57,6 +57,7 @@ type reader struct {
 	audio  []byte
 	final  string
 	first  string
+	close  string
 	done   chan struct{}
 }
 
@@ -95,6 +96,11 @@ func startReader(conn *websocket.Conn) *reader {
 				var ev live.TranscriptDelta
 				if json.Unmarshal(data, &ev) == nil && ev.Final {
 					r.final = ev.Content
+				}
+			case live.ServerSessionClosed:
+				var ev live.SessionClosedEvent
+				if json.Unmarshal(data, &ev) == nil {
+					r.close = ev.Reason
 				}
 			}
 			r.mu.Unlock()
@@ -136,6 +142,12 @@ func (r *reader) finalTranscript() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.final
+}
+
+func (r *reader) closeReason() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.close
 }
 
 func send(t *testing.T, conn *websocket.Conn, v any) {

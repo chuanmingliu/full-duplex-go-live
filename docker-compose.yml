@@ -1,0 +1,28 @@
+# Production-shaped process. Copy .env.example to .env.local first and set
+# GOLIVE_AUTH_TOKEN plus vendor credentials. The production profile refuses
+# to boot without the token.
+services:
+  golive:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.local
+    environment:
+      GOLIVE_LOG_FORMAT: json
+      GOLIVE_TRUST_PROXY: "true"
+    command: ["-profile", "configs/production.json"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8080/livez"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

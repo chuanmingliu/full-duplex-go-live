@@ -3,6 +3,7 @@ package duplex
 import (
 	"context"
 	b64 "encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"math"
@@ -2067,5 +2068,61 @@ func TestOnNewQueryQueueSaysEverything(t *testing.T) {
 	if !strings.Contains(said, first) {
 		t.Errorf("the first answer was abandoned when the second question arrived.\n"+
 			"  generated: %q\n  synthesized: %q", first, said)
+	}
+}
+
+type recordLLM struct {
+	mu   sync.Mutex
+	last provider.LLMRequest
+}
+
+func (r *recordLLM) Name() string { return "record" }
+
+func (r *recordLLM) Stream(_ context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	r.mu.Lock()
+	r.last = req
+	r.mu.Unlock()
+	ch := make(chan provider.LLMDelta)
+	close(ch)
+	return ch, nil
+}
+
+func TestEnginePassesToolsToBackend(t *testing.T) {
+	cfg := testConfig()
+	cfg.Duplex.Speculative = false
+	c := newCollector(cfg.ClientRate)
+	rec := &recordLLM{}
+	tool := json.RawMessage(`{"type":"function","function":{"name":"lookup"}}`)
+
+	e := New(Options{
+		Cfg:        cfg,
+		SessionID:  "test",
+		ClientRate: cfg.ClientRate,
+		Delegation: live.DelegationResponses,
+		Tools:      []json.RawMessage{tool},
+	}, Deps{
+		ASR:  mock.NewASR("你好帮我查一下明天的天气"),
+		LLM:  rec,
+		TTS:  mock.NewTTS(),
+		Emit: c.emit,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	e.Start(ctx)
+	t.Cleanup(func() { e.Close(); cancel() })
+
+	speak(e, cfg.ClientRate, 1400)
+	pause(e, cfg.ClientRate, 700)
+	waitFor(t, "a delegation", 6*time.Second, func() bool {
+		return c.count(live.ServerDelegationCreated) > 0
+	})
+	waitFor(t, "the backend to be called", 2*time.Second, func() bool {
+		rec.mu.Lock()
+		defer rec.mu.Unlock()
+		return len(rec.last.Tools) > 0
+	})
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.last.Tools) != 1 || string(rec.last.Tools[0]) != string(tool) {
+		t.Fatalf("tools = %s, want the lookup function", rec.last.Tools)
 	}
 }

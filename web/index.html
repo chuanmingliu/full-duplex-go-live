@@ -111,6 +111,7 @@
   <label>ASR <select id="asr"><option value="">default</option></select></label>
   <label>LLM <select id="llm"><option value="">default</option></select></label>
   <label>TTS <select id="tts"><option value="">default</option></select></label>
+  <label>Token <input type="password" id="authtoken" autocomplete="off" placeholder="optional" style="width:9em"></label>
   <label><input type="checkbox" id="backchannel"> backchannel</label>
   <label><input type="checkbox" id="speculative" checked> speculative</label>
   <label>On new query <select id="onnewquery">
@@ -236,6 +237,7 @@ const ui = {
   asr: document.getElementById('asr'),
   llm: document.getElementById('llm'),
   tts: document.getElementById('tts'),
+  authtoken: document.getElementById('authtoken'),
   backchannel: document.getElementById('backchannel'),
   speculative: document.getElementById('speculative'),
   transcript: document.getElementById('transcript'),
@@ -255,6 +257,11 @@ const ui = {
     ctx: document.getElementById('s-ctx'),
   },
 };
+
+try {
+  var tok = new URLSearchParams(location.search).get('token');
+  if (tok && ui.authtoken) ui.authtoken.value = tok;
+} catch (e) {}
 
 let ws = null, ctx = null, micStream = null, micNode = null, source = null;
 let muted = false, playhead = 0, outBytes = 0, speakStart = 0, firstAudioAt = 0, turnStart = 0;
@@ -302,7 +309,20 @@ function saveCfg() {
   }
 }
 
-fetch('v1/live/config').then(r => r.json()).then(p => {
+function authToken() {
+  try {
+    var q = new URLSearchParams(location.search).get('token');
+    if (q) return q;
+    if (ui.authtoken && ui.authtoken.value.trim()) return ui.authtoken.value.trim();
+    return localStorage.getItem('golive_token') || '';
+  } catch (e) { return ''; }
+}
+function authHeaders() {
+  var t = authToken();
+  return t ? { Authorization: 'Bearer ' + t } : {};
+}
+
+fetch('v1/live/config', { headers: authHeaders() }).then(r => r.json()).then(p => {
   if (p.defaults) {
     serverDefaults = p.defaults;
     ui.instructions.placeholder = p.defaults.instructions || '(server has no system prompt set)';
@@ -325,6 +345,11 @@ fetch('v1/live/config').then(r => r.json()).then(p => {
   fill(ui.asr, p.asr, p.selected && p.selected.asr);
   fill(ui.llm, p.llm, p.selected && p.selected.llm);
   fill(ui.tts, p.tts, p.selected && p.selected.tts);
+  if (p.allow_provider_override === false) {
+    [ui.asr, ui.llm, ui.tts].forEach(function (el) {
+      if (el && el.closest) { var lab = el.closest('label'); if (lab) lab.style.display = 'none'; }
+    });
+  }
 }).catch(() => {
   ui.instructions.placeholder = '(could not reach the server)';
   ui.greeting.placeholder = '(could not reach the server)';
@@ -521,7 +546,12 @@ async function connect() {
   await populateSinks();
 
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-  ws = new WebSocket(proto + location.host + '/v1/live');
+  var t = authToken();
+  if (t) {
+    try { localStorage.setItem('golive_token', t); } catch (e) {}
+    if (ui.authtoken && !ui.authtoken.value) ui.authtoken.value = t;
+  }
+  ws = new WebSocket(proto + location.host + '/v1/live' + (t ? '?token=' + encodeURIComponent(t) : ''));
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {

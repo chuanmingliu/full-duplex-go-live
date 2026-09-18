@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -51,9 +52,10 @@ func main() {
 
 // stack is one service under test.
 type stack struct {
-	name string
-	url  string
-	kind string // "golive" | "realtime"
+	name  string
+	url   string
+	kind  string // "golive" | "realtime"
+	token string
 }
 
 func parseStack(spec, kind string) (stack, error) {
@@ -81,19 +83,26 @@ func run() error {
 		outJSON   = flag.String("json", "", "write raw per-run results here")
 		outMD     = flag.String("md", "", "write the report here as markdown")
 		verbose   = flag.Bool("v", false, "print every run as it completes")
+		token     = flag.String("token", "", "bearer token for golive; also read from GOLIVE_AUTH_TOKEN")
 	)
 	flag.Parse()
+
+	if *token == "" {
+		*token = os.Getenv("GOLIVE_AUTH_TOKEN")
+	}
 
 	a, err := parseStack(*aSpec, "golive")
 	if err != nil {
 		return err
 	}
+	a.token = *token
 	stacks := []stack{a}
 	if *bSpec != "" {
 		b, err := parseStack(*bSpec, "realtime")
 		if err != nil {
 			return err
 		}
+		b.token = *token
 		stacks = append(stacks, b)
 	}
 
@@ -239,7 +248,11 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 	r := result{Stack: s.name, Clip: c.name}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, s.url, nil)
+	header := http.Header{}
+	if s.token != "" {
+		header.Set("Authorization", "Bearer "+s.token)
+	}
+	conn, _, err := dialer.DialContext(ctx, s.url, header)
 	if err != nil {
 		r.Err = "dial: " + err.Error()
 		return r

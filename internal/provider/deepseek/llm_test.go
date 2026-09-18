@@ -66,4 +66,7 @@ func TestEveryRegisteredBackendIsNamed(t *testing.T) {
 	if c.DefaultModel != "sentinel" {
 		t.Fatalf("model = %q, want the per-provider override", c.DefaultModel)
 	}
+	if c.Name() != "cerebras" {
+		t.Errorf("Name() = %q, want cerebras (not a hard-coded deepseek)", c.Name())
+	}
 }

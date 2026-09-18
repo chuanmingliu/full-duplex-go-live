@@ -14,6 +14,7 @@ T2A and it is a production-shaped voice service.
 ```
 ./start.sh             # http://localhost:8080 — open it and talk
 ./start.sh real        # the same, against Tencent + DeepSeek + MiniMax
+./start.sh prod        # auth required, json logs, no demo page
 make demo              # drive a turn from the CLI, interrupt it, save the audio
 ```
 
@@ -90,8 +91,9 @@ Package map:
 | Package | Responsibility |
 | --- | --- |
 | `internal/live` | gpt-live-1 event types, session config, extension events |
-| `internal/server` | WebSocket session state machine, HTTP routes, demo hosting |
+| `internal/server` | WebSocket session state machine, HTTP routes, auth, admission, demo hosting |
 | `internal/duplex` | The engine: turn tracking, generation/cancel scope, paced player, backchannel |
+| `internal/metrics` | Process-wide Prometheus text (no client library) |
 | `internal/audio` | PCM conversion, resampling, framing, energy VAD, WAV |
 | `internal/segment` | LLM text → speakable segments (CJK + Latin aware) |
 | `internal/provider` | ASR / LLM / TTS contracts and registry |
@@ -302,7 +304,7 @@ on a conversational cadence, connection setup dominates time-to-first-audio.
 ```
 make test     # unit + wire-level integration, all on mock providers
 make race     # the same under -race; the engine is heavily concurrent
-make dist     # cross-compile bin/ for darwin-arm64, darwin-amd64, linux-amd64
+make dist     # cross-compile bin/ for darwin-arm64, darwin-amd64, linux-amd64, linux-arm64
 ```
 
 [TESTING.md](TESTING.md) covers driving it by hand. Below is what the automated
@@ -337,20 +339,58 @@ any waveform viewer.
 
 ## Operational notes
 
-* **Build environments without a module proxy.** `GOPROXY=direct GOSUMDB=off`
-  fetches straight from the source hosts. The Makefile and `start.sh` set both.
+* **Production profile.** `configs/production.json` turns auth on, serves no
+  demo page, logs JSON, caps concurrent sessions, and refuses client provider
+  overrides. Boot it with `GOLIVE_AUTH_TOKEN` set:
+
+  ```
+  ./start.sh prod
+  # or
+  docker compose up --build
+  ```
+
+  Endpoints: `/livez` (liveness), `/readyz` (admission), `/metrics`
+  (Prometheus; authenticated when a token is set unless `metrics_public` is
+  on), `ws://host/v1/live`.
+
+* **Auth.** `GOLIVE_AUTH_TOKEN` is required by the production profile. Clients
+  send `Authorization: Bearer …` or, for browsers, `?token=`. golivectl and
+  golivebench take `-token`. `GOLIVE_ALLOWED_ORIGINS` is the WebSocket Origin
+  allow-list; with auth and no list, only same-host origins are accepted.
+  Failed logins from one IP are 401 up to `auth_fail_burst` (default 30) and
+  429 after that. `GOLIVE_METRICS_TOKEN` is an optional scrape credential so
+  Prometheus does not have to hold the session secret.
+
+* **Admission and drain.** `max_sessions` / `max_sessions_per_ip` refuse
+  upgrades with 503 before a socket is open. SIGTERM sets `/readyz` to
+  draining, sends `session.closed` with reason `server_shutdown`, and waits
+  `shutdown_timeout_seconds` for the map to empty.
+
+* **Idle and flood.** `duplex.idle_timeout_seconds` (default 300) closes a
+  silent session. `duplex.max_events_per_second` and `duplex.max_audio_kbps`
+  (set in the production profile) close a client that is flooding the
+  socket, with reason `rate_limited`.
+
+* **Health.** `/livez` is always 200 if the process is up. `/readyz` is 503
+  while draining or at the session cap, which is what a load balancer should
+  honour. `/metrics` is Prometheus text: session gauges, reject reasons,
+  barge-ins, provider retries/errors, and time-to-first-audio.
+
+* **Build environments without a module proxy.** `GOPROXY=direct` fetches
+  straight from the source hosts. Checksum verification (`GOSUMDB`) stays on.
 * **Shipping it.** `make dist` fills `bin/` with binaries for macOS (both
-  architectures) and Linux amd64; the whole directory then runs anywhere those
-  platforms are, with or without Go.
-* **Put an authenticating proxy in front of it.** The WebSocket accepts any
-  origin, because a voice session carries no ambient credentials and the demo
-  page needs it. That is a deliberate choice, not an oversight to inherit.
+  architectures) and Linux amd64/arm64; the whole directory then runs anywhere
+  those platforms are, with or without Go. `docker compose up --build` is the
+  same service, non-root, read-only rootfs, healthcheck on `/livez`.
 * **One session, one engine, ~8 goroutines.** Cost is dominated by provider
   sockets, not CPU. The VAD is energy-based on purpose: a neural detector per
   concurrent session is a different machine.
 * **Backpressure.** A client that cannot drain its socket is disconnected rather
   than allowed to stall the engine — on a realtime audio path, queueing only
   makes the lag worse.
+* **Trusting proxies.** `trust_proxy` reads `X-Forwarded-For` for the per-IP
+  cap. Only turn it on behind a proxy that overwrites that header; otherwise
+  a caller can spoof the address and bypass the cap.
 
 ## License
 

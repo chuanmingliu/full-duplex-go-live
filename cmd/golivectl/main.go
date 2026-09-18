@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -50,10 +51,18 @@ func run() error {
 		tts        = flag.String("tts", "", "override the TTS provider for this session")
 		verbose    = flag.Bool("v", false, "print every server event, not just the interesting ones")
 		waitMS     = flag.Int("wait-ms", 6000, "how long to keep listening after the last audio is sent")
+		token      = flag.String("token", "", "bearer token (GOLIVE_AUTH_TOKEN); also read from GOLIVE_AUTH_TOKEN")
 	)
 	flag.Parse()
 
-	conn, _, err := websocket.DefaultDialer.Dial(*url, nil)
+	if *token == "" {
+		*token = os.Getenv("GOLIVE_AUTH_TOKEN")
+	}
+	header := http.Header{}
+	if *token != "" {
+		header.Set("Authorization", "Bearer "+*token)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(*url, header)
 	if err != nil {
 		return fmt.Errorf("dialing %s: %w", *url, err)
 	}

@@ -20,8 +20,54 @@ type Config struct {
 	// Server
 	Addr     string `json:"addr"`
 	LogLevel string `json:"log_level"`
+	// LogFormat is "text" (default, human logs) or "json" (aggregators).
+	LogFormat string `json:"log_format"`
 	// WebRoot serves the demo client. Empty disables it.
 	WebRoot string `json:"web_root"`
+
+	// AuthToken is read only from GOLIVE_AUTH_TOKEN. It is never a profile
+	// field, which is what keeps a profile committable.
+	AuthToken string `json:"-"`
+	// AuthRequired refuses to boot without AuthToken. Set it in a production
+	// profile so a missing env var is a start-up failure rather than an open
+	// socket.
+	AuthRequired bool `json:"auth_required"`
+	// AllowedOrigins is the WebSocket Origin allow-list. Empty means "allow
+	// anything" when auth is off, and "same host only" when a token is set.
+	AllowedOrigins []string `json:"allowed_origins"`
+	// TrustProxy reads X-Forwarded-For / X-Real-IP for per-IP admission.
+	TrustProxy bool `json:"trust_proxy"`
+
+	// MaxSessions caps concurrent WebSocket sessions; 0 is unlimited.
+	MaxSessions int `json:"max_sessions"`
+	// MaxSessionsPerIP caps sessions from one client address; 0 is unlimited.
+	MaxSessionsPerIP int `json:"max_sessions_per_ip"`
+	// AllowProviderOverride lets a client pick ASR/LLM/TTS at session.start.
+	// The demo page uses this; a production profile turns it off.
+	AllowProviderOverride bool `json:"allow_provider_override"`
+	// EnableMetrics serves Prometheus text at /metrics. On by default.
+	EnableMetrics bool `json:"enable_metrics"`
+	// EnablePprof serves /debug/pprof. Off by default; still behind auth when
+	// a token is configured.
+	EnablePprof bool `json:"enable_pprof"`
+	// MetricsPublic serves /metrics without a token. Off by default; turn it
+	// on only when the scrape endpoint is on a private network.
+	MetricsPublic bool `json:"metrics_public"`
+	// MetricsToken is an optional scrape credential, independent of the
+	// session token, so Prometheus does not have to hold the caller's secret.
+	// Read only from GOLIVE_METRICS_TOKEN.
+	MetricsToken string `json:"-"`
+	// AuthFailBurst is how many 401s one IP may collect inside
+	// AuthFailWindowSeconds before further attempts are 429. 0 disables.
+	AuthFailBurst int `json:"auth_fail_burst"`
+	// AuthFailWindowSeconds is the window for AuthFailBurst. 0 means 60.
+	AuthFailWindowSeconds int `json:"auth_fail_window_seconds"`
+	// TLSCertFile / TLSKeyFile enable in-process TLS. Empty means HTTP; put
+	// TLS at the edge unless you have a reason not to.
+	TLSCertFile string `json:"tls_cert_file"`
+	TLSKeyFile  string `json:"tls_key_file"`
+	// ShutdownTimeoutSeconds is how long SIGTERM waits for sessions to close.
+	ShutdownTimeoutSeconds int `json:"shutdown_timeout_seconds"`
 
 	// Providers, by registry name.
 	ASR string `json:"asr"`
@@ -210,6 +256,12 @@ type DuplexConfig struct {
 	SessionMaxSeconds int `json:"session_max_seconds"`
 	// IdleTimeoutSeconds closes a session with no audio at all; 0 disables.
 	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
+	// MaxEventsPerSecond caps non-audio client events. Audio frames are
+	// expected at 50/s and are bounded by MaxAudioKbps instead. 0 is unlimited.
+	MaxEventsPerSecond int `json:"max_events_per_second"`
+	// MaxAudioKbps caps inbound PCM. 24 kHz PCM16 is 384 kbps; a value around
+	// 512 leaves headroom for jitter without allowing a flood. 0 is unlimited.
+	MaxAudioKbps int `json:"max_audio_kbps"`
 }
 
 // VADProfile is the JSON-facing form of the detector's tuning.
@@ -233,17 +285,23 @@ type VADProfile struct {
 // and no credentials at all.
 func Default() Config {
 	return Config{
-		Addr:       ":8080",
-		LogLevel:   "info",
-		WebRoot:    "web",
-		ASR:        "mock",
-		LLM:        "mock",
-		TTS:        "mock",
-		Model:      "golive-1",
-		Voice:      "",
-		Language:   "zh",
-		Speed:      1.0,
-		ClientRate: 24000,
+		Addr:                   ":8080",
+		LogLevel:               "info",
+		LogFormat:              "text",
+		WebRoot:                "web",
+		AllowProviderOverride:  true,
+		EnableMetrics:          true,
+		AuthFailBurst:          30,
+		AuthFailWindowSeconds:  60,
+		ShutdownTimeoutSeconds: 10,
+		ASR:                    "mock",
+		LLM:                    "mock",
+		TTS:                    "mock",
+		Model:                  "golive-1",
+		Voice:                  "",
+		Language:               "zh",
+		Speed:                  1.0,
+		ClientRate:             24000,
 		Instructions: "You are a calm, friendly voice assistant. Speak warmly and " +
 			"naturally, at an unhurried pace. Keep routine answers to one or two " +
 			"short sentences. Never read out markup, lists or code.",
@@ -357,7 +415,24 @@ func Load(profilePath string) (Config, error) {
 func (c *Config) applyEnv() {
 	setString(&c.Addr, "GOLIVE_ADDR")
 	setString(&c.LogLevel, "GOLIVE_LOG_LEVEL")
+	setString(&c.LogFormat, "GOLIVE_LOG_FORMAT")
 	setString(&c.WebRoot, "GOLIVE_WEB_ROOT")
+	setString(&c.AuthToken, "GOLIVE_AUTH_TOKEN")
+	setBool(&c.AuthRequired, "GOLIVE_AUTH_REQUIRED")
+	setCSV(&c.AllowedOrigins, "GOLIVE_ALLOWED_ORIGINS")
+	setBool(&c.TrustProxy, "GOLIVE_TRUST_PROXY")
+	setInt(&c.MaxSessions, "GOLIVE_MAX_SESSIONS")
+	setInt(&c.MaxSessionsPerIP, "GOLIVE_MAX_SESSIONS_PER_IP")
+	setBool(&c.AllowProviderOverride, "GOLIVE_ALLOW_PROVIDER_OVERRIDE")
+	setBool(&c.EnableMetrics, "GOLIVE_ENABLE_METRICS")
+	setBool(&c.EnablePprof, "GOLIVE_PPROF")
+	setBool(&c.MetricsPublic, "GOLIVE_METRICS_PUBLIC")
+	setString(&c.MetricsToken, "GOLIVE_METRICS_TOKEN")
+	setInt(&c.AuthFailBurst, "GOLIVE_AUTH_FAIL_BURST")
+	setInt(&c.AuthFailWindowSeconds, "GOLIVE_AUTH_FAIL_WINDOW_SECONDS")
+	setString(&c.TLSCertFile, "GOLIVE_TLS_CERT_FILE")
+	setString(&c.TLSKeyFile, "GOLIVE_TLS_KEY_FILE")
+	setInt(&c.ShutdownTimeoutSeconds, "GOLIVE_SHUTDOWN_TIMEOUT_SECONDS")
 	setString(&c.ASR, "GOLIVE_ASR")
 	setString(&c.LLM, "GOLIVE_LLM")
 	setString(&c.TTS, "GOLIVE_TTS")
@@ -379,10 +454,39 @@ func (c *Config) applyEnv() {
 	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
 	setBool(&c.Duplex.ResetTTSOnInterrupt, "GOLIVE_RESET_TTS_ON_INTERRUPT")
 	setBool(&c.Duplex.PlaybackPaced, "GOLIVE_PLAYBACK_PACED")
+	setInt(&c.Duplex.MaxEventsPerSecond, "GOLIVE_MAX_EVENTS_PER_SECOND")
+	setInt(&c.Duplex.MaxAudioKbps, "GOLIVE_MAX_AUDIO_KBPS")
+	setInt(&c.Duplex.IdleTimeoutSeconds, "GOLIVE_IDLE_TIMEOUT_SECONDS")
 }
 
 // Validate rejects combinations that would fail confusingly later.
 func (c *Config) Validate() error {
+	switch c.LogFormat {
+	case "", "text", "json":
+		if c.LogFormat == "" {
+			c.LogFormat = "text"
+		}
+	default:
+		return fmt.Errorf("config: log_format %q must be text or json", c.LogFormat)
+	}
+	if c.AuthRequired && c.AuthToken == "" {
+		return fmt.Errorf("config: auth_required is set but GOLIVE_AUTH_TOKEN is empty")
+	}
+	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+		return fmt.Errorf("config: tls_cert_file and tls_key_file must be set together")
+	}
+	if c.ShutdownTimeoutSeconds < 0 {
+		return fmt.Errorf("config: shutdown_timeout_seconds must be >= 0")
+	}
+	if c.MaxSessions < 0 || c.MaxSessionsPerIP < 0 {
+		return fmt.Errorf("config: session caps must be >= 0")
+	}
+	if c.AuthFailBurst < 0 || c.AuthFailWindowSeconds < 0 {
+		return fmt.Errorf("config: auth fail throttle must be >= 0")
+	}
+	if c.Duplex.MaxEventsPerSecond < 0 || c.Duplex.MaxAudioKbps < 0 {
+		return fmt.Errorf("config: rate caps must be >= 0")
+	}
 	switch c.ClientRate {
 	case 8000, 16000, 24000, 48000:
 	default:
@@ -532,5 +636,19 @@ func setBool(dst *bool, key string) {
 		if b, err := strconv.ParseBool(v); err == nil {
 			*dst = b
 		}
+	}
+}
+
+func setCSV(dst *[]string, key string) {
+	if v := os.Getenv(key); v != "" {
+		parts := strings.Split(v, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		*dst = out
 	}
 }

@@ -70,6 +70,7 @@ func init() {
 
 // LLM is a streaming chat-completions client.
 type LLM struct {
+	name         string
 	BaseURL      string
 	APIKey       string
 	DefaultModel string
@@ -107,6 +108,7 @@ func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 		model = config.Env(prefix+"MODEL", model)
 	}
 	return &LLM{
+		name:         name,
 		BaseURL:      strings.TrimRight(base, "/"),
 		APIKey:       key,
 		DefaultModel: model,
@@ -125,7 +127,12 @@ func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 }
 
 // Name implements provider.LLM.
-func (l *LLM) Name() string { return "deepseek" }
+func (l *LLM) Name() string {
+	if l.name != "" {
+		return l.name
+	}
+	return "deepseek"
+}
 
 // Prewarm implements provider.Prewarmer: it opens a connection to the backend
 // and returns it to the idle pool, so the first completion of a session does
