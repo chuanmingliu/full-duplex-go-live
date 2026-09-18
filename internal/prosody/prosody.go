@@ -152,8 +152,12 @@ func Default() Config {
 				Insert: "<#0.3#>", At: AtAfterMatch},
 			{When: WhenToolLatencyOver, Arg: 800,
 				Insert: "<#0.5#>", At: AtAfterFirstClause},
-			{When: WhenContainsAny, Arg: []any{"unfortunately", "i'm afraid", "can't", "unable"},
-				Insert: "(sighs)", At: AtEndOfMatchedSentence},
+			// Both apostrophes, and "cannot" as one word. A model writes
+			// whichever it likes, and a rule that matches only the straight
+			// apostrophe misses most of what it was written for.
+			{When: WhenContainsAny, Arg: []any{
+				"unfortunately", "afraid", "can't", "can\u2019t", "cannot", "unable",
+			}, Insert: "(sighs)", At: AtEndOfMatchedSentence},
 			{When: WhenEndsWithQuestion,
 				Insert: "<#0.4#>", At: AtBeforeFinalClause},
 			{When: WhenSentenceCountOver, Arg: 3,

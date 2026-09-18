@@ -239,3 +239,25 @@ func TestInjectNamesTheRulesThatFired(t *testing.T) {
 		t.Fatalf("applied summary unreadable: %q", got)
 	}
 }
+
+// A model writes "can't", "can’t" or "cannot" as it pleases. A rule that
+// matches only the straight apostrophe misses most of what it exists for.
+func TestDefaultRulesMatchBothApostrophes(t *testing.T) {
+	c := Default()
+	turn := TurnContext{LastTagTurn: -1, FirstSegment: true}
+	for _, reply := range []string{
+		"I'm afraid that flight is already full.",
+		"I can't move it to yesterday.",
+		"I can’t move it to yesterday.",
+		"I cannot move that booking.",
+		"Unfortunately that is gone.",
+		"I am unable to do that.",
+	} {
+		if got := c.Inject(reply, turn); got.Tags != 1 {
+			t.Fatalf("no tag for %q", reply)
+		}
+	}
+	if got := c.Inject("That booking is no longer changeable.", turn); got.Tags != 0 {
+		t.Fatalf("tag on a neutral reply: %q", got.Text)
+	}
+}
