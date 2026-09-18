@@ -1,0 +1,10 @@
+bin/
+*.wav
+.env
+.env.local
+golive.log
+.git
+.github
+demo/
+bench.md
+bench.json

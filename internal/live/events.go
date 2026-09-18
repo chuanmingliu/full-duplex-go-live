@@ -67,6 +67,8 @@ const (
 	CloseRemoteHangup   = "remote_hangup"
 	CloseConnectionLost = "connection_lost"
 	CloseError          = "error"
+	CloseShutdown       = "server_shutdown"
+	CloseFlooded        = "rate_limited"
 )
 
 // Delegation targets.

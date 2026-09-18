@@ -16,6 +16,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/duplex"
 	"github.com/chuanmingliu/golive/internal/live"
+	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 )
 
@@ -59,6 +60,8 @@ type Session struct {
 	closeMsg    atomic.Pointer[string]
 	audioEvents atomic.Int64
 	audioOut    atomic.Int64
+	lastActive  atomic.Int64
+	rate        byteRate
 }
 
 // SessionOptions configure a new session.
@@ -80,7 +83,7 @@ func NewSession(opts SessionOptions) *Session {
 	if factory == nil {
 		factory = duplex.New
 	}
-	return &Session{
+	s := &Session{
 		conn:      opts.Conn,
 		cfg:       opts.Cfg,
 		log:       log.With("session", opts.ID),
@@ -91,10 +94,17 @@ func NewSession(opts SessionOptions) *Session {
 		stopWrite: make(chan struct{}),
 		newEngine: factory,
 	}
+	s.lastActive.Store(time.Now().UnixNano())
+	return s
 }
 
 // Serve runs the session until the client disconnects or the context ends.
 func (s *Session) Serve(ctx context.Context) {
+	defer func() {
+		if v := recover(); v != nil {
+			s.log.Error("session panic", "err", v)
+		}
+	}()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -106,6 +116,10 @@ func (s *Session) Serve(ctx context.Context) {
 		<-ctx.Done()
 		_ = s.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	}()
+
+	if idle := s.cfg.Duplex.IdleTimeoutSeconds; idle > 0 {
+		go s.watchIdle(idle)
+	}
 
 	s.readLoop(ctx)
 
@@ -125,6 +139,7 @@ func (s *Session) Serve(ctx context.Context) {
 	close(s.stopWrite)
 	wg.Wait()
 	cancel()
+	s.writeClose(reason)
 	_ = s.conn.Close()
 }
 
@@ -132,6 +147,9 @@ func (s *Session) Serve(ctx context.Context) {
 // that cannot keep up is disconnected rather than allowed to stall the engine,
 // because backpressure on a realtime audio path only makes the lag worse.
 func (s *Session) Emit(event any) {
+	if errEv, ok := event.(live.ErrorEvent); ok {
+		metrics.Default().Error(errEv.Error.Code)
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		s.log.Error("marshalling server event", "err", err)
@@ -176,11 +194,99 @@ func (s *Session) logOutbound(data []byte) {
 }
 
 func (s *Session) finish() {
-	s.stopReadOnce.Do(func() { close(s.stopRead) })
+	s.stopReadOnce.Do(func() {
+		close(s.stopRead)
+		// ReadMessage ignores stopRead while it is blocked. Expiring the
+		// deadline is what actually wakes the read loop so idle, drain,
+		// flood and session.close all close the socket in bounded time.
+		_ = s.conn.SetReadDeadline(time.Now())
+	})
+}
+
+func (s *Session) touch() {
+	s.lastActive.Store(time.Now().UnixNano())
+}
+
+func (s *Session) watchIdle(seconds int) {
+	d := time.Duration(seconds) * time.Second
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-s.stopRead:
+			return
+		case <-tick.C:
+			last := time.Unix(0, s.lastActive.Load())
+			if time.Since(last) >= d {
+				s.log.Info("session idle timeout", "idle_s", seconds)
+				s.setCloseReason(live.CloseExpired)
+				s.finish()
+				return
+			}
+		}
+	}
 }
 
 func (s *Session) setCloseReason(reason string) {
 	s.closeMsg.CompareAndSwap(nil, &reason)
+}
+
+func (s *Session) writeClose(reason string) {
+	code := websocket.CloseGoingAway
+	switch reason {
+	case live.CloseRequested, live.CloseRemoteHangup:
+		code = websocket.CloseNormalClosure
+	case live.CloseFlooded:
+		code = websocket.CloseTryAgainLater
+	case live.CloseShutdown:
+		code = websocket.CloseGoingAway
+	}
+	_ = s.conn.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(code, reason),
+		time.Now().Add(time.Second),
+	)
+}
+
+func (s *Session) floodClose(why string) {
+	s.log.Warn("session rate limit exceeded", "why", why)
+	s.setCloseReason(live.CloseFlooded)
+	s.Emit(live.NewError("invalid_request_error", "rate_limited",
+		"client is sending too fast", ""))
+	s.finish()
+}
+
+// byteRate is a one-second window counted on the read loop, so it needs no lock.
+type byteRate struct {
+	start  time.Time
+	events int
+	audio  int
+}
+
+func (b *byteRate) roll() {
+	if b.start.IsZero() || time.Since(b.start) >= time.Second {
+		b.start = time.Now()
+		b.events = 0
+		b.audio = 0
+	}
+}
+
+func (b *byteRate) allowEvent(max int) bool {
+	if max <= 0 {
+		return true
+	}
+	b.roll()
+	b.events++
+	return b.events <= max
+}
+
+func (b *byteRate) allowAudio(n, maxKbps int) bool {
+	if maxKbps <= 0 {
+		return true
+	}
+	b.roll()
+	b.audio += n
+	return b.audio <= maxKbps*1000/8
 }
 
 func (s *Session) writeLoop() {
@@ -218,7 +324,10 @@ func (s *Session) writeLoop() {
 }
 
 func (s *Session) readLoop(ctx context.Context) {
-	s.conn.SetReadLimit(8 << 20)
+	// 1 MiB is enough for a session.start carrying the 128-message history
+	// cap, and far smaller than the previous 8 MiB which invited a memory
+	// spike from a single frame.
+	s.conn.SetReadLimit(1 << 20)
 	_ = s.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	s.conn.SetPongHandler(func(string) error {
 		return s.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
@@ -240,12 +349,17 @@ func (s *Session) readLoop(ctx context.Context) {
 			}
 			return
 		}
+		s.touch()
 		_ = s.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 
 		if msgType == websocket.BinaryMessage {
 			// A convenience for raw-PCM clients: binary frames are treated as
 			// session.input_audio.append with no base64 round trip. A
 			// conformant gpt-live-1 client never sends these.
+			if !s.rate.allowAudio(len(data), s.cfg.Duplex.MaxAudioKbps) {
+				s.floodClose("audio")
+				return
+			}
 			s.handleBinaryAudio(data)
 			continue
 		}
@@ -285,6 +399,13 @@ func (s *Session) handleEvent(ctx context.Context, data []byte) error {
 		}
 	} else {
 		s.log.Debug("client event", "type", eventType, "event_id", eventID, "bytes", len(data))
+	}
+
+	if eventType != live.ClientInputAudioAppend {
+		if !s.rate.allowEvent(s.cfg.Duplex.MaxEventsPerSecond) {
+			s.floodClose("events")
+			return fmt.Errorf("live: rate limited")
+		}
 	}
 
 	if !started && eventType != live.ClientSessionStart {
@@ -375,14 +496,21 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 
 	asrName, llmName, ttsName := s.cfg.ASR, s.cfg.LLM, s.cfg.TTS
 	if g := ev.Session.Golive; g != nil {
-		if g.ASR != "" {
-			asrName = g.ASR
-		}
-		if g.LLM != "" {
-			llmName = g.LLM
-		}
-		if g.TTS != "" {
-			ttsName = g.TTS
+		if g.ASR != "" || g.LLM != "" || g.TTS != "" {
+			if !s.cfg.AllowProviderOverride {
+				s.Emit(live.NewError("invalid_request_error", "provider_override_disabled",
+					"golive.asr/llm/tts cannot be set on this server", eventID))
+				return fmt.Errorf("live: provider override disabled")
+			}
+			if g.ASR != "" {
+				asrName = g.ASR
+			}
+			if g.LLM != "" {
+				llmName = g.LLM
+			}
+			if g.TTS != "" {
+				ttsName = g.TTS
+			}
 		}
 	}
 
@@ -469,6 +597,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		Greeting:     greeting,
 		OnNewQuery:   onNewQuery,
 		History:      history,
+		Tools:        toolsOf(resolved),
 	}, duplex.Deps{
 		ASR:  asr,
 		LLM:  llm,
@@ -606,6 +735,8 @@ func (s *Session) onSessionUpdate(data []byte, eventID string) error {
 		updated := s.config
 		s.mu.Unlock()
 
+		s.withEngine(func(e *duplex.Engine) { e.SetTools(toolsOf(updated)) })
+
 		s.Emit(live.SessionStartedEvent{
 			Envelope: live.Envelope{Type: live.ServerSessionUpdated},
 			Session:  updated,
@@ -634,6 +765,10 @@ func (s *Session) onInputAudio(data []byte, eventID string) error {
 		s.Emit(live.NewError("invalid_request_error", "bad_audio",
 			"audio must be base64-encoded PCM in the session format", eventID))
 		return err
+	}
+	if !s.rate.allowAudio(len(pcm), s.cfg.Duplex.MaxAudioKbps) {
+		s.floodClose("audio")
+		return fmt.Errorf("live: rate limited")
 	}
 	s.withEngine(func(e *duplex.Engine) { e.PushAudio(pcm) })
 	return nil
@@ -712,4 +847,11 @@ func voiceOf(c live.SessionConfig) string {
 		return c.Audio.Output.Voice
 	}
 	return ""
+}
+
+func toolsOf(c live.SessionConfig) []json.RawMessage {
+	if c.Delegation != nil && c.Delegation.Responses != nil {
+		return c.Delegation.Responses.Tools
+	}
+	return nil
 }

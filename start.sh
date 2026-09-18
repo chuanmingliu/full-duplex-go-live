@@ -3,6 +3,7 @@
 #
 #   ./start.sh              mock providers, no credentials, full debug logging
 #   ./start.sh real         Tencent + DeepSeek + MiniMax, reads .env.local
+#   ./start.sh prod         production profile (auth required, json logs, no demo)
 #   PORT=9000 ./start.sh    listen somewhere else
 #
 # If a Go toolchain is present the binary is rebuilt from source first, so what
@@ -31,12 +32,10 @@ esac
 BIN="bin/golive"
 if command -v go >/dev/null 2>&1; then
   echo "· building from source"
-  # The module proxy is not reachable from every network; direct works wherever
-  # the source hosts do.
-  GOPROXY="${GOPROXY:-direct}" GOSUMDB="${GOSUMDB:-off}" \
-    go build -o bin/golive ./cmd/golive
-  GOPROXY="${GOPROXY:-direct}" GOSUMDB="${GOSUMDB:-off}" \
-    go build -o bin/golivectl ./cmd/golivectl
+  GOPROXY="${GOPROXY:-direct}" \
+    go build -ldflags "-s -w" -o bin/golive ./cmd/golive
+  GOPROXY="${GOPROXY:-direct}" \
+    go build -ldflags "-s -w" -o bin/golivectl ./cmd/golivectl
 else
   BIN="bin/golive-$OS-$ARCH"
   if [ ! -x "$BIN" ]; then
@@ -55,26 +54,43 @@ if [ "$OS" = darwin ]; then
   xattr -dr com.apple.quarantine bin 2>/dev/null || true
 fi
 
-if [ "$MODE" = real ]; then
-  if [ ! -f .env.local ]; then
-    echo "real mode needs .env.local — copy .env.example and fill it in" >&2
-    exit 1
-  fi
-  PROFILE=configs/tencent-deepseek-minimax.json
-  ENVFILE=.env.local
-else
-  PROFILE=configs/mock.json
-  ENVFILE=/dev/null
-fi
+LOG_LEVEL="${GOLIVE_LOG_LEVEL:-}"
+case "$MODE" in
+  prod)
+    if [ ! -f .env.local ]; then
+      echo "prod mode needs .env.local — copy .env.example and fill it in" >&2
+      echo "GOLIVE_AUTH_TOKEN is required" >&2
+      exit 1
+    fi
+    PROFILE=configs/production.json
+    ENVFILE=.env.local
+    LOG_LEVEL="${LOG_LEVEL:-info}"
+    ;;
+  real)
+    if [ ! -f .env.local ]; then
+      echo "real mode needs .env.local — copy .env.example and fill it in" >&2
+      exit 1
+    fi
+    PROFILE=configs/tencent-deepseek-minimax.json
+    ENVFILE=.env.local
+    LOG_LEVEL="${LOG_LEVEL:-info}"
+    ;;
+  *)
+    PROFILE=configs/mock.json
+    ENVFILE=/dev/null
+    LOG_LEVEL="${LOG_LEVEL:-debug}"
+    MODE=mock
+    ;;
+esac
 
 echo
-echo "  golive — $MODE providers, debug logging"
+echo "  golive — $MODE providers"
 echo "  open:  http://localhost:$PORT"
 echo "  log:   $(pwd)/golive.log"
 echo "  stop:  Ctrl-C"
 echo
 
-# GOLIVE_LOG_LEVEL=debug logs every client event, every server event (audio
-# chunks counted rather than printed), and every stage of every turn.
-GOLIVE_LOG_LEVEL=debug \
+# Mock keeps debug so the demo is inspectable. Real/prod inherit info unless
+# GOLIVE_LOG_LEVEL is set — debug logs contain transcripts.
+GOLIVE_LOG_LEVEL="$LOG_LEVEL" \
   "./$BIN" -profile "$PROFILE" -env "$ENVFILE" -addr ":$PORT" 2>&1 | tee golive.log

@@ -40,6 +40,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/live"
+	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/segment"
 )
@@ -75,6 +76,8 @@ type Options struct {
 	Greeting string
 	// OnNewQuery overrides the profile's interruption policy for this session.
 	OnNewQuery string
+	// Tools are forwarded to the backend in responses mode.
+	Tools []json.RawMessage
 }
 
 // Engine is one session's duplex orchestrator.
@@ -139,6 +142,9 @@ type Engine struct {
 	lastState   live.ChannelStateEvent
 	pendingTool map[string]pendingCall
 	waitingTool bool
+	tools       []json.RawMessage
+
+	backendCancel context.CancelFunc
 
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
@@ -227,6 +233,7 @@ func New(opts Options, deps Deps) *Engine {
 		),
 		bcSet:       NewPhraseSet(opts.Cfg.Duplex.UserBackchannelPhrases),
 		pendingTool: map[string]pendingCall{},
+		tools:       append([]json.RawMessage(nil), opts.Tools...),
 		startAt:     time.Now(),
 	}
 	e.tracker = NewTracker(&e.gen)
@@ -363,6 +370,7 @@ func (e *Engine) PushAudio(pcm []byte) {
 		default:
 		}
 		e.log.Warn("input audio queue full; dropped a frame")
+		metrics.Default().AudioDropped()
 	}
 }
 
@@ -471,7 +479,13 @@ func (e *Engine) ContinueResponse(delegationID string) {
 			return
 		}
 		e.waitingTool = false
-		go e.runBackend(turn, e.snapshotMessages(turn))
+		if e.backendCancel != nil {
+			e.backendCancel()
+		}
+		ctx, cancel := context.WithCancel(e.ctx)
+		e.backendCancel = cancel
+		tools := append([]json.RawMessage(nil), e.tools...)
+		go e.runBackend(ctx, turn, e.snapshotMessages(turn), tools)
 	})
 }
 
@@ -663,7 +677,18 @@ func (e *Engine) openASR(startMS int64) {
 		Language:   e.opts.Language,
 		Interim:    true,
 	})
+	if err != nil && e.ctx.Err() == nil {
+		metrics.Default().Retry("asr")
+		e.log.Warn("asr open retrying", "err", err)
+		time.Sleep(150 * time.Millisecond)
+		stream, err = e.deps.ASR.Open(e.ctx, provider.ASROptions{
+			SampleRate: provider.PipelineRate,
+			Language:   e.opts.Language,
+			Interim:    true,
+		})
+	}
 	if err != nil {
+		metrics.Default().ProviderError("asr")
 		e.log.Error("asr open failed", "err", err)
 		e.deps.Emit(live.NewError("server_error", "asr_unavailable", err.Error(), ""))
 		return
@@ -986,7 +1011,13 @@ func (e *Engine) beginGeneration(turn *Turn, reason string) {
 		// session.commentary.append or session.thinking.append.
 		return
 	}
-	go e.runBackend(turn, e.snapshotMessages(turn))
+	if e.backendCancel != nil {
+		e.backendCancel()
+	}
+	ctx, cancel := context.WithCancel(e.ctx)
+	e.backendCancel = cancel
+	tools := append([]json.RawMessage(nil), e.tools...)
+	go e.runBackend(ctx, turn, e.snapshotMessages(turn), tools)
 }
 
 // snapshotMessages builds the backend request on the loop goroutine so the
@@ -1007,20 +1038,32 @@ func (e *Engine) snapshotMessages(turn *Turn) []provider.Message {
 	return msgs
 }
 
-func (e *Engine) runBackend(turn *Turn, msgs []provider.Message) {
+func (e *Engine) runBackend(ctx context.Context, turn *Turn, msgs []provider.Message, tools []json.RawMessage) {
 	if e.deps.LLM == nil {
 		return
 	}
 	delegationID := fmt.Sprintf("%s.%d", turn.ID, turn.Revision)
 
-	deltas, err := e.deps.LLM.Stream(e.ctx, provider.LLMRequest{
+	req := provider.LLMRequest{
 		Model:           e.opts.Cfg.BackendModel,
 		Messages:        msgs,
 		Temperature:     e.opts.Cfg.Temperature,
 		MaxTokens:       e.opts.Cfg.MaxOutputTokens,
 		DisableThinking: e.opts.Cfg.DisableThinking,
-	})
+		Tools:           tools,
+	}
+	deltas, err := e.deps.LLM.Stream(ctx, req)
+	if err != nil && ctx.Err() == nil && retryable(err) {
+		metrics.Default().Retry("llm")
+		e.log.Warn("llm stream retrying", "err", err)
+		time.Sleep(200 * time.Millisecond)
+		deltas, err = e.deps.LLM.Stream(ctx, req)
+	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		metrics.Default().ProviderError("llm")
 		e.log.Error("llm stream failed", "err", err)
 		e.deps.Emit(live.NewError("server_error", "backend_unavailable", err.Error(), ""))
 		return
@@ -1032,7 +1075,7 @@ func (e *Engine) runBackend(turn *Turn, msgs []provider.Message) {
 	firstToken := true
 
 	for d := range deltas {
-		if !e.tracker.IsCurrent(turn) {
+		if ctx.Err() != nil || !e.tracker.IsCurrent(turn) {
 			pipe.Abort()
 			return
 		}
@@ -1435,7 +1478,19 @@ func (e *Engine) ttsSession() (provider.TTSStream, error) {
 		Speed:      e.opts.Cfg.Speed,
 		Language:   e.opts.Language,
 	})
+	if err != nil && e.ctx.Err() == nil {
+		metrics.Default().Retry("tts")
+		e.log.Warn("tts open retrying", "err", err)
+		time.Sleep(150 * time.Millisecond)
+		stream, err = e.deps.TTS.Open(e.ctx, provider.TTSOptions{
+			SampleRate: provider.PipelineRate,
+			Voice:      e.opts.Voice,
+			Speed:      e.opts.Cfg.Speed,
+			Language:   e.opts.Language,
+		})
+	}
 	if err != nil {
+		metrics.Default().ProviderError("tts")
 		return nil, err
 	}
 	e.log.Debug("speak: tts session opened",
@@ -1748,11 +1803,16 @@ func (e *Engine) softInterrupt() {
 // interrupt is barge-in: stop generating, stop speaking, and let the
 // truncation callback fix history.
 func (e *Engine) interrupt() {
+	if e.backendCancel != nil {
+		e.backendCancel()
+		e.backendCancel = nil
+	}
 	gen := e.gen.Bump()
 	e.abortSpeech()
 	if e.opts.Cfg.Duplex.ResetTTSOnInterrupt {
 		e.resetTTS()
 	}
+	metrics.Default().BargeIn()
 	e.log.Debug("barge-in: generation invalidated", "generation", gen)
 }
 
@@ -1934,6 +1994,9 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	}
 	e.deps.Emit(ev)
 
+	if !tm.SpeechEndAt.IsZero() {
+		metrics.Default().ObserveTurn(ev.FirstAudioOutMS)
+	}
 	// Only turns a caller actually waited for belong in the latency summary.
 	// A greeting or an unsolicited commentary has no speech-end origin, so its
 	// figures describe nothing anyone experienced as waiting.
@@ -2272,6 +2335,25 @@ func (e *Engine) publishState() {
 }
 
 // --- helpers ---
+
+// SetTools replaces the backend tool list for subsequent generations.
+func (e *Engine) SetTools(tools []json.RawMessage) {
+	clone := append([]json.RawMessage(nil), tools...)
+	e.post(func() { e.tools = clone })
+}
+
+func retryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, n := range []string{"429", "502", "503", "504", "unavailable", "timeout", "connection reset", "try again"} {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
+}
 
 func normalizeForCompare(s string) string {
 	var b strings.Builder

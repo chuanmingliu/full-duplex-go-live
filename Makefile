@@ -1,16 +1,14 @@
-# The module proxy is not always reachable from build environments behind a
-# restricted egress policy; fetching straight from the source hosts is.
+# Restricted networks can set GOPROXY=direct. Checksum verification stays on.
 GOFLAGS ?=
-GOPROXY ?= direct
-GOSUMDB ?= off
-export GOPROXY
-export GOSUMDB
 
 BIN := bin
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 # Platforms shipped in a dist bundle, so the project runs on a machine with no
 # Go toolchain.
-PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64
+PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
 .PHONY: all build test race vet fmt run run-mock demo bench ttsprobe dist clean tidy
 
@@ -18,10 +16,10 @@ all: vet test build
 
 build:
 	@mkdir -p $(BIN)
-	go build -o $(BIN)/golive ./cmd/golive
-	go build -o $(BIN)/golivectl ./cmd/golivectl
-	go build -o $(BIN)/golivebench ./cmd/golivebench
-	go build -o $(BIN)/ttsprobe ./cmd/ttsprobe
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golive ./cmd/golive
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivectl ./cmd/golivectl
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivebench ./cmd/golivebench
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/ttsprobe ./cmd/ttsprobe
 
 ## test: the Go suite, plus the demo page's transcript bookkeeping. The page is
 ## where a session is read, so a defect there is indistinguishable from one in
@@ -46,6 +44,10 @@ tidy:
 ## run: start with the real provider stack (needs .env.local)
 run: build
 	$(BIN)/golive -profile configs/tencent-deepseek-minimax.json -env .env.local
+
+## run-prod: production profile (auth required, no demo page, json logs)
+run-prod: build
+	$(BIN)/golive -profile configs/production.json -env .env.local
 
 ## run-mock: start with mock providers; no credentials needed
 run-mock: build
@@ -76,7 +78,7 @@ dist:
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "  building $$os/$$arch"; \
 		for c in golive golivectl golivebench ttsprobe; do \
-			GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" \
+			GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" \
 				-o $(BIN)/$$c-$$os-$$arch ./cmd/$$c; \
 		done; \
 	done

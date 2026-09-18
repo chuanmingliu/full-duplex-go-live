@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // TestConversationalExtrasAreOffByDefault pins the three behaviours that make
 // the agent speak when it was not asked something.
@@ -42,5 +46,73 @@ func TestConversationalExtrasAreOffByDefault(t *testing.T) {
 	if d.UserBackchannelHoldMS <= 0 {
 		t.Error("user_backchannel_hold_ms is off by default; a wordless noise would cut " +
 			"the assistant off mid-sentence")
+	}
+}
+
+func TestAuthTokenIsNeverLoadedFromAProfile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "p.json")
+	if err := os.WriteFile(path, []byte(`{"auth_token":"leaked","log_level":"warn"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthToken != "" {
+		t.Fatal("auth_token in a profile was loaded; credentials must stay in the environment")
+	}
+	if cfg.LogLevel != "warn" {
+		t.Errorf("log_level = %q; the rest of the profile should still apply", cfg.LogLevel)
+	}
+}
+
+func TestAuthRequiredWithoutTokenFailsClosed(t *testing.T) {
+	t.Setenv("GOLIVE_AUTH_TOKEN", "")
+	cfg := Default()
+	cfg.AuthRequired = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("auth_required with an empty token must not validate")
+	}
+}
+
+func TestAuthTokenFromEnv(t *testing.T) {
+	t.Setenv("GOLIVE_AUTH_TOKEN", "from-env")
+	t.Setenv("GOLIVE_AUTH_REQUIRED", "true")
+	t.Setenv("GOLIVE_MAX_SESSIONS", "8")
+	t.Setenv("GOLIVE_ALLOWED_ORIGINS", "https://a.example, https://b.example")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthToken != "from-env" {
+		t.Errorf("token = %q", cfg.AuthToken)
+	}
+	if !cfg.AuthRequired {
+		t.Error("auth_required not set from env")
+	}
+	if cfg.MaxSessions != 8 {
+		t.Errorf("max_sessions = %d", cfg.MaxSessions)
+	}
+	if len(cfg.AllowedOrigins) != 2 {
+		t.Errorf("origins = %v", cfg.AllowedOrigins)
+	}
+}
+
+func TestMetricsTokenIsNeverLoadedFromAProfile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "p.json")
+	if err := os.WriteFile(path, []byte(`{"metrics_token":"leaked","metrics_public":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MetricsToken != "" {
+		t.Fatal("metrics_token in a profile was loaded")
+	}
+	if !cfg.MetricsPublic {
+		t.Error("metrics_public should still apply")
 	}
 }
