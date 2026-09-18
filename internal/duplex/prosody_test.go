@@ -20,11 +20,11 @@ func TestProsodyBudgetSpansSegments(t *testing.T) {
 	cfg.MaxMarkersPerReply = 1
 	st := newTestProsody(cfg)
 
-	first := st.inject("Well, I have looked at that.", 0)
+	first, _ := st.inject("Well, I have looked at that.", 0)
 	if first == "Well, I have looked at that." {
 		t.Fatalf("first segment got no marker: %q", first)
 	}
-	second := st.inject("Unfortunately it is fully booked.", 0)
+	second, _ := st.inject("Unfortunately it is fully booked.", 0)
 	if second != "Unfortunately it is fully booked." {
 		t.Fatalf("budget spent twice in one reply: %q", second)
 	}
@@ -33,8 +33,8 @@ func TestProsodyBudgetSpansSegments(t *testing.T) {
 // A rule about how a reply opens must not fire again on its later segments.
 func TestProsodyOpeningRuleOnlyOnFirstSegment(t *testing.T) {
 	st := newTestProsody(prosody.Default())
-	_ = st.inject("Right, here it is.", 0)
-	if got := st.inject("Well, that is the other one.", 0); got != "Well, that is the other one." {
+	_, _ = st.inject("Right, here it is.", 0)
+	if got, _ := st.inject("Well, that is the other one.", 0); got != "Well, that is the other one." {
 		t.Fatalf("opening rule fired on a later segment: %q", got)
 	}
 }
@@ -44,14 +44,18 @@ func TestProsodyDisabledLeavesTextAlone(t *testing.T) {
 	cfg.Mode = prosody.ModeOff
 	st := newTestProsody(cfg)
 	const in = "Well, unfortunately that is booked."
-	if got := st.inject(in, 5000); got != in {
+	if got, _ := st.inject(in, 5000); got != in {
 		t.Fatalf("disabled injector rewrote the text: %q", got)
 	}
 	// Sanitizing still runs: a model that was never told about markup still
 	// writes the occasional stage direction.
-	tts, plain := st.sanitize("That is odd (yawns).", "speech-2.8-turbo")
+	tts, plain, rep := st.sanitize("That is odd (yawns).", "speech-2.8-turbo")
 	if tts != "That is odd." || plain != "That is odd." {
 		t.Fatalf("sanitizer did not clean a disabled turn: %q / %q", tts, plain)
+	}
+	// The drop has to be visible, or a tag that disappears leaves no trace.
+	if len(rep.Dropped) != 1 || rep.Dropped[0].Token != "(yawns)" {
+		t.Fatalf("drop not reported: %+v", rep.Dropped)
 	}
 }
 

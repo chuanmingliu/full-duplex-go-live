@@ -1271,6 +1271,20 @@ consume:
 			return
 		}
 	}
+	// One line per reply saying what the markup layer spent. Read down a log,
+	// it is how you tell a rule set that never fires from one that fires on
+	// every sentence, and neither is visible from the per-segment lines.
+	if ip, it, kp, kt := p.pros.spent(); ip+it > 0 {
+		p.e.log.Debug("prosody: turn summary",
+			"turn", p.turn.ID,
+			"mode", string(p.e.opts.Cfg.Prosody.Mode),
+			"injected_pauses", ip,
+			"injected_tags", it,
+			"spoken_pauses", kp,
+			"spoken_tags", kt,
+			"budget", p.e.opts.Cfg.Prosody.MaxMarkersPerReply)
+	}
+
 	if p.ctx.Err() == nil && (p.soft.Load() || p.e.tracker.IsCurrent(p.turn)) {
 		p.e.player.Enqueue(Segment{
 			Kind:     SegEnd,
@@ -1297,10 +1311,44 @@ func (p *speechPipe) current() bool {
 // model that was never told about markup still emits the occasional "(pauses)"
 // or markdown asterisk, and those reach the caller's ear as words.
 func (p *speechPipe) markup(text, model string) (spoken, plain string) {
-	injected := p.pros.inject(text, p.backendLatencyMS())
-	spoken, plain = p.pros.sanitize(injected, model)
+	injected, res := p.pros.inject(text, p.backendLatencyMS())
+	if len(res.Applied) > 0 {
+		p.e.log.Debug("prosody: rules fired",
+			"turn", p.turn.ID,
+			"rules", res.AppliedSummary(),
+			"pauses", res.Pauses,
+			"tags", res.Tags,
+			"from_model", res.FromModel)
+	}
+
+	spoken, plain, rep := p.pros.sanitize(injected, model)
+
+	// The drops are the reason this logging exists. A tag that disappears
+	// leaves no other trace: the caller hears a flat sentence, and nothing
+	// says whether it was an invented tag, a model that cannot render tags, a
+	// marker at a segment edge, or a segment with no speech left in it.
+	if rep.Notable() {
+		p.e.log.Debug("prosody: markup removed",
+			"turn", p.turn.ID,
+			"model", model,
+			"dropped", rep.DropSummary(),
+			"collapsed", rep.Collapsed,
+			"clamped", rep.Clamped)
+	}
 	if spoken == "" {
 		return "", ""
+	}
+	// The one line that says what actually went to the synthesizer. Every
+	// other line in the speak path logs the plain text, by design, so without
+	// this the markup is invisible — and a feature whose output you cannot see
+	// is one you cannot tune.
+	if spoken != plain {
+		p.e.log.Debug("speak: markup",
+			"turn", p.turn.ID,
+			"pauses", rep.Pauses,
+			"tags", rep.TagNames(),
+			"sent", spoken,
+			"recorded", plain)
 	}
 	return spoken, plain
 }
@@ -1352,12 +1400,6 @@ func (p *speechPipe) speak(text string) bool {
 	// directions writes more of them, and the effect compounds within a few
 	// turns.
 	spoken, text := p.markup(text, ttsModel(stream))
-	// Log the two apart when they differ. Without this the markup is invisible
-	// — every other line logs the plain text, by design — and a feature you
-	// cannot see the output of is one you cannot tune.
-	if spoken != text {
-		p.e.log.Debug("speak: markup", "turn", p.turn.ID, "sent", spoken, "recorded", text)
-	}
 	if text == "" {
 		// Nothing speakable survived — a segment of pure markup. It would
 		// synthesize to no audio at all, which the adapter reports exactly as
@@ -1902,11 +1944,20 @@ func (e *Engine) trackOutputSilence(pcm []byte) {
 }
 
 func (e *Engine) onTruncated(r TruncationReport) {
-	e.log.Info("speak: turn truncated",
-		"turn", r.TurnID,
-		"played_ms", r.PlayedMS,
-		"emitted_ms", r.TotalMS,
-		"heard_text", r.SpokenText)
+	if r.CutIn != "" {
+		e.log.Info("speak: turn truncated",
+			"turn", r.TurnID,
+			"played_ms", r.PlayedMS,
+			"emitted_ms", r.TotalMS,
+			"cut", r.CutIn,
+			"heard_text", r.SpokenText)
+	} else {
+		e.log.Info("speak: turn truncated",
+			"turn", r.TurnID,
+			"played_ms", r.PlayedMS,
+			"emitted_ms", r.TotalMS,
+			"heard_text", r.SpokenText)
+	}
 	e.deps.Emit(live.AudioTruncatedEvent{
 		Envelope: live.Envelope{Type: live.ExtAudioTruncated},
 		ItemID:   r.TurnID,

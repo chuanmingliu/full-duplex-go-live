@@ -105,6 +105,59 @@ func Tokenize(s string) []Token {
 // Both values are empty when the segment has nothing speakable left, which the
 // caller must treat as "do not send this segment" rather than as an error.
 func (c Config) Sanitize(text, model string) (tts, plain string) {
+	tts, plain, _ = c.SanitizeReport(text, model)
+	return tts, plain
+}
+
+// Drop is one piece of markup the sanitizer removed, and why.
+type Drop struct {
+	Token  string
+	Reason string
+}
+
+// Why a piece of markup was dropped.
+const (
+	DropUnknownTag   = "not a known tag"
+	DropModelNoTags  = "model does not render tags"
+	DropSegmentEdge  = "marker at a segment edge"
+	DropNoSpeakable  = "nothing speakable left"
+)
+
+// Report is what the sanitizer did, for the log.
+//
+// A tag that silently disappears is the hardest thing about operating this
+// layer: the caller hears a flat sentence and nothing anywhere says a tag was
+// removed, or which of the four reasons applied. This is that record.
+type Report struct {
+	Pauses    int      // pause markers in the text that was sent
+	Tags      []string // sound tags in the text that was sent
+	Dropped   []Drop
+	Collapsed int // runs of consecutive pauses summed into one
+	Clamped   int // pauses moved to the profile's floor or ceiling
+}
+
+// Notable reports whether anything happened that is worth a log line.
+func (r Report) Notable() bool {
+	return len(r.Dropped) > 0 || r.Collapsed > 0 || r.Clamped > 0
+}
+
+// TagNames returns the tags kept, for a log field.
+func (r Report) TagNames() string { return strings.Join(r.Tags, ",") }
+
+// DropSummary renders the drops as "tag:reason" pairs, for a log field.
+func (r Report) DropSummary() string {
+	if len(r.Dropped) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(r.Dropped))
+	for _, d := range r.Dropped {
+		parts = append(parts, d.Token+":"+d.Reason)
+	}
+	return strings.Join(parts, " ")
+}
+
+// SanitizeReport is Sanitize with an account of what it removed.
+func (c Config) SanitizeReport(text, model string) (tts, plain string, rep Report) {
 	allowTags := TagsSupported(model)
 	lo, hi := c.PauseClampMS[0], c.PauseClampMS[1]
 	if lo == 0 && hi == 0 {
@@ -115,20 +168,36 @@ func (c Config) Sanitize(text, model string) (tts, plain string) {
 	for _, t := range Tokenize(text) {
 		switch t.Kind {
 		case TokPause:
-			ms := clampMS(int(t.Seconds*1000+0.5), lo, hi)
+			asked := int(t.Seconds*1000 + 0.5)
+			ms := clampMS(asked, lo, hi)
+			if ms != asked {
+				rep.Clamped++
+			}
 			// Sum a run of pauses instead of emitting them back to back: the
 			// API rejects consecutive markers outright.
 			if n := len(kept); n > 0 && kept[n-1].Kind == TokPause {
 				ms = clampMS(int(kept[n-1].Seconds*1000+0.5)+ms, lo, hi)
 				kept = kept[:n-1]
+				rep.Collapsed++
 			}
 			kept = append(kept, pauseToken(ms))
 		case TokSoundTag:
-			if allowTags && KnownTag(t.Name) {
+			switch {
+			case allowTags && KnownTag(t.Name):
 				kept = append(kept, t)
+			case KnownTag(t.Name):
+				// A real tag the provider cannot render. Dropped: it would be
+				// read out as words.
+				rep.Dropped = append(rep.Dropped, Drop{t.Text, DropModelNoTags})
+			case allowTags:
+				// An unknown parenthesised word on a model that was told about
+				// tags. It is a tag the model invented, so it goes the same way.
+				rep.Dropped = append(rep.Dropped, Drop{t.Text, DropUnknownTag})
+			default:
+				// Nothing here knows anything about tags, so this is an
+				// ordinary parenthetical word and belongs in the speech.
+				kept = append(kept, Token{Kind: TokText, Text: t.Text})
 			}
-			// Anything else is dropped silently. A tag the provider will not
-			// render is worse than no tag at all.
 		default:
 			if clean := cleanText(t.Text); clean != "" {
 				if n := len(kept); n > 0 && kept[n-1].Kind == TokText {
@@ -143,10 +212,21 @@ func (c Config) Sanitize(text, model string) (tts, plain string) {
 	// A marker may not open or close a segment: it has to sit between
 	// speakable text.
 	for len(kept) > 0 && kept[0].Kind != TokText {
+		rep.Dropped = append(rep.Dropped, Drop{kept[0].Text, DropSegmentEdge})
 		kept = kept[1:]
 	}
 	for len(kept) > 0 && kept[len(kept)-1].Kind != TokText {
+		rep.Dropped = append(rep.Dropped, Drop{kept[len(kept)-1].Text, DropSegmentEdge})
 		kept = kept[:len(kept)-1]
+	}
+
+	for _, t := range kept {
+		switch t.Kind {
+		case TokPause:
+			rep.Pauses++
+		case TokSoundTag:
+			rep.Tags = append(rep.Tags, t.Name)
+		}
 	}
 
 	var tb, pb strings.Builder
@@ -167,12 +247,17 @@ func (c Config) Sanitize(text, model string) (tts, plain string) {
 		gap = false
 		pb.WriteString(t.Text)
 	}
-	tts = strings.TrimSpace(tb.String())
+	// The same tidy-up as the history text below: dropping a tag from
+	// "odd (yawns)." leaves a space stranded before the full stop.
+	tts = strings.TrimSpace(spaceBeforePunctRe.ReplaceAllString(collapseSpaces(tb.String()), "$1"))
 	plain = strings.TrimSpace(spaceBeforePunctRe.ReplaceAllString(collapseSpaces(pb.String()), "$1"))
 	if plain == "" {
-		return "", ""
+		if strings.TrimSpace(text) != "" {
+			rep.Dropped = append(rep.Dropped, Drop{strings.TrimSpace(text), DropNoSpeakable})
+		}
+		return "", "", rep
 	}
-	return tts, plain
+	return tts, plain, rep
 }
 
 // SpokenPrefix returns the plain text the caller actually heard, given how
@@ -319,3 +404,33 @@ func isCJK(r rune) bool {
 
 // closingPunct is punctuation that attaches to the word before it.
 const closingPunct = ".,!?;:)]}\u3002\uff0c\uff01\uff1f\uff1b\uff1a\u3001"
+
+// MSPerChar estimates how long one speakable character of a segment took to
+// say, given the segment's measured audio duration.
+//
+// It is what makes SpokenPrefix usable from the player: the player knows a
+// segment's total duration and nothing about its markup, and dividing that
+// duration by the raw character count would charge the silence of a pause and
+// the audio of a tag to the characters around them.
+func MSPerChar(markup string, totalMS float64) float64 {
+	chars := 0
+	extra := 0.0
+	for _, t := range Tokenize(markup) {
+		switch t.Kind {
+		case TokPause:
+			extra += t.Seconds * 1000
+		case TokSoundTag:
+			extra += TagDurationMS(t.Name)
+		default:
+			chars += len([]rune(t.Text))
+		}
+	}
+	if chars == 0 {
+		return 0
+	}
+	speech := totalMS - extra
+	if speech < 0 {
+		speech = 0
+	}
+	return speech / float64(chars)
+}

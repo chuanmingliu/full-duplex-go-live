@@ -182,3 +182,60 @@ func TestPromptAdditionFollowsMode(t *testing.T) {
 		t.Fatal("both mode needs the prompt block")
 	}
 }
+
+// A tag that silently disappears is the hardest thing about operating this
+// layer, so every removal has to be reportable.
+func TestSanitizeReportExplainsEveryRemoval(t *testing.T) {
+	c := Default()
+
+	_, _, rep := c.SanitizeReport("Odd (yawns) but fine.", model28)
+	if len(rep.Dropped) != 1 || rep.Dropped[0].Reason != DropUnknownTag {
+		t.Fatalf("invented tag not explained: %+v", rep.Dropped)
+	}
+
+	_, _, rep = c.SanitizeReport("Odd (sighs) but fine.", "speech-2.6-turbo")
+	if len(rep.Dropped) != 1 || rep.Dropped[0].Reason != DropModelNoTags {
+		t.Fatalf("unrenderable tag not explained: %+v", rep.Dropped)
+	}
+
+	_, _, rep = c.SanitizeReport("<#0.40#>hello there", model28)
+	if len(rep.Dropped) != 1 || rep.Dropped[0].Reason != DropSegmentEdge {
+		t.Fatalf("edge marker not explained: %+v", rep.Dropped)
+	}
+
+	_, _, rep = c.SanitizeReport("(sighs)", model28)
+	if len(rep.Dropped) == 0 || rep.Dropped[len(rep.Dropped)-1].Reason != DropNoSpeakable {
+		t.Fatalf("empty segment not explained: %+v", rep.Dropped)
+	}
+
+	_, _, rep = c.SanitizeReport("one<#0.30#><#0.40#>two<#5.00#>three", model28)
+	if rep.Collapsed != 1 {
+		t.Fatalf("collapse not counted: %+v", rep)
+	}
+	if rep.Clamped == 0 {
+		t.Fatalf("clamp not counted: %+v", rep)
+	}
+	if rep.Pauses != 2 {
+		t.Fatalf("kept pauses not counted: %+v", rep)
+	}
+
+	_, _, rep = c.SanitizeReport("Not in the plan (sighs), but fixable.", model28)
+	if rep.TagNames() != "sighs" {
+		t.Fatalf("kept tag not named: %q", rep.TagNames())
+	}
+	if rep.Notable() {
+		t.Fatal("a clean segment should not be worth a log line")
+	}
+}
+
+func TestInjectNamesTheRulesThatFired(t *testing.T) {
+	c := Default()
+	res := c.Inject("Well, unfortunately that is booked.",
+		TurnContext{LastTagTurn: -1, FirstSegment: true})
+	if len(res.Applied) == 0 {
+		t.Fatal("no rules reported as fired")
+	}
+	if got := res.AppliedSummary(); !strings.Contains(got, "→") {
+		t.Fatalf("applied summary unreadable: %q", got)
+	}
+}

@@ -15,11 +15,15 @@ import (
 // was. Both have to be counted somewhere, and counting them on the engine
 // keeps the rule set table-testable.
 type prosodyState struct {
-	cfg   prosody.Config
-	used  int
-	first bool
-	turn  int
-	last  *atomic.Int64 // session-wide: the turn index that last carried a tag
+	cfg        prosody.Config
+	used       int
+	pauses     int
+	tags       int
+	keptPauses int
+	keptTags   int
+	first      bool
+	turn       int
+	last       *atomic.Int64 // session-wide: the turn index that last carried a tag
 }
 
 func (e *Engine) newProsodyState() *prosodyState {
@@ -37,15 +41,15 @@ func (e *Engine) newProsodyState() *prosodyState {
 // the budget is carried across them. That is the one place this differs from
 // the offline description of the feature: a rule that would need the whole
 // reply — "is this the last sentence" — sees only what has been said so far.
-func (s *prosodyState) inject(text string, toolLatencyMS int) string {
+func (s *prosodyState) inject(text string, toolLatencyMS int) (string, prosody.Result) {
 	if s == nil || !s.cfg.Enabled() {
-		return text
+		return text, prosody.Result{Text: text}
 	}
 	cfg := s.cfg
 	cfg.MaxMarkersPerReply -= s.used
 	if cfg.MaxMarkersPerReply <= 0 {
 		s.first = false
-		return text
+		return text, prosody.Result{Text: text}
 	}
 	res := cfg.Inject(text, prosody.TurnContext{
 		TurnIndex:     s.turn,
@@ -57,8 +61,22 @@ func (s *prosodyState) inject(text string, toolLatencyMS int) string {
 	s.used += res.Markers()
 	if res.Tags > 0 {
 		s.last.Store(int64(s.turn))
+		s.tags += res.Tags
 	}
-	return res.Text
+	s.pauses += res.Pauses
+	return res.Text, res
+}
+
+// spent reports what this reply used, and what survived to be spoken.
+//
+// The two differ more often than you would expect, and the gap is the thing
+// worth watching: a tag the model cannot render, a marker at a segment edge,
+// or a budget spent on insertions the sanitizer then removed.
+func (s *prosodyState) spent() (injectedPauses, injectedTags, keptPauses, keptTags int) {
+	if s == nil {
+		return 0, 0, 0, 0
+	}
+	return s.pauses, s.tags, s.keptPauses, s.keptTags
 }
 
 // sanitize splits a segment into what the synthesizer is sent and what the
@@ -67,10 +85,15 @@ func (s *prosodyState) inject(text string, toolLatencyMS int) string {
 // It runs whatever the mode, including "off": a model that has never been told
 // about markup still writes the occasional "(pauses)" or markdown asterisk, and
 // those reach the caller's ear as words.
-func (s *prosodyState) sanitize(text, model string) (tts, plain string) {
+func (s *prosodyState) sanitize(text, model string) (tts, plain string, rep prosody.Report) {
 	cfg := prosody.Config{}
 	if s != nil {
 		cfg = s.cfg
 	}
-	return cfg.Sanitize(text, model)
+	tts, plain, rep = cfg.SanitizeReport(text, model)
+	if s != nil {
+		s.keptPauses += rep.Pauses
+		s.keptTags += len(rep.Tags)
+	}
+	return tts, plain, rep
 }

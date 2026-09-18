@@ -68,6 +68,12 @@ type TurnContext struct {
 	// LastTagTurn is the TurnIndex of the last reply that carried a sound tag,
 	// or -1 if none has. The caller owns this state so that Inject need not.
 	LastTagTurn int
+	// FirstSegment says this text opens the reply.
+	//
+	// It exists because a streamed reply is injected one segment at a time —
+	// the whole text is never in hand at once — and a rule about how a reply
+	// opens must not fire again on its third sentence.
+	FirstSegment bool
 }
 
 // Result is a rewritten reply and an account of what was done to it.
@@ -81,7 +87,14 @@ type Result struct {
 	Pauses    int
 	Tags      int
 	FromModel int
+	// Applied names the rules that fired, as "when→insert". A rule set is
+	// tuned by watching which rules actually fire on real replies, and
+	// nothing else in the pipeline can tell you that.
+	Applied []string
 }
+
+// AppliedSummary renders the fired rules for a log field.
+func (r Result) AppliedSummary() string { return strings.Join(r.Applied, " ") }
 
 // Markers returns how many markers Inject added.
 func (r Result) Markers() int { return r.Pauses + r.Tags }
@@ -133,6 +146,7 @@ func (c Config) Inject(reply string, turn TurnContext) Result {
 			continue
 		}
 		picked = append(picked, insertion{off: off, ins: strings.TrimSpace(r.Insert), tag: isTag})
+		res.Applied = append(res.Applied, r.When+"→"+strings.TrimSpace(r.Insert))
 		if isTag {
 			tagged = true
 		}
@@ -145,7 +159,13 @@ func (c Config) Inject(reply string, turn TurnContext) Result {
 	sort.Slice(picked, func(i, j int) bool { return picked[i].off > picked[j].off })
 	out := reply
 	for _, p := range picked {
-		out = spliceAt(out, p.off, p.ins, p.tag)
+		next := spliceAt(out, p.off, p.ins, p.tag)
+		if next == out {
+			// spliceAt refused it: the position turned out to be a segment
+			// edge, where a marker is invalid. Not counted, not reported.
+			continue
+		}
+		out = next
 		if p.tag {
 			res.Tags++
 		} else {
@@ -183,7 +203,7 @@ func (r Rule) matches(reply string, turn TurnContext) bool {
 	low := strings.ToLower(reply)
 	switch r.When {
 	case WhenReplyStartsWith:
-		return firstWordEnd(low, argStrings(r.Arg)) >= 0
+		return turn.FirstSegment && firstWordEnd(low, argStrings(r.Arg)) >= 0
 	case WhenContainsAny:
 		for _, a := range argStrings(r.Arg) {
 			if a != "" && strings.Contains(low, strings.ToLower(a)) {

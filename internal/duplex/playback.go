@@ -55,6 +55,11 @@ type TruncationReport struct {
 	TurnID   string
 	PlayedMS int64
 	TotalMS  int64
+	// CutIn names the markup the cut landed inside, if any: "in <#0.80#>" or
+	// "in (sighs)". Empty when the cut landed in speech. A barge-in during a
+	// pause is the most likely barge-in there is, because a pause is exactly
+	// when a caller believes the floor is free, so it is worth counting.
+	CutIn string
 	// SpokenText is the prefix of the turn the user actually heard. This, not
 	// the full generated text, is what belongs in conversation history.
 	SpokenText string
@@ -340,7 +345,7 @@ func (p *Player) Interrupt() {
 	}
 	playedMS := p.heardMSLocked()
 	totalMS := p.emittedMS
-	text := p.spokenPrefixLocked(playedMS)
+	text, cutIn := p.spokenPrefixLocked(playedMS)
 	p.resetTurnLocked()
 	p.setSpeakingLocked(false)
 	p.mu.Unlock()
@@ -350,6 +355,7 @@ func (p *Player) Interrupt() {
 		PlayedMS:   int64(playedMS),
 		TotalMS:    int64(totalMS),
 		SpokenText: text,
+		CutIn:      cutIn,
 	})
 }
 
@@ -609,7 +615,9 @@ func (p *Player) heardMSLocked() float64 {
 // that finished before the cut, plus a proportional slice of the one that was
 // still playing. Character count is a crude proxy for duration, but it is
 // stable across scripts and far better than claiming the whole segment landed.
-func (p *Player) spokenPrefixLocked(playedMS float64) string {
+// It also reports where in the markup the cut landed, when it landed in any:
+// "in <#0.80#>" or "in (sighs)", empty otherwise.
+func (p *Player) spokenPrefixLocked(playedMS float64) (string, string) {
 	var out string
 	var prevEnd float64
 	for _, span := range p.spoken {
@@ -619,12 +627,13 @@ func (p *Player) spokenPrefixLocked(playedMS float64) string {
 			continue
 		}
 		out += partialSpoken(span.text, span.markup, playedMS-prevEnd, span.endMS-prevEnd)
-		return out
+		return out, markupCutNote(span.markup, playedMS-prevEnd, span.endMS-prevEnd)
 	}
 	if p.pendingText != "" && playedMS > p.pendingFrom {
 		out += partialSpoken(p.pendingText, p.pendingMarkup, playedMS-p.pendingFrom, p.emittedMS-p.pendingFrom)
+		return out, markupCutNote(p.pendingMarkup, playedMS-p.pendingFrom, p.emittedMS-p.pendingFrom)
 	}
-	return out
+	return out, ""
 }
 
 // partialSpoken is partialText with the segment's markup taken into account.
@@ -639,6 +648,43 @@ func partialSpoken(text, markup string, playedMS, totalMS float64) string {
 		return partialText(text, playedMS, totalMS)
 	}
 	return prosody.SpokenPrefix(markup, int(playedMS), prosody.MSPerChar(markup, totalMS))
+}
+
+// markupCutNote describes where in a marked-up segment a cut landed, for the
+// truncation log. A barge-in during a pause is the most likely barge-in there
+// is — a pause is when a caller believes the floor is free — so it is worth
+// being able to count them.
+func markupCutNote(markup string, playedMS, totalMS float64) string {
+	if markup == "" {
+		return ""
+	}
+	rate := prosody.MSPerChar(markup, totalMS)
+	if rate <= 0 {
+		return ""
+	}
+	acc := 0.0
+	for _, t := range prosody.Tokenize(markup) {
+		var dur float64
+		switch t.Kind {
+		case prosody.TokPause:
+			dur = t.Seconds * 1000
+		case prosody.TokSoundTag:
+			dur = prosody.TagDurationMS(t.Name)
+		default:
+			dur = float64(len([]rune(t.Text))) * rate
+		}
+		if playedMS >= acc && playedMS < acc+dur {
+			switch t.Kind {
+			case prosody.TokPause:
+				return "in " + t.Text
+			case prosody.TokSoundTag:
+				return "in " + t.Text
+			}
+			return ""
+		}
+		acc += dur
+	}
+	return ""
 }
 
 func partialText(text string, playedMS, totalMS float64) string {
