@@ -94,6 +94,17 @@ func (s *Segmenter) Push(delta string) []string {
 	return out
 }
 
+// FlushFirst emits whatever is buffered as the first segment, ignoring
+// punctuation. It exists so time-to-first-audio cannot be held hostage by a
+// reply that opens with a long unpunctuated clause.
+func (s *Segmenter) FlushFirst() string {
+	text := Normalize(string(s.buf))
+	s.buf = s.buf[:0]
+	s.depth = 0
+	s.first = false
+	return text
+}
+
 // Flush emits whatever is left, typically at end of turn.
 func (s *Segmenter) Flush() string {
 	text := Normalize(string(s.buf))
@@ -140,6 +151,14 @@ func (s *Segmenter) tryFlush() (string, bool) {
 		return "", false
 	}
 
+	// Never cut inside a pause marker. A segment ending "<#0" and one opening
+	// "0.40#>" are sent as two task_continue messages, and the synthesizer
+	// speaks both fragments as characters. This is the same rule the decimal
+	// point and the abbreviation get, for the same reason.
+	if s.openPauseMarker() {
+		return "", false
+	}
+
 	switch {
 	case strong && length >= minChars:
 	case weak && s.first && length >= minChars:
@@ -172,6 +191,19 @@ func (s *Segmenter) cut(last, from int) (string, bool) {
 		return "", false
 	}
 	return seg, true
+}
+
+// openPauseMarker reports whether the buffer ends inside an unclosed "<#…#>".
+func (s *Segmenter) openPauseMarker() bool {
+	for i := len(s.buf) - 1; i >= 1; i-- {
+		if s.buf[i] == '>' && s.buf[i-1] == '#' {
+			return false
+		}
+		if s.buf[i] == '#' && s.buf[i-1] == '<' {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Segmenter) isDecimalPoint(i int) bool {
@@ -226,6 +258,15 @@ func Normalize(text string) string {
 	runes := []rune(text)
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
+		// A pause marker is copied through untouched. It has to be checked
+		// before the markdown rule below, because a marker is made of '#' and
+		// stripping markdown across it turns "<#0.40#>" into "<0.40>", which
+		// the synthesizer reads out as characters.
+		if end := pauseMarkerEnd(runes, i); end > i {
+			b.WriteString(string(runes[i:end]))
+			i = end - 1
+			continue
+		}
 		switch r {
 		case '*', '_', '`', '#', '~':
 			// Markdown emphasis, headings, code fences and strikethrough.
@@ -271,4 +312,22 @@ func TruncateRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n])
+}
+
+// pauseMarkerEnd returns the index just past a pause marker starting at i, or
+// i when there is none. The shape is fixed by the API: "<#", one or two digits
+// with up to two decimal places, then "#>".
+func pauseMarkerEnd(runes []rune, i int) int {
+	if i+4 >= len(runes) || runes[i] != '<' || runes[i+1] != '#' {
+		return i
+	}
+	for j := i + 2; j < len(runes)-1 && j < i+10; j++ {
+		if runes[j] == '#' && runes[j+1] == '>' {
+			return j + 2
+		}
+		if runes[j] != '.' && !unicode.IsDigit(runes[j]) {
+			return i
+		}
+	}
+	return i
 }

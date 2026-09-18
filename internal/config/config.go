@@ -13,6 +13,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/chuanmingliu/golive/internal/prosody"
 )
 
 // Config is the fully resolved service configuration.
@@ -48,9 +50,25 @@ type Config struct {
 	MaxOutputTokens int     `json:"max_output_tokens"`
 	DisableThinking bool    `json:"disable_thinking"`
 	HistoryTurns    int     `json:"history_turns"`
+	// HistoryMaxChars bounds conversation history by size as well as by turns,
+	// because size is what the backend charges for in latency.
+	//
+	// Measured on one machine, one model, one endpoint: a 79-character system
+	// prompt produced a time-to-first-token of 259–546 ms, and a long persona
+	// prompt at the same history_turns produced 2441–3385 ms. That is the
+	// largest single term in the cascade — bigger than the silence threshold,
+	// the recognizer and synthesis put together — and history_turns does not
+	// constrain it, since sixteen exchanges can be four hundred characters or
+	// four thousand. Zero disables the limit.
+	HistoryMaxChars int `json:"history_max_chars"`
 
 	// Duplex engine
 	Duplex DuplexConfig `json:"duplex"`
+
+	// Prosody controls the speech markup added to replies before synthesis.
+	// Off by default: it changes how every answer sounds, so a deployment
+	// opts into it rather than inheriting it.
+	Prosody prosody.Config `json:"prosody"`
 
 	// VAD
 	VAD VADProfile `json:"vad"`
@@ -69,16 +87,95 @@ type DuplexConfig struct {
 	// BackchannelPhrases are spoken at random.
 	BackchannelPhrases []string `json:"backchannel_phrases"`
 
+	// UserBackchannelPhrases are the things the *caller* can say without taking
+	// the floor: "嗯", "对", "uh huh". Hearing one of these while the assistant
+	// is talking keeps the answer running instead of cutting it off.
+	//
+	// This is a stand-in for something a real full-duplex model does natively —
+	// it hears an acknowledgement in the same stream as everything else and
+	// keeps going, having learned that murmured agreement is not a request to
+	// stop. golive has no such model, so it is given a list instead. A blunt
+	// approximation, and deliberately a small one: every phrase here is a
+	// phrase the caller can no longer use to interrupt, so the list should
+	// contain noises, not words. Empty disables the behaviour entirely.
+	UserBackchannelPhrases []string `json:"user_backchannel_phrases"`
+	// UserBackchannelHoldMS is how long the assistant may keep talking while it
+	// waits to find out which kind of speech it just heard.
+	//
+	// The cost of the feature lives in this number. Barge-in is acoustic and
+	// immediate; recognizing what was said is neither, so a real interruption
+	// is delayed by however long the transcript takes to become decisive — up
+	// to this bound, after which the engine yields regardless. Most
+	// interruptions resolve far sooner, because the first syllable that no
+	// candidate starts with settles it. Talking over someone is worse than
+	// stopping for nothing, so the timeout fails toward yielding.
+	UserBackchannelHoldMS int `json:"user_backchannel_hold_ms"`
+
+	// HoldingFiller keeps the conversation alive while the backend works.
+	//
+	// This is the behaviour that makes a delegating voice agent bearable: the
+	// conversational layer is supposed to keep talking to you while the slow
+	// part runs somewhere else, rather than going silent and leaving you
+	// wondering whether the call dropped. It costs one extra synthesis, and it
+	// can delay the real answer by however long the filler takes to
+	// synthesize, so the threshold below should sit above your normal
+	// time-to-first-audio — where it fires only on turns that were going to be
+	// slow anyway.
+	HoldingFiller bool `json:"holding_filler"`
+	// HoldingFillerAfterMS is how long backend work may run silently first.
+	HoldingFillerAfterMS int `json:"holding_filler_after_ms"`
+	// HoldingFillerPhrases are spoken at random.
+	HoldingFillerPhrases []string `json:"holding_filler_phrases"`
+
 	// Speculative starts generation from a stable partial transcript.
 	Speculative bool `json:"speculative"`
-	// SpeculativeStableMS is how long a partial transcript must stop changing
-	// before it is trusted enough to speculate on.
+	// SpeculativeStableMS is how long the speaker must be audibly quiet, with
+	// the partial transcript unchanged throughout, before the backend is
+	// started early. It is measured from the first frame of the pause, so the
+	// head start it buys is vad.min_silence_ms minus this, plus however long
+	// the final transcript takes to arrive. Raise it if the log shows frequent
+	// "think: speculation missed"; below about 120 ms the recognizer has not
+	// caught up and the guess is a prefix.
 	SpeculativeStableMS int `json:"speculative_stable_ms"`
 	// SpeculativeMinChars avoids speculating on a one-word fragment.
+	//
+	// This can sit lower than it first appears, because its original job is now
+	// done better elsewhere. It existed to stop the engine generating an answer
+	// to "嗯" — but UserBackchannelPhrases catches those by name, and catches
+	// them whatever their length. What is left for this setting is genuinely
+	// short questions ("多少钱"), which are worth speculating on: a real call
+	// showed every delegation arriving as final_transcript, most of them
+	// blocked here, while the backend spent 2.1 s on each one.
 	SpeculativeMinChars int `json:"speculative_min_chars"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
+	// ResetTTSOnInterrupt closes the synthesis connection whenever an answer is
+	// cut short, so the next turn starts on a fresh one.
+	//
+	// Belt and braces. A correct adapter resynchronizes its own stream after an
+	// abandoned call, and the bundled ones do; this exists for providers that
+	// cannot, where the alternative is the tail of the interrupted sentence
+	// playing at the start of the next answer. It costs a reconnect on the turn
+	// after every barge-in, so leave it off unless you hear that leak.
+	ResetTTSOnInterrupt bool `json:"reset_tts_on_interrupt"`
+
+	// OnNewQuery decides what happens to an answer still in flight when the
+	// user starts speaking again. The right choice is situational, which is
+	// why it is a setting rather than a constant:
+	//
+	//	cut             stop immediately, mid-word. Best for a fast assistant
+	//	                where the user expects to be able to redirect it.
+	//	finish_sentence let the sentence being spoken complete, then stop and
+	//	                answer the new query. Sounds composed, and is usually
+	//	                right on a phone line where cutting mid-word reads as a
+	//	                dropped call.
+	//	queue           say everything, then answer the new query. Almost never
+	//	                what a caller wants — it talks over them and answers a
+	//	                question they have moved past — but it is what a
+	//	                half-duplex cascade does, so it is available for
+	//	                comparison.
+	OnNewQuery string `json:"on_new_query"`
 
 	// PlaybackChunkMS is the size of each session.output_audio.delta.
 	PlaybackChunkMS int `json:"playback_chunk_ms"`
@@ -95,6 +192,11 @@ type DuplexConfig struct {
 	// segment. A short first segment buys a dramatically earlier first
 	// syllable; later segments should be longer for better prosody.
 	StreamFirstChunkChars int `json:"stream_first_chunk_chars"`
+	// StreamFirstChunkDeadlineMS bounds how long the first segment waits for a
+	// sentence boundary before being spoken anyway. Punctuation arrives when
+	// the model chooses; the caller's patience does not, and this is silence
+	// they are listening to. 0 disables the deadline.
+	StreamFirstChunkDeadlineMS int `json:"stream_first_chunk_deadline_ms"`
 	// StreamMinChunkChars is the floor for subsequent segments.
 	StreamMinChunkChars int `json:"stream_min_chunk_chars"`
 	// StreamMaxChunkChars force-flushes a segment that never hits punctuation.
@@ -104,6 +206,12 @@ type DuplexConfig struct {
 	DelegationMode string `json:"delegation_mode"`
 	// DelegateMinChars is the shortest user turn worth sending to the backend.
 	DelegateMinChars int `json:"delegate_min_chars"`
+
+	// MaxAppendChars bounds one session.instructions/thinking/commentary
+	// append. gpt-live-1 documents a 500-token cap on instruction appends;
+	// without a tokenizer this is the character-count approximation of it, and
+	// it is generous enough that ordinary use never meets it.
+	MaxAppendChars int `json:"max_append_chars"`
 
 	// SessionMaxSeconds force-closes a session; 0 disables.
 	SessionMaxSeconds int `json:"session_max_seconds"`
@@ -152,25 +260,67 @@ func Default() Config {
 		MaxOutputTokens: 512,
 		DisableThinking: true,
 		HistoryTurns:    16,
+		HistoryMaxChars: 2000,
+		Prosody:         prosodyDefault(),
 		Duplex: DuplexConfig{
-			Backchannel:           true,
-			BackchannelAfterMS:    2600,
-			BackchannelEveryMS:    4200,
-			BackchannelPhrases:    []string{"嗯", "好的", "我在听"},
-			Speculative:           true,
-			SpeculativeStableMS:   260,
-			SpeculativeMinChars:   6,
-			AllowBargeIn:          true,
-			PlaybackChunkMS:       40,
-			PlaybackPaced:         true,
-			PlaybackLeadMS:        300,
-			StreamFirstChunkChars: 8,
-			StreamMinChunkChars:   24,
-			StreamMaxChunkChars:   120,
-			DelegationMode:        "auto",
-			DelegateMinChars:      1,
-			SessionMaxSeconds:     3600,
-			IdleTimeoutSeconds:    300,
+			// Off by default, along with the holding filler and the floor
+			// hold below.
+			//
+			// All three were built to make a delegating agent feel less like a
+			// half-duplex cascade, and all three turned out to cost more in
+			// practice than they returned: an acknowledgement lands on top of
+			// the caller, a filler is heard as the agent having nothing to say,
+			// and the hold delays a real interruption by however long the
+			// recognizer takes to disagree. The phrase lists stay populated so
+			// switching any of them back on is one boolean, not a retyped list.
+			Backchannel:        false,
+			BackchannelAfterMS: 2600,
+			BackchannelEveryMS: 4200,
+			BackchannelPhrases: []string{"嗯", "好的", "我在听"},
+			// Empty by default, so any word the recognizer does hear takes
+			// the floor at once. Populating it is what makes "对" stop
+			// counting as an interruption; that is the part of this machinery
+			// that decides on the caller's behalf, and it stays opt-in.
+			//
+			// Suggested contents, since they are tedious to retype:
+			//   嗯 嗯嗯 哦 噢 啊 对 对对 是 是的 好 好的 行 懂了 知道了
+			//   ok okay mm mhm uh huh yeah yep right i see
+			UserBackchannelPhrases: nil,
+			// The hold itself stays on, and it is not the same feature.
+			//
+			// It arrived with the phrase list, but what it actually does is
+			// wait for the transcript before yielding the floor — and the case
+			// that matters has no phrase list in it at all. A cough, a door, or
+			// the assistant's own voice through a speakerphone opens the VAD,
+			// the recognizer finds no words, and without the hold the greeting
+			// is cut mid-name. TestNoiseDoesNotCostTheAssistantItsTurn cuts it
+			// at 您好，我是众安保险的车险管家小翠 with this at 0.
+			//
+			// The cost is paid only while the transcript is ambiguous: a real
+			// interruption releases it on the first word that no candidate
+			// starts with, which with an empty list is the first word.
+			UserBackchannelHoldMS:      600,
+			HoldingFiller:              false,
+			HoldingFillerAfterMS:       1500,
+			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
+			Speculative:                true,
+			SpeculativeStableMS:        180,
+			SpeculativeMinChars:        4,
+			AllowBargeIn:               true,
+			OnNewQuery:                 "cut",
+			ResetTTSOnInterrupt:        false,
+			PlaybackChunkMS:            40,
+			PlaybackPaced:              true,
+			PlaybackLeadMS:             300,
+			StreamFirstChunkChars:      6,
+			StreamFirstChunkDeadlineMS: 220,
+			StreamMinChunkChars:        24,
+			StreamMaxChunkChars:        120,
+			DelegationMode:             "auto",
+			DelegateMinChars:           1,
+			MaxAppendChars:             1500,
+			SessionMaxSeconds:          3600,
+			IdleTimeoutSeconds:         300,
 		},
 		VAD: VADProfile{
 			FrameMS:            20,
@@ -234,6 +384,8 @@ func (c *Config) applyEnv() {
 	setBool(&c.Duplex.Backchannel, "GOLIVE_BACKCHANNEL")
 	setBool(&c.Duplex.Speculative, "GOLIVE_SPECULATIVE")
 	setBool(&c.Duplex.AllowBargeIn, "GOLIVE_ALLOW_BARGE_IN")
+	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
+	setBool(&c.Duplex.ResetTTSOnInterrupt, "GOLIVE_RESET_TTS_ON_INTERRUPT")
 	setBool(&c.Duplex.PlaybackPaced, "GOLIVE_PLAYBACK_PACED")
 }
 
@@ -243,6 +395,12 @@ func (c *Config) Validate() error {
 	case 8000, 16000, 24000, 48000:
 	default:
 		return fmt.Errorf("config: client_rate %d is not one of 8000, 16000, 24000, 48000", c.ClientRate)
+	}
+	switch c.Duplex.OnNewQuery {
+	case "cut", "finish_sentence", "queue":
+	default:
+		return fmt.Errorf("config: on_new_query %q must be cut, finish_sentence or queue",
+			c.Duplex.OnNewQuery)
 	}
 	switch c.Duplex.DelegationMode {
 	case "client", "responses", "auto":
@@ -258,7 +416,19 @@ func (c *Config) Validate() error {
 	if c.Duplex.StreamFirstChunkChars > c.Duplex.StreamMaxChunkChars {
 		return fmt.Errorf("config: stream_first_chunk_chars exceeds stream_max_chunk_chars")
 	}
+	if err := c.Prosody.Validate(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// prosodyDefault is the prosody package's own defaults with the mode forced
+// off. The rule set is carried anyway, so turning the feature on in a profile
+// is one word rather than a block of JSON to write from scratch.
+func prosodyDefault() prosody.Config {
+	c := prosody.Default()
+	c.Mode = prosody.ModeOff
+	return c
 }
 
 // LoadDotEnv reads KEY=VALUE lines into the process environment without

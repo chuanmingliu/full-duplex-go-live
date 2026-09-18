@@ -114,3 +114,44 @@ func TestResetClearsPendingText(t *testing.T) {
 		t.Error("text from the abandoned turn leaked into the next one")
 	}
 }
+
+// A pause marker split across two segments is sent as two task_continue
+// messages and spoken as its fragments, so the segmenter has to treat it the
+// way it already treats "3.5" and "Dr.".
+func TestSegmenterNeverSplitsAPauseMarker(t *testing.T) {
+	s := New(Config{FirstChunkChars: 4, MinChunkChars: 6, MaxChunkChars: 30})
+	const reply = "好的<#0.40#>我先查一下这个航班。然后告诉你结果。"
+
+	var segs []string
+	for _, r := range reply {
+		segs = append(segs, s.Push(string(r))...)
+	}
+	if rest := s.Flush(); rest != "" {
+		segs = append(segs, rest)
+	}
+
+	for _, seg := range segs {
+		if strings.Count(seg, "<#") != strings.Count(seg, "#>") {
+			t.Fatalf("segment ends inside a pause marker: %q", seg)
+		}
+	}
+	if joined := strings.Join(segs, ""); !strings.Contains(joined, "<#0.40#>") {
+		t.Fatalf("marker did not survive segmentation: %q", joined)
+	}
+}
+
+// Normalize strips '#' as markdown, and a pause marker is made of '#'. Left
+// alone, it turns "<#0.40#>" into "<0.40>" and the synthesizer reads out the
+// characters.
+func TestNormalizeKeepsPauseMarkers(t *testing.T) {
+	got := Normalize("**Right**<#0.40#>_here_ it is")
+	if !strings.Contains(got, "<#0.40#>") {
+		t.Fatalf("markdown stripping ate the marker: %q", got)
+	}
+	if strings.ContainsAny(got, "*_") {
+		t.Fatalf("markdown survived: %q", got)
+	}
+	if got := Normalize("a # b"); strings.Contains(got, "#") {
+		t.Fatalf("a bare hash is still markdown: %q", got)
+	}
+}
