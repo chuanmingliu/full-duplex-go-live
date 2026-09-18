@@ -1352,6 +1352,12 @@ func (p *speechPipe) speak(text string) bool {
 	// directions writes more of them, and the effect compounds within a few
 	// turns.
 	spoken, text := p.markup(text, ttsModel(stream))
+	// Log the two apart when they differ. Without this the markup is invisible
+	// — every other line logs the plain text, by design — and a feature you
+	// cannot see the output of is one you cannot tune.
+	if spoken != text {
+		p.e.log.Debug("speak: markup", "turn", p.turn.ID, "sent", spoken, "recorded", text)
+	}
 	if text == "" {
 		// Nothing speakable survived — a segment of pure markup. It would
 		// synthesize to no audio at all, which the adapter reports exactly as
