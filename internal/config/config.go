@@ -221,18 +221,27 @@ type DuplexConfig struct {
 
 // VADProfile is the JSON-facing form of the detector's tuning.
 type VADProfile struct {
-	FrameMS            int     `json:"frame_ms"`
-	MinSpeechMS        int     `json:"min_speech_ms"`
-	MinSilenceMS       int     `json:"min_silence_ms"`
-	SpeechPadMS        int     `json:"speech_pad_ms"`
-	MaxSpeechMS        int     `json:"max_speech_ms"`
-	SnapshotMS         int     `json:"snapshot_ms"`
-	NoiseFloorDB       float64 `json:"noise_floor_db"`
-	MaxNoiseFloorDB    float64 `json:"max_noise_floor_db"`
-	SpeechMarginDB     float64 `json:"speech_margin_db"`
-	MaxZCR             float64 `json:"max_zcr"`
-	GapToleranceMS     int     `json:"gap_tolerance_ms"`
-	BargeInMarginDB    float64 `json:"barge_in_margin_db"`
+	FrameMS         int     `json:"frame_ms"`
+	MinSpeechMS     int     `json:"min_speech_ms"`
+	MinSilenceMS    int     `json:"min_silence_ms"`
+	SpeechPadMS     int     `json:"speech_pad_ms"`
+	MaxSpeechMS     int     `json:"max_speech_ms"`
+	SnapshotMS      int     `json:"snapshot_ms"`
+	NoiseFloorDB    float64 `json:"noise_floor_db"`
+	MaxNoiseFloorDB float64 `json:"max_noise_floor_db"`
+	SpeechMarginDB  float64 `json:"speech_margin_db"`
+	MaxZCR          float64 `json:"max_zcr"`
+	GapToleranceMS  int     `json:"gap_tolerance_ms"`
+	BargeInMarginDB float64 `json:"barge_in_margin_db"`
+	// OutputSilenceDB is the level below which our own outgoing audio counts
+	// as silence, and OutputSilenceMS is how long it must stay there first.
+	//
+	// The gate exists to tell a pause from the gap between two words. Without
+	// it the barge-in margin would flicker on every plosive, which is worse
+	// than leaving it up: the bar would be low at random moments rather than
+	// at the moments that mean something.
+	OutputSilenceDB    float64 `json:"output_silence_db"`
+	OutputSilenceMS    int     `json:"output_silence_ms"`
 	BargeInMinSpeechMS int     `json:"barge_in_min_speech_ms"`
 }
 
@@ -335,6 +344,8 @@ func Default() Config {
 			MaxZCR:             0.55,
 			GapToleranceMS:     160,
 			BargeInMarginDB:    6,
+			OutputSilenceDB:    -50,
+			OutputSilenceMS:    120,
 			BargeInMinSpeechMS: 320,
 		},
 	}

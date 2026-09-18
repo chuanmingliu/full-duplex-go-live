@@ -24,6 +24,7 @@ package prosody
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -91,6 +92,17 @@ const defaultTagDurationMS = 450
 func KnownTag(name string) bool {
 	_, ok := tagDurationMS[strings.ToLower(name)]
 	return ok
+}
+
+// Tags returns the sound tags this package will let through, sorted. It is
+// what `ttsprobe -tag-timing` iterates over to measure them.
+func Tags() []string {
+	out := make([]string, 0, len(tagDurationMS))
+	for name := range tagDurationMS {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TagDurationMS returns the expected spoken length of a sound tag.

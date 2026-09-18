@@ -123,8 +123,10 @@ type Engine struct {
 	// pair is what enforces the tag cooldown across a whole session.
 	prosodyTurn    atomic.Uint64
 	prosodyLastTag atomic.Int64
-	lastBC         time.Time
-	bcSeq          int
+	// silentOutMS counts how long our own outgoing audio has been silent.
+	silentOutMS atomic.Int64
+	lastBC      time.Time
+	bcSeq       int
 	// lastAck and lastFiller keep a phrase from being chosen twice running.
 	lastAck    string
 	lastFiller string
@@ -1833,6 +1835,7 @@ func (e *Engine) interrupt() {
 
 func (e *Engine) emitAudio(itemID string, pcm []byte) {
 	e.outputMS.Add(int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
+	e.trackOutputSilence(pcm)
 	// The first byte on the wire is the moment the caller stops waiting, so it
 	// is stamped here rather than when synthesis produced it — the paced player
 	// sits between the two.
@@ -1851,6 +1854,45 @@ func (e *Engine) onSpeakingChanged(speaking bool) {
 	// The VAD raises its barge-in bar while we hold the floor. This is the
 	// closest a cascade gets to echo cancellation without a reference signal.
 	e.vad.SetAssistantSpeaking(speaking)
+	if !speaking {
+		e.silentOutMS.Store(0)
+		e.vad.SetOutputSilence(false)
+	}
+}
+
+// trackOutputSilence lowers the barge-in bar while our own output is silent.
+//
+// The bar is echo suppression without a reference signal: it assumes that
+// anything heard while we are speaking is probably us. Silence we are emitting
+// ourselves breaks that assumption — there is nothing to echo — and a pause
+// marker is the longest stretch of it there is. It is also exactly when the
+// caller believes the floor is free and starts talking, so leaving the bar up
+// through a pause makes late barge-in detection worse at the one moment it is
+// most likely to be needed.
+//
+// Measured from the outgoing audio rather than predicted from the markup: the
+// synthesizer renders a pause as real silence in the stream, and the tag
+// duration table is an estimate, so the audio is the more honest source.
+func (e *Engine) trackOutputSilence(pcm []byte) {
+	gateDB := e.opts.Cfg.VAD.OutputSilenceDB
+	gateMS := e.opts.Cfg.VAD.OutputSilenceMS
+	if gateMS <= 0 {
+		return
+	}
+	samples, err := audio.DecodePCM16(pcm)
+	if err != nil || len(samples) == 0 {
+		return
+	}
+	ms := audio.PCM16(e.opts.ClientRate).DurationMS(pcm)
+	if audio.DBFS(audio.RMS(samples)) > gateDB {
+		if e.silentOutMS.Swap(0) >= int64(gateMS) {
+			e.vad.SetOutputSilence(false)
+		}
+		return
+	}
+	if e.silentOutMS.Add(int64(ms)) >= int64(gateMS) {
+		e.vad.SetOutputSilence(true)
+	}
 }
 
 func (e *Engine) onTruncated(r TruncationReport) {

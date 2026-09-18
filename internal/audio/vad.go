@@ -193,12 +193,26 @@ type VAD struct {
 	clockMS float64
 
 	noiseFloorDB float64
+	// echoFloorDB is how loud our own output comes back through the caller's
+	// speaker, measured while we are talking. It is a diagnostic and takes no
+	// part in the voiced decision — see Push.
+	echoFloorDB float64
 
 	// speaking mirrors whether the assistant is currently producing audio. It
 	// is the one field written from another goroutine — the player's — because
 	// listening and speaking are concurrent by design, so it is atomic rather
 	// than plain.
 	speaking atomic.Bool
+	// outputSilent says the audio we are currently emitting is silence.
+	//
+	// The barge-in margin exists to stop the assistant's own voice, returning
+	// through the caller's microphone, from being heard as an interruption.
+	// While the assistant is emitting silence there is no voice to return, so
+	// the margin is protecting against nothing and the only thing it still
+	// does is make a real interruption harder to hear. That matters more than
+	// it sounds: a pause is exactly when a person believes the floor is free,
+	// so the moment the bar is highest is the moment it should be lowest.
+	outputSilent atomic.Bool
 }
 
 // NewVAD builds a detector. cfg is copied; later mutation has no effect.
@@ -216,11 +230,15 @@ func NewVAD(cfg VADConfig) *VAD {
 		preroll:      make([][]float32, prerollCap),
 		prerollCap:   prerollCap,
 		noiseFloorDB: cfg.NoiseFloorDB,
+		echoFloorDB:  cfg.NoiseFloorDB,
 	}
 }
 
 // FrameSamples is the frame size the VAD expects, in samples.
 func (v *VAD) FrameSamples() int { return v.frameSamples }
+
+// FrameMS is the frame size the VAD expects, in milliseconds.
+func (v *VAD) FrameMS() float64 { return v.frameMS }
 
 // FrameBytes is the frame size the VAD expects, in PCM16 bytes.
 func (v *VAD) FrameBytes() int { return v.frameSamples * BytesPerSample }
@@ -231,8 +249,34 @@ func (v *VAD) FrameBytes() int { return v.frameSamples * BytesPerSample }
 // are talking, so acoustic echo does not read as a barge-in.
 func (v *VAD) SetAssistantSpeaking(speaking bool) { v.speaking.Store(speaking) }
 
+// SetOutputSilence reports whether the audio going out right now is silence —
+// a pause marker the synthesizer rendered, or a gap between sentences. It
+// lowers the barge-in bar without changing whether an utterance that opens
+// here is labelled a barge-in, which it still is.
+func (v *VAD) SetOutputSilence(silent bool) { v.outputSilent.Store(silent) }
+
 // NoiseFloorDB exposes the adaptive floor for diagnostics.
 func (v *VAD) NoiseFloorDB() float64 { return v.noiseFloorDB }
+
+// EchoFloorDB exposes the learned level of the assistant's own voice returning
+// through the caller's speaker. Worth logging: when it sits far above
+// NoiseFloorDB, the caller is on a speakerphone or has echo cancellation off,
+// and the gap is exactly what was cutting answers short before it existed.
+func (v *VAD) EchoFloorDB() float64 { return v.echoFloorDB }
+
+// TrailingSilenceMS reports how long the open utterance has been unvoiced, and
+// zero when no utterance is open.
+//
+// This is the acoustic evidence that the speaker has paused, and it is a far
+// better trigger for speculation than a transcript that stopped changing: a
+// recognizer goes quiet both when the speaker stops talking and when it is
+// merely behind, and only one of those is worth guessing on.
+func (v *VAD) TrailingSilenceMS() float64 {
+	if !v.open {
+		return 0
+	}
+	return v.silenceMS
+}
 
 // Reset drops any open utterance without emitting it.
 func (v *VAD) Reset() {
@@ -251,7 +295,7 @@ func (v *VAD) Reset() {
 func (v *VAD) thresholds() (marginDB float64, minSpeechMS int) {
 	marginDB = v.cfg.SpeechMarginDB
 	minSpeechMS = v.cfg.MinSpeechMS
-	if v.speaking.Load() {
+	if v.speaking.Load() && !v.outputSilent.Load() {
 		marginDB += v.cfg.BargeInMarginDB
 		if v.cfg.BargeInMinSpeechMS > minSpeechMS {
 			minSpeechMS = v.cfg.BargeInMinSpeechMS
@@ -279,6 +323,52 @@ func (v *VAD) Push(frame []float32) Decision {
 	// is already mid-sentence when the socket opens would calibrate the floor
 	// to their own voice and then never be heard.
 	voiced := level > v.noiseFloorDB+marginDB && zcr <= v.cfg.MaxZCR
+
+	// Measure how loud we come back through the caller's speaker.
+	//
+	// This is a diagnostic, deliberately kept out of the voiced decision above.
+	// The noise floor cannot learn this itself, because of a trap in its own
+	// rules: it adapts only on frames it believes are *not* speech, so once
+	// echo is loud enough to read as voiced it stops feeding the floor, the
+	// floor never rises to meet it, and the echo reads as voiced forever. A
+	// real call shows the signature plainly — noise_floor_db pinned at −60
+	// while barge-ins open at active_ms=320 exactly, the configured minimum,
+	// again and again. That is not somebody starting to talk, whose energy
+	// overshoots the bar; it is a signal sitting precisely on it, and it was
+	// cutting the greeting short with the assistant's own audio.
+	//
+	// Making it part of the decision was tried and abandoned. Energy alone
+	// cannot separate steady echo from a steady voice at the same level, so
+	// every variant either let the first burst through or muted a caller
+	// talking over the assistant — and deafening the caller is much the worse
+	// failure. What actually separates them is the transcript, which is why
+	// the floor hold in the engine is the fix and this is the instrument that
+	// tells you to reach for barge_in_margin_db.
+	//
+	// Adapts on every frame while we speak, voiced or not, because during our
+	// own output echo is the expected content. Only while the utterance is
+	// closed: once a barge-in has opened, the input is the caller.
+	if v.speaking.Load() && !v.open {
+		// Upward only. The question is how loud our echo comes back at its
+		// loudest, not what it averages: the gaps between our own words are
+		// near-silent, and letting them pull the measurement down would report
+		// a quiet line for a room that is plainly echoing.
+		const attack = 0.05
+		if level > v.echoFloorDB {
+			v.echoFloorDB += (level - v.echoFloorDB) * attack
+		}
+		switch {
+		case math.IsNaN(v.echoFloorDB) || math.IsInf(v.echoFloorDB, 0):
+			v.echoFloorDB = v.cfg.NoiseFloorDB
+		case v.echoFloorDB > v.cfg.MaxNoiseFloorDB:
+			v.echoFloorDB = v.cfg.MaxNoiseFloorDB
+		}
+	} else if !v.speaking.Load() {
+		// Decay while we are quiet, so a one-off bang does not pin the
+		// measurement high for the rest of the call.
+		const decay = 0.002
+		v.echoFloorDB += (v.cfg.NoiseFloorDB - v.echoFloorDB) * decay
+	}
 
 	// Adapt the floor only on frames we believe are not speech, and only
 	// upward slowly / downward quickly, so a sustained talker cannot drag the
