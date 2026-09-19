@@ -19,6 +19,7 @@ const (
 	AtAfterMatch           = "after_match"
 	AtAfterFirstClause     = "after_first_clause"
 	AtEndOfMatchedSentence = "end_of_matched_sentence"
+	AtBeforeMatch          = "before_match"
 	AtBeforeFinalClause    = "before_final_clause"
 	AtBeforeLastSentence   = "before_last_sentence"
 )
@@ -45,7 +46,7 @@ func (r Rule) validate() error {
 	}
 	switch r.At {
 	case AtAfterMatch, AtAfterFirstClause, AtEndOfMatchedSentence,
-		AtBeforeFinalClause, AtBeforeLastSentence:
+		AtBeforeMatch, AtBeforeFinalClause, AtBeforeLastSentence:
 	default:
 		return errUnknown("at", r.At)
 	}
@@ -185,7 +186,10 @@ func spliceAt(s string, off int, ins string, tag bool) string {
 	left, right := s[:off], s[off:]
 	if tag {
 		left = strings.TrimRight(left, " ")
-		if left != "" && !strings.HasSuffix(left, " ") {
+		// A space before the tag is an English convention. Chinese and
+		// Japanese are written without them, and one inserted here survives
+		// into the history text as a gap nobody typed.
+		if left != "" && !endsCJK(left) && !startsCJK(right) {
 			ins = " " + ins
 		}
 		return left + ins + right
@@ -230,6 +234,8 @@ func (r Rule) position(reply string) int {
 		return firstClauseEnd(reply)
 	case AtEndOfMatchedSentence:
 		return endOfSentenceContaining(reply, argStrings(r.Arg))
+	case AtBeforeMatch:
+		return beforeMatch(reply, argStrings(r.Arg))
 	case AtBeforeFinalClause:
 		return lastClauseStart(reply)
 	case AtBeforeLastSentence:

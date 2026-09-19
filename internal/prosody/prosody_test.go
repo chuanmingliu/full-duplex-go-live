@@ -261,3 +261,83 @@ func TestDefaultRulesMatchBothApostrophes(t *testing.T) {
 		t.Fatalf("tag on a neutral reply: %q", got.Text)
 	}
 }
+
+// Warm() is for a support line, where a sigh is aimed at whoever is listening.
+func TestWarmCarriesNoSigh(t *testing.T) {
+	for _, r := range Warm().Rules {
+		if r.Insert == "(sighs)" || r.Insert == "(groans)" {
+			t.Fatalf("a customer-facing preset must not sigh at the customer: %+v", r)
+		}
+	}
+	if err := Warm().Validate(); err != nil {
+		t.Fatalf("warm preset does not validate: %v", err)
+	}
+}
+
+// Bad news gets a beat before it, not a reaction after it.
+func TestWarmPutsTheBeatBeforeBadNews(t *testing.T) {
+	c := Warm()
+	turn := TurnContext{LastTagTurn: -1, FirstSegment: true}
+
+	for _, reply := range []string{
+		"我查了一下，不好意思，这个航班已经满了。",
+		"I checked, and unfortunately that flight is full.",
+	} {
+		got := c.Inject(reply, turn).Text
+		if !containsBefore(got, "<#0.5#>", "不好意思") && !containsBefore(got, "<#0.5#>", "unfortunately") {
+			t.Fatalf("beat not placed before the bad news: %q", got)
+		}
+	}
+}
+
+func containsBefore(s, marker, word string) bool {
+	m, w := indexOf(s, marker), indexOf(s, word)
+	return m >= 0 && w >= 0 && m < w
+}
+
+func indexOf(s, sub string) int { return strings.Index(s, sub) }
+
+func TestWarmBreathesOnALongAnswer(t *testing.T) {
+	c := Warm()
+	const reply = "我帮您看了一下。这个订单还在处理中。预计明天会有结果。"
+	got := c.Inject(reply, TurnContext{LastTagTurn: -1, FirstSegment: true})
+	if got.Tags != 1 {
+		t.Fatalf("no breath on a three-sentence answer: %q", got.Text)
+	}
+	tts, plain := c.Sanitize(got.Text, model28)
+	if !strings.Contains(tts, "(breath)") {
+		t.Fatalf("breath did not survive: %q", tts)
+	}
+	if strings.Contains(plain, "breath") {
+		t.Fatalf("tag leaked into history: %q", plain)
+	}
+}
+
+func TestPresetsValidate(t *testing.T) {
+	for name, c := range Presets() {
+		if err := c.Validate(); err != nil {
+			t.Fatalf("preset %q does not validate: %v", name, err)
+		}
+	}
+}
+
+// A space before a tag is an English convention, and one inserted into Chinese
+// survives into the history text as a gap nobody typed.
+func TestWarmDoesNotSpaceTagsInChinese(t *testing.T) {
+	c := Warm()
+	got := c.Inject("我帮您看了一下。这个订单还在处理中。预计明天会有结果。",
+		TurnContext{LastTagTurn: -1, FirstSegment: true})
+	if strings.Contains(got.Text, " (breath)") {
+		t.Fatalf("space inserted before a tag in Chinese: %q", got.Text)
+	}
+	_, plain := c.Sanitize(got.Text, model28)
+	if strings.Contains(plain, "。 ") {
+		t.Fatalf("the space leaked into history: %q", plain)
+	}
+	// English keeps its space.
+	en := c.Inject("I looked it up. It is still processing. I will know tomorrow.",
+		TurnContext{LastTagTurn: -1, FirstSegment: true})
+	if !strings.Contains(en.Text, " (breath)") {
+		t.Fatalf("English lost its space before the tag: %q", en.Text)
+	}
+}

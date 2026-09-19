@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func noTags() TurnContext { return TurnContext{LastTagTurn: -1} }
+func noTags() TurnContext { return TurnContext{LastTagTurn: -1, FirstSegment: true} }
 
 func TestInjectPlacesMarkers(t *testing.T) {
 	c := Default()
@@ -30,7 +30,7 @@ func TestInjectPlacesMarkers(t *testing.T) {
 		{
 			name:  "slow tool work earns a beat",
 			reply: "Right, I have the booking here.",
-			turn:  TurnContext{ToolLatencyMS: 1200, LastTagTurn: -1},
+			turn:  TurnContext{ToolLatencyMS: 1200, LastTagTurn: -1, FirstSegment: true},
 			want:  "Right,<#0.5#>I have the booking here.",
 		},
 		{
@@ -93,15 +93,15 @@ func TestInjectCooldownStopsRepeatSighing(t *testing.T) {
 	c := Default()
 	const reply = "Unfortunately that one is gone too."
 
-	cold := c.Inject(reply, TurnContext{TurnIndex: 9, LastTagTurn: -1})
+	cold := c.Inject(reply, TurnContext{TurnIndex: 9, LastTagTurn: -1, FirstSegment: true})
 	if cold.Tags != 1 {
 		t.Fatalf("first tag should be allowed, got %q", cold.Text)
 	}
-	hot := c.Inject(reply, TurnContext{TurnIndex: 9, LastTagTurn: 8})
+	hot := c.Inject(reply, TurnContext{TurnIndex: 9, LastTagTurn: 8, FirstSegment: true})
 	if hot.Tags != 0 || hot.Text != reply {
 		t.Fatalf("tag emitted inside cooldown: %q", hot.Text)
 	}
-	past := c.Inject(reply, TurnContext{TurnIndex: 9, LastTagTurn: 4})
+	past := c.Inject(reply, TurnContext{TurnIndex: 9, LastTagTurn: 4, FirstSegment: true})
 	if past.Tags != 1 {
 		t.Fatalf("tag refused after cooldown expired: %q", past.Text)
 	}
@@ -149,5 +149,31 @@ func TestInjectOutputSurvivesSanitize(t *testing.T) {
 		if strings.Contains(plain, "<#") || strings.Contains(plain, "(") {
 			t.Fatalf("markup reached history: %q", plain)
 		}
+	}
+}
+
+// A rule about how a reply opens must not fire again on a later segment of the
+// same reply, which is all a streaming injector ever sees.
+func TestInjectOpeningRuleIsFirstSegmentOnly(t *testing.T) {
+	c := Default()
+	const seg = "Well, that one is also taken."
+	later := TurnContext{LastTagTurn: -1, FirstSegment: false}
+	if got := c.Inject(seg, later); got.Pauses != 0 {
+		t.Fatalf("opening rule fired mid-reply: %q", got.Text)
+	}
+	if got := c.Inject(seg, noTags()); got.Pauses != 1 {
+		t.Fatalf("opening rule did not fire on the first segment: %q", got.Text)
+	}
+}
+
+func TestMSPerCharExcludesMarkupTime(t *testing.T) {
+	// Ten speakable characters and 800 ms of silence inside a 1800 ms segment:
+	// the speech itself took 1000 ms, so 100 ms per character.
+	got := MSPerChar("abcde<#0.80#>fghij", 1800)
+	if got < 99 || got > 101 {
+		t.Fatalf("want ~100 ms per char, got %v", got)
+	}
+	if MSPerChar("<#0.50#>", 500) != 0 {
+		t.Fatal("markup with no speakable text should report no rate")
 	}
 }

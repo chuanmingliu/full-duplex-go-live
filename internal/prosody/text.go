@@ -123,17 +123,7 @@ func lastClauseStart(s string) int {
 // punctuation of the first sentence holding any of the words — where a sound
 // tag belongs, reacting to the clause rather than announcing it.
 func endOfSentenceContaining(s string, words []string) int {
-	low := strings.ToLower(s)
-	hit := -1
-	for _, w := range words {
-		w = strings.ToLower(strings.TrimSpace(w))
-		if w == "" {
-			continue
-		}
-		if i := strings.Index(low, w); i >= 0 && (hit < 0 || i < hit) {
-			hit = i
-		}
-	}
+	hit := firstIndexOfAny(strings.ToLower(s), words)
 	if hit < 0 {
 		return -1
 	}
@@ -152,6 +142,38 @@ func endOfSentenceContaining(s string, words []string) int {
 		return sp.start + len(body)
 	}
 	return -1
+}
+
+// beforeMatch returns the position immediately before the first matched word.
+//
+// This is where a beat goes when it is preparing the listener for what comes
+// next rather than reacting to what came before. Bad news works this way
+// round: the pause before "unfortunately" reads as the speaker gathering
+// themselves, and the same pause after the sentence reads as a reaction to it.
+//
+// It declines position zero, where a marker would sit at the segment edge and
+// be invalid — and where there is nothing before it to gather anyway.
+func beforeMatch(s string, words []string) int {
+	hit := firstIndexOfAny(strings.ToLower(s), words)
+	if hit <= 0 {
+		return -1
+	}
+	return hit
+}
+
+// firstIndexOfAny returns the earliest occurrence of any word, or -1.
+func firstIndexOfAny(low string, words []string) int {
+	hit := -1
+	for _, w := range words {
+		w = strings.ToLower(strings.TrimSpace(w))
+		if w == "" {
+			continue
+		}
+		if i := strings.Index(low, w); i >= 0 && (hit < 0 || i < hit) {
+			hit = i
+		}
+	}
+	return hit
 }
 
 // markerNear reports whether markup already sits within a clause of off. It is
@@ -193,3 +215,21 @@ func countMarkers(s string) int {
 
 // hasTag reports whether the reply already carries a sound tag.
 func hasTag(s string) bool { return parenRe.MatchString(s) }
+
+// endsCJK and startsCJK say whether a space between two runs of text would be
+// wrong, because one side is written in a script that does not use them.
+func endsCJK(s string) bool {
+	if s == "" {
+		return false
+	}
+	r, _ := utf8.DecodeLastRuneInString(s)
+	return isCJK(r)
+}
+
+func startsCJK(s string) bool {
+	if s == "" {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s)
+	return isCJK(r)
+}
