@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/prosody"
 )
 
@@ -243,6 +244,18 @@ type VADProfile struct {
 	OutputSilenceDB    float64 `json:"output_silence_db"`
 	OutputSilenceMS    int     `json:"output_silence_ms"`
 	BargeInMinSpeechMS int     `json:"barge_in_min_speech_ms"`
+
+	// OnsetMethod names a fast-attack detector ("tkeo", "envelope" or
+	// "flux") that lets a barge-in open on a strong transient instead of
+	// waiting out barge_in_min_speech_ms. Empty (the default) runs none of
+	// them and changes nothing — see internal/audio/onset.go for what each
+	// one measures and internal/audio/vad.go for how the fast path works.
+	OnsetMethod string `json:"onset_method"`
+	// OnsetMarginDB tunes that detector's own adaptive floor. Zero uses the
+	// detector's built-in default. Like speech_margin_db and
+	// barge_in_margin_db, this needs tuning against real call audio, not
+	// this package's guess.
+	OnsetMarginDB float64 `json:"onset_margin_db"`
 }
 
 // Default returns a configuration that runs end to end with the mock providers
@@ -423,6 +436,9 @@ func (c *Config) Validate() error {
 	}
 	if c.VAD.FrameMS <= 0 || 1000%c.VAD.FrameMS != 0 {
 		return fmt.Errorf("config: vad.frame_ms must divide 1000 evenly, got %d", c.VAD.FrameMS)
+	}
+	if !audio.ValidOnsetMethod(c.VAD.OnsetMethod) {
+		return fmt.Errorf("config: vad.onset_method %q must be empty, tkeo, envelope or flux", c.VAD.OnsetMethod)
 	}
 	if c.Duplex.StreamFirstChunkChars > c.Duplex.StreamMaxChunkChars {
 		return fmt.Errorf("config: stream_first_chunk_chars exceeds stream_max_chunk_chars")

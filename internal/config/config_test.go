@@ -81,3 +81,31 @@ func TestProsodyProfileLoads(t *testing.T) {
 		t.Fatal("an unknown mode should be rejected at load, not at runtime")
 	}
 }
+
+func TestOnsetMethodProfileLoads(t *testing.T) {
+	const profile = `{"vad": {"onset_method": "tkeo", "onset_margin_db": 12}}`
+	c := Default()
+	if err := json.Unmarshal([]byte(profile), &c); err != nil {
+		t.Fatalf("profile did not parse: %v", err)
+	}
+	if c.VAD.OnsetMethod != "tkeo" {
+		t.Fatalf("onset_method not read: %q", c.VAD.OnsetMethod)
+	}
+	if c.VAD.OnsetMarginDB != 12 {
+		t.Fatalf("onset_margin_db not read: %v", c.VAD.OnsetMarginDB)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid onset_method rejected: %v", err)
+	}
+
+	c.VAD.OnsetMethod = "neural"
+	if err := c.Validate(); err == nil {
+		t.Fatal("an unknown onset_method should be rejected at load, not at runtime")
+	}
+}
+
+func TestOnsetMethodOffByDefault(t *testing.T) {
+	if m := Default().VAD.OnsetMethod; m != "" {
+		t.Fatalf("onset_method defaults to %q, want off — the barge-in fast path must be opt-in", m)
+	}
+}

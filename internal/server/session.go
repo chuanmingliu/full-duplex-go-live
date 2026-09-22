@@ -411,11 +411,46 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		history = append(history, provider.Message{Role: role, Content: m.Content})
 	}
 
+	// A copy, so a per-session override never mutates the server's defaults for
+	// every other session.
+	cfg := s.cfg
 	backchannel := s.cfg.Duplex.Backchannel
 	speculative := s.cfg.Duplex.Speculative
 	language := s.cfg.Language
 	greeting := s.cfg.Greeting
+	onNewQuery := ""
 	if g := ev.Session.Golive; g != nil {
+		if g.UserBackchannelPhrases != nil {
+			phrases, err := validPhrases(*g.UserBackchannelPhrases)
+			if err != nil {
+				s.Emit(live.NewError("invalid_request_error", "invalid_backchannel_phrases",
+					err.Error(), eventID))
+				return err
+			}
+			cfg.Duplex.UserBackchannelPhrases = phrases
+		}
+		if g.OnNewQuery != "" {
+			switch g.OnNewQuery {
+			case "cut", "finish_sentence", "queue":
+				onNewQuery = g.OnNewQuery
+			default:
+				s.Emit(live.NewError("invalid_request_error", "invalid_on_new_query",
+					fmt.Sprintf("golive.on_new_query %q must be cut, finish_sentence or queue",
+						g.OnNewQuery), eventID))
+				return fmt.Errorf("live: bad on_new_query %q", g.OnNewQuery)
+			}
+		}
+		if g.OnsetMethod != "" {
+			switch g.OnsetMethod {
+			case "tkeo", "envelope", "flux":
+				cfg.VAD.OnsetMethod = g.OnsetMethod
+			default:
+				s.Emit(live.NewError("invalid_request_error", "invalid_onset_method",
+					fmt.Sprintf("golive.onset_method %q must be tkeo, envelope or flux",
+						g.OnsetMethod), eventID))
+				return fmt.Errorf("live: bad onset_method %q", g.OnsetMethod)
+			}
+		}
 		// A pointer, so "" explicitly suppresses the server's greeting rather
 		// than falling back to it.
 		if g.Greeting != nil {
@@ -433,7 +468,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 	}
 
 	engine := s.newEngine(duplex.Options{
-		Cfg:          s.cfg,
+		Cfg:          cfg,
 		SessionID:    s.id,
 		ClientRate:   resolved.Audio.Format.Rate,
 		Instructions: resolved.Instructions,
@@ -443,6 +478,7 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		Backchannel:  backchannel,
 		Speculative:  speculative,
 		Greeting:     greeting,
+		OnNewQuery:   onNewQuery,
 		History:      history,
 	}, duplex.Deps{
 		ASR:  asr,
@@ -464,6 +500,8 @@ func (s *Session) onSessionStart(ctx context.Context, data []byte, eventID strin
 		"rate", resolved.Audio.Format.Rate,
 		"delegation", resolved.Delegation.Type,
 		"greeting", greeting != "",
+		"on_new_query", onNewQueryOr(onNewQuery, s.cfg.Duplex.OnNewQuery),
+		"onset_method", cfg.VAD.OnsetMethod,
 		"asr", asrName, "llm", llmName, "tts", ttsName)
 
 	s.Emit(live.SessionStartedEvent{
@@ -623,8 +661,62 @@ func (s *Session) onAppend(data []byte, eventID string, apply func(*duplex.Engin
 		s.Emit(live.NewError("invalid_request_error", "empty_content", "content must not be empty", eventID))
 		return fmt.Errorf("live: empty append content")
 	}
+	// gpt-live-1 caps an instruction append at 500 tokens. Enforcing a bound
+	// matters more than matching it exactly: these appends go straight into a
+	// context window the conversational layer cannot afford to fill, and an
+	// application that pipes a whole document through one silently degrades
+	// every later turn instead of failing.
+	if max := s.cfg.Duplex.MaxAppendChars; max > 0 && len([]rune(ev.Content)) > max {
+		s.Emit(live.NewError("invalid_request_error", "content_too_long",
+			fmt.Sprintf("content is %d characters; the limit is %d. Summarize before appending: "+
+				"this goes into the conversational context window, not the backend's.",
+				len([]rune(ev.Content)), max), eventID))
+		return fmt.Errorf("live: append content too long")
+	}
 	s.withEngine(func(e *duplex.Engine) { apply(e, ev) })
 	return nil
+}
+
+// maxBackchannelPhrases and maxBackchannelPhraseRunes bound what a session may
+// install. The list is a floor-control policy, not free-text: every entry is a
+// phrase the caller permanently loses the ability to interrupt with, so a long
+// list or a long entry is far more likely to be a mistake than an intention.
+const (
+	maxBackchannelPhrases     = 64
+	maxBackchannelPhraseRunes = 24
+)
+
+// validPhrases checks a client-supplied backchannel list. Blank entries are
+// dropped rather than rejected — they are what a textarea produces from a
+// trailing newline, and failing a session over one would be needlessly strict.
+func validPhrases(in []string) ([]string, error) {
+	out := make([]string, 0, len(in))
+	for _, p := range in {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if n := len([]rune(p)); n > maxBackchannelPhraseRunes {
+			return nil, fmt.Errorf(
+				"golive.user_backchannel_phrases: %q is %d characters; the limit is %d, because an "+
+					"entry this long is a sentence the caller can no longer interrupt with",
+				p, n, maxBackchannelPhraseRunes)
+		}
+		out = append(out, p)
+	}
+	if len(out) > maxBackchannelPhrases {
+		return nil, fmt.Errorf(
+			"golive.user_backchannel_phrases: %d entries; the limit is %d",
+			len(out), maxBackchannelPhrases)
+	}
+	return out, nil
+}
+
+func onNewQueryOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func voiceOf(c live.SessionConfig) string {

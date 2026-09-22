@@ -90,16 +90,21 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // prompt and greeting as placeholders rather than inventing its own.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"asr":      provider.ASRNames(),
-		"llm":      provider.LLMNames(),
-		"tts":      provider.TTSNames(),
-		"selected": map[string]string{"asr": s.cfg.ASR, "llm": s.cfg.LLM, "tts": s.cfg.TTS},
+		"asr":           provider.ASRNames(),
+		"llm":           provider.LLMNames(),
+		"tts":           provider.TTSNames(),
+		"selected":      map[string]string{"asr": s.cfg.ASR, "llm": s.cfg.LLM, "tts": s.cfg.TTS},
+		"onset_methods": []string{"tkeo", "envelope", "flux"},
 		"defaults": map[string]any{
-			"instructions": s.cfg.Instructions,
-			"greeting":     s.cfg.Greeting,
-			"model":        s.cfg.Model,
-			"language":     s.cfg.Language,
-			"rate":         s.cfg.ClientRate,
+			"instructions":             s.cfg.Instructions,
+			"greeting":                 s.cfg.Greeting,
+			"on_new_query":             s.cfg.Duplex.OnNewQuery,
+			"onset_method":             s.cfg.VAD.OnsetMethod,
+			"user_backchannel_phrases": s.cfg.Duplex.UserBackchannelPhrases,
+			"user_backchannel_hold_ms": s.cfg.Duplex.UserBackchannelHoldMS,
+			"model":                    s.cfg.Model,
+			"language":                 s.cfg.Language,
+			"rate":                     s.cfg.ClientRate,
 		},
 	})
 }

@@ -215,6 +215,8 @@ func New(opts Options, deps Deps) *Engine {
 		GapToleranceMS:     opts.Cfg.VAD.GapToleranceMS,
 		BargeInMarginDB:    opts.Cfg.VAD.BargeInMarginDB,
 		BargeInMinSpeechMS: opts.Cfg.VAD.BargeInMinSpeechMS,
+		OnsetMethod:        opts.Cfg.VAD.OnsetMethod,
+		OnsetMarginDB:      opts.Cfg.VAD.OnsetMarginDB,
 	}
 	vad := audio.NewVAD(vcfg)
 
@@ -570,6 +572,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			"start_ms", d.StartMS,
 			"active_ms", int(d.ActiveMS),
 			"barge_in", d.BargeIn,
+			"fast_onset", d.FastOnset,
 			"noise_floor_db", round1(e.vad.NoiseFloorDB()),
 			"echo_floor_db", round1(e.vad.EchoFloorDB()),
 			"echo_headroom_db", round1(e.vad.EchoFloorDB()-e.vad.NoiseFloorDB()),
@@ -1678,7 +1681,13 @@ func (h *floorHold) sawEvidence() { h.until = h.started.Add(4 * h.hold) }
 // handles the consequences by refusing to yield to an utterance with no words
 // in it, and the acoustic cure is a setting only the operator can judge.
 func (e *Engine) warnIfEcho(d audio.Decision) {
-	if e.echoWarned || !d.BargeIn {
+	if e.echoWarned || !d.BargeIn || d.FastOnset {
+		// FastOnset means this opening cleared a different, independent bar
+		// — a strong attack transient, not the elevated margin/duration
+		// pair this heuristic is calibrated against. It will routinely land
+		// at or under the ordinary MinSpeechMS, which is exactly the "sitting
+		// precisely on the bar" shape atTheBar looks for below, and would
+		// otherwise warn on every legitimate fast-pathed barge-in.
 		return
 	}
 	atTheBar := int(d.ActiveMS) <= e.opts.Cfg.VAD.BargeInMinSpeechMS+int(e.vad.FrameMS())

@@ -213,23 +213,103 @@ func TestBargeInMarginStandsDownDuringOutputSilence(t *testing.T) {
 		BargeInMinSpeechMS: 320,
 	})
 
-	margin, minSpeech := v.thresholds()
+	margin, minSpeech, _ := v.thresholds(false)
 	if margin != 10 || minSpeech != 100 {
 		t.Fatalf("idle thresholds wrong: %v dB, %d ms", margin, minSpeech)
 	}
 
 	v.SetAssistantSpeaking(true)
-	if margin, minSpeech = v.thresholds(); margin != 18 || minSpeech != 320 {
+	if margin, minSpeech, _ = v.thresholds(false); margin != 18 || minSpeech != 320 {
 		t.Fatalf("speaking thresholds wrong: %v dB, %d ms", margin, minSpeech)
 	}
 
 	v.SetOutputSilence(true)
-	if margin, minSpeech = v.thresholds(); margin != 10 || minSpeech != 100 {
+	if margin, minSpeech, _ = v.thresholds(false); margin != 10 || minSpeech != 100 {
 		t.Fatalf("margin held up through our own silence: %v dB, %d ms", margin, minSpeech)
 	}
 
 	v.SetOutputSilence(false)
-	if margin, _ = v.thresholds(); margin != 18 {
+	if margin, _, _ = v.thresholds(false); margin != 18 {
 		t.Fatalf("margin did not come back when speech resumed: %v dB", margin)
 	}
+}
+
+// TestOnsetFastPathOpensBargeInEarly exercises the actual barge-in scenario
+// the onset detector exists for: a caller interrupting while the assistant
+// is speaking. With a fast-attack method configured, a sharp onset should
+// clear the elevated bar (BargeInMarginDB / BargeInMinSpeechMS) well before
+// BargeInMinSpeechMS of audio has accumulated, and the opening Decision
+// should say so via FastOnset. With onset detection off — the default —
+// nothing changes: the utterance still has to wait out the full elevated
+// bar, exactly as before this package existed.
+func TestOnsetFastPathOpensBargeInEarly(t *testing.T) {
+	const frameMS = 20
+	rate := RatePipeline
+	frameSamples := rate * frameMS / 1000
+
+	newTestVAD := func(onsetMethod string) *VAD {
+		return NewVAD(VADConfig{
+			SampleRate:         rate,
+			FrameMS:            frameMS,
+			MinSpeechMS:        100,
+			MinSilenceMS:       200,
+			SpeechMarginDB:     10,
+			BargeInMarginDB:    8,
+			BargeInMinSpeechMS: 320,
+			OnsetMethod:        onsetMethod,
+		})
+	}
+
+	// Quiet enough to stay well under the voiced threshold (so it never
+	// itself opens a candidate) while still being a real, nonzero signal —
+	// enough for the onset detector's adaptive floor to calibrate against,
+	// the same way it would against real mic self-noise between utterances.
+	background := steadyTone(rate, 1500, 0.002)
+	attack := tone(rate, 500, 0.9)
+
+	openAt := func(v *VAD) (opened bool, activeMS float64, fastOnset, bargeIn bool) {
+		v.SetAssistantSpeaking(true)
+		for off := 0; off+frameSamples <= len(background); off += frameSamples {
+			v.Push(background[off : off+frameSamples])
+		}
+		for off := 0; off+frameSamples <= len(attack); off += frameSamples {
+			d := v.Push(attack[off : off+frameSamples])
+			if d.Kind == DecisionStarted {
+				return true, d.ActiveMS, d.FastOnset, d.BargeIn
+			}
+		}
+		return false, 0, false, false
+	}
+
+	t.Run("strong onset clears the bar early", func(t *testing.T) {
+		opened, activeMS, fastOnset, bargeIn := openAt(newTestVAD("tkeo"))
+		if !opened {
+			t.Fatal("utterance never opened")
+		}
+		if !bargeIn {
+			t.Error("expected BargeIn")
+		}
+		if !fastOnset {
+			t.Error("expected FastOnset")
+		}
+		if activeMS >= 320 {
+			t.Errorf("opened at active_ms=%v, want well under the 320ms elevated bar", activeMS)
+		}
+	})
+
+	t.Run("off by default: still waits out the elevated bar", func(t *testing.T) {
+		opened, activeMS, fastOnset, bargeIn := openAt(newTestVAD(""))
+		if !opened {
+			t.Fatal("utterance never opened")
+		}
+		if !bargeIn {
+			t.Error("expected BargeIn")
+		}
+		if fastOnset {
+			t.Error("did not expect FastOnset with onset_method off")
+		}
+		if activeMS < 320 {
+			t.Errorf("opened at active_ms=%v before the elevated bar with onset_method off — fast path should not have fired", activeMS)
+		}
+	})
 }

@@ -43,6 +43,14 @@ type Decision struct {
 
 	// BargeIn marks an utterance that opened while the assistant was speaking.
 	BargeIn bool
+	// FastOnset marks an utterance that opened via the onset-detector fast
+	// path rather than waiting out BargeInMinSpeechMS: a strong attack
+	// transient stood in for the elevated confirmation window. Only ever
+	// true alongside BargeIn. warnIfEcho in the engine treats it as a
+	// reason *not* to suspect echo, even though it shares the "opened
+	// suspiciously close to the bar" shape that heuristic otherwise looks
+	// for — this opening cleared a different, independent bar instead.
+	FastOnset bool
 }
 
 // VADConfig tunes detection. Zero values are replaced by the defaults in
@@ -88,6 +96,16 @@ type VADConfig struct {
 	BargeInMarginDB float64
 	// BargeInMinSpeechMS likewise raises MinSpeechMS during playback.
 	BargeInMinSpeechMS int
+
+	// OnsetMethod names a fast-attack detector ("tkeo", "envelope" or
+	// "flux") that lets a barge-in open on a strong transient instead of
+	// waiting out BargeInMinSpeechMS — see internal/audio/onset.go. Empty
+	// (the default) runs no detector and changes nothing.
+	OnsetMethod string
+	// OnsetMarginDB tunes that detector's own adaptive floor. Zero uses the
+	// detector's built-in default rather than being treated as "off" —
+	// OnsetMethod is what turns the fast path on.
+	OnsetMarginDB float64
 }
 
 // DefaultVADConfig returns values tuned for 16 kHz conversational speech on a
@@ -213,6 +231,17 @@ type VAD struct {
 	// it sounds: a pause is exactly when a person believes the floor is free,
 	// so the moment the bar is highest is the moment it should be lowest.
 	outputSilent atomic.Bool
+
+	// onset scores each closed-state frame for a fast-attack transient, so a
+	// genuine barge-in can clear BargeInMinSpeechMS's elevated bar early
+	// instead of waiting it out. Only pushed while !open: once a candidate
+	// has opened, BargeIn is already decided, and there is nothing left for
+	// it to do until the VAD closes again and starts hunting for the next
+	// utterance — which is also what keeps a long open utterance from
+	// dragging the detector's own floor up to meet a sustained voice, the
+	// same reason noiseFloorDB below only adapts while !open.
+	onset     OnsetDetector
+	fastOnset bool
 }
 
 // NewVAD builds a detector. cfg is copied; later mutation has no effect.
@@ -231,6 +260,7 @@ func NewVAD(cfg VADConfig) *VAD {
 		prerollCap:   prerollCap,
 		noiseFloorDB: cfg.NoiseFloorDB,
 		echoFloorDB:  cfg.NoiseFloorDB,
+		onset:        NewOnsetDetector(OnsetMethod(cfg.OnsetMethod), cfg.SampleRate, cfg.OnsetMarginDB),
 	}
 }
 
@@ -282,6 +312,7 @@ func (v *VAD) TrailingSilenceMS() float64 {
 func (v *VAD) Reset() {
 	v.open = false
 	v.bargeIn = false
+	v.fastOnset = false
 	v.utterance = nil
 	v.pending = nil
 	v.snapshotAcc = nil
@@ -292,16 +323,28 @@ func (v *VAD) Reset() {
 	v.sinceSnap = 0
 }
 
-func (v *VAD) thresholds() (marginDB float64, minSpeechMS int) {
+// thresholds returns the margin and minimum-speech bar for this frame.
+// strongOnset carries this frame's onset-detector verdict: a strong attack
+// transient stands in for the elevated barge-in confirmation, on the theory
+// that a fresh interrupt's sharp attack is exactly what steady echo lacks —
+// the assistant's own voice returning through a speakerphone is shaped by
+// the room and the speaker, not a new onset. fast reports whether that
+// substitution actually happened, so the caller can mark the resulting
+// Decision and keep it out of warnIfEcho's "opened right at the bar" check,
+// which this deliberately does.
+func (v *VAD) thresholds(strongOnset bool) (marginDB float64, minSpeechMS int, fast bool) {
 	marginDB = v.cfg.SpeechMarginDB
 	minSpeechMS = v.cfg.MinSpeechMS
 	if v.speaking.Load() && !v.outputSilent.Load() {
+		if strongOnset && v.cfg.OnsetMethod != "" {
+			return marginDB, minSpeechMS, true
+		}
 		marginDB += v.cfg.BargeInMarginDB
 		if v.cfg.BargeInMinSpeechMS > minSpeechMS {
 			minSpeechMS = v.cfg.BargeInMinSpeechMS
 		}
 	}
-	return marginDB, minSpeechMS
+	return marginDB, minSpeechMS, false
 }
 
 // Push consumes one frame and returns the resulting decision. The frame must
@@ -316,7 +359,16 @@ func (v *VAD) Push(frame []float32) Decision {
 
 	level := DBFS(RMS(frame))
 	zcr := ZeroCrossingRate(frame)
-	marginDB, minSpeechMS := v.thresholds()
+
+	// Only while hunting for the next utterance: once one is open, BargeIn
+	// is already decided, and continuing to feed a loud, sustained voice
+	// into the onset detector would drag its floor up to meet it, the same
+	// reason noiseFloorDB below is gated the same way.
+	var onset OnsetScore
+	if !v.open {
+		onset = v.onset.Push(frame)
+	}
+	marginDB, minSpeechMS, fast := v.thresholds(onset.Strong)
 
 	// The floor starts at the configured value rather than at the first frame.
 	// Seeding from frame one looks smarter and is actively wrong: a caller who
@@ -391,12 +443,12 @@ func (v *VAD) Push(frame []float32) Decision {
 	}
 
 	if !v.open {
-		return v.pushClosed(frame, voiced, minSpeechMS)
+		return v.pushClosed(frame, voiced, minSpeechMS, fast)
 	}
 	return v.pushOpen(frame, voiced)
 }
 
-func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int) Decision {
+func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int, fast bool) Decision {
 	v.pushPreroll(frame)
 	if !voiced {
 		// Speech is not continuously voiced — stops, unvoiced consonants and
@@ -429,6 +481,7 @@ func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int) Decision
 	// onset is not clipped.
 	v.open = true
 	v.bargeIn = v.speaking.Load()
+	v.fastOnset = v.bargeIn && fast
 	v.utterance = append(v.prerollAudio(), v.pending...)
 	v.activeMS = v.pendingMS
 	v.silenceMS = 0
@@ -447,12 +500,13 @@ func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int) Decision
 	copy(opening, v.utterance)
 
 	return Decision{
-		Kind:     DecisionStarted,
-		Snapshot: opening,
-		ActiveMS: v.activeMS,
-		StartMS:  v.startMS,
-		EndMS:    int64(v.clockMS),
-		BargeIn:  v.bargeIn,
+		Kind:      DecisionStarted,
+		Snapshot:  opening,
+		ActiveMS:  v.activeMS,
+		StartMS:   v.startMS,
+		EndMS:     int64(v.clockMS),
+		BargeIn:   v.bargeIn,
+		FastOnset: v.fastOnset,
 	}
 }
 
@@ -477,6 +531,7 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 		activeMS := v.activeMS
 		startMS := v.startMS
 		bargeIn := v.bargeIn
+		fastOnset := v.fastOnset
 		v.Reset()
 		return Decision{
 			Kind:      DecisionStopped,
@@ -486,6 +541,7 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 			StartMS:   startMS,
 			EndMS:     int64(v.clockMS),
 			BargeIn:   bargeIn,
+			FastOnset: fastOnset,
 		}
 	}
 
@@ -494,12 +550,13 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 		v.snapshotAcc = nil
 		v.sinceSnap = 0
 		return Decision{
-			Kind:     DecisionSpeaking,
-			Snapshot: snapshot,
-			ActiveMS: v.activeMS,
-			StartMS:  v.startMS,
-			EndMS:    int64(v.clockMS),
-			BargeIn:  v.bargeIn,
+			Kind:      DecisionSpeaking,
+			Snapshot:  snapshot,
+			ActiveMS:  v.activeMS,
+			StartMS:   v.startMS,
+			EndMS:     int64(v.clockMS),
+			BargeIn:   v.bargeIn,
+			FastOnset: v.fastOnset,
 		}
 	}
 
