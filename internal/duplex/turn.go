@@ -422,14 +422,17 @@ func (t *Tracker) IsCurrent(turn *Turn) bool {
 	if turn == nil {
 		return false
 	}
+	// The whole comparison is under the lock, not just the pointer: State is
+	// written by Commit and Abandon on the loop goroutine while generation
+	// goroutines ask this.
 	t.mu.RLock()
 	cur := t.current
-	t.mu.RUnlock()
-	return cur != nil &&
+	live := cur != nil &&
 		cur.ID == turn.ID &&
 		cur.Revision == turn.Revision &&
-		cur.State != TurnAbandoned &&
-		t.gen.Valid(turn.Generation)
+		cur.State != TurnAbandoned
+	t.mu.RUnlock()
+	return live && t.gen.Valid(turn.Generation)
 }
 
 // rollingMS keeps the recent history of one duration, in milliseconds, so the
