@@ -79,10 +79,11 @@ type PlayerConfig struct {
 // the first chunk still leaves as soon as it exists — and buys correct history.
 type Player struct {
 	cfg        PlayerConfig
-	emit       func(itemID string, pcm []byte)
+	emit       func(itemID string, pcm []byte, playAt time.Time)
 	onSpeaking func(bool)
 	onTruncate func(TruncationReport)
 	onTurnDone func(turnID string, totalMS int64, text string)
+	onSegment  func(turnID, text string, playAt time.Time)
 
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -109,7 +110,10 @@ type Player struct {
 	spoken      []spokenSpan
 	pendingText string
 	pendingFrom float64
-	speaking    bool
+	// pendingAnnounced records that the segment in pendingText has been
+	// reported through onSegment, which happens on its first audio.
+	pendingAnnounced bool
+	speaking         bool
 }
 
 type spokenSpan struct {
@@ -117,8 +121,10 @@ type spokenSpan struct {
 	endMS float64
 }
 
-// NewPlayer builds a player. emit is called for each outbound audio chunk.
-func NewPlayer(cfg PlayerConfig, emit func(itemID string, pcm []byte)) *Player {
+// NewPlayer builds a player. emit is called for each outbound audio chunk, with
+// the moment the listener will hear it — a little after the moment it is sent,
+// because the player runs ahead of the playhead by up to LeadMS.
+func NewPlayer(cfg PlayerConfig, emit func(itemID string, pcm []byte, playAt time.Time)) *Player {
 	if cfg.ChunkMS <= 0 {
 		cfg.ChunkMS = 40
 	}
@@ -139,6 +145,16 @@ func (p *Player) OnSpeaking(f func(bool)) { p.onSpeaking = f }
 
 // OnTruncate registers a callback for interrupted turns.
 func (p *Player) OnTruncate(f func(TruncationReport)) { p.onTruncate = f }
+
+// OnSegment registers a callback for a segment of text starting to be heard.
+//
+// It fires on the segment's first audio, not when the text is queued, and that
+// is the point of it: the transcript a client is shown should be what was said.
+// Text is generated a sentence or more ahead of the voice, so reporting it as
+// it was written put words in the transcript that an interruption then meant
+// nobody ever heard. It is invoked with the player's lock held, so it must not
+// call back into the player.
+func (p *Player) OnSegment(f func(turnID, text string, playAt time.Time)) { p.onSegment = f }
 
 // OnTurnDone registers a callback for turns that finished uninterrupted.
 func (p *Player) OnTurnDone(f func(turnID string, totalMS int64, text string)) { p.onTurnDone = f }
@@ -344,6 +360,19 @@ func (p *Player) Interrupt() {
 	})
 }
 
+// Heard reports the turn now playing and the part of it that has reached the
+// listener, without disturbing it. It is what a snapshot of the conversation
+// taken mid-sentence needs: the words so far are part of the conversation even
+// though the turn has not ended.
+func (p *Player) Heard() (turnID, text string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.activeTurn == "" {
+		return "", ""
+	}
+	return p.activeTurn, p.spokenPrefixLocked(p.heardMSLocked())
+}
+
 // reportTruncation forwards a truncation, unless there was nothing to truncate.
 //
 // A turn cancelled between being queued and producing its first chunk has an
@@ -412,6 +441,7 @@ func (p *Player) beginSegment(seg Segment) {
 	p.ensureTurnLocked(seg.TurnID)
 	p.pendingText = seg.Text
 	p.pendingFrom = p.emittedMS
+	p.pendingAnnounced = false
 }
 
 // abandonSegment drops the text announced by a SegBegin that produced no audio.
@@ -515,7 +545,22 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 			}
 		}
 
-		p.emit(seg.TurnID, chunk)
+		p.mu.Lock()
+		if p.activeTurn != seg.TurnID {
+			// The turn was cut while this chunk waited its turn.
+			p.mu.Unlock()
+			return
+		}
+		playAt := p.playhead
+		if !p.pendingAnnounced && p.pendingText != "" {
+			p.pendingAnnounced = true
+			if p.onSegment != nil {
+				p.onSegment(seg.TurnID, p.pendingText, playAt)
+			}
+		}
+		p.mu.Unlock()
+
+		p.emit(seg.TurnID, chunk, playAt)
 
 		p.mu.Lock()
 		chunkMS := format.DurationMS(chunk)
@@ -651,6 +696,7 @@ func (p *Player) resetTurnLocked() {
 	p.spoken = nil
 	p.pendingText = ""
 	p.pendingFrom = 0
+	p.pendingAnnounced = false
 }
 
 func (p *Player) setSpeakingLocked(state bool) {

@@ -36,6 +36,12 @@ type Message struct {
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	// Name is the tool name for RoleTool messages.
 	Name string `json:"name,omitempty"`
+	// ToolCalls are the function calls a RoleAssistant message made. Every
+	// chat-completions backend requires the RoleTool messages that answer them
+	// to follow immediately, one per call — a tool result with no call in front
+	// of it is rejected outright, and it takes the whole conversation with it,
+	// because the offending message is in history on every later request.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
 // --- ASR ---
@@ -94,6 +100,10 @@ type ToolCall struct {
 type TokenUsage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
+	// CachedInputTokens is how much of the prompt the provider served from its
+	// prefix cache, where it reports one. Zero means "none" or "not reported";
+	// the two are indistinguishable from here.
+	CachedInputTokens int `json:"cached_input_tokens,omitempty"`
 }
 
 // LLMDelta is one event from a streaming completion.
@@ -110,7 +120,15 @@ type LLMRequest struct {
 	Messages    []Message
 	Temperature float64
 	MaxTokens   int
-	Tools       []json.RawMessage
+	// Tools are function definitions in chat-completions form:
+	// {"type":"function","function":{"name":…,"parameters":…}}.
+	Tools []json.RawMessage
+	// ToolChoice is "auto", "required", "none" or a chat-completions named
+	// choice. Nil leaves the provider's default, which is auto.
+	ToolChoice any
+	// ParallelToolCalls, when set, allows or forbids more than one call per
+	// response. Nil leaves the provider's default.
+	ParallelToolCalls *bool
 	// DisableThinking suppresses reasoning traces on models that emit them.
 	// In a voice session a reasoning trace is pure added latency before the
 	// first spoken syllable.

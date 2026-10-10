@@ -62,11 +62,16 @@ const rowFn = lift(/^function row\(id, who\) \{[\s\S]*?^\}$/m, 'function row()')
 const resetMatch = page.match(/^function resetTranscript\(\) \{[\s\S]*?^\}$/m);
 const resetFn = resetMatch ? resetMatch[0] : 'function resetTranscript() { /* absent */ }';
 
+const captionFn = lift(/^function applyInputTranscript\(ev\) \{[\s\S]*?^\}$/m, 'function applyInputTranscript()');
+
 const scope = new Function('document', 'ui', `
   ${rowsDecl}
+  const liveCaptions = new Set();
+  let playingTurn = '';
   ${rowFn}
+  ${captionFn}
   ${resetFn}
-  return { row, resetTranscript, rows };
+  return { row, resetTranscript, rows, applyInputTranscript };
 `)(document, ui);
 
 // --- replay ----------------------------------------------------------------
@@ -138,3 +143,37 @@ if (audio.scheduled() !== 1) {
 }
 
 console.log('ok — a new turn\'s audio drops whatever the last one still had scheduled');
+
+// --- the caller's caption ---------------------------------------------------
+//
+// One utterance, as the server sends it: the recognizer mishears a word and
+// corrects it. The standard stream only ever carries settled text, in
+// fragments; the golive stream carries the whole hypothesis each time. A page
+// that listens to both must show the sentence once, and a client that only
+// knows gpt-live-1 must get the same sentence from the fragments alone.
+scope.resetTranscript();
+const utterance = [
+  { type: 'golive.input_transcript.updated', item_id: 'in_1', text: '今天' },
+  { type: 'golive.input_transcript.updated', item_id: 'in_1', text: '今天天七' },
+  { type: 'session.input_transcript.delta', item_id: 'in_1', delta: '今天' },
+  { type: 'golive.input_transcript.updated', item_id: 'in_1', text: '今天天气' },
+  { type: 'session.input_transcript.delta', item_id: 'in_1', delta: '天气' },
+  { type: 'golive.input_transcript.updated', item_id: 'in_1', text: '今天天气怎么样', final: true },
+  { type: 'session.input_transcript.delta', item_id: 'in_1', delta: '怎么样', final: true },
+];
+let caption;
+for (const ev of utterance) caption = scope.applyInputTranscript(ev);
+if (caption.text.textContent !== '今天天气怎么样') {
+  fail(`with both streams the caption reads ${JSON.stringify(caption.text.textContent)}`);
+}
+if (caption.el.className.split(' ').includes('partial')) fail('a final caption is still styled as partial');
+
+scope.resetTranscript();
+for (const ev of utterance) {
+  if (ev.type === 'session.input_transcript.delta') caption = scope.applyInputTranscript(ev);
+}
+if (caption.text.textContent !== '今天天气怎么样') {
+  fail(`from the gpt-live-1 fragments alone the caption reads ${JSON.stringify(caption.text.textContent)}`);
+}
+
+console.log('ok — the caller\'s caption is the sentence once, from either transcript stream');

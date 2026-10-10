@@ -121,6 +121,8 @@
     <option value="queue">queue</option>
   </select></label>
   <button id="cfgtoggle" aria-expanded="false" aria-controls="cfg">Session config</button>
+  <label>Type <input type="text" id="typed" autocomplete="off" disabled
+    placeholder="text instead of speech, Enter to send" style="width:20em"></label>
 </header>
 
 <section id="cfg" class="cfg" hidden>
@@ -222,6 +224,7 @@ const SESSION_RATE = 24000;
 const ui = {
   connect: document.getElementById('connect'),
   mute: document.getElementById('mute'),
+  typed: document.getElementById('typed'),
   hangup: document.getElementById('hangup'),
   testsound: document.getElementById('testsound'),
   sink: document.getElementById('sink'),
@@ -266,6 +269,8 @@ try {
 let ws = null, ctx = null, micStream = null, micNode = null, source = null;
 let muted = false, playhead = 0, outBytes = 0, speakStart = 0, firstAudioAt = 0, turnStart = 0;
 const rows = new Map();
+// Caller utterances whose caption is being driven by the revisable transcript.
+const liveCaptions = new Set();
 
 // Session config lives in localStorage: it is a per-viewer convenience on a
 // page served from your own machine, not shared state. Every access is guarded
@@ -386,6 +391,24 @@ function row(id, who) {
   return r;
 }
 
+// The caller's words arrive two ways. session.input_transcript.delta is the
+// gpt-live-1 stream: fragments to append, never taken back, so it only carries
+// text the recognizer has stopped changing. golive.input_transcript.updated is
+// the recognizer's whole current hypothesis, corrections included. A caption
+// wants the second; once an utterance has one, the fragments for it are
+// redundant and are skipped rather than appended on top.
+function applyInputTranscript(ev) {
+  const r = row(ev.item_id, 'user');
+  if (ev.type === 'golive.input_transcript.updated') {
+    liveCaptions.add(ev.item_id);
+    r.text.textContent = ev.text;
+  } else if (!liveCaptions.has(ev.item_id)) {
+    r.text.textContent += ev.delta || '';
+  }
+  if (ev.final) r.el.classList.remove('partial');
+  return r;
+}
+
 // Item ids are only unique within one session: every socket restarts them at
 // item_1 / bc_1. Keeping the rows across a reconnect therefore appends the new
 // session's greeting to the old one's row, which reads as the assistant
@@ -393,6 +416,7 @@ function row(id, who) {
 function resetTranscript() {
   playingTurn = '';
   rows.clear();
+  liveCaptions.clear();
   while (ui.transcript.firstChild) ui.transcript.removeChild(ui.transcript.firstChild);
 }
 
@@ -551,7 +575,7 @@ async function connect() {
     try { localStorage.setItem('golive_token', t); } catch (e) {}
     if (ui.authtoken && !ui.authtoken.value) ui.authtoken.value = t;
   }
-  ws = new WebSocket(proto + location.host + '/v1/live' + (t ? '?token=' + encodeURIComponent(t) : ''));
+  ws = new WebSocket(proto + location.host + '/v1/live/sessions' + (t ? '?token=' + encodeURIComponent(t) : ''));
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
@@ -603,6 +627,7 @@ async function connect() {
 
   ui.connect.disabled = true;
   ui.mute.disabled = false;
+  ui.typed.disabled = false;
   ui.hangup.disabled = false;
 }
 
@@ -650,24 +675,22 @@ function handle(ev) {
       if (ev.barge_in) log('← barge-in detected', 'ev-cut');
       break;
 
-    case 'session.input_transcript.delta': {
-      const r = row(ev.item_id, 'user');
-      r.text.textContent = ev.replace ? ev.content : r.text.textContent + ev.content;
-      if (ev.final) r.el.classList.remove('partial');
+    case 'session.input_transcript.delta':
+    case 'golive.input_transcript.updated':
+      applyInputTranscript(ev);
       ui.transcript.scrollTop = ui.transcript.scrollHeight;
       break;
-    }
 
     case 'session.output_transcript.delta': {
       const r = row(ev.item_id, 'assistant');
-      r.text.textContent += ev.content;
+      r.text.textContent += ev.delta || '';
       r.el.classList.remove('partial');
       ui.transcript.scrollTop = ui.transcript.scrollHeight;
       break;
     }
 
     case 'session.output_audio.delta': {
-      const bytes = b64ToBytes(ev.audio);
+      const bytes = b64ToBytes(ev.delta || ev.audio || '');
       outBytes += bytes.byteLength;
       ui.stats.out.textContent = (outBytes / 2 / SESSION_RATE).toFixed(1) + 's';
       if (!firstAudioAt && turnStart) {
@@ -708,7 +731,31 @@ function handle(ev) {
       break;
 
     case 'session.delegation.created':
-      log('← delegation ' + ev.delegation.id + ' (' + ev.delegation.reason + ') ' + ev.delegation.transcript);
+      log('← delegation ' + ev.delegation.id + ' → ' + ev.delegation.target +
+        ' (' + ev.delegation.reason + ') ' + (ev.delegation.request || ev.delegation.transcript || ''));
+      break;
+
+    case 'golive.delegation.speculative':
+      log('← speculating on: ' + ev.transcript);
+      break;
+
+    case 'response.event': {
+      // The backend's own stream, nested. Only what an application would act
+      // on is worth a line here: a function it is being asked to run.
+      const inner = ev.event || {};
+      if (inner.type === 'response.output_item.done' && inner.item && inner.item.type === 'function_call') {
+        log('← function call ' + inner.item.name + '(' + inner.item.arguments + ') ' + inner.item.call_id, 'ev-hold');
+      } else if (inner.type === 'response.failed') {
+        log('! backend response failed', 'ev-error');
+      }
+      break;
+    }
+
+    case 'session.usage.updated':
+      if (ev.context_window) {
+        log('← usage ' + ev.usage.seconds.toFixed(1) + 's, context ' +
+          Math.round(ev.context_window.usage_ratio * 100) + '%');
+      }
       break;
 
     case 'golive.turn.metrics':
@@ -724,13 +771,14 @@ function handle(ev) {
       break;
 
     default:
-      if (ev.type !== 'response.event') log('← ' + ev.type);
+      log('← ' + ev.type);
   }
 }
 
 function teardown() {
   ui.connect.disabled = false;
   ui.mute.disabled = true;
+  ui.typed.disabled = true;
   ui.hangup.disabled = true;
   Object.keys(ui.lamps).forEach(k => lamp(k, false));
   if (micNode) { micNode.onaudioprocess = null; micNode.disconnect(); micNode = null; }
@@ -811,6 +859,20 @@ ui.mute.onclick = () => {
   muted = !muted;
   ui.mute.textContent = muted ? 'Unmute' : 'Mute';
   send({ type: muted ? 'session.input_audio.mute' : 'session.input_audio.unmute' });
+};
+// Typed input is two events, as in gpt-live-1: the message, then the request
+// to answer it. The assistant replies out loud, like any other turn.
+ui.typed.onkeydown = (e) => {
+  if (e.key !== 'Enter') return;
+  const text = ui.typed.value.trim();
+  if (!text) return;
+  send({
+    type: 'response.item.create',
+    item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: text }] },
+  });
+  send({ type: 'response.create' });
+  log('→ typed: ' + text);
+  ui.typed.value = '';
 };
 ui.hangup.onclick = () => {
   send({ type: 'session.close', event_id: 'bye' });

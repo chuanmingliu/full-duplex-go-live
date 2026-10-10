@@ -33,6 +33,9 @@ type Registry struct {
 
 	bargeIns atomic.Int64
 
+	specHeld      atomic.Int64
+	specAbandoned atomic.Int64
+
 	histN      atomic.Int64
 	histSumMS  atomic.Int64
 	histCounts []atomic.Int64 // len(latencyBuckets)+1, +Inf last
@@ -106,6 +109,16 @@ func (r *Registry) ProviderError(kind string) { r.bump(&r.provErrs, kind) }
 // BargeIn records an answer cut short by user speech.
 func (r *Registry) BargeIn() { r.bargeIns.Add(1) }
 
+// SpeculationHeld records a turn started on a guess that the final transcript
+// confirmed: the head start was kept.
+func (r *Registry) SpeculationHeld() { r.specHeld.Add(1) }
+
+// SpeculationAbandoned records a turn started on a guess and then given up —
+// the speaker carried on, or the transcript changed. Each one is a backend
+// request paid for and thrown away, so the ratio of this to SpeculationHeld is
+// what tells an operator whether the speculation windows are set too eagerly.
+func (r *Registry) SpeculationAbandoned() { r.specAbandoned.Add(1) }
+
 // SetBuild stamps the process identity onto /metrics.
 func (r *Registry) SetBuild(version, commit string) {
 	r.buildMu.Lock()
@@ -177,6 +190,11 @@ func (r *Registry) WritePrometheus(w io.Writer) {
 	fmt.Fprintf(w, "# HELP golive_barge_ins_total Answers cut short by user speech.\n")
 	fmt.Fprintf(w, "# TYPE golive_barge_ins_total counter\n")
 	fmt.Fprintf(w, "golive_barge_ins_total %d\n", r.bargeIns.Load())
+
+	fmt.Fprintf(w, "# HELP golive_speculations_total Turns started before the caller's turn was confirmed, by outcome.\n")
+	fmt.Fprintf(w, "# TYPE golive_speculations_total counter\n")
+	fmt.Fprintf(w, "golive_speculations_total{outcome=\"held\"} %d\n", r.specHeld.Load())
+	fmt.Fprintf(w, "golive_speculations_total{outcome=\"abandoned\"} %d\n", r.specAbandoned.Load())
 
 	r.buildMu.Lock()
 	ver, commit := r.buildVersion, r.buildCommit

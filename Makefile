@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: all build test race vet fmt run run-mock demo bench ttsprobe dist clean tidy
+.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist clean tidy
 
 all: vet test build
 
@@ -53,6 +53,17 @@ run-prod: build
 run-mock: build
 	$(BIN)/golive -profile configs/mock.json -env /dev/null
 
+## run-sim: mock providers with realistic stage latencies injected, for
+## measuring the engine's own latency work. See configs/sim.env.
+run-sim: build
+	$(BIN)/golive -profile configs/sim.json -env configs/sim.env
+
+## bench-sim: measure a server started with run-sim. Four utterance lengths,
+## because a turn's length decides which path through the engine it takes.
+bench-sim: build
+	$(BIN)/golivebench -a golive-sim=ws://127.0.0.1:8080/v1/live/sessions \
+		-synth-ms 700,1500,2400,3300 -runs 12 -warmup 1 -v -md bench-sim.md -json bench-sim.json
+
 ## demo: drive a full turn, then interrupt it, and save both sides
 demo: build
 	$(BIN)/golivectl -speak-ms 2200 -barge-in-at 1400 -record session.wav
@@ -62,7 +73,7 @@ demo: build
 CASCADE ?= ws://127.0.0.1:8765/v1/realtime
 CLIPS   ?=
 bench: build
-	$(BIN)/golivebench -a golive=ws://127.0.0.1:8080/v1/live -b cascade=$(CASCADE) \
+	$(BIN)/golivebench -a golive=ws://127.0.0.1:8080/v1/live/sessions -b cascade=$(CASCADE) \
 		$(if $(CLIPS),-clips "$(CLIPS)",) -runs 12 -warmup 2 -v -md bench.md -json bench.json
 
 ## ttsprobe: measure time-to-first-audio from the synthesis provider alone,
@@ -85,4 +96,4 @@ dist:
 	@ls -lh $(BIN)
 
 clean:
-	rm -rf $(BIN) *.wav golive.log bench.md bench.json
+	rm -rf $(BIN) *.wav golive.log bench.md bench.json bench-sim.md bench-sim.json

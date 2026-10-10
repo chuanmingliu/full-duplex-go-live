@@ -55,14 +55,20 @@ type reader struct {
 	counts map[string]int
 	errs   []live.ErrorEvent
 	audio  []byte
-	final  string
-	first  string
-	close  string
-	done   chan struct{}
+	// wire is the audio exactly as it was sent, before any decoding.
+	wire  []byte
+	heard strings.Builder
+	final string
+	first string
+	close string
+	// raw keeps every event by type, so a test can check the shape that
+	// actually crossed the wire rather than the Go struct it came from.
+	raw  map[string][]json.RawMessage
+	done chan struct{}
 }
 
 func startReader(conn *websocket.Conn) *reader {
-	r := &reader{counts: map[string]int{}, done: make(chan struct{})}
+	r := &reader{counts: map[string]int{}, raw: map[string][]json.RawMessage{}, done: make(chan struct{})}
 	go func() {
 		defer close(r.done)
 		for {
@@ -79,6 +85,9 @@ func startReader(conn *websocket.Conn) *reader {
 				r.first = env.Type
 			}
 			r.counts[env.Type]++
+			if env.Type != live.ServerOutputAudioDelta || len(r.raw[env.Type]) < 4 {
+				r.raw[env.Type] = append(r.raw[env.Type], append(json.RawMessage(nil), data...))
+			}
 			switch env.Type {
 			case live.ServerError:
 				var ev live.ErrorEvent
@@ -88,14 +97,21 @@ func startReader(conn *websocket.Conn) *reader {
 			case live.ServerOutputAudioDelta:
 				var ev live.OutputAudioDelta
 				if json.Unmarshal(data, &ev) == nil {
-					if pcm, err := base64.StdEncoding.DecodeString(ev.Audio); err == nil {
-						r.audio = append(r.audio, pcm...)
+					if wire, err := base64.StdEncoding.DecodeString(ev.Delta); err == nil {
+						r.wire = append(r.wire, wire...)
+						r.audio = append(r.audio, wire...)
 					}
 				}
 			case live.ServerInputTranscriptDelta:
+				// Appended and never replaced, the way a gpt-live-1 client
+				// reads it.
 				var ev live.TranscriptDelta
-				if json.Unmarshal(data, &ev) == nil && ev.Final {
-					r.final = ev.Content
+				if json.Unmarshal(data, &ev) == nil {
+					r.heard.WriteString(ev.Delta)
+					if ev.Final {
+						r.final = r.heard.String()
+						r.heard.Reset()
+					}
 				}
 			case live.ServerSessionClosed:
 				var ev live.SessionClosedEvent
@@ -107,6 +123,34 @@ func startReader(conn *websocket.Conn) *reader {
 		}
 	}()
 	return r
+}
+
+// events returns every event of one type, as sent.
+func (r *reader) events(kind string) []json.RawMessage {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]json.RawMessage(nil), r.raw[kind]...)
+}
+
+// field decodes one top-level field of the nth event of a type.
+func (r *reader) field(t *testing.T, kind string, n int, name string, into any) bool {
+	t.Helper()
+	evs := r.events(kind)
+	if n >= len(evs) {
+		return false
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(evs[n], &obj); err != nil {
+		t.Fatalf("%s is not a JSON object: %v", kind, err)
+	}
+	raw, ok := obj[name]
+	if !ok {
+		return false
+	}
+	if err := json.Unmarshal(raw, into); err != nil {
+		t.Fatalf("%s.%s has the wrong type: %v (%s)", kind, name, err, raw)
+	}
+	return true
 }
 
 func (r *reader) count(name string) int {
@@ -303,8 +347,8 @@ func TestSessionRefusesImmutableUpdates(t *testing.T) {
 
 	await(t, "an error", 2*time.Second, func() bool { return r.count(live.ServerError) > 0 })
 	ev, _ := r.lastError()
-	if ev.Error.Code != "immutable_field" {
-		t.Errorf("error code is %q, want immutable_field", ev.Error.Code)
+	if ev.Error.Code != "immutable_field_update" {
+		t.Errorf("error code is %q, want immutable_field_update", ev.Error.Code)
 	}
 
 	// A legal update must still be accepted.

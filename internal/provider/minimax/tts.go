@@ -221,12 +221,40 @@ func jsonArrayEnv(key string) []map[string]any {
 	return out
 }
 
+// sampleRates are the rates the T2A endpoint will synthesize at.
+var sampleRates = []int{8000, 16000, 22050, 24000, 32000, 44100}
+
+// supportedRate picks the rate to ask for, given the one the caller wants.
+//
+// The engine asks for the session's own rate so that nothing has to be
+// resampled on the way out. That works for every rate a phone or a browser
+// commonly uses except 48000, which this endpoint does not offer: asked for it,
+// the first sentence of the call fails. The caller resamples from whatever
+// SampleRate reports, so the answer is the highest supported rate that divides
+// the wanted one exactly — 24000 for 48000 — which keeps that resample a clean
+// integer ratio rather than the 44100-to-48000 kind.
+func supportedRate(want int) int {
+	if want <= 0 {
+		return provider.PipelineRate
+	}
+	best := 0
+	for _, r := range sampleRates {
+		if r == want {
+			return want
+		}
+		if want%r == 0 && r > best {
+			best = r
+		}
+	}
+	if best == 0 {
+		return provider.PipelineRate
+	}
+	return best
+}
+
 // Open implements provider.TTS.
 func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
-	rate := opts.SampleRate
-	if rate <= 0 {
-		rate = provider.PipelineRate
-	}
+	rate := supportedRate(opts.SampleRate)
 	voice := opts.Voice
 	if voice == "" {
 		voice = t.VoiceID

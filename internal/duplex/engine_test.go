@@ -24,8 +24,10 @@ type collector struct {
 	mu     sync.Mutex
 	counts map[string]int
 	events []any
-	audio  []byte
-	rate   int
+	// at is when each event was emitted, index for index with events.
+	at    []time.Time
+	audio []byte
+	rate  int
 }
 
 func newCollector(rate int) *collector {
@@ -36,13 +38,16 @@ func (c *collector) emit(event any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = append(c.events, event)
+	c.at = append(c.at, time.Now())
 	switch ev := event.(type) {
 	case live.OutputAudioDelta:
 		c.counts[ev.Type]++
-		if pcm, err := decodeB64(ev.Audio); err == nil {
-			c.audio = append(c.audio, pcm...)
-		}
+		c.audio = append(c.audio, ev.PCM...)
 	case live.TranscriptDelta:
+		c.counts[ev.Type]++
+	case live.InputTranscriptEvent:
+		c.counts[ev.Type]++
+	case live.SpeculativeDelegationEvent:
 		c.counts[ev.Type]++
 	case live.SpeechEvent:
 		c.counts[ev.Type]++
@@ -114,7 +119,7 @@ func (c *collector) outputTranscript(itemID string) string {
 	for _, ev := range c.events {
 		d, ok := ev.(live.TranscriptDelta)
 		if ok && d.Type == live.ServerOutputTranscriptDelta && d.ItemID == itemID {
-			b.WriteString(d.Content)
+			b.WriteString(d.Delta)
 		}
 	}
 	return b.String()
@@ -140,12 +145,36 @@ func (c *collector) inputTranscript() string {
 		if !ok || d.Type != live.ServerInputTranscriptDelta {
 			continue
 		}
-		if d.Replace {
-			b.Reset()
-		}
-		b.WriteString(d.Content)
+		// Append-only, exactly as a gpt-live-1 client would: no fragment is
+		// ever replaced.
+		b.WriteString(d.Delta)
 	}
 	return b.String()
+}
+
+// speculativeHints returns the transcripts speculation started on, in order.
+func (c *collector) speculativeHints() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []string
+	for _, ev := range c.events {
+		if h, ok := ev.(live.SpeculativeDelegationEvent); ok {
+			out = append(out, h.Transcript)
+		}
+	}
+	return out
+}
+
+// eventIndex returns the position of the first event satisfying match, or -1.
+func (c *collector) eventIndex(match func(any) bool) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, ev := range c.events {
+		if match(ev) {
+			return i
+		}
+	}
+	return -1
 }
 
 func decodeB64(s string) ([]byte, error) {
@@ -395,7 +424,7 @@ func TestEngineClientDelegationSpeaksCommentary(t *testing.T) {
 		t.Fatalf("delegation target is %q, want %q", d.Delegation.Target, live.DelegationClient)
 	}
 
-	e.AppendCommentary(d.Delegation.ID, "好的，已经帮你订好了。")
+	e.AppendCommentary(d.Delegation.ID, "好的，已经帮你订好了。", "")
 	waitFor(t, "commentary audio", 4*time.Second, func() bool { return c.audioMS() > 100 })
 }
 
@@ -404,7 +433,7 @@ func TestEngineRejectsUnknownToolResult(t *testing.T) {
 	c := newCollector(cfg.ClientRate)
 	e, _ := newTestEngine(t, cfg, c)
 
-	e.SubmitToolOutput(live.ResponseItem{Type: "function_call_output", CallID: "nope", Output: "{}"})
+	e.SubmitItem(live.ResponseItem{Type: "function_call_output", CallID: "nope", Output: "{}"}, "")
 	waitFor(t, "an error event", 2*time.Second, func() bool {
 		return c.count(live.ServerError) > 0
 	})
@@ -415,7 +444,7 @@ func TestEngineMuteStopsTranscription(t *testing.T) {
 	c := newCollector(cfg.ClientRate)
 	e, _ := newTestEngine(t, cfg, c)
 
-	e.SetMuted(true)
+	e.SetMuted(true, "")
 	time.Sleep(100 * time.Millisecond)
 	speak(e, cfg.ClientRate, 1000)
 	pause(e, cfg.ClientRate, 500)
@@ -424,7 +453,7 @@ func TestEngineMuteStopsTranscription(t *testing.T) {
 		t.Error("a muted session still detected speech")
 	}
 
-	e.SetMuted(false)
+	e.SetMuted(false, "")
 	speak(e, cfg.ClientRate, 1200)
 	pause(e, cfg.ClientRate, 700)
 	waitFor(t, "speech after unmute", 3*time.Second, func() bool {
@@ -1168,7 +1197,7 @@ func TestFillerYieldsToTheAnswerItWasCovering(t *testing.T) {
 	var mu sync.Mutex
 	heard := map[string]int{}
 	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
-		func(id string, pcm []byte) {
+		func(id string, pcm []byte, _ time.Time) {
 			mu.Lock()
 			heard[id] += len(pcm)
 			mu.Unlock()
@@ -1289,7 +1318,7 @@ func TestAnswerOwnsTheFloorUntilItEnds(t *testing.T) {
 	var doneMS int64
 
 	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
-		func(id string, pcm []byte) {
+		func(id string, pcm []byte, _ time.Time) {
 			mu.Lock()
 			heard[id] += len(pcm)
 			mu.Unlock()
@@ -1849,7 +1878,7 @@ func TestAbandonedSegmentIsNotReportedAsSpoken(t *testing.T) {
 	var doneID, doneText string
 
 	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
-		func(id string, pcm []byte) {})
+		func(id string, pcm []byte, _ time.Time) {})
 	p.OnTurnDone(func(id string, ms int64, text string) {
 		mu.Lock()
 		doneID, doneText = id, text

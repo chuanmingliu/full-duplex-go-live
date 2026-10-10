@@ -67,7 +67,7 @@
     "min_silence_ms": 380,
     "speech_pad_ms": 240,
     "max_speech_ms": 30000,
-    "snapshot_ms": 200,
+    "snapshot_ms": 40,
     "noise_floor_db": -60,
     "max_noise_floor_db": -28,
     "speech_margin_db": 10,

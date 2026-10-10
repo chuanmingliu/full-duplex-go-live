@@ -40,6 +40,9 @@ func run() error {
 		outPath    = flag.String("out", "golivectl-out.wav", "where to write the assistant audio")
 		recPath    = flag.String("record", "", "optional stereo recording: input left, output right")
 		rate       = flag.Int("rate", 24000, "session PCM rate (8000, 16000, 24000 or 48000)")
+		format     = flag.String("format", "audio/pcm", "session audio format: audio/pcm, or audio/pcmu / audio/pcma (G.711, always 8000 Hz)")
+		text       = flag.String("text", "", "also send this as typed input (response.item.create + response.create) once the session starts")
+		stored     = flag.Bool("store", false, "ask the server to keep the session (store:true); needs store_dir on the server")
 		speakMS    = flag.Int("speak-ms", 1800, "length of synthetic speech when -in is not given")
 		silenceMS  = flag.Int("silence-ms", 900, "trailing silence that closes the utterance")
 		bargeInAt  = flag.Int("barge-in-at", 0, "ms after the first output audio to interrupt with new speech (0 disables)")
@@ -68,14 +71,24 @@ func run() error {
 	}
 	defer conn.Close()
 
-	c := &client{conn: conn, rate: *rate, verbose: *verbose, firstAudio: make(chan struct{})}
+	codec, err := audio.CodecForMIME(*format)
+	if err != nil {
+		return err
+	}
+	if codec != audio.CodecPCM16 {
+		// A phone line: the law fixes the rate.
+		*rate = audio.RateTelephony
+	}
+
+	c := &client{conn: conn, rate: *rate, codec: codec, verbose: *verbose, firstAudio: make(chan struct{})}
 	go c.readLoop()
 
 	session := live.SessionConfig{
 		Audio: &live.AudioConfig{
-			Format: &live.AudioFormat{Type: "audio/pcm", Rate: *rate},
+			Format: &live.AudioFormat{Type: *format, Rate: *rate},
 		},
 		Delegation: &live.DelegationConfig{Type: *delegation},
+		Store:      *stored,
 		Golive:     &live.GoliveConfig{ASR: *asr, LLM: *llm, TTS: *tts},
 	}
 	if *instr != "" {
@@ -86,6 +99,24 @@ func run() error {
 		Session:  session,
 	}); err != nil {
 		return err
+	}
+
+	if *text != "" {
+		// Typed input goes to the backend the way a spoken turn would, and is
+		// queued until response.create asks for it to be answered.
+		if err := c.send(live.ResponseItemCreateEvent{
+			Envelope: live.Envelope{Type: live.ClientResponseItemCreate, EventID: "item_1"},
+			Item: live.ResponseItem{
+				Type:    "message",
+				Role:    "user",
+				Content: live.TextContent("input_text", *text),
+			},
+		}); err != nil {
+			return err
+		}
+		if err := c.send(live.Envelope{Type: live.ClientResponseCreate, EventID: "create_1"}); err != nil {
+			return err
+		}
 	}
 
 	// Gather the microphone side.
@@ -157,7 +188,9 @@ type client struct {
 	writeMu    sync.Mutex
 	out        []byte
 	transcript strings.Builder
+	row        strings.Builder
 	reply      strings.Builder
+	codec      audio.Codec
 	events     map[string]int
 	firstOnce  sync.Once
 	firstAudio chan struct{}
@@ -189,7 +222,7 @@ func (c *client) streamPaced(pcm []byte) error {
 		<-ticker.C
 		if err := c.send(live.InputAudioAppendEvent{
 			Envelope: live.Envelope{Type: live.ClientInputAudioAppend},
-			Audio:    base64.StdEncoding.EncodeToString(pcm[off:end]),
+			Audio:    base64.StdEncoding.EncodeToString(c.codec.FromPCM16(pcm[off:end])),
 		}); err != nil {
 			return err
 		}
@@ -225,8 +258,9 @@ func (c *client) readLoop() {
 		case live.ServerOutputAudioDelta:
 			var ev live.OutputAudioDelta
 			if json.Unmarshal(data, &ev) == nil {
-				pcm, err := base64.StdEncoding.DecodeString(ev.Audio)
+				wire, err := base64.StdEncoding.DecodeString(ev.Delta)
 				if err == nil {
+					pcm := c.codec.ToPCM16(wire)
 					c.mu.Lock()
 					c.out = append(c.out, pcm...)
 					c.mu.Unlock()
@@ -237,16 +271,21 @@ func (c *client) readLoop() {
 				continue
 			}
 		case live.ServerInputTranscriptDelta:
+			// Append-only, as gpt-live-1 specifies: fragments are concatenated
+			// and nothing is ever taken back.
 			var ev live.TranscriptDelta
 			if json.Unmarshal(data, &ev) == nil {
 				c.mu.Lock()
-				if ev.Replace {
-					c.transcript.Reset()
+				c.transcript.WriteString(ev.Delta)
+				c.row.WriteString(ev.Delta)
+				row := c.row.String()
+				if ev.Final {
+					c.row.Reset()
+					c.transcript.WriteString(" ")
 				}
-				c.transcript.WriteString(ev.Content)
 				c.mu.Unlock()
 				if ev.Final {
-					fmt.Printf("  user: %s\n", ev.Content)
+					fmt.Printf("  user: %s\n", row)
 				}
 				if !c.verbose {
 					continue
@@ -256,9 +295,14 @@ func (c *client) readLoop() {
 			var ev live.TranscriptDelta
 			if json.Unmarshal(data, &ev) == nil {
 				c.mu.Lock()
-				c.reply.WriteString(ev.Content)
+				c.reply.WriteString(ev.Delta)
 				c.mu.Unlock()
 			}
+			if !c.verbose {
+				continue
+			}
+		case live.ExtInputTranscript:
+			// The revisable caption: useful on a screen, noise in a trace.
 			if !c.verbose {
 				continue
 			}

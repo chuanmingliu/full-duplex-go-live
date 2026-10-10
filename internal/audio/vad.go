@@ -100,7 +100,7 @@ func DefaultVADConfig() VADConfig {
 		MinSilenceMS:       380,
 		SpeechPadMS:        240,
 		MaxSpeechMS:        30000,
-		SnapshotMS:         200,
+		SnapshotMS:         40,
 		NoiseFloorDB:       -60,
 		MaxNoiseFloorDB:    -28,
 		SpeechMarginDB:     10,
@@ -188,6 +188,12 @@ type VAD struct {
 	pending      []float32
 	snapshotAcc  []float32
 	sinceSnap    float64
+	// voicedRunMS is how long the open utterance has been continuously voiced
+	// since its last unvoiced frame.
+	voicedRunMS float64
+	// minSilenceMS overrides cfg.MinSilenceMS for the open utterance when
+	// positive. See SetMinSilenceMS.
+	minSilenceMS int
 
 	startMS int64
 	clockMS float64
@@ -262,6 +268,59 @@ func (v *VAD) TrailingSilenceMS() float64 {
 	return v.silenceMS
 }
 
+// VoicedRunMS reports how long the open utterance has been continuously voiced
+// since its last unvoiced frame, and zero when no utterance is open or the
+// current frame is unvoiced.
+//
+// It is the counterpart of TrailingSilenceMS: that one says the speaker has
+// paused, this one says they have started again. One voiced frame is not
+// evidence of that — a click reads as voiced — so a caller that acts on a
+// resumption should ask for a few frames' worth.
+func (v *VAD) VoicedRunMS() float64 {
+	if !v.open {
+		return 0
+	}
+	return v.voicedRunMS
+}
+
+// CandidateMS reports how much voiced audio the detector is holding as a
+// possible utterance that has not been confirmed yet, and zero when there is
+// none.
+//
+// An utterance is only declared after MinSpeechMS of it, which is a fifth of a
+// second in which the engine already knows something is probably coming. That
+// is long enough to dial a recognizer.
+func (v *VAD) CandidateMS() float64 {
+	if v.open {
+		return 0
+	}
+	return v.pendingMS
+}
+
+// SetMinSilenceMS overrides how much trailing silence closes the utterance that
+// is open now. Zero or less restores the configured value, and so does the end
+// of the utterance: the override never outlives the turn it was set for.
+//
+// The fixed threshold is the same for "what time is it" and for "I wanted to
+// ask about, um". A caller who knows more than the detector does — the words so
+// far — can use this to wait longer for the second without waiting longer for
+// the first.
+func (v *VAD) SetMinSilenceMS(ms int) {
+	if ms <= 0 {
+		v.minSilenceMS = 0
+		return
+	}
+	v.minSilenceMS = ms
+}
+
+// MinSilenceMS is the trailing silence that currently closes an utterance.
+func (v *VAD) MinSilenceMS() int {
+	if v.minSilenceMS > 0 {
+		return v.minSilenceMS
+	}
+	return v.cfg.MinSilenceMS
+}
+
 // Reset drops any open utterance without emitting it.
 func (v *VAD) Reset() {
 	v.open = false
@@ -274,6 +333,8 @@ func (v *VAD) Reset() {
 	v.pendingGapMS = 0
 	v.silenceMS = 0
 	v.sinceSnap = 0
+	v.voicedRunMS = 0
+	v.minSilenceMS = 0
 }
 
 func (v *VAD) thresholds() (marginDB float64, minSpeechMS int) {
@@ -381,7 +442,16 @@ func (v *VAD) Push(frame []float32) Decision {
 }
 
 func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int) Decision {
-	v.pushPreroll(frame)
+	// A frame lives in exactly one place: the pre-roll ring, or the candidate.
+	//
+	// It used to go into both. Every frame was pushed to the ring first and the
+	// voiced ones were then appended to the candidate as well, so when the
+	// candidate was promoted the utterance was "the last 240 ms" followed by
+	// "the candidate" — and with a 200 ms minimum those are nearly the same
+	// audio. The recognizer was handed the first fifth of a second of every
+	// utterance twice, back to back, with 40 ms of real padding in front
+	// instead of 240. The snapshot test could not see it, because the snapshots
+	// faithfully reproduced the doubled utterance.
 	if !voiced {
 		// Speech is not continuously voiced — stops, unvoiced consonants and
 		// the troughs between syllables all read as silence at frame scale. So
@@ -392,12 +462,18 @@ func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int) Decision
 		if v.pendingMS > 0 {
 			v.pendingGapMS += v.frameMS
 			if v.pendingGapMS > float64(v.cfg.GapToleranceMS) {
+				// Not speech after all. Its audio is still the most recent
+				// audio there is, so it goes back to being pre-roll.
+				v.spillPendingToPreroll()
 				v.pendingMS = 0
 				v.pendingGapMS = 0
 				v.pending = nil
+				v.pushPreroll(frame)
 			} else {
 				v.pending = append(v.pending, frame...)
 			}
+		} else {
+			v.pushPreroll(frame)
 		}
 		return Decision{Kind: DecisionNone}
 	}
@@ -421,8 +497,11 @@ func (v *VAD) pushClosed(frame []float32, voiced bool, minSpeechMS int) Decision
 	v.pendingGapMS = 0
 	v.snapshotAcc = nil
 	v.sinceSnap = 0
-	padMS := float64(v.prerollLen) * v.frameMS
-	v.startMS = int64(math.Max(0, v.clockMS-v.activeMS-padMS))
+	v.voicedRunMS = v.activeMS
+	// Measured from the audio actually handed out, which includes the pad and
+	// any tolerated gaps inside the candidate, not only its voiced frames.
+	heldMS := float64(len(v.utterance)) / float64(v.cfg.SampleRate) * 1000
+	v.startMS = int64(math.Max(0, v.clockMS-heldMS))
 	v.clearPreroll()
 
 	// The opening snapshot is everything accumulated so far: the pre-roll pad
@@ -448,12 +527,14 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 	if voiced {
 		v.activeMS += v.frameMS
 		v.silenceMS = 0
+		v.voicedRunMS += v.frameMS
 	} else {
 		v.silenceMS += v.frameMS
+		v.voicedRunMS = 0
 	}
 
 	totalMS := float64(len(v.utterance)) / float64(v.cfg.SampleRate) * 1000
-	closing := v.silenceMS >= float64(v.cfg.MinSilenceMS) || totalMS >= float64(v.cfg.MaxSpeechMS)
+	closing := v.silenceMS >= float64(v.MinSilenceMS()) || totalMS >= float64(v.cfg.MaxSpeechMS)
 
 	if closing {
 		utterance := v.utterance
@@ -497,6 +578,14 @@ func (v *VAD) pushPreroll(frame []float32) {
 	v.prerollPos = (v.prerollPos + 1) % v.prerollCap
 	if v.prerollLen < v.prerollCap {
 		v.prerollLen++
+	}
+}
+
+// spillPendingToPreroll returns a discarded candidate's frames to the ring, in
+// order, so the pre-roll stays "the audio just before now" with no hole in it.
+func (v *VAD) spillPendingToPreroll() {
+	for off := 0; off+v.frameSamples <= len(v.pending); off += v.frameSamples {
+		v.pushPreroll(v.pending[off : off+v.frameSamples])
 	}
 }
 

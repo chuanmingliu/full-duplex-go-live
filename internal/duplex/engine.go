@@ -26,7 +26,6 @@ package duplex
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -39,6 +38,7 @@ import (
 
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
+	"github.com/chuanmingliu/golive/internal/endpoint"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
@@ -68,16 +68,38 @@ type Options struct {
 	Voice        string
 	Language     string
 	// Delegation is "client" or "responses".
-	Delegation  string
-	Backchannel bool
-	Speculative bool
-	History     []provider.Message
+	Delegation string
+	// ClientDelegation is "always" or "auto"; it only matters in client mode.
+	// Empty takes the profile's duplex.client_delegation.
+	ClientDelegation string
+	Backchannel      bool
+	Speculative      bool
+	History          []provider.Message
 	// Greeting is spoken once the session is live, unprompted.
 	Greeting string
 	// OnNewQuery overrides the profile's interruption policy for this session.
 	OnNewQuery string
-	// Tools are forwarded to the backend in responses mode.
+	// Tools are forwarded to the backend in responses mode, in chat-completions
+	// form. It is shorthand for Backend.Tools and is used when that is unset.
 	Tools []json.RawMessage
+	// Backend carries the session's delegation.responses settings.
+	Backend BackendOptions
+}
+
+// BackendOptions is delegation.responses, as the engine uses it: already
+// translated into what the configured provider takes.
+type BackendOptions struct {
+	// Model overrides the profile's backend_model when non-empty.
+	Model string
+	// Instructions are the backend's own: business rules and tool workflows,
+	// as opposed to the conversational style in session.instructions.
+	Instructions string
+	// Tools are function definitions in chat-completions form.
+	Tools             []json.RawMessage
+	ToolChoice        any
+	ParallelToolCalls *bool
+	// MaxOutputTokens overrides the profile's max_output_tokens when positive.
+	MaxOutputTokens int
 }
 
 // Engine is one session's duplex orchestrator.
@@ -99,7 +121,22 @@ type Engine struct {
 
 	audioCh chan []byte
 	asrCh   chan asrEvent
-	ctrl    chan func()
+
+	// Work handed to the loop goroutine. A queue rather than a channel: post
+	// is called from the loop itself — an interruption reports its truncation
+	// back through here — and a full channel would have the loop waiting for
+	// itself to make room.
+	ctrlMu  sync.Mutex
+	ctrlQ   []func()
+	ctrlSig chan struct{}
+	// loopDone closes when the loop goroutine has exited, after which its
+	// state can be read from anywhere.
+	loopDone chan struct{}
+
+	// backendPending counts backend requests that have been started and have
+	// not yet produced a speech pipe: the gap in which an answer is certainly
+	// coming and nothing else shows it.
+	backendPending atomic.Int32
 
 	// --- loop-goroutine state (no locking) ---
 	muted       bool
@@ -109,11 +146,27 @@ type Engine struct {
 	speechEndMS int64
 	asrRun      *asrRun
 	asrSeq      uint64
-	watch       *StabilityWatch
-	specTurn    *Turn
-	bcSet       *PhraseSet
-	echoWarned  bool
-	hold        *floorHold
+	// asrStandby is a recognizer connection dialled on the first suspicion of
+	// speech, waiting to be adopted by the utterance if there turns out to be
+	// one. See maybePredialASR.
+	asrStandby *lazyASR
+	watch      *StabilityWatch
+	specTurn   *Turn
+	// patience is the silence threshold currently imposed on the detector, or
+	// zero for the configured one. See applyPatience.
+	patience int
+	// classText and classVal memoize the endpoint classification, which is
+	// asked for on every audio frame of a pause and changes only with the text.
+	classText string
+	classVal  endpoint.Class
+	// lastCommitted is the most recent confirmed turn that carried the caller's
+	// words. If it is superseded before it is answered, its words still belong
+	// in the conversation. See ensureUserRecorded.
+	lastCommitted *Turn
+	recordedUser  map[string]bool
+	bcSet         *PhraseSet
+	echoWarned    bool
+	hold          *floorHold
 	// turnBeforeUtterance is whatever was already being said when the current
 	// utterance opened. It is not a candidate for this utterance's origin.
 	turnBeforeUtterance *Turn
@@ -138,13 +191,36 @@ type Engine struct {
 	ttfa rollingMS
 	// specWhy records why the last speculation check declined, so a turn that
 	// ends up waiting for the final transcript can say what stopped it.
-	specWhy     string
-	lastState   live.ChannelStateEvent
-	pendingTool map[string]pendingCall
-	waitingTool bool
-	tools       []json.RawMessage
+	specWhy   string
+	lastState live.ChannelStateEvent
 
+	// --- delegation state, also loop-goroutine only; see think.go ---
+	backend       BackendOptions
 	backendCancel context.CancelFunc
+	respSeq       int
+	// pending holds backend responses that ended in function calls and are
+	// waiting for the application's results, by delegation id.
+	pending      map[string]*pendingResponse
+	pendingOrder []string
+	callIndex    map[string]string
+	// continuations are pending responses whose results are all in, waiting
+	// for a free floor to be resumed.
+	continuations []*pendingResponse
+	// typed is text the user typed rather than spoke, queued by
+	// response.item.create until response.create starts it.
+	typed []string
+	// commentary is text an application asked to have spoken, waiting for the
+	// caller to stop talking and the floor to be free.
+	commentary []queuedCommentary
+	// appendedChars is how much session.instructions.append has added.
+	appendedChars int
+	// standbyRetryAt is the earliest a recognizer may be dialled on suspicion
+	// again, after one such dial failed.
+	standbyRetryAt time.Time
+	// delegations are the ids announced to the client and still answerable.
+	delegations     map[string]bool
+	delegationOrder []string
+	lastWarm        time.Time
 
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
@@ -154,11 +230,18 @@ type Engine struct {
 	ttsStream provider.TTSStream
 
 	latencies []int64
+	// specHeld and specAbandoned count this session's guesses by outcome, for
+	// the summary at close. Loop goroutine only.
+	specHeld      int
+	specAbandoned int
 
-	inputMS  atomic.Int64
-	outputMS atomic.Int64
-	inTok    atomic.Int64
-	outTok   atomic.Int64
+	inputMS   atomic.Int64
+	outputMS  atomic.Int64
+	inTok     atomic.Int64
+	outTok    atomic.Int64
+	cachedTok atomic.Int64
+	// ctxRatio is math.Float64bits of how full the conversational context is.
+	ctxRatio atomic.Uint64
 	startAt  time.Time
 
 	closeOnce sync.Once
@@ -179,11 +262,24 @@ type asrRun struct {
 	lastText string
 	openedAt time.Time
 	sendDone bool
-}
+	// sendDoneAt is when the utterance was closed and a final asked for.
+	sendDoneAt time.Time
+	// ended is set once the stream has closed its results, final or not.
+	ended bool
+	// finalSeen is set once the utterance has been concluded, by the
+	// recognizer's final transcript or by giving up on one.
+	finalSeen bool
 
-type pendingCall struct {
-	turn *Turn
-	call provider.ToolCall
+	// prevHyp is the hypothesis before lastText; committed is how much of the
+	// utterance has gone out on the append-only transcript; shown is the last
+	// whole hypothesis sent on the revisable one. See emitInputTranscript.
+	prevHyp   string
+	committed string
+	shown     string
+	// held marks that transcript events for this utterance were kept back
+	// while a floor hold was undecided, so the first one after it must go out
+	// even if the text has not changed since.
+	held bool
 }
 
 // New builds an engine. Call Start before pushing audio.
@@ -196,6 +292,12 @@ func New(opts Options, deps Deps) *Engine {
 	}
 	if opts.Delegation == "" {
 		opts.Delegation = live.DelegationResponses
+	}
+	if opts.ClientDelegation == "" {
+		opts.ClientDelegation = opts.Cfg.Duplex.ClientDelegation
+	}
+	if opts.Backend.Tools == nil {
+		opts.Backend.Tools = opts.Tools
 	}
 
 	vcfg := audio.VADConfig{
@@ -217,24 +319,28 @@ func New(opts Options, deps Deps) *Engine {
 	vad := audio.NewVAD(vcfg)
 
 	e := &Engine{
-		opts:    opts,
-		deps:    deps,
-		log:     deps.Log.With("session", opts.SessionID),
-		vad:     vad,
-		framer:  audio.NewFramer(vad.FrameBytes()),
-		audioCh: make(chan []byte, 64),
-		asrCh:   make(chan asrEvent, 64),
-		ctrl:    make(chan func(), 32),
-		history: append([]provider.Message(nil), opts.History...),
-		instr:   opts.Instructions,
+		opts:     opts,
+		deps:     deps,
+		log:      deps.Log.With("session", opts.SessionID),
+		vad:      vad,
+		framer:   audio.NewFramer(vad.FrameBytes()),
+		audioCh:  make(chan []byte, 64),
+		asrCh:    make(chan asrEvent, 64),
+		ctrlSig:  make(chan struct{}, 1),
+		loopDone: make(chan struct{}),
+		history:  append([]provider.Message(nil), opts.History...),
+		instr:    opts.Instructions,
 		watch: NewStabilityWatch(
 			time.Duration(opts.Cfg.Duplex.SpeculativeStableMS)*time.Millisecond,
 			opts.Cfg.Duplex.SpeculativeMinChars,
 		),
-		bcSet:       NewPhraseSet(opts.Cfg.Duplex.UserBackchannelPhrases),
-		pendingTool: map[string]pendingCall{},
-		tools:       append([]json.RawMessage(nil), opts.Tools...),
-		startAt:     time.Now(),
+		bcSet:        NewPhraseSet(opts.Cfg.Duplex.UserBackchannelPhrases),
+		backend:      opts.Backend,
+		pending:      map[string]*pendingResponse{},
+		callIndex:    map[string]string{},
+		delegations:  map[string]bool{},
+		recordedUser: map[string]bool{},
+		startAt:      time.Now(),
 	}
 	e.tracker = NewTracker(&e.gen)
 	e.player = NewPlayer(PlayerConfig{
@@ -246,6 +352,8 @@ func New(opts Options, deps Deps) *Engine {
 	e.player.OnSpeaking(e.onSpeakingChanged)
 	e.player.OnTruncate(e.onTruncated)
 	e.player.OnTurnDone(e.onTurnDone)
+	e.player.OnSegment(e.onSegmentHeard)
+	e.noteContext()
 	return e
 }
 
@@ -340,9 +448,11 @@ func (e *Engine) Greet() {
 		// truncated honestly if it is, and it enters conversation history so
 		// the backend knows what was already said.
 		turn := e.tracker.Begin("", false)
+		e.commitTurn(turn)
 		e.log.Debug("speak: greeting", "turn", turn.ID, "text", text)
-		e.emitOutputTranscript(turn, text)
-		pipe := e.newSpeechPipe(turn)
+		// Cacheable: it is the same sentence on every call, and it is the
+		// first thing a caller hears. See PhraseCache.
+		pipe := e.newSpeechPipe(turn, true)
 		pipe.Push(text)
 		pipe.Close()
 		turn.AppendResponse(text)
@@ -374,148 +484,75 @@ func (e *Engine) PushAudio(pcm []byte) {
 	}
 }
 
-// SetMuted stops or resumes consumption of client audio. Muting does not tear
-// down the listen channel, so unmuting is instantaneous.
-func (e *Engine) SetMuted(muted bool) {
+// SetMuted stops or resumes consumption of client audio, and acknowledges the
+// command that asked. Muting does not tear down the listen channel, so
+// unmuting is instantaneous; it does not stop the assistant speaking, and it
+// does not cancel backend work.
+func (e *Engine) SetMuted(muted bool, clientEventID string) {
 	e.post(func() {
 		e.muted = muted
 		if muted {
+			// A guess made on an utterance that will now never finish can
+			// never be confirmed either.
+			if e.liveSpeculation() != nil {
+				e.abandonSpeculation("the microphone was muted mid-utterance")
+			}
 			e.closeASR(true)
+			e.closeStandby()
 			e.vad.Reset()
 			e.userOpen = false
+			e.patience = 0
+			e.hold = nil
 		}
 		e.publishState()
-	})
-}
-
-// AppendInstructions adds trusted system-level guidance mid-session.
-func (e *Engine) AppendInstructions(content string) {
-	if strings.TrimSpace(content) == "" {
-		return
-	}
-	e.instrMu.Lock()
-	if e.instr == "" {
-		e.instr = content
-	} else {
-		e.instr += "\n" + content
-	}
-	e.instrMu.Unlock()
-	e.deps.Emit(live.AckEvent{Envelope: live.Envelope{Type: live.ServerInstructionsAppended}})
-}
-
-// AppendThinking records backend context that must inform the conversation but
-// must not be spoken. This is the quiet half of client delegation: progress an
-// application knows about, injected without taking the floor.
-func (e *Engine) AppendThinking(delegationID, content string) {
-	if strings.TrimSpace(content) == "" {
-		return
-	}
-	e.post(func() {
-		e.history = append(e.history, provider.Message{
-			Role:    provider.RoleSystem,
-			Content: "[backend] " + content,
+		kind := live.ServerInputAudioUnmuted
+		if muted {
+			kind = live.ServerInputAudioMuted
+		}
+		e.deps.Emit(live.AckEvent{
+			Envelope:      live.Envelope{Type: kind},
+			ClientEventID: clientEventID,
 		})
-		e.trimHistory()
-	})
-	e.deps.Emit(live.AckEvent{
-		Envelope:     live.Envelope{Type: live.ServerThinkingAppended},
-		DelegationID: delegationID,
 	})
 }
 
-// AppendCommentary hands the engine text to speak. In client-delegation mode
-// this is how an application's answer reaches the user.
-func (e *Engine) AppendCommentary(delegationID, content string) {
-	if strings.TrimSpace(content) == "" {
-		return
-	}
-	e.post(func() {
-		turn := e.tracker.Current()
-		if turn == nil || !e.tracker.IsCurrent(turn) {
-			// Unsolicited commentary (a push notification, say) still deserves
-			// a turn of its own so truncation accounting works.
-			turn = e.tracker.Begin("", false)
-		}
-		e.emitOutputTranscript(turn, content)
-		pipe := e.newSpeechPipe(turn)
-		pipe.Push(content)
-		pipe.Close()
-		turn.AppendResponse(content)
-	})
-	e.deps.Emit(live.AckEvent{
-		Envelope:     live.Envelope{Type: live.ServerCommentaryAppended},
-		DelegationID: delegationID,
-	})
-}
-
-// SubmitToolOutput accepts a function_call_output from the client.
-func (e *Engine) SubmitToolOutput(item live.ResponseItem) {
-	e.post(func() {
-		pending, ok := e.pendingTool[item.CallID]
-		if !ok {
-			e.deps.Emit(live.NewError("invalid_request_error", "unknown_call_id",
-				fmt.Sprintf("no pending tool call with call_id %q", item.CallID), ""))
-			return
-		}
-		delete(e.pendingTool, item.CallID)
-		e.history = append(e.history, provider.Message{
-			Role:       provider.RoleTool,
-			Name:       pending.call.Name,
-			ToolCallID: item.CallID,
-			Content:    item.Output,
-		})
-		e.trimHistory()
-	})
-}
-
-// ContinueResponse resumes delegated backend work after tool results landed.
-func (e *Engine) ContinueResponse(delegationID string) {
-	e.post(func() {
-		turn := e.tracker.Current()
-		if turn == nil || !e.tracker.IsCurrent(turn) {
-			return
-		}
-		if !e.waitingTool {
-			return
-		}
-		e.waitingTool = false
-		if e.backendCancel != nil {
-			e.backendCancel()
-		}
-		ctx, cancel := context.WithCancel(e.ctx)
-		e.backendCancel = cancel
-		tools := append([]json.RawMessage(nil), e.tools...)
-		go e.runBackend(ctx, turn, e.snapshotMessages(turn), tools)
-	})
-}
-
-// Usage reports cumulative session cost drivers.
-func (e *Engine) Usage() live.UsageBody {
-	in := float64(e.inputMS.Load()) / 1000
-	out := float64(e.outputMS.Load()) / 1000
-	return live.UsageBody{
-		VoiceDurationSeconds: time.Since(e.startAt).Seconds(),
-		InputAudioSeconds:    in,
-		OutputAudioSeconds:   out,
-		BackendInputTokens:   int(e.inTok.Load()),
-		BackendOutputTokens:  int(e.outTok.Load()),
-	}
-}
-
-// post runs f on the engine loop goroutine.
+// post runs f on the engine loop goroutine, after everything posted before
+// it. It never blocks, so it is safe to call from the loop itself.
 func (e *Engine) post(f func()) {
+	e.ctrlMu.Lock()
+	e.ctrlQ = append(e.ctrlQ, f)
+	e.ctrlMu.Unlock()
 	select {
-	case e.ctrl <- f:
-	case <-e.ctx.Done():
+	case e.ctrlSig <- struct{}{}:
+	default:
+	}
+}
+
+// runPosted runs what has been posted, in order, including anything posted
+// while it runs.
+func (e *Engine) runPosted() {
+	for e.ctx.Err() == nil {
+		e.ctrlMu.Lock()
+		batch := e.ctrlQ
+		e.ctrlQ = nil
+		e.ctrlMu.Unlock()
+		if len(batch) == 0 {
+			return
+		}
+		for _, f := range batch {
+			f()
+		}
 	}
 }
 
 // --- main loop ---
 
 func (e *Engine) loop() {
+	defer close(e.loopDone)
 	tick := time.NewTicker(120 * time.Millisecond)
 	defer tick.Stop()
 	defer e.closeASR(true)
+	defer e.closeStandby()
 
 	for {
 		select {
@@ -525,8 +562,8 @@ func (e *Engine) loop() {
 			e.onAudio(pcm)
 		case ev := <-e.asrCh:
 			e.onASREvent(ev)
-		case f := <-e.ctrl:
-			f()
+		case <-e.ctrlSig:
+			e.runPosted()
 		case <-tick.C:
 			e.onTick()
 		}
@@ -557,17 +594,30 @@ func (e *Engine) onAudio(pcm []byte) {
 	// applies to a hold that has run out — every millisecond late is a
 	// millisecond spent talking over someone.
 	e.expireHold()
+	e.maybePredialASR()
+	e.applyPatience()
 	e.maybeSpeculate()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {
 	switch d.Kind {
 	case audio.DecisionStarted:
+		// A guess still unconfirmed here belongs to the utterance before this
+		// one — a new utterance cannot open inside the pause of an old one — and
+		// that utterance did end; only its final transcript is outstanding, and
+		// opening the recognizer for this one is about to discard it. The
+		// caller said those words, so the turn stands: confirm it, and let the
+		// floor logic below decide what becomes of its answer.
+		if spec := e.liveSpeculation(); spec != nil {
+			e.tracker.Commit(spec.ID, spec.Revision)
+			e.commitTurn(spec)
+		}
 		e.userOpen = true
 		e.userSince = time.Now()
 		e.watch.Reset()
 		e.specTurn = nil
 		e.specWhy = ""
+		e.patience = 0
 		// Remembered so the utterance's speech-end origin is not applied to
 		// whatever was already being said when it began.
 		e.turnBeforeUtterance = e.tracker.Current()
@@ -593,22 +643,22 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// through — which matters most after an idle gap long enough for the
 		// synthesis task to have been dropped at the far end.
 		e.prewarm("utterance opened")
+		e.maybeWarmPrefix()
 		e.openASR(d.StartMS)
 		e.writeASR(d.Snapshot)
 		e.publishState()
 
 	case audio.DecisionSpeaking:
+		// Not logged: at a 40 ms cadence this is 25 lines a second, and all
+		// they would say is that someone is talking.
 		e.writeASR(d.Snapshot)
 		if e.asrRun != nil {
 			e.asrRun.endMS = d.EndMS
 		}
-		e.log.Debug("listen: snapshot",
-			"samples", len(d.Snapshot),
-			"active_ms", int(d.ActiveMS),
-			"end_ms", d.EndMS)
 
 	case audio.DecisionStopped:
 		e.userOpen = false
+		e.patience = 0
 		if e.hold != nil {
 			// The final transcript is now imminent — closing the recognizer is
 			// what asks for it. Do not time out on the last leg.
@@ -645,6 +695,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			BargeIn:  d.BargeIn,
 		})
 		e.closeASR(false)
+		e.speculateAtClose()
 		e.publishState()
 	}
 }
@@ -652,505 +703,20 @@ func (e *Engine) handleDecision(d audio.Decision) {
 func (e *Engine) onTick() {
 	e.publishState()
 	e.expireHold()
+	e.expireStandby()
+	e.expireFinalWait()
 	e.observeTTFA()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
-
-	if max := e.opts.Cfg.Duplex.SessionMaxSeconds; max > 0 && time.Since(e.startAt) > time.Duration(max)*time.Second {
-		e.deps.Emit(live.SessionClosedEvent{
-			Envelope: live.Envelope{Type: live.ServerSessionClosed},
-			Reason:   live.CloseExpired,
-		})
-		e.cancel()
-	}
+	e.drainDeferred()
+	// The session's lifetime is the session's business: the server bounds it
+	// with a deadline on the context it hands this engine, and says so in
+	// session.closed. The engine used to announce the expiry itself and then
+	// stop, which produced two closing events — this one, and the server's a
+	// moment later with a different reason.
 }
 
 // --- listen channel: ASR ---
-
-func (e *Engine) openASR(startMS int64) {
-	e.closeASR(true)
-	if e.deps.ASR == nil {
-		return
-	}
-	stream, err := e.deps.ASR.Open(e.ctx, provider.ASROptions{
-		SampleRate: provider.PipelineRate,
-		Language:   e.opts.Language,
-		Interim:    true,
-	})
-	if err != nil && e.ctx.Err() == nil {
-		metrics.Default().Retry("asr")
-		e.log.Warn("asr open retrying", "err", err)
-		time.Sleep(150 * time.Millisecond)
-		stream, err = e.deps.ASR.Open(e.ctx, provider.ASROptions{
-			SampleRate: provider.PipelineRate,
-			Language:   e.opts.Language,
-			Interim:    true,
-		})
-	}
-	if err != nil {
-		metrics.Default().ProviderError("asr")
-		e.log.Error("asr open failed", "err", err)
-		e.deps.Emit(live.NewError("server_error", "asr_unavailable", err.Error(), ""))
-		return
-	}
-	e.asrSeq++
-	run := &asrRun{
-		id:       e.asrSeq,
-		stream:   stream,
-		itemID:   fmt.Sprintf("user_%d", e.asrSeq),
-		startMS:  startMS,
-		endMS:    startMS,
-		openedAt: time.Now(),
-	}
-	e.asrRun = run
-	e.log.Debug("asr: stream opened",
-		"provider", e.deps.ASR.Name(),
-		"run", run.id,
-		"item", run.itemID,
-		"start_ms", startMS)
-
-	go func(id uint64, s provider.ASRStream) {
-		for res := range s.Results() {
-			select {
-			case e.asrCh <- asrEvent{run: id, res: res}:
-			case <-e.ctx.Done():
-				return
-			}
-		}
-		select {
-		case e.asrCh <- asrEvent{run: id, done: true}:
-		case <-e.ctx.Done():
-		}
-	}(run.id, stream)
-}
-
-func (e *Engine) writeASR(samples []float32) {
-	if e.asrRun == nil || len(samples) == 0 || e.asrRun.sendDone {
-		return
-	}
-	if err := e.asrRun.stream.Write(audio.EncodePCM16(samples)); err != nil {
-		e.log.Warn("asr write failed", "err", err)
-	}
-}
-
-// closeASR ends the current recognition. hard tears the stream down without
-// waiting for a final result; the soft form asks for one.
-func (e *Engine) closeASR(hard bool) {
-	run := e.asrRun
-	if run == nil {
-		return
-	}
-	if hard {
-		e.asrRun = nil
-		_ = run.stream.Close()
-		return
-	}
-	if !run.sendDone {
-		run.sendDone = true
-		if err := run.stream.CloseSend(); err != nil {
-			e.log.Warn("asr close-send failed", "err", err)
-		}
-	}
-}
-
-func (e *Engine) onASREvent(ev asrEvent) {
-	run := e.asrRun
-	if run == nil || run.id != ev.run {
-		return // a stale stream's result; the utterance it belongs to is gone
-	}
-	if ev.done {
-		// The recognizer finished the utterance without ever producing a word.
-		// Same conclusion as an empty final, reached by a provider that closes
-		// rather than sending one: there was no speech, so the assistant keeps
-		// the floor instead of waiting for the hold to time out and yielding to
-		// a noise.
-		if e.hold != nil && strings.TrimSpace(run.lastText) == "" {
-			e.log.Debug("listen: the recognizer ended with no words; keeping the floor",
-				"held_ms", time.Since(e.hold.started).Milliseconds())
-			e.hold = nil
-		}
-		if run.sendDone {
-			e.asrRun = nil
-		}
-		return
-	}
-	if ev.res.Err != nil {
-		e.log.Warn("asr error", "err", ev.res.Err)
-		e.deps.Emit(live.NewError("server_error", "asr_error", ev.res.Err.Error(), ""))
-		return
-	}
-
-	text := strings.TrimSpace(ev.res.Text)
-	if text == "" && !ev.res.Final {
-		return
-	}
-	if ev.res.Final {
-		e.log.Debug("asr: final",
-			"run", run.id,
-			"text", text,
-			"elapsed_ms", time.Since(run.openedAt).Milliseconds())
-	} else if text != run.lastText {
-		e.log.Debug("asr: partial", "run", run.id, "text", text)
-	}
-	// Before anything else: if an interruption is being held pending the
-	// transcript, this is the evidence it was waiting for.
-	if e.hold != nil && e.judgeHold(text, ev.res.Final) {
-		run.lastText = text
-		return
-	}
-
-	e.emitInputTranscript(run, text, ev.res.Final)
-
-	if ev.res.Final {
-		run.lastText = text
-		e.onFinalTranscript(run, text)
-		return
-	}
-	run.lastText = text
-	// Deliberately no speculation check here. Whether to guess depends on
-	// whether the speaker has paused, which is an acoustic question, so it is
-	// answered on the audio path in maybeSpeculate.
-}
-
-func (e *Engine) emitInputTranscript(run *asrRun, text string, final bool) {
-	if text == run.lastText && !final {
-		return
-	}
-	delta := live.TranscriptDelta{
-		Envelope: live.Envelope{Type: live.ServerInputTranscriptDelta},
-		ItemID:   run.itemID,
-		StartMS:  run.startMS,
-		EndMS:    run.endMS,
-		Final:    final,
-	}
-	// Extending hypotheses stream as fragments; corrections and the final
-	// result carry the whole row.
-	if !final && strings.HasPrefix(text, run.lastText) && run.lastText != "" {
-		delta.Content = strings.TrimPrefix(text, run.lastText)
-	} else {
-		delta.Content = text
-		delta.Replace = true
-	}
-	if delta.Content == "" && !final {
-		return
-	}
-	e.deps.Emit(delta)
-}
-
-// maybeSpeculate decides whether to start the backend before the VAD has
-// finished waiting out the end of the turn.
-//
-// It runs on the audio path, once per frame, because the trigger is acoustic:
-// the speaker has gone quiet for a while but not yet long enough for
-// vad.min_silence_ms to close the utterance. That window — the difference
-// between speculative_stable_ms and min_silence_ms, plus however long the final
-// transcript takes to arrive — is the head start speculation buys, and it is
-// free whenever the guess holds.
-//
-// The earlier version triggered on a transcript that had stopped changing,
-// which sounds equivalent and is not. A recognizer running a few hundred
-// milliseconds behind the speaker also stops changing, so the watch fired
-// mid-utterance on a prefix, and almost every speculative turn was immediately
-// revised: the guess was not merely wrong, it was wrong by construction. Tying
-// the clock to a pause the microphone can actually hear fixes that, and
-// Unsettle restarts it the instant the speaker resumes.
-func (e *Engine) maybeSpeculate() {
-	if !e.opts.Speculative || e.waitingTool || e.muted {
-		return
-	}
-	run := e.asrRun
-	if run == nil || run.lastText == "" {
-		e.specWhy = "no partial transcript yet"
-		return
-	}
-	if e.watch.Fired() {
-		return
-	}
-	// Tested against the partial itself, not against whether a floor hold is
-	// pending.
-	//
-	// The two are different questions — the hold decides whether to yield the
-	// floor, speculation decides whether to start the backend early — and
-	// keying this on the hold conflated them. In practice the hold releases on
-	// the first partial that cannot become an acknowledgement, so by the time
-	// the text is a question the hold is already gone and the old condition
-	// rarely bit; the case it did cover is this one, stated directly. It also
-	// catches an acknowledgement long enough to clear speculative_min_chars
-	// ("好的好的"), which the old form missed whenever no hold existed.
-	if e.bcSet.Matches(run.lastText) {
-		e.specWhy = "the partial so far is an acknowledgement, not a question"
-		return
-	}
-	if n := len([]rune(run.lastText)); n < e.opts.Cfg.Duplex.SpeculativeMinChars {
-		e.specWhy = fmt.Sprintf("partial is %d characters; speculative_min_chars is %d",
-			n, e.opts.Cfg.Duplex.SpeculativeMinChars)
-		return
-	}
-	if e.vad.TrailingSilenceMS() <= 0 {
-		// Still talking. Anything the recognizer has emitted so far is a
-		// prefix, however settled it looks.
-		e.watch.Unsettle()
-		e.specWhy = "the speaker never paused long enough before the turn closed"
-		return
-	}
-	// One clock, started at the first frame of the pause: speculative_stable_ms
-	// is now "quiet for this long, with the transcript unchanged throughout".
-	// A hypothesis landing mid-pause restarts it, which is what we want — the
-	// recognizer catching up is exactly when the guess would have been wrong.
-	e.specWhy = fmt.Sprintf(
-		"the pause never stayed quiet and unchanged for speculative_stable_ms (%d ms) before vad.min_silence_ms (%d ms) closed the turn",
-		e.opts.Cfg.Duplex.SpeculativeStableMS, e.opts.Cfg.VAD.MinSilenceMS)
-	if e.watch.Observe(run.lastText, time.Now()) {
-		e.startSpeculativeTurn(run.lastText)
-	}
-}
-
-// --- think channel ---
-
-func (e *Engine) startSpeculativeTurn(text string) {
-	if e.waitingTool {
-		return
-	}
-	turn := e.tracker.Begin(text, true)
-	e.specTurn = turn
-	e.log.Debug("think: speculating on a stable partial", "turn", turn.ID, "text", text)
-	e.beginGeneration(turn, "speculative")
-}
-
-func (e *Engine) onFinalTranscript(run *asrRun, text string) {
-	if text == "" {
-		// Nothing was said after all. Drop any speculation so its audio never
-		// reaches the user.
-		if e.specTurn != nil {
-			e.abortSpeech()
-			e.tracker.Abandon()
-			e.specTurn = nil
-		}
-		return
-	}
-
-	if spec := e.specTurn; spec != nil && e.tracker.IsCurrent(spec) {
-		if normalizeForCompare(spec.Transcript) == normalizeForCompare(text) {
-			// The guess held: the audio already flowing is correct, and the
-			// final transcript costs nothing. This is the whole point of
-			// speculating.
-			e.tracker.Commit(spec.ID, spec.Revision)
-			e.log.Debug("think: speculation held; keeping the audio already in flight",
-				"turn", spec.ID, "text", text)
-			e.specTurn = nil
-			return
-		}
-		e.log.Debug("think: speculation missed; regenerating",
-			"turn", spec.ID, "guess", spec.Transcript, "final", text)
-		e.abortSpeech()
-		revised := e.tracker.Revise(spec.ID, text, true)
-		e.specTurn = nil
-		if revised != nil {
-			e.beginGeneration(revised, "revision")
-			return
-		}
-	}
-
-	turn := e.tracker.Begin(text, false)
-	turn.MarkTranscriptFinal()
-	e.specTurn = nil
-	// A turn that waited for the final transcript pays the backend's whole
-	// time-to-first-token where a speculative one would have spent it during
-	// the pause. When speculation is switched on and still never fires, that is
-	// worth one line rather than a silent loss — a real call showed every
-	// delegation arriving as final_transcript with nothing to say why.
-	if e.opts.Speculative && e.specWhy != "" {
-		e.log.Info("think: answered without speculating",
-			"turn", turn.ID, "reason", e.specWhy, "transcript", text)
-	}
-	e.specWhy = ""
-	e.beginGeneration(turn, "final_transcript")
-}
-
-// beginGeneration announces the delegation and, in responses mode, runs the
-// backend itself.
-func (e *Engine) beginGeneration(turn *Turn, reason string) {
-	if len([]rune(turn.Transcript)) < e.opts.Cfg.Duplex.DelegateMinChars {
-		return
-	}
-	// Only stamp the origin when it belongs to this turn. While the utterance
-	// is still open — which is the case for every speculative turn — the
-	// engine's speechEndAt is the *previous* utterance's, and stamping it here
-	// dated the turn to the last thing the caller said. That is where
-	// llm_first_token_ms=16279 came from: a real number, measured from the
-	// wrong zero. A speculative turn is stamped when speech actually ends.
-	if !e.userOpen && !e.speechEndAt.IsZero() {
-		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
-	}
-	target := e.opts.Delegation
-	e.log.Debug("think: delegating",
-		"turn", turn.ID,
-		"revision", turn.Revision,
-		"target", target,
-		"reason", reason,
-		"transcript", turn.Transcript,
-		"history_messages", len(e.history))
-	e.deps.Emit(live.DelegationCreatedEvent{
-		Envelope: live.Envelope{Type: live.ServerDelegationCreated},
-		Delegation: live.Delegation{
-			ID:          fmt.Sprintf("%s.%d", turn.ID, turn.Revision),
-			Target:      target,
-			Reason:      reason,
-			Transcript:  turn.Transcript,
-			CreatedAtMS: time.Since(e.startAt).Milliseconds(),
-		},
-	})
-	e.publishState()
-
-	e.delegatedAt = time.Now()
-	e.delegatedTurn = turn
-	e.filled = false
-
-	if target == live.DelegationClient {
-		// The application owns the work. It will answer with
-		// session.commentary.append or session.thinking.append.
-		return
-	}
-	if e.backendCancel != nil {
-		e.backendCancel()
-	}
-	ctx, cancel := context.WithCancel(e.ctx)
-	e.backendCancel = cancel
-	tools := append([]json.RawMessage(nil), e.tools...)
-	go e.runBackend(ctx, turn, e.snapshotMessages(turn), tools)
-}
-
-// snapshotMessages builds the backend request on the loop goroutine so the
-// generation goroutine never touches mutable history.
-func (e *Engine) snapshotMessages(turn *Turn) []provider.Message {
-	e.instrMu.RLock()
-	instructions := e.instr
-	e.instrMu.RUnlock()
-
-	msgs := make([]provider.Message, 0, len(e.history)+2)
-	if instructions != "" {
-		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: instructions})
-	}
-	msgs = append(msgs, e.history...)
-	if turn.Transcript != "" {
-		msgs = append(msgs, provider.Message{Role: provider.RoleUser, Content: turn.Transcript})
-	}
-	return msgs
-}
-
-func (e *Engine) runBackend(ctx context.Context, turn *Turn, msgs []provider.Message, tools []json.RawMessage) {
-	if e.deps.LLM == nil {
-		return
-	}
-	delegationID := fmt.Sprintf("%s.%d", turn.ID, turn.Revision)
-
-	req := provider.LLMRequest{
-		Model:           e.opts.Cfg.BackendModel,
-		Messages:        msgs,
-		Temperature:     e.opts.Cfg.Temperature,
-		MaxTokens:       e.opts.Cfg.MaxOutputTokens,
-		DisableThinking: e.opts.Cfg.DisableThinking,
-		Tools:           tools,
-	}
-	deltas, err := e.deps.LLM.Stream(ctx, req)
-	if err != nil && ctx.Err() == nil && retryable(err) {
-		metrics.Default().Retry("llm")
-		e.log.Warn("llm stream retrying", "err", err)
-		time.Sleep(200 * time.Millisecond)
-		deltas, err = e.deps.LLM.Stream(ctx, req)
-	}
-	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
-		metrics.Default().ProviderError("llm")
-		e.log.Error("llm stream failed", "err", err)
-		e.deps.Emit(live.NewError("server_error", "backend_unavailable", err.Error(), ""))
-		return
-	}
-
-	pipe := e.newSpeechPipe(turn)
-	var full strings.Builder
-	started := time.Now()
-	firstToken := true
-
-	for d := range deltas {
-		if ctx.Err() != nil || !e.tracker.IsCurrent(turn) {
-			pipe.Abort()
-			return
-		}
-		if d.Err != nil {
-			e.log.Error("llm delta error", "err", d.Err)
-			e.deps.Emit(live.NewError("server_error", "backend_error", d.Err.Error(), ""))
-			break
-		}
-		if d.Usage != nil {
-			e.inTok.Add(int64(d.Usage.InputTokens))
-			e.outTok.Add(int64(d.Usage.OutputTokens))
-		}
-		if d.ToolCall != nil {
-			e.onToolCall(turn, delegationID, *d.ToolCall)
-			continue
-		}
-		if d.Text == "" {
-			continue
-		}
-		turn.MarkFirstToken()
-		if firstToken {
-			firstToken = false
-			e.log.Debug("think: first token",
-				"turn", turn.ID,
-				"provider", e.deps.LLM.Name(),
-				"model", e.opts.Cfg.BackendModel,
-				"ms", time.Since(started).Milliseconds())
-		}
-		full.WriteString(d.Text)
-		e.emitOutputTranscript(turn, d.Text)
-		e.deps.Emit(live.ResponseEventEnvelope{
-			Envelope:     live.Envelope{Type: live.ServerResponseEvent},
-			DelegationID: delegationID,
-			Event:        rawJSON(map[string]any{"type": "response.output_text.delta", "delta": d.Text}),
-		})
-		pipe.Push(d.Text)
-	}
-
-	turn.AppendResponse(full.String())
-	e.log.Debug("think: backend complete",
-		"turn", turn.ID,
-		"chars", len([]rune(full.String())),
-		"ms", time.Since(started).Milliseconds())
-	pipe.Close()
-}
-
-func (e *Engine) onToolCall(turn *Turn, delegationID string, call provider.ToolCall) {
-	e.post(func() {
-		e.pendingTool[call.ID] = pendingCall{turn: turn, call: call}
-		e.waitingTool = true
-	})
-	// gpt-live-1 wraps backend function calls in response.event rather than
-	// surfacing them inline, so the application handles them the same way in
-	// either delegation mode.
-	e.deps.Emit(live.ResponseEventEnvelope{
-		Envelope:     live.Envelope{Type: live.ServerResponseEvent},
-		DelegationID: delegationID,
-		Event: rawJSON(map[string]any{
-			"type":      "response.output_item.done",
-			"call_id":   call.ID,
-			"name":      call.Name,
-			"arguments": call.Arguments,
-		}),
-	})
-}
-
-func (e *Engine) emitOutputTranscript(turn *Turn, text string) {
-	e.deps.Emit(live.TranscriptDelta{
-		Envelope: live.Envelope{Type: live.ServerOutputTranscriptDelta},
-		ItemID:   turn.ID,
-		Content:  text,
-		StartMS:  time.Since(e.startAt).Milliseconds(),
-		EndMS:    time.Since(e.startAt).Milliseconds(),
-	})
-}
 
 // --- speak channel ---
 
@@ -1167,20 +733,24 @@ type speechPipe struct {
 	// soft asks the pipe to stop after the sentence it is currently
 	// synthesizing, rather than abandoning it mid-word.
 	soft atomic.Bool
+	// cacheable marks text that is the same every time it is said, whose
+	// audio is worth keeping. See PhraseCache.
+	cacheable bool
 }
 
-func (e *Engine) newSpeechPipe(turn *Turn) *speechPipe {
+func (e *Engine) newSpeechPipe(turn *Turn, cacheable bool) *speechPipe {
 	if old := e.speech.Load(); old != nil {
 		old.Abort()
 	}
 	ctx, cancel := context.WithCancel(e.ctx)
 	p := &speechPipe{
-		e:      e,
-		turn:   turn,
-		in:     make(chan string, 64),
-		done:   make(chan struct{}),
-		ctx:    ctx,
-		cancel: cancel,
+		e:         e,
+		turn:      turn,
+		in:        make(chan string, 64),
+		done:      make(chan struct{}),
+		ctx:       ctx,
+		cancel:    cancel,
+		cacheable: cacheable && e.opts.Cfg.Duplex.PhraseCache,
 	}
 	e.speech.Store(p)
 	go p.run()
@@ -1225,6 +795,10 @@ func (p *speechPipe) alive() bool {
 }
 
 func (p *speechPipe) run() {
+	// Whatever was waiting for the floor — a function result to read back,
+	// something an application asked to have said — gets another look the
+	// moment this pipe is finished, rather than at the next tick.
+	defer p.e.wake()
 	defer close(p.done)
 	seg := segment.New(segment.Config{
 		FirstChunkChars: p.e.opts.Cfg.Duplex.StreamFirstChunkChars,
@@ -1239,6 +813,11 @@ func (p *speechPipe) run() {
 	// deadline whether or not a boundary turned up.
 	var firstDeadline <-chan time.Time
 	deadline := time.Duration(p.e.opts.Cfg.Duplex.StreamFirstChunkDeadlineMS) * time.Millisecond
+	// And a second, shorter bound that starts once the text has passed a
+	// clause boundary it was too short to end on. See
+	// DuplexConfig.StreamFirstChunkGraceMS.
+	var boundaryGrace <-chan time.Time
+	grace := time.Duration(p.e.opts.Cfg.Duplex.StreamFirstChunkGraceMS) * time.Millisecond
 	spoke := false
 
 consume:
@@ -1249,18 +828,40 @@ consume:
 		select {
 		case <-p.ctx.Done():
 			return
+		case <-boundaryGrace:
+			boundaryGrace = nil
+			if spoke {
+				continue
+			}
+			early := seg.FlushFirstAtBoundary()
+			if early == "" {
+				continue
+			}
+			p.e.log.Debug("speak: first segment cut at an early boundary",
+				"turn", p.turn.ID, "text", early, "grace_ms", grace.Milliseconds())
+			spoke = true
+			firstDeadline = nil
+			if !p.speak(early) {
+				return
+			}
 		case <-firstDeadline:
 			firstDeadline = nil
 			if spoke {
 				continue
 			}
-			forced := seg.FlushFirst()
+			// At a boundary if the text has passed one, wherever it has got to
+			// if not.
+			forced := seg.FlushFirstAtBoundary()
+			if forced == "" {
+				forced = seg.FlushFirst()
+			}
 			if forced == "" {
 				continue
 			}
 			p.e.log.Debug("speak: first segment flushed on deadline",
 				"turn", p.turn.ID, "chars", len([]rune(forced)), "ms", deadline.Milliseconds())
 			spoke = true
+			boundaryGrace = nil
 			if !p.speak(forced) {
 				return
 			}
@@ -1274,12 +875,16 @@ consume:
 			for _, ready := range seg.Push(text) {
 				spoke = true
 				firstDeadline = nil
+				boundaryGrace = nil
 				if !p.speak(ready) {
 					return
 				}
 				if p.soft.Load() {
 					break consume
 				}
+			}
+			if !spoke && boundaryGrace == nil && grace > 0 && seg.HasEarlyBoundary() {
+				boundaryGrace = time.After(grace)
 			}
 		}
 	}
@@ -1301,6 +906,31 @@ consume:
 	}
 }
 
+// confirmed holds a turn's audio until the turn is certain, and reports false if
+// it never will be.
+//
+// An answer begun on a guess is worth starting — the backend's first token and
+// the synthesizer's first byte are the two long waits, and both are spent here
+// while the caller is still deciding whether they have finished. But none of it
+// may be heard until they have. A guess that turns out wrong then costs tokens
+// and nothing else: no syllable goes out over a caller who was only pausing, no
+// transcript of words that were never said, and nothing for history to be
+// corrected about afterwards. The wait is almost always already over by the
+// time there is audio to play; when it is not, it ends with the final
+// transcript.
+func (p *speechPipe) confirmed() bool {
+	if p.turn.Committed() {
+		return true
+	}
+	waited := time.Now()
+	if !p.turn.awaitCommit(p.ctx.Done()) {
+		return false
+	}
+	p.e.log.Debug("speak: held the answer until the turn was confirmed",
+		"turn", p.turn.ID, "held_ms", time.Since(waited).Milliseconds())
+	return p.ctx.Err() == nil && p.current()
+}
+
 // current reports whether this pipe may still produce. Under a soft stop the
 // turn is allowed to be stale: the player is holding a grace open for exactly
 // the sentence being synthesized here, and abandoning it now would cut the
@@ -1320,8 +950,23 @@ func (p *speechPipe) speak(text string) bool {
 		return false
 	}
 
+	// Words that have been said before, in this voice, do not need saying to
+	// the synthesizer again — and on a hit this path needs no synthesis
+	// connection at all, which is why a cached greeting can start before the
+	// handshake with the vendor has finished.
+	if p.cacheable {
+		if cached, ok := Phrases().Get(p.e.phraseKey(text)); ok {
+			return p.speakCached(text, cached)
+		}
+	}
+
 	stream, err := p.e.ttsSession()
 	if err != nil {
+		if p.ctx.Err() != nil {
+			// The turn was dropped, or the session closed, while dialling.
+			// That is not the synthesizer being unavailable.
+			return false
+		}
 		p.e.log.Error("tts open failed", "err", err)
 		p.e.deps.Emit(live.NewError("server_error", "tts_unavailable", err.Error(), ""))
 		return false
@@ -1353,6 +998,11 @@ func (p *speechPipe) speak(text string) bool {
 	}
 
 	p.turn.MarkFirstSegment()
+	// Synthesis is under way; whether the caller may hear it is a separate
+	// question. See confirmed.
+	if !p.confirmed() {
+		return false
+	}
 	// The answer is ready, so anything the assistant was saying to cover the
 	// wait has done its job. Left playing, a filler delays the very thing it
 	// was hiding — measured at nearly two seconds on a real turn.
@@ -1370,6 +1020,9 @@ func (p *speechPipe) speak(text string) bool {
 
 	var pcmBytes int
 	firstChunk := true
+	// keep is the segment's audio as the provider produced it, collected only
+	// for text worth caching.
+	var keep []byte
 
 	for chunk := range chunks {
 		if p.ctx.Err() != nil || !p.current() {
@@ -1382,6 +1035,9 @@ func (p *speechPipe) speak(text string) bool {
 		}
 		if len(chunk.PCM) == 0 {
 			continue
+		}
+		if p.cacheable {
+			keep = append(keep, chunk.PCM...)
 		}
 		pcm, err := audio.ResamplePCM16(chunk.PCM, stream.SampleRate(), p.e.opts.ClientRate)
 		if err != nil {
@@ -1454,12 +1110,65 @@ func (p *speechPipe) speak(text string) bool {
 		Revision: p.turn.Revision,
 		Text:     text,
 	})
+	// Only a segment that ran to its end is kept: the loop above returns early
+	// on every interruption, so reaching here means keep is the whole of it.
+	if p.cacheable && len(keep) > 0 {
+		Phrases().Put(p.e.phraseKey(text), PhraseAudio{PCM: keep, Rate: stream.SampleRate()})
+	}
 	p.e.log.Debug("speak: segment synthesized",
 		"turn", p.turn.ID,
 		"text", text,
 		"audio_ms", int(float64(pcmBytes)/float64(audio.BytesPerSample)/float64(p.e.opts.ClientRate)*1000),
 		"ms", time.Since(segStarted).Milliseconds())
 	return true
+}
+
+// speakCached plays a segment from the phrase cache.
+func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
+	pcm, err := audio.ResamplePCM16(cached.PCM, cached.Rate, p.e.opts.ClientRate)
+	if err != nil || len(pcm) == 0 {
+		return true
+	}
+	p.turn.MarkFirstSegment()
+	if !p.confirmed() {
+		return false
+	}
+	if !IsBackchannel(p.turn.ID) && p.e.player.PreemptBackchannel() {
+		p.e.log.Debug("speak: cutting the filler short; the answer is ready", "turn", p.turn.ID)
+	}
+	seg := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, Revision: p.turn.Revision}
+	begin, body, mark := seg, seg, seg
+	begin.Kind, begin.Text = SegBegin, text
+	body.Kind, body.PCM = SegAudio, pcm
+	mark.Kind, mark.Text = SegMark, text
+	p.e.player.Enqueue(begin)
+	p.turn.MarkFirstAudio()
+	p.e.player.Enqueue(body)
+	p.e.player.Enqueue(mark)
+	p.e.log.Debug("speak: segment played from the phrase cache",
+		"turn", p.turn.ID,
+		"text", text,
+		"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)))
+	return true
+}
+
+// ttsRate is the sample rate this session asks its synthesizer for.
+func (e *Engine) ttsRate() int { return SynthesisRate(e.opts.Cfg, e.opts.ClientRate) }
+
+// phraseKey identifies text as this session would have it synthesized.
+func (e *Engine) phraseKey(text string) PhraseKey {
+	name := ""
+	if e.deps.TTS != nil {
+		name = e.deps.TTS.Name()
+	}
+	return PhraseKey{
+		Provider: name,
+		Voice:    e.opts.Voice,
+		Speed:    e.opts.Cfg.Speed,
+		Language: e.opts.Language,
+		Rate:     e.ttsRate(),
+		Text:     text,
+	}
 }
 
 func (e *Engine) ttsSession() (provider.TTSStream, error) {
@@ -1472,22 +1181,23 @@ func (e *Engine) ttsSession() (provider.TTSStream, error) {
 		return nil, fmt.Errorf("duplex: no TTS provider configured")
 	}
 	opened := time.Now()
-	stream, err := e.deps.TTS.Open(e.ctx, provider.TTSOptions{
-		SampleRate: provider.PipelineRate,
+	// The session's own rate where the provider can produce it: speech
+	// synthesized at 16 kHz and stretched to 24 is 16 kHz speech in a bigger
+	// file, and a telephony session asking for 8 kHz was being resampled
+	// twice. A provider that cannot is free to return another rate; the
+	// stream reports what it actually produces and speak converts.
+	ttsOpts := provider.TTSOptions{
+		SampleRate: e.ttsRate(),
 		Voice:      e.opts.Voice,
 		Speed:      e.opts.Cfg.Speed,
 		Language:   e.opts.Language,
-	})
+	}
+	stream, err := e.deps.TTS.Open(e.ctx, ttsOpts)
 	if err != nil && e.ctx.Err() == nil {
 		metrics.Default().Retry("tts")
 		e.log.Warn("tts open retrying", "err", err)
 		time.Sleep(150 * time.Millisecond)
-		stream, err = e.deps.TTS.Open(e.ctx, provider.TTSOptions{
-			SampleRate: provider.PipelineRate,
-			Voice:      e.opts.Voice,
-			Speed:      e.opts.Cfg.Speed,
-			Language:   e.opts.Language,
-		})
+		stream, err = e.deps.TTS.Open(e.ctx, ttsOpts)
 	}
 	if err != nil {
 		metrics.Default().ProviderError("tts")
@@ -1558,8 +1268,16 @@ func (e *Engine) policy() string {
 // interruption on that moment alone was a real bug: start talking in such a gap
 // and the stale answer resumed afterwards, ahead of the answer to what you had
 // just asked.
+//
+// "Still being generated" includes the stretch before the backend has said
+// anything at all — the request is out and its first token is not back. On a
+// real backend that is most of a second, and nothing else marks it: there is no
+// audio and no speech pipe yet. Leaving it out meant a caller who spoke again
+// in that gap interrupted nothing, and the answer to their first sentence then
+// arrived on top of their second; and it meant something waiting for a free
+// floor took it, only to be cut off mid-word when that answer turned up.
 func (e *Engine) assistantHasFloor() bool {
-	if e.player.Active() {
+	if e.player.Active() || e.backendPending.Load() > 0 {
 		return true
 	}
 	pipe := e.speech.Load()
@@ -1803,10 +1521,7 @@ func (e *Engine) softInterrupt() {
 // interrupt is barge-in: stop generating, stop speaking, and let the
 // truncation callback fix history.
 func (e *Engine) interrupt() {
-	if e.backendCancel != nil {
-		e.backendCancel()
-		e.backendCancel = nil
-	}
+	e.cancelBackend()
 	gen := e.gen.Bump()
 	e.abortSpeech()
 	if e.opts.Cfg.Duplex.ResetTTSOnInterrupt {
@@ -1816,18 +1531,43 @@ func (e *Engine) interrupt() {
 	e.log.Debug("barge-in: generation invalidated", "generation", gen)
 }
 
-func (e *Engine) emitAudio(itemID string, pcm []byte) {
-	e.outputMS.Add(int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
+// emitAudio hands one chunk of output to the session, which encodes it for the
+// wire in whatever format the client negotiated.
+func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
+	ms := audio.PCM16(e.opts.ClientRate).DurationMS(pcm)
+	e.outputMS.Add(int64(ms))
 	// The first byte on the wire is the moment the caller stops waiting, so it
 	// is stamped here rather than when synthesis produced it — the paced player
 	// sits between the two.
 	if turn := e.tracker.Current(); turn != nil && turn.ID == itemID {
 		turn.MarkFirstAudioOut()
 	}
+	start := playAt.Sub(e.startAt).Milliseconds()
+	if start < 0 {
+		start = 0
+	}
 	e.deps.Emit(live.OutputAudioDelta{
 		Envelope: live.Envelope{Type: live.ServerOutputAudioDelta},
 		ItemID:   itemID,
-		Audio:    encodeBase64(pcm),
+		StartMS:  start,
+		EndMS:    start + int64(ms),
+		PCM:      pcm,
+	})
+}
+
+// onSegmentHeard reports a sentence on the assistant's transcript as its audio
+// begins. See Player.OnSegment for why then and not when it was written.
+func (e *Engine) onSegmentHeard(turnID, text string, playAt time.Time) {
+	at := playAt.Sub(e.startAt).Milliseconds()
+	if at < 0 {
+		at = 0
+	}
+	e.deps.Emit(live.TranscriptDelta{
+		Envelope: live.Envelope{Type: live.ServerOutputTranscriptDelta},
+		Delta:    text,
+		StartMS:  at,
+		EndMS:    at,
+		ItemID:   turnID,
 	})
 }
 
@@ -1884,78 +1624,7 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 		}
 		e.emitMetrics(turn, totalMS, false)
 	})
-	e.deps.Emit(live.Usage{
-		Envelope: live.Envelope{Type: live.ServerUsageUpdated},
-		Usage:    e.Usage(),
-	})
-}
-
-// recordTurn commits what was actually heard to conversation history. Turns
-// that were cut off contribute only their audible prefix; anything else would
-// have the model reasoning from sentences the user never received.
-func (e *Engine) recordTurn(turnID, spoken string) {
-	spoken = strings.TrimSpace(spoken)
-	e.post(func() {
-		if strings.HasPrefix(turnID, "bc_") {
-			return // backchannels are not conversation
-		}
-		turn := e.tracker.Current()
-		if turn != nil && turn.ID == turnID {
-			turn.SetSpoken(spoken)
-			if turn.Transcript != "" {
-				e.history = append(e.history, provider.Message{
-					Role:    provider.RoleUser,
-					Content: turn.Transcript,
-				})
-			}
-		}
-		if spoken != "" {
-			e.history = append(e.history, provider.Message{
-				Role:    provider.RoleAssistant,
-				Content: spoken,
-			})
-		}
-		e.trimHistory()
-	})
-}
-
-// trimHistory bounds what is sent to the backend, by turns and by size.
-//
-// The turn cap alone is not a bound on cost. history_turns: 16 is sixteen
-// exchanges whatever their length, and a sales agent's answers run to fifty
-// characters each while a caller's questions run to four — so the same setting
-// describes wildly different prompts, and the one it produces on a real call is
-// the expensive end. Since time-to-first-token tracks prompt size and nothing
-// else in this cascade comes close to it as a cost, the size needs its own
-// limit.
-//
-// Oldest first, and always in whole messages: half an exchange is worse than
-// none, because the model then reads an answer with no question or a question
-// with no answer and infers a conversation that did not happen.
-func (e *Engine) trimHistory() {
-	if max := e.opts.Cfg.HistoryTurns * 2; max > 0 && len(e.history) > max {
-		e.history = append([]provider.Message(nil), e.history[len(e.history)-max:]...)
-	}
-
-	maxChars := e.opts.Cfg.HistoryMaxChars
-	if maxChars <= 0 {
-		return
-	}
-	total := 0
-	for _, m := range e.history {
-		total += len([]rune(m.Content))
-	}
-	dropped := 0
-	for total > maxChars && len(e.history) > 1 {
-		total -= len([]rune(e.history[0].Content))
-		e.history = e.history[1:]
-		dropped++
-	}
-	if dropped > 0 {
-		e.history = append([]provider.Message(nil), e.history...)
-		e.log.Debug("think: history trimmed to fit history_max_chars",
-			"dropped_messages", dropped, "chars", total, "limit", maxChars)
-	}
+	e.deps.Emit(e.UsageEvent())
 }
 
 // emitMetrics reports one turn's stage latencies, all measured from the moment
@@ -2019,22 +1688,35 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 // latencySummary reports the session's response latencies once, at close.
 // Median and p95 rather than a mean: one slow cold-start turn drags a mean
 // enough to hide what every other turn actually did.
+//
+// The speculation tally is alongside because the two are one story. Every
+// guess that held is a turn that started early; every one abandoned is a
+// backend request paid for and thrown away. A session where the second number
+// rivals the first has its speculation windows set too eagerly for its
+// recognizer, and this line is where that shows.
 func (e *Engine) latencySummary() {
-	if len(e.latencies) == 0 {
+	if len(e.latencies) == 0 && e.specHeld+e.specAbandoned == 0 {
 		return
 	}
-	v := append([]int64(nil), e.latencies...)
-	sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
-	at := func(q float64) int64 {
-		i := int(q * float64(len(v)-1))
-		return v[i]
+	attrs := []any{
+		"turns", len(e.latencies),
+		"speculation_held", e.specHeld,
+		"speculation_abandoned", e.specAbandoned,
 	}
-	e.log.Info("session: response latency summary",
-		"turns", len(v),
-		"min_ms", v[0],
-		"p50_ms", at(0.5),
-		"p95_ms", at(0.95),
-		"max_ms", v[len(v)-1])
+	if len(e.latencies) > 0 {
+		v := append([]int64(nil), e.latencies...)
+		sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
+		at := func(q float64) int64 {
+			i := int(q * float64(len(v)-1))
+			return v[i]
+		}
+		attrs = append(attrs,
+			"min_ms", v[0],
+			"p50_ms", at(0.5),
+			"p95_ms", at(0.95),
+			"max_ms", v[len(v)-1])
+	}
+	e.log.Info("session: response latency summary", attrs...)
 }
 
 // --- backchannel channel ---
@@ -2255,62 +1937,6 @@ func (e *Engine) observeTTFA() {
 	e.delegatedTurn = nil
 }
 
-// speakBackchannel bypasses the speech pipe: a backchannel must not disturb the
-// pipe that a real answer may already be using.
-func (e *Engine) speakBackchannel(turn *Turn, phrase string) {
-	stream, err := e.ttsSession()
-	if err != nil {
-		return
-	}
-	// Own context, for the same reason as speak: the loop below returns the
-	// moment the generation moves, and abandoning the channel without
-	// cancelling wedges the connection every other turn shares. Backchannels
-	// are abandoned often — a filler is superseded whenever the caller speaks
-	// again — so this is the call site that did the most damage.
-	bcCtx, cancelBC := context.WithCancel(e.ctx)
-	defer cancelBC()
-	chunks, err := stream.Synthesize(bcCtx, phrase)
-	if err != nil {
-		return
-	}
-	// The floor may have been taken while this was synthesizing, in which case
-	// the player refuses it and there is nothing to say or to transcribe.
-	if !e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, Text: phrase}) {
-		e.log.Debug("backchannel: dropped; the answer took the floor while it was synthesizing",
-			"turn", turn.ID, "text", phrase)
-		return
-	}
-	// The caller hears this, so it belongs in the transcript.
-	//
-	// It was missing, and the gap was not cosmetic: a real call spoke four
-	// holding fillers — 稍等一下, 让我查一下, 我看一下, 让我查一下 — and the
-	// transcript showed none of them, so the written record of the call did not
-	// match the call. Worse, two of those fillers belonged to turns the caller
-	// interrupted before any answer arrived, which read in the transcript as
-	// two user questions in a row that the agent simply ignored, when what
-	// actually happened was the agent saying "one moment" and then being cut
-	// off.
-	//
-	// Conversation history is the separate question and keeps the opposite
-	// answer: recordTurn still drops bc_ turns, because a filler is not
-	// something the model should reason from. What was said aloud and what the
-	// model is told are two different records, and conflating them is what hid
-	// this.
-	e.emitOutputTranscript(turn, phrase)
-	for chunk := range chunks {
-		if chunk.Err != nil || !e.gen.Valid(turn.Generation) {
-			return
-		}
-		pcm, err := audio.ResamplePCM16(chunk.PCM, stream.SampleRate(), e.opts.ClientRate)
-		if err != nil {
-			continue
-		}
-		e.player.Enqueue(Segment{Kind: SegAudio, Gen: turn.Generation, TurnID: turn.ID, PCM: pcm})
-	}
-	e.player.Enqueue(Segment{Kind: SegMark, Gen: turn.Generation, TurnID: turn.ID, Text: phrase})
-	e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID})
-}
-
 // --- channel state ---
 
 func (e *Engine) publishState() {
@@ -2335,12 +1961,6 @@ func (e *Engine) publishState() {
 }
 
 // --- helpers ---
-
-// SetTools replaces the backend tool list for subsequent generations.
-func (e *Engine) SetTools(tools []json.RawMessage) {
-	clone := append([]json.RawMessage(nil), tools...)
-	e.post(func() { e.tools = clone })
-}
 
 func retryable(err error) bool {
 	if err == nil {
@@ -2369,10 +1989,6 @@ func normalizeForCompare(s string) string {
 
 func round1(v float64) float64 {
 	return float64(int(v*10)) / 10
-}
-
-func encodeBase64(pcm []byte) string {
-	return base64.StdEncoding.EncodeToString(pcm)
 }
 
 func rawJSON(v any) json.RawMessage {

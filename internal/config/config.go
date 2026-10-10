@@ -69,15 +69,32 @@ type Config struct {
 	// ShutdownTimeoutSeconds is how long SIGTERM waits for sessions to close.
 	ShutdownTimeoutSeconds int `json:"shutdown_timeout_seconds"`
 
+	// StoreDir is where sessions started with store:true keep their recording
+	// and their conversation, which is what GET …/content and …/fork read.
+	// Empty disables storage: store:true is then accepted and ignored, and
+	// those two endpoints answer 404.
+	StoreDir string `json:"store_dir"`
+	// StoreTTLHours is how long a stored session is kept. gpt-live-1 keeps
+	// recordings thirty days; the default here is one, because this is a disk
+	// on your machine rather than somebody else's.
+	StoreTTLHours int `json:"store_ttl_hours"`
+
 	// Providers, by registry name.
 	ASR string `json:"asr"`
 	LLM string `json:"llm"`
 	TTS string `json:"tts"`
 
 	// Session defaults
-	Model        string `json:"model"`
-	Voice        string `json:"voice"`
-	Instructions string `json:"instructions"`
+	Model string `json:"model"`
+	Voice string `json:"voice"`
+	// VoiceAliases maps a voice name a client asks for to the synthesis
+	// provider's own id. A client written for gpt-live-1 sends "marin" or
+	// "cedar"; a vendor wants its own identifier and fails the session on
+	// anything else. An unlisted name is passed through unchanged, except for
+	// the gpt-live-1 built-in names, which fall back to Voice — nobody means
+	// for a provider to be handed "marin".
+	VoiceAliases map[string]string `json:"voice_aliases"`
+	Instructions string            `json:"instructions"`
 	// Greeting is spoken as soon as a session opens, before the caller says
 	// anything. Empty means the assistant waits to be spoken to.
 	Greeting string  `json:"greeting"`
@@ -88,12 +105,23 @@ type Config struct {
 	ClientRate int `json:"client_rate"`
 
 	// Backend / LLM
-	BackendModel    string  `json:"backend_model"`
-	BackendBaseURL  string  `json:"backend_base_url"`
-	Temperature     float64 `json:"temperature"`
-	MaxOutputTokens int     `json:"max_output_tokens"`
-	DisableThinking bool    `json:"disable_thinking"`
-	HistoryTurns    int     `json:"history_turns"`
+	BackendModel string `json:"backend_model"`
+	// BackendModels maps the model a session names in
+	// delegation.responses.model to one the configured provider actually has.
+	// A gpt-live-1 client must send that field and sends an OpenAI model id;
+	// passed through, it fails every turn with "model not found". A name that
+	// is not listed here falls back to BackendModel, unless
+	// AllowBackendModelPassthrough says the client is to be taken at its word.
+	BackendModels map[string]string `json:"backend_models"`
+	// AllowBackendModelPassthrough sends an unlisted delegation.responses.model
+	// to the provider as written. For deployments where clients are your own
+	// and name your own models.
+	AllowBackendModelPassthrough bool    `json:"allow_backend_model_passthrough"`
+	BackendBaseURL               string  `json:"backend_base_url"`
+	Temperature                  float64 `json:"temperature"`
+	MaxOutputTokens              int     `json:"max_output_tokens"`
+	DisableThinking              bool    `json:"disable_thinking"`
+	HistoryTurns                 int     `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//
@@ -166,6 +194,25 @@ type DuplexConfig struct {
 	// HoldingFillerPhrases are spoken at random.
 	HoldingFillerPhrases []string `json:"holding_filler_phrases"`
 
+	// LegacyAudioField also sends output audio under "audio", the key golive
+	// used before it matched gpt-live-1, which carries it in "delta". It costs
+	// every chunk twice on the wire, so it is off: turn it on only for a client
+	// you cannot update, and turn it back off when you have.
+	LegacyAudioField bool `json:"legacy_audio_field"`
+
+	// ClientDelegation decides who talks in client-delegation mode.
+	//
+	//	always  every caller turn is announced as a delegation and golive says
+	//	        nothing of its own. The application answers with
+	//	        session.commentary.append. No model call sits in front of the
+	//	        application, so this is the fast one.
+	//	auto    the configured backend acts as the conversational front, the way
+	//	        gpt-live-1's own model does: it answers small talk itself and
+	//	        calls a built-in "delegate" function when the request needs the
+	//	        application. Closer to the real thing, and one model call slower
+	//	        on every delegated turn.
+	ClientDelegation string `json:"client_delegation"`
+
 	// Speculative starts generation from a stable partial transcript.
 	Speculative bool `json:"speculative"`
 	// SpeculativeStableMS is how long the speaker must be audibly quiet, with
@@ -186,6 +233,52 @@ type DuplexConfig struct {
 	// showed every delegation arriving as final_transcript, most of them
 	// blocked here, while the backend spent 2.1 s on each one.
 	SpeculativeMinChars int `json:"speculative_min_chars"`
+	// SpeculativeEagerMS replaces SpeculativeStableMS when the words so far
+	// read as a finished thought — a question, a closed reply. Those are the
+	// turns where waiting buys nothing, and a guess that turns out wrong is
+	// abandoned the moment the speaker carries on. 0 disables the shortcut.
+	SpeculativeEagerMS int `json:"speculative_eager_ms"`
+	// SpeculativeSettleMS is how long the transcript must have been still
+	// before a guess is made, when it changed during the pause. A recognizer
+	// runs behind the speaker, so the last words arrive a little way into the
+	// silence; once they have, nothing more is coming, and this is the short
+	// wait that confirms it. Raise it if the log shows speculation being
+	// abandoned because "the transcript moved on". 0 uses the whole window,
+	// which is the older, more cautious behaviour.
+	SpeculativeSettleMS int `json:"speculative_settle_ms"`
+	// SemanticEndpointing lets the partial transcript inform how a pause is
+	// read, in addition to how long it is. See internal/endpoint. It never
+	// shortens the silence a turn is given.
+	SemanticEndpointing bool `json:"semantic_endpointing"`
+	// PatientSilenceMS replaces vad.min_silence_ms while the words so far end
+	// on something nobody stops on ("然后", "我想问一下", "and"). It is the
+	// difference between hearing someone think and cutting them off to answer
+	// half a sentence. Ignored unless it is longer than vad.min_silence_ms and
+	// SemanticEndpointing is on; 0 disables it.
+	PatientSilenceMS int `json:"patient_silence_ms"`
+
+	// ASRPredial opens the recognizer's connection when the detector first
+	// suspects speech, rather than when it is sure. The detector takes
+	// vad.min_speech_ms to be sure, which is about what the handshake costs, so
+	// the two overlap instead of adding up. A connection dialled for a noise is
+	// closed unused a few seconds later.
+	ASRPredial bool `json:"asr_predial"`
+	// TTSNativeRate asks the synthesizer for audio at the session's own rate
+	// when it can produce it, instead of at 16 kHz to be resampled. A 24 kHz
+	// session then gets 24 kHz speech rather than 16 kHz speech stretched to
+	// fit, and a telephony session skips a conversion.
+	TTSNativeRate bool `json:"tts_native_rate"`
+	// PhraseCache keeps the synthesized audio of the fixed things the assistant
+	// says — the greeting, acknowledgements, holding fillers — so they play
+	// from memory instead of being synthesized again on every call.
+	PhraseCache bool `json:"phrase_cache"`
+	// BackendPrefixWarm sends the backend a one-token request carrying the
+	// conversation so far when the caller starts speaking, so a provider with a
+	// prefix cache has it loaded by the time the real request follows. It
+	// spends prompt tokens on every utterance to save time to first token on a
+	// long prompt, and whether that trade is worth anything depends entirely on
+	// the provider: measure before leaving it on.
+	BackendPrefixWarm bool `json:"backend_prefix_warm"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
@@ -236,6 +329,14 @@ type DuplexConfig struct {
 	// the model chooses; the caller's patience does not, and this is silence
 	// they are listening to. 0 disables the deadline.
 	StreamFirstChunkDeadlineMS int `json:"stream_first_chunk_deadline_ms"`
+	// StreamFirstChunkGraceMS is how long the first segment goes on waiting once
+	// it has reached a comma or full stop that came too early to count — "好的，"
+	// against a six-character minimum. A longer clause may complete in that
+	// time and make a better opening; if it does not, the short one is spoken,
+	// cut cleanly at its punctuation, rather than waiting out the whole
+	// deadline to be cut wherever the text happens to have got to. 0 disables
+	// it and the deadline alone applies.
+	StreamFirstChunkGraceMS int `json:"stream_first_chunk_grace_ms"`
 	// StreamMinChunkChars is the floor for subsequent segments.
 	StreamMinChunkChars int `json:"stream_min_chunk_chars"`
 	// StreamMaxChunkChars force-flushes a segment that never hits punctuation.
@@ -266,11 +367,16 @@ type DuplexConfig struct {
 
 // VADProfile is the JSON-facing form of the detector's tuning.
 type VADProfile struct {
-	FrameMS            int     `json:"frame_ms"`
-	MinSpeechMS        int     `json:"min_speech_ms"`
-	MinSilenceMS       int     `json:"min_silence_ms"`
-	SpeechPadMS        int     `json:"speech_pad_ms"`
-	MaxSpeechMS        int     `json:"max_speech_ms"`
+	FrameMS      int `json:"frame_ms"`
+	MinSpeechMS  int `json:"min_speech_ms"`
+	MinSilenceMS int `json:"min_silence_ms"`
+	SpeechPadMS  int `json:"speech_pad_ms"`
+	MaxSpeechMS  int `json:"max_speech_ms"`
+	// SnapshotMS is how often an open utterance's audio is handed to the
+	// recognizer. It is latency, not bookkeeping: audio waiting for the next
+	// snapshot is audio the recognizer has not heard, so every hypothesis — and
+	// the final one that the reply waits on — runs behind the speaker by up to
+	// this much. 40 ms is what realtime recognizers ask for.
 	SnapshotMS         int     `json:"snapshot_ms"`
 	NoiseFloorDB       float64 `json:"noise_floor_db"`
 	MaxNoiseFloorDB    float64 `json:"max_noise_floor_db"`
@@ -294,6 +400,7 @@ func Default() Config {
 		AuthFailBurst:          30,
 		AuthFailWindowSeconds:  60,
 		ShutdownTimeoutSeconds: 10,
+		StoreTTLHours:          24,
 		ASR:                    "mock",
 		LLM:                    "mock",
 		TTS:                    "mock",
@@ -353,9 +460,17 @@ func Default() Config {
 			HoldingFiller:              false,
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
+			ClientDelegation:           "always",
 			Speculative:                true,
 			SpeculativeStableMS:        180,
 			SpeculativeMinChars:        4,
+			SpeculativeEagerMS:         100,
+			SpeculativeSettleMS:        80,
+			SemanticEndpointing:        true,
+			PatientSilenceMS:           700,
+			ASRPredial:                 true,
+			TTSNativeRate:              true,
+			PhraseCache:                true,
 			AllowBargeIn:               true,
 			OnNewQuery:                 "cut",
 			ResetTTSOnInterrupt:        false,
@@ -364,6 +479,7 @@ func Default() Config {
 			PlaybackLeadMS:             300,
 			StreamFirstChunkChars:      6,
 			StreamFirstChunkDeadlineMS: 220,
+			StreamFirstChunkGraceMS:    60,
 			StreamMinChunkChars:        24,
 			StreamMaxChunkChars:        120,
 			DelegationMode:             "auto",
@@ -378,7 +494,7 @@ func Default() Config {
 			MinSilenceMS:       380,
 			SpeechPadMS:        240,
 			MaxSpeechMS:        30000,
-			SnapshotMS:         200,
+			SnapshotMS:         40,
 			NoiseFloorDB:       -60,
 			MaxNoiseFloorDB:    -28,
 			SpeechMarginDB:     10,
@@ -444,6 +560,12 @@ func (c *Config) applyEnv() {
 	setString(&c.BackendModel, "GOLIVE_BACKEND_MODEL")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
+	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")
+	setString(&c.StoreDir, "GOLIVE_STORE_DIR")
+	setInt(&c.StoreTTLHours, "GOLIVE_STORE_TTL_HOURS")
+	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
+	setBool(&c.Duplex.SemanticEndpointing, "GOLIVE_SEMANTIC_ENDPOINTING")
+	setBool(&c.Duplex.BackendPrefixWarm, "GOLIVE_BACKEND_PREFIX_WARM")
 	setInt(&c.ClientRate, "GOLIVE_CLIENT_RATE")
 	setInt(&c.MaxOutputTokens, "GOLIVE_MAX_OUTPUT_TOKENS")
 	setFloat(&c.Temperature, "GOLIVE_TEMPERATURE")
@@ -502,6 +624,20 @@ func (c *Config) Validate() error {
 	case "client", "responses", "auto":
 	default:
 		return fmt.Errorf("config: delegation_mode %q must be client, responses or auto", c.Duplex.DelegationMode)
+	}
+	switch c.Duplex.ClientDelegation {
+	case "":
+		c.Duplex.ClientDelegation = "always"
+	case "always", "auto":
+	default:
+		return fmt.Errorf("config: client_delegation %q must be always or auto", c.Duplex.ClientDelegation)
+	}
+	if c.VAD.SnapshotMS > 0 && c.VAD.FrameMS > 0 && c.VAD.SnapshotMS%c.VAD.FrameMS != 0 {
+		return fmt.Errorf("config: vad.snapshot_ms (%d) must be a multiple of vad.frame_ms (%d)",
+			c.VAD.SnapshotMS, c.VAD.FrameMS)
+	}
+	if c.StoreTTLHours < 0 {
+		return fmt.Errorf("config: store_ttl_hours must be >= 0")
 	}
 	if c.Duplex.PlaybackChunkMS <= 0 {
 		return fmt.Errorf("config: playback_chunk_ms must be positive")
