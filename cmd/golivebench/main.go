@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,7 +79,7 @@ func run() error {
 		warmup    = flag.Int("warmup", 1, "unmeasured runs per stack first, to pay connection setup")
 		rate      = flag.Int("rate", 24000, "session PCM rate")
 		silenceMS = flag.Int("silence-ms", 1200, "trailing silence after each clip, so the engine's VAD closes the turn")
-		synthMS   = flag.Int("synth-ms", 1800, "length of synthetic speech when -clips is empty")
+		synthMS   = flag.String("synth-ms", "1800", "length of synthetic speech when -clips is empty; a comma-separated list makes one clip per length")
 		timeout   = flag.Int("timeout-s", 30, "give up on a run after this long")
 		outJSON   = flag.String("json", "", "write raw per-run results here")
 		outMD     = flag.String("md", "", "write the report here as markdown")
@@ -216,9 +217,27 @@ type clip struct {
 	pcm  []byte
 }
 
-func loadClips(glob string, rate, synthMS int) ([]clip, error) {
+func loadClips(glob string, rate int, synthMS string) ([]clip, error) {
 	if glob == "" {
-		return []clip{{name: "synthetic", pcm: syntheticSpeech(rate, synthMS)}}, nil
+		// Several lengths, because a turn's length decides which path through
+		// the engine it takes: a one-word reply never pauses long enough to
+		// speculate on, and a long question does more than once.
+		var out []clip
+		for _, field := range strings.Split(synthMS, ",") {
+			field = strings.TrimSpace(field)
+			if field == "" {
+				continue
+			}
+			ms, err := strconv.Atoi(field)
+			if err != nil || ms < 100 {
+				return nil, fmt.Errorf("-synth-ms %q: want a length in ms, at least 100", field)
+			}
+			out = append(out, clip{name: fmt.Sprintf("synthetic_%04dms", ms), pcm: syntheticSpeech(rate, ms)})
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("-synth-ms is empty")
+		}
+		return out, nil
 	}
 	paths, err := filepath.Glob(glob)
 	if err != nil {
@@ -263,6 +282,9 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 
 	go func() {
 		defer close(events)
+		// The caller's transcript arrives as fragments; the row is rebuilt here
+		// so both dialects reduce to "the final text, and when it was known".
+		var heard strings.Builder
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
@@ -309,9 +331,26 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 				_ = json.Unmarshal(data, &ev)
 				events <- incoming{kind: "transcript", text: ev.Transcript, at: at}
 			case live.ServerInputTranscriptDelta:
-				var ev live.TranscriptDelta
-				if json.Unmarshal(data, &ev) == nil && ev.Final {
-					events <- incoming{kind: "transcript", text: ev.Content, at: at}
+				// "delta" is the gpt-live-1 field. "content" and "replace" are
+				// what golive sent before it matched, kept so this harness can
+				// still be pointed at an older build for a before-and-after.
+				var ev struct {
+					Delta   string `json:"delta"`
+					Content string `json:"content"`
+					Final   bool   `json:"final"`
+					Replace bool   `json:"replace"`
+				}
+				if json.Unmarshal(data, &ev) != nil {
+					continue
+				}
+				if ev.Replace {
+					heard.Reset()
+				}
+				heard.WriteString(ev.Delta)
+				heard.WriteString(ev.Content)
+				if ev.Final {
+					events <- incoming{kind: "transcript", text: heard.String(), at: at}
+					heard.Reset()
 				}
 
 			// --- assistant text, both dialects ---
@@ -417,6 +456,12 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 			}
 			switch ev.kind {
 			case "audio":
+				// Audio that arrived before the caller finished is not an
+				// answer to them — a greeting, the tail of something earlier —
+				// and counting it would report a negative latency.
+				if ev.at.Before(speechEnd) {
+					continue
+				}
 				if firstAudio.IsZero() {
 					firstAudio = ev.at
 				}
@@ -459,11 +504,15 @@ done:
 
 func sendSessionConfig(send func(any) error, kind string, rate int) error {
 	if kind == "golive" {
+		// No greeting: it would still be playing when the clip starts, and the
+		// first thing measured would be the caller interrupting it.
+		quiet := ""
 		return send(live.SessionStartEvent{
 			Envelope: live.Envelope{Type: live.ClientSessionStart, EventID: "bench"},
 			Session: live.SessionConfig{
 				Audio:      &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: rate}},
 				Delegation: &live.DelegationConfig{Type: live.DelegationResponses},
+				Golive:     &live.GoliveConfig{Greeting: &quiet},
 			},
 		})
 	}

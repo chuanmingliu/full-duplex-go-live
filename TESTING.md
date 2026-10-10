@@ -39,6 +39,24 @@ The page shows four channel lamps: **listen · transcribe · think · speak**.
 4. **Mute mid-turn.** The listen lamp goes out but the session stays up;
    unmuting is instant because the channel was never torn down.
 
+5. **Pause in the middle of a sentence, then finish it.** The log shows
+   `← speculating on: …` during the pause, with half your sentence — the
+   backend has been started on a guess. Carry on talking and nothing comes of
+   it: no delegation, no audio — whatever it had ready is held until the turn
+   is confirmed, and dropped when it is not. Stop for real and a second guess is made on the
+   whole sentence, and that one is answered. Under `responses` delegation with
+   a tool configured, this is also the moment a function call would have gone
+   out on half a request, and does not.
+
+6. **Type instead of talking.** The **Type** box sends `response.item.create`
+   with a text message and then `response.create`. The answer is spoken, like
+   any other turn.
+
+7. **Ask for something that needs a lookup** (on mock providers, anything with
+   "查" in it, with a tool configured — see *Function calls from the terminal*
+   below). The assistant says a holding line, the log shows
+   `← function call …`, and the conversation stays open while it waits.
+
 On mock providers the recognizer always "hears" the same sentence, revealed
 progressively as you talk, and the reply is a fixed long paragraph — deliberately
 long so there is something to interrupt.
@@ -374,6 +392,11 @@ What each prefix tells you:
 | `listen:` | Did the VAD hear you at all? `noise_floor_db` is the adaptive floor; if it sits near your speech level, the mic is too hot or the room too loud. `barge_in=true` means it opened while the assistant held the floor. |
 | `asr:` | Partial hypotheses as they arrive, and `elapsed_ms` on the final — the recognizer's real latency. |
 | `think:` | Which turn was delegated and why (`final_transcript`, `speculative`, `revision`), then time to first token. `history_messages` is how much context went with it. |
+| `think: abandoning the speculative turn` | DEBUG. A guess was dropped: `reason` says whether the caller carried on or the transcript changed under it. Normal in moderation — it is what a mid-sentence pause looks like. |
+| `speak: held the answer until the turn was confirmed` | DEBUG. The answer to a guess was ready before the recognizer's final transcript was. `held_ms` is what waiting for certainty cost that turn; it is normally absent, because the backend is normally the slower of the two. |
+| `asr: the recognizer ended without a final transcript` | WARN. The stream closed, or went silent for three seconds, after the utterance ended. The last hypothesis was answered instead. Occasional is a flaky connection; every turn is a recognizer that is not being asked for a final the way it expects. |
+| `think: speculation held` | DEBUG. The final transcript matched the guess, so the answer already in flight is the answer. `speculation_held` / `speculation_abandoned` in the session summary are the totals; mostly-abandoned means `speculative_stable_ms` is too short for how your callers pause. |
+| `listen: the caller seems to be mid-thought` | DEBUG. Semantic endpointing read the words so far as unfinished and is giving the pause `patient_silence_ms`. If the assistant feels slow to answer after trailing-off sentences, this is why; if it cuts people off, this is the line that should have appeared and did not. |
 | `think: answered without speculating` | INFO, one line per turn that paid the backend's full time-to-first-token when it did not have to. `reason` says what stopped it — too few characters, no pause, or a backchannel still being judged. If every turn carries this line, speculation is switched on and doing nothing. |
 | `speak:` | Per-segment synthesis time. `chars=11 ms=180` on the first segment is your real time-to-first-syllable. |
 | `speak: turn truncated` | `played_ms` vs `emitted_ms`, and `heard_text` — the exact prefix that entered history. |
@@ -412,7 +435,56 @@ viewer. `-v` prints every server event.
 `./bin/golivectl-darwin-arm64`.)
 
 Useful flags: `-in yourfile.wav` to send real speech, `-rate 8000|16000|24000`,
-`-delegation client`, `-asr/-llm/-tts` to override providers per session.
+`-format audio/pcmu` (or `audio/pcma`) for a G.711 session, `-text "…"` to send
+typed input, `-store` to ask for the session to be kept, `-delegation client`,
+`-asr/-llm/-tts` to override providers per session.
+
+### Function calls from the terminal
+
+Anything that speaks WebSocket will do; [`websocat`](https://github.com/vi/websocat)
+is the least ceremony. Start a session with a tool, in the Responses form:
+
+```bash
+websocat ws://127.0.0.1:8080/v1/live/sessions
+{"type":"session.start","session":{"delegation":{"type":"responses","responses":{"tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{"query":{"type":"string"}}}}]}}}}
+{"type":"response.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我查一下保单"}]}}
+{"type":"response.create"}
+```
+
+A `response.event` comes back whose `event.item` is a `function_call` with a
+`call_id`. Answer it:
+
+```bash
+{"type":"response.item.create","item":{"type":"function_call_output","call_id":"<the call_id>","output":"保单有效"}}
+{"type":"response.create"}
+```
+
+and the result is read back. Send `response.create` first and you get
+`tool_outputs_missing` instead.
+
+### A sideband, a recording, a fork
+
+```bash
+# keep sessions: needs a directory
+GOLIVE_STORE_DIR=/tmp/golive-store ./start.sh
+
+# a stored session; note the sess_… id it prints
+./bin/golivectl -store -speak-ms 2200 -v
+
+# while one is running, watch it from a second connection
+websocat ws://127.0.0.1:8080/v1/live/sessions/sess_…/attach
+
+# afterwards: the whole call, caller left, assistant right
+curl -o call.wav http://127.0.0.1:8080/v1/live/sessions/sess_…/content
+
+# and a new session that carries on from where it stopped
+websocat ws://127.0.0.1:8080/v1/live/sessions/sess_…/fork
+{"type":"session.start","session":{}}
+```
+
+The sideband receives every event, the caller's audio included, and can send
+anything except audio — which is how an application server answers delegations
+for a call whose media a telephony bridge is carrying.
 
 ---
 

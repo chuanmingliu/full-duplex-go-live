@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chuanmingliu/golive/internal/provider"
 )
 
 // TestEndsSentenceDecidesWhoFlushes covers the one thing task_flush turns on.
@@ -181,4 +183,22 @@ func TestKeepAliveIsOptional(t *testing.T) {
 	// is also dropping.
 	_ = s.Close()
 	_ = s.Close()
+}
+
+// The engine asks for the session's rate; one of the rates a session may have
+// is not one this endpoint synthesizes at.
+func TestSupportedRateNeverAsksForOneTheEndpointRefuses(t *testing.T) {
+	for want, got := range map[int]int{
+		0:     provider.PipelineRate,
+		8000:  8000,
+		16000: 16000,
+		24000: 24000,
+		48000: 24000, // not offered; half of it is, and resamples cleanly
+		11025: provider.PipelineRate,
+		44100: 44100,
+	} {
+		if r := supportedRate(want); r != got {
+			t.Errorf("supportedRate(%d) = %d, want %d", want, r, got)
+		}
+	}
 }

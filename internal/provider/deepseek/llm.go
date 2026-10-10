@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -164,7 +165,11 @@ type chatRequest struct {
 	Temperature float64           `json:"temperature,omitempty"`
 	MaxTokens   int               `json:"max_tokens,omitempty"`
 	Tools       []json.RawMessage `json:"tools,omitempty"`
-	StreamOpts  *streamOptions    `json:"stream_options,omitempty"`
+	ToolChoice  any               `json:"tool_choice,omitempty"`
+	// A pointer so "false" is sent and "unset" is not: the two mean different
+	// things, and a backend that does not know the field rejects it.
+	ParallelToolCalls *bool          `json:"parallel_tool_calls,omitempty"`
+	StreamOpts        *streamOptions `json:"stream_options,omitempty"`
 }
 
 type streamOptions struct {
@@ -172,10 +177,52 @@ type streamOptions struct {
 }
 
 type chatMessage struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	Name       string `json:"name,omitempty"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Name       string         `json:"name,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+}
+
+// chatToolCall is an assistant message's function call, as chat completions
+// wants it echoed back.
+type chatToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// toChatMessages converts the engine's messages to the wire form.
+func toChatMessages(in []provider.Message) []chatMessage {
+	msgs := make([]chatMessage, 0, len(in))
+	for _, m := range in {
+		cm := chatMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+		}
+		// Name on a tool message is an older convention some compatible
+		// servers reject; the call id is what ties a result to its call.
+		if m.Role != provider.RoleTool {
+			cm.Name = m.Name
+		}
+		for _, tc := range m.ToolCalls {
+			var c chatToolCall
+			c.ID = tc.ID
+			c.Type = "function"
+			c.Function.Name = tc.Name
+			c.Function.Arguments = tc.Arguments
+			if c.Function.Arguments == "" {
+				c.Function.Arguments = "{}"
+			}
+			cm.ToolCalls = append(cm.ToolCalls, c)
+		}
+		msgs = append(msgs, cm)
+	}
+	return msgs
 }
 
 // promptChars totals the characters sent, which is the thing that predicts
@@ -209,6 +256,12 @@ type chatChunk struct {
 	Usage *struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
+		// DeepSeek reports its prefix cache at the top level; OpenAI and most
+		// compatible servers nest it. Whichever is present is used.
+		PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+		PromptTokensDetails  *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 }
 
@@ -219,17 +272,9 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		model = l.DefaultModel
 	}
 
-	msgs := make([]chatMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		msgs = append(msgs, chatMessage{
-			Role:       m.Role,
-			Content:    m.Content,
-			Name:       m.Name,
-			ToolCallID: m.ToolCallID,
-		})
-	}
+	msgs := toChatMessages(req.Messages)
 
-	body, err := json.Marshal(chatRequest{
+	creq := chatRequest{
 		Model:       model,
 		Messages:    msgs,
 		Stream:      true,
@@ -237,7 +282,14 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
 		StreamOpts:  &streamOptions{IncludeUsage: true},
-	})
+	}
+	// Tool settings only mean something next to tools, and a server that is
+	// strict about unknown or inapplicable fields refuses the whole request.
+	if len(req.Tools) > 0 {
+		creq.ToolChoice = req.ToolChoice
+		creq.ParallelToolCalls = req.ParallelToolCalls
+	}
+	body, err := json.Marshal(creq)
 	if err != nil {
 		return nil, err
 	}
@@ -316,6 +368,51 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 		}
 	}
 
+	// flushCalls emits the accumulated calls in the order the model made them.
+	// Ranging over the map directly did not: with two calls in one response the
+	// order was random from run to run, and an application that executes them
+	// in arrival order got a different sequence each time.
+	//
+	// whole says the model declared itself finished. Without that — a stream
+	// that simply stopped — a call is only passed on if its arguments parse:
+	// the application is about to run it, and half a JSON object is not what
+	// the model asked for.
+	flushCalls := func(whole bool) bool {
+		if len(calls) == 0 {
+			return true
+		}
+		idx := make([]int, 0, len(calls))
+		for i := range calls {
+			idx = append(idx, i)
+		}
+		sort.Ints(idx)
+		for n, i := range idx {
+			pc := calls[i]
+			if pc.name == "" {
+				continue
+			}
+			if args := strings.TrimSpace(pc.args.String()); !whole && args != "" && !json.Valid([]byte(args)) {
+				slog.Warn("llm: dropping a function call cut off mid-arguments", "name", pc.name)
+				continue
+			}
+			id := pc.id
+			if id == "" {
+				// Some compatible servers omit the id. The engine needs one to
+				// match a result to its call.
+				id = fmt.Sprintf("call_%d_%d", time.Now().UnixNano(), n)
+			}
+			if !send(provider.LLMDelta{ToolCall: &provider.ToolCall{
+				ID:        id,
+				Name:      pc.name,
+				Arguments: pc.args.String(),
+			}}) {
+				return false
+			}
+		}
+		calls = map[int]*partialCall{}
+		return true
+	}
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -332,9 +429,22 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 			continue
 		}
 		if chunk.Usage != nil {
+			cached := chunk.Usage.PromptCacheHitTokens
+			if d := chunk.Usage.PromptTokensDetails; d != nil && d.CachedTokens > cached {
+				cached = d.CachedTokens
+			}
+			// The cache is the one thing a caller controls about time to first
+			// token without changing the prompt: a prefix the provider has seen
+			// is not processed again. Whether it was hit is otherwise invisible,
+			// so it is logged next to the size it applies to.
+			slog.Debug("llm: usage",
+				"prompt_tokens", chunk.Usage.PromptTokens,
+				"cached_prompt_tokens", cached,
+				"completion_tokens", chunk.Usage.CompletionTokens)
 			if !send(provider.LLMDelta{Usage: &provider.TokenUsage{
-				InputTokens:  chunk.Usage.PromptTokens,
-				OutputTokens: chunk.Usage.CompletionTokens,
+				InputTokens:       chunk.Usage.PromptTokens,
+				OutputTokens:      chunk.Usage.CompletionTokens,
+				CachedInputTokens: cached,
 			}}) {
 				return
 			}
@@ -367,24 +477,21 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 				}
 			}
 			if choice.FinishReason != "" {
-				for _, pc := range calls {
-					if pc.name == "" {
-						continue
-					}
-					if !send(provider.LLMDelta{ToolCall: &provider.ToolCall{
-						ID:        pc.id,
-						Name:      pc.name,
-						Arguments: pc.args.String(),
-					}}) {
-						return
-					}
+				if !flushCalls(true) {
+					return
 				}
-				calls = map[int]*partialCall{}
 			}
 		}
 	}
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		send(provider.LLMDelta{Err: fmt.Errorf("llm: stream read: %w", err)})
+	if err := scanner.Err(); err != nil {
+		if ctx.Err() == nil {
+			send(provider.LLMDelta{Err: fmt.Errorf("llm: stream read: %w", err)})
+		}
+		return
+	}
+	// A stream that ended without a finish_reason still made its calls.
+	if !flushCalls(false) {
+		return
 	}
 }
 

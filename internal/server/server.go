@@ -10,6 +10,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/store"
 )
 
 // Server exposes the live protocol over WebSocket, plus health, metrics and
@@ -36,6 +38,11 @@ type Server struct {
 	held     int // reservations, including sessions not yet in the map
 	draining atomic.Bool
 	authGate *failGate
+
+	// store keeps sessions started with store:true. Nil when store_dir is
+	// unset, in which case nothing is kept and nothing can be forked.
+	store     *store.Store
+	lastSweep atomic.Int64
 
 	// Factory lets tests inject a stub engine.
 	Factory EngineFactory
@@ -62,13 +69,51 @@ func NewServer(cfg config.Config, log *slog.Logger) *Server {
 		authGate: newFailGate(cfg.AuthFailBurst, cfg.AuthFailWindowSeconds),
 	}
 	s.upgrader.CheckOrigin = s.checkOrigin
+	if cfg.StoreDir != "" {
+		st, err := store.Open(cfg.StoreDir, time.Duration(cfg.StoreTTLHours)*time.Hour)
+		if err != nil {
+			// A server that cannot record still answers the phone.
+			log.Warn("session storage is disabled", "store_dir", cfg.StoreDir, "err", err)
+		} else {
+			s.store = st
+			s.sweepStore()
+			log.Info("session storage enabled", "store_dir", cfg.StoreDir, "ttl_hours", cfg.StoreTTLHours)
+		}
+	}
 	return s
+}
+
+// sweepStore removes expired stored sessions, at most once an hour. It runs
+// when a session opens, which is the only time the store grows.
+func (s *Server) sweepStore() {
+	if s.store == nil {
+		return
+	}
+	now := time.Now().Unix()
+	last := s.lastSweep.Load()
+	if last != 0 && now-last < 3600 {
+		return
+	}
+	if !s.lastSweep.CompareAndSwap(last, now) {
+		return
+	}
+	go func() {
+		if n := s.store.Sweep(); n > 0 {
+			s.log.Info("expired stored sessions removed", "n", n)
+		}
+	}()
 }
 
 // Handler builds the HTTP routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	// /v1/live/sessions is where gpt-live-1 lives; /v1/live is where golive
+	// first put it, and stays.
 	mux.HandleFunc("/v1/live", s.handleLive)
+	mux.HandleFunc("/v1/live/sessions", s.handleLive)
+	mux.HandleFunc("/v1/live/sessions/{id}/attach", s.handleAttach)
+	mux.HandleFunc("/v1/live/sessions/{id}/fork", s.handleFork)
+	mux.HandleFunc("/v1/live/sessions/{id}/content", s.handleContent)
 	mux.HandleFunc("/livez", s.handleLivez)
 	mux.HandleFunc("/healthz", s.handleLivez)
 	mux.HandleFunc("/readyz", s.handleReadyz)
@@ -169,6 +214,136 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
+	s.serveSession(w, r, nil)
+}
+
+// handleFork starts a new session from a stored one: same model, same
+// instructions, the conversation so far as its history. The client still sends
+// session.start, and may choose store, its Responses delegation settings and
+// its own audio format there.
+func (s *Server) handleFork(w http.ResponseWriter, r *http.Request) {
+	if err := s.authorize(r); err != nil {
+		s.rejectAuth(w, r)
+		return
+	}
+	id := r.PathValue("id")
+	meta, ok := s.sourceForFork(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"error": "session_not_found",
+			"hint":  "only a session started with store:true, on a server with store_dir set, can be forked",
+		})
+		return
+	}
+	s.serveSession(w, r, &meta)
+}
+
+// sourceForFork finds the record to fork from: a session still running, or one
+// that has ended and been kept.
+func (s *Server) sourceForFork(id string) (store.Meta, bool) {
+	if s.store == nil || !store.ValidID(id) {
+		return store.Meta{}, false
+	}
+	s.mu.Lock()
+	sess := s.sessions[id]
+	s.mu.Unlock()
+	if sess != nil {
+		if meta, ok := sess.snapshot(); ok {
+			return meta, true
+		}
+	}
+	meta, err := s.store.Meta(id)
+	if err != nil {
+		return store.Meta{}, false
+	}
+	return meta, true
+}
+
+// handleAttach joins a sideband to a running session.
+func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
+	if err := s.authorize(r); err != nil {
+		s.rejectAuth(w, r)
+		return
+	}
+	id := r.PathValue("id")
+	s.mu.Lock()
+	sess := s.sessions[id]
+	s.mu.Unlock()
+	if sess == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session_not_found"})
+		return
+	}
+	if s.draining.Load() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "draining"})
+		return
+	}
+	if sess.Sidebands() >= MaxSidebands {
+		metrics.Default().Rejected("sidebands")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"error": "too_many_sidebands",
+			"hint":  "a session accepts a small, fixed number of sidebands",
+		})
+		return
+	}
+	if !websocket.IsWebSocketUpgrade(r) {
+		writeJSON(w, http.StatusUpgradeRequired, map[string]any{
+			"error": "upgrade_required",
+			"hint":  "attach is a WebSocket endpoint",
+		})
+		return
+	}
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		s.log.Warn("sideband upgrade failed", "err", err, "session", id)
+		return
+	}
+	sess.Attach(r.Context(), conn)
+}
+
+// handleContent serves a stored session's recording: one stereo WAV, the
+// caller on the left channel and the assistant on the right.
+func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := s.authorize(r); err != nil {
+		s.rejectAuth(w, r)
+		return
+	}
+	id := r.PathValue("id")
+	if s.store == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session_not_found"})
+		return
+	}
+	size, err := s.store.ContentSize(id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session_not_found"})
+		return
+	}
+	if _, err := s.store.Meta(id); err != nil {
+		// Recorded but not yet written up: the session is still running and
+		// has never been snapshotted. Its audio is not a finished file.
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "session_in_progress",
+			"hint":  "the recording is available once the session has closed",
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+id+`.wav"`)
+	if r.Method == http.MethodHead {
+		return
+	}
+	if err := s.store.WriteContent(id, w); err != nil {
+		s.log.Warn("serving a stored recording failed", "session", id, "err", err)
+	}
+}
+
+// serveSession upgrades a request and runs a session on it. seed is the stored
+// session it forks from, or nil for a new one.
+func (s *Server) serveSession(w http.ResponseWriter, r *http.Request, seed *store.Meta) {
 	if s.draining.Load() {
 		metrics.Default().Rejected("draining")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "draining"})
@@ -176,6 +351,19 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.authorize(r); err != nil {
 		s.rejectAuth(w, r)
+		return
+	}
+	if !websocket.IsWebSocketUpgrade(r) {
+		// gpt-live-1 also takes a POST here carrying a WebRTC offer. golive
+		// speaks WebSocket only, and says so rather than answering 400 to a
+		// client that did nothing wrong.
+		status, hint := http.StatusUpgradeRequired, "this is a WebSocket endpoint"
+		if r.Method == http.MethodPost {
+			status = http.StatusNotImplemented
+			hint = "WebRTC sessions are not supported by this server; connect with a WebSocket and " +
+				"send session.start"
+		}
+		writeJSON(w, status, map[string]any{"error": "websocket_required", "hint": hint})
 		return
 	}
 	ip := s.clientIP(r)
@@ -193,12 +381,15 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := "sess_" + randomID()
+	s.sweepStore()
 	session := NewSession(SessionOptions{
 		Conn:    conn,
 		Cfg:     s.cfg,
 		Log:     s.log,
 		ID:      id,
 		Factory: s.Factory,
+		Store:   s.store,
+		Seed:    seed,
 	})
 	if rid := requestIDFrom(r.Context()); rid != "" {
 		session.log = session.log.With("request_id", rid)

@@ -83,7 +83,21 @@ type Turn struct {
 	// Speculative records whether the turn began before the final transcript.
 	Speculative bool
 
-	mu              sync.Mutex
+	// DelegationID overrides the delegation this turn's backend work is
+	// reported under. It is set, before the turn is shared, on a turn that
+	// resumes an earlier delegation with its function results; otherwise the
+	// id is derived from the turn's own.
+	DelegationID string
+
+	mu sync.Mutex
+	// committed, dead, held and commitCh implement the rule that a turn begun
+	// on a guess says nothing binding until the guess is confirmed. See
+	// emitOrHold.
+	committed bool
+	dead      bool
+	held      []any
+	commitCh  chan struct{}
+
 	startedAt       time.Time
 	speechEndAt     time.Time
 	speechEndMS     int64
@@ -122,6 +136,94 @@ func (t *Turn) Timings() Timings {
 		FirstAudio:      t.firstAudio,
 		FirstAudioOut:   t.firstAudioOut,
 		CompletedAt:     t.completedAt,
+	}
+}
+
+// emitOrHold delivers an event that commits the service to something — a
+// delegation, a backend function call — or keeps it back while the turn is
+// still a guess.
+//
+// Speculation starts the backend on a transcript that may yet change. Its audio
+// can be cut and its text discarded, but an event cannot be unsent: a client
+// that sees session.delegation.created, or a function call inside
+// response.event, acts on it. gpt-live-1 never retracts either, so golive does
+// not announce one until the turn it belongs to is certain. Held events are
+// released, in order, the instant the turn commits, and dropped if it dies.
+//
+// Emission happens under the turn's lock so a release and a direct emit from
+// another goroutine cannot interleave out of order. emit must not block.
+func (t *Turn) emitOrHold(ev any, emit func(any)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.dead {
+		return
+	}
+	if !t.committed {
+		t.held = append(t.held, ev)
+		return
+	}
+	emit(ev)
+}
+
+// commit confirms the turn and releases what was held for it.
+func (t *Turn) commit(emit func(any)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.committed || t.dead {
+		return
+	}
+	t.committed = true
+	for _, ev := range t.held {
+		emit(ev)
+	}
+	t.held = nil
+	if t.commitCh != nil {
+		close(t.commitCh)
+	}
+}
+
+// kill abandons the turn: nothing held for it is ever sent, and nothing more
+// will be.
+func (t *Turn) kill() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.dead {
+		return
+	}
+	t.dead = true
+	t.held = nil
+	// Whoever is waiting on the turn's confirmation — a function call, the
+	// first sentence of its answer — is told now that it is not coming.
+	if !t.committed && t.commitCh != nil {
+		close(t.commitCh)
+	}
+}
+
+// Committed reports whether the turn has been confirmed.
+func (t *Turn) Committed() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.committed
+}
+
+// awaitCommit blocks until the turn is confirmed, and reports false if done
+// closes first. A turn that was never speculative is confirmed at birth.
+func (t *Turn) awaitCommit(done <-chan struct{}) bool {
+	t.mu.Lock()
+	ch, committed, dead := t.commitCh, t.committed, t.dead
+	t.mu.Unlock()
+	if committed {
+		return true
+	}
+	if dead || ch == nil {
+		return false
+	}
+	select {
+	case <-ch:
+		// Closed by commit or by kill; only one of them is good news.
+		return t.Committed()
+	case <-done:
+		return false
 	}
 }
 
@@ -236,6 +338,7 @@ func (t *Tracker) Begin(transcript string, speculative bool) *Turn {
 		Transcript:  transcript,
 		Generation:  t.gen.Bump(),
 		Speculative: speculative,
+		commitCh:    make(chan struct{}),
 		startedAt:   time.Now(),
 	}
 	if !speculative {
@@ -263,6 +366,7 @@ func (t *Tracker) Revise(turnID, transcript string, committed bool) *Turn {
 		Transcript:  transcript,
 		Generation:  t.gen.Bump(),
 		Speculative: !committed,
+		commitCh:    make(chan struct{}),
 		startedAt:   prev.Timings().StartedAt,
 	}
 	if committed {
@@ -381,7 +485,10 @@ type StabilityWatch struct {
 	minChars  int
 
 	lastText string
+	// lastSeen is when the current pause was first observed; changed is when
+	// the transcript last moved inside it, or zero if it has not.
 	lastSeen time.Time
+	changed  time.Time
 	fired    bool
 }
 
@@ -394,6 +501,7 @@ func NewStabilityWatch(stableFor time.Duration, minChars int) *StabilityWatch {
 func (w *StabilityWatch) Reset() {
 	w.lastText = ""
 	w.lastSeen = time.Time{}
+	w.changed = time.Time{}
 	w.fired = false
 }
 
@@ -407,6 +515,7 @@ func (w *StabilityWatch) Reset() {
 func (w *StabilityWatch) Unsettle() {
 	w.lastText = ""
 	w.lastSeen = time.Time{}
+	w.changed = time.Time{}
 }
 
 // Observe records a partial transcript and reports whether it has now been
@@ -434,5 +543,59 @@ func (w *StabilityWatch) Observe(text string, now time.Time) bool {
 	return false
 }
 
-// Fired reports whether this utterance already produced a speculative turn.
+// ObserveFor is Observe with the windows chosen by the caller, and without the
+// length floor: the engine decides those from what the text says, which the
+// watch cannot see.
+//
+// There are two windows because there are two questions. stableFor is how long
+// the pause must have lasted: the speaker has to be audibly quiet for that long
+// before anything is guessed. settle is how long the transcript must have been
+// still, and it is the shorter of the two, because of what it is guarding
+// against. A recognizer runs behind the speaker, so the words of the last
+// syllable arrive some way into the silence that follows it — and once they
+// have, with no more speech to process, nothing further is coming. The old
+// rule restarted the whole of stableFor at that arrival, which put the guess
+// at "recognizer lag plus the full window": with a typical recognizer, later
+// than the moment the turn closed anyway, so the head start was nothing.
+func (w *StabilityWatch) ObserveFor(text string, now time.Time, stableFor, settle time.Duration) bool {
+	if w.fired {
+		return false
+	}
+	if w.lastSeen.IsZero() {
+		// First look at this pause.
+		w.lastSeen = now
+		w.changed = time.Time{}
+		w.lastText = text
+		return false
+	}
+	if text != w.lastText {
+		w.lastText = text
+		w.changed = now
+		return false
+	}
+	if now.Sub(w.lastSeen) < stableFor {
+		return false
+	}
+	if !w.changed.IsZero() && now.Sub(w.changed) < settle {
+		return false
+	}
+	w.fired = true
+	return true
+}
+
+// Rearm lets the watch fire again in the same utterance.
+//
+// It used to fire once and stay fired, which made a guess on the wrong pause
+// doubly expensive: the speculation was wasted, and the pause that really ended
+// the turn then got no head start at all, because the one shot was spent. A
+// speaker who stops to think mid-sentence is common enough that this was the
+// usual way for speculation to buy nothing.
+func (w *StabilityWatch) Rearm() {
+	w.fired = false
+	w.lastText = ""
+	w.lastSeen = time.Time{}
+	w.changed = time.Time{}
+}
+
+// Fired reports whether this utterance currently has a speculative turn out.
 func (w *StabilityWatch) Fired() bool { return w.fired }

@@ -8,9 +8,11 @@ package mock
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +22,55 @@ import (
 )
 
 func init() {
-	provider.RegisterASR("mock", func() (provider.ASR, error) { return NewASR(""), nil })
-	provider.RegisterLLM("mock", func() (provider.LLM, error) { return NewLLM(), nil })
-	provider.RegisterTTS("mock", func() (provider.TTS, error) { return NewTTS(), nil })
+	provider.RegisterASR("mock", func() (provider.ASR, error) { return NewASR("").withEnv(), nil })
+	provider.RegisterLLM("mock", func() (provider.LLM, error) { return NewLLM().withEnv(), nil })
+	provider.RegisterTTS("mock", func() (provider.TTS, error) { return NewTTS().withEnv(), nil })
+}
+
+// --- latency injection ---
+//
+// The mocks answer instantly, which is right for unit tests and useless for
+// judging latency work: every stage costs zero, so nothing an engine does about
+// a slow stage can show up. The GOLIVE_MOCK_* variables below give each stage
+// the delays a real vendor has — a handshake, a recognizer running behind the
+// speaker, a backend's time to first token, a synthesizer's time to first byte —
+// so a change to the engine can be measured A/B on one machine with no
+// credentials and no network weather. configs/sim.json documents a set modelled
+// on the stage timings in BENCHMARK.md.
+//
+// Only the registered factories read them. Tests construct the mocks directly
+// and are unaffected by whatever happens to be in the environment.
+
+func envMS(key string) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n * float64(time.Millisecond))
+}
+
+func envOn(key string) bool {
+	b, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
+	return err == nil && b
+}
+
+// sleepCtx waits d, or returns false early when ctx ends.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // --- ASR ---
@@ -34,6 +82,27 @@ type ASR struct {
 	phrase string
 	// MSPerRune is how much audio one character of the phrase represents.
 	MSPerRune float64
+
+	// DialDelay is how long Open takes: the handshake a real recognizer needs.
+	DialDelay time.Duration
+	// Lag is how far behind the audio each hypothesis arrives. A streaming
+	// recognizer is always a little behind the speaker, and that gap is what
+	// decides whether a partial is trustworthy at the moment the speaker pauses.
+	Lag time.Duration
+	// FinalDelay is how long the final result takes after CloseSend.
+	FinalDelay time.Duration
+	// VoicedOnly counts only voiced audio toward the phrase. Off, the hypothesis
+	// keeps growing through silence, which no recognizer does; it is off by
+	// default only because the unit tests were timed against it.
+	VoicedOnly bool
+}
+
+func (a *ASR) withEnv() *ASR {
+	a.DialDelay = envMS("GOLIVE_MOCK_ASR_DIAL_MS")
+	a.Lag = envMS("GOLIVE_MOCK_ASR_LAG_MS")
+	a.FinalDelay = envMS("GOLIVE_MOCK_ASR_FINAL_MS")
+	a.VoicedOnly = envOn("GOLIVE_MOCK_ASR_VOICED_ONLY")
+	return a
 }
 
 // NewASR builds a mock recognizer. An empty phrase falls back to
@@ -57,6 +126,9 @@ func (a *ASR) Open(ctx context.Context, opts provider.ASROptions) (provider.ASRS
 	if rate <= 0 {
 		rate = provider.PipelineRate
 	}
+	if !sleepCtx(ctx, a.DialDelay) {
+		return nil, ctx.Err()
+	}
 	s := &asrStream{
 		asr:     a,
 		rate:    rate,
@@ -75,39 +147,75 @@ type asrStream struct {
 	mu       sync.Mutex
 	audioMS  float64
 	lastText string
-	closed   bool
+	// sendDone is set by CloseSend: no more audio, the final is on its way.
+	sendDone bool
+	// finished is set once the results channel has been closed.
+	finished bool
 }
 
 func (s *asrStream) Write(pcm []byte) error {
 	s.mu.Lock()
-	if s.closed {
+	if s.sendDone || s.finished {
 		s.mu.Unlock()
 		return nil
 	}
-	s.audioMS += audio.PCM16(s.rate).DurationMS(pcm)
+	s.audioMS += s.heardMS(pcm)
 	text := s.asr.prefix(s.audioMS)
 	changed := text != s.lastText
 	s.lastText = text
 	s.mu.Unlock()
 
 	if changed && text != "" {
-		s.send(provider.ASRResult{Text: text})
+		s.deliver(provider.ASRResult{Text: text}, s.asr.Lag)
 	}
 	return nil
 }
 
+// heardMS is how much of pcm counts toward the phrase.
+func (s *asrStream) heardMS(pcm []byte) float64 {
+	format := audio.PCM16(s.rate)
+	if !s.asr.VoicedOnly {
+		return format.DurationMS(pcm)
+	}
+	frame := format.BytesForMS(20)
+	if frame <= 0 {
+		return format.DurationMS(pcm)
+	}
+	var ms float64
+	for off := 0; off < len(pcm); off += frame {
+		end := off + frame
+		if end > len(pcm) {
+			end = len(pcm)
+		}
+		samples, err := audio.DecodePCM16(pcm[off:end])
+		if err != nil {
+			continue
+		}
+		// -40 dBFS: far above digital silence, far below the synthetic speech
+		// the harnesses send.
+		if audio.RMS(samples) > 0.01 {
+			ms += format.DurationMS(pcm[off:end])
+		}
+	}
+	return ms
+}
+
 func (s *asrStream) CloseSend() error {
 	s.mu.Lock()
-	if s.closed {
+	if s.sendDone || s.finished {
 		s.mu.Unlock()
 		return nil
 	}
-	s.closed = true
+	s.sendDone = true
 	text := s.asr.prefix(s.audioMS)
 	s.mu.Unlock()
 
-	s.send(provider.ASRResult{Text: text, Final: true})
-	close(s.results)
+	// The final never overtakes a partial still in flight.
+	wait := s.asr.FinalDelay
+	if s.asr.Lag > 0 && wait <= s.asr.Lag {
+		wait = s.asr.Lag + time.Millisecond
+	}
+	s.deliver(provider.ASRResult{Text: text, Final: true}, wait)
 	return nil
 }
 
@@ -116,19 +224,41 @@ func (s *asrStream) Results() <-chan provider.ASRResult { return s.results }
 func (s *asrStream) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	close(s.results)
+	s.finish()
 	return nil
 }
 
+// finish closes the results channel once. The caller holds mu.
+func (s *asrStream) finish() {
+	if s.finished {
+		return
+	}
+	s.finished = true
+	close(s.results)
+}
+
+// deliver hands a result to the reader after delay, and closes the stream
+// behind a final one.
+func (s *asrStream) deliver(r provider.ASRResult, delay time.Duration) {
+	if delay <= 0 {
+		s.send(r)
+		return
+	}
+	time.AfterFunc(delay, func() { s.send(r) })
+}
+
 func (s *asrStream) send(r provider.ASRResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished {
+		return
+	}
 	select {
 	case s.results <- r:
-	case <-s.ctx.Done():
 	default:
+	}
+	if r.Final {
+		s.finish()
 	}
 }
 
@@ -153,6 +283,102 @@ func (a *ASR) prefix(ms float64) string {
 type LLM struct {
 	// DelayPerRune paces the stream so barge-in has something to cut into.
 	DelayPerRune time.Duration
+	// FirstTokenDelay is the backend's time to first token: on a real stack,
+	// the largest single term between the caller's last word and the reply.
+	FirstTokenDelay time.Duration
+
+	// UseTools makes the model behave like one that has been given functions:
+	// when the user's message contains ToolTrigger and a tool is on offer, it
+	// says a short holding line and calls the first tool; once the conversation
+	// ends in a tool result, it reports that result. Off, tools are ignored and
+	// every reply is the plain one.
+	UseTools bool
+	// ToolTrigger is the substring that makes a message worth a tool call.
+	ToolTrigger string
+
+	mu    sync.Mutex
+	calls int
+}
+
+func (l *LLM) withEnv() *LLM {
+	l.FirstTokenDelay = envMS("GOLIVE_MOCK_LLM_TTFT_MS")
+	if d := envMS("GOLIVE_MOCK_LLM_RUNE_MS"); d > 0 {
+		l.DelayPerRune = d
+	}
+	// On for the registered mock, so a demo session that configures a function
+	// can watch a call go out and come back without a real backend.
+	l.UseTools = true
+	return l
+}
+
+// ToolPreface is what the mock says before calling a tool.
+const ToolPreface = "好的，我查一下。"
+
+// ToolReply is what the mock says once a tool result is in.
+func ToolReply(result string) string {
+	return "查到了，" + strings.TrimSpace(result) + "。"
+}
+
+// toolName pulls the function name out of a chat-completions tool definition.
+func toolName(raw json.RawMessage) string {
+	var def struct {
+		Name     string `json:"name"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if json.Unmarshal(raw, &def) != nil {
+		return ""
+	}
+	if def.Function.Name != "" {
+		return def.Function.Name
+	}
+	return def.Name
+}
+
+// plan decides what this completion does: plain text, or text and a call.
+func (l *LLM) plan(req provider.LLMRequest) (text string, call *provider.ToolCall) {
+	var lastUser string
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if req.Messages[i].Role == provider.RoleUser {
+			lastUser = req.Messages[i].Content
+			break
+		}
+	}
+	if !l.UseTools {
+		return Reply(lastUser), nil
+	}
+
+	// A conversation that ends in tool results is waiting for them to be read
+	// back, whatever tools are on offer now.
+	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == provider.RoleTool {
+		var results []string
+		for i := n - 1; i >= 0 && req.Messages[i].Role == provider.RoleTool; i-- {
+			results = append([]string{req.Messages[i].Content}, results...)
+		}
+		return ToolReply(strings.Join(results, "，")), nil
+	}
+
+	trigger := l.ToolTrigger
+	if trigger == "" {
+		trigger = "查"
+	}
+	if len(req.Tools) == 0 || !strings.Contains(lastUser, trigger) {
+		return Reply(lastUser), nil
+	}
+	if choice, ok := req.ToolChoice.(string); ok && choice == "none" {
+		return Reply(lastUser), nil
+	}
+	name := toolName(req.Tools[0])
+	if name == "" {
+		return Reply(lastUser), nil
+	}
+	l.mu.Lock()
+	l.calls++
+	id := fmt.Sprintf("call_mock_%d", l.calls)
+	l.mu.Unlock()
+	args, _ := json.Marshal(map[string]string{"request": lastUser})
+	return ToolPreface, &provider.ToolCall{ID: id, Name: name, Arguments: string(args)}
 }
 
 // NewLLM builds a mock language model.
@@ -170,11 +396,14 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 			break
 		}
 	}
-	reply := Reply(last)
+	reply, call := l.plan(req)
 
 	out := make(chan provider.LLMDelta, 64)
 	go func() {
 		defer close(out)
+		if !sleepCtx(ctx, l.FirstTokenDelay) {
+			return
+		}
 		for _, r := range reply {
 			select {
 			case <-ctx.Done():
@@ -187,6 +416,13 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 					return
 				case <-time.After(l.DelayPerRune):
 				}
+			}
+		}
+		if call != nil {
+			select {
+			case out <- provider.LLMDelta{ToolCall: call}:
+			case <-ctx.Done():
+				return
 			}
 		}
 		select {
@@ -225,8 +461,34 @@ type TTS struct {
 	// tests run fast; the engine's own player provides playback pacing.
 	Realtime bool
 
+	// DialDelay is how long Open takes: the connect-and-greet a persistent
+	// synthesis session costs once.
+	DialDelay time.Duration
+	// FirstByteDelay is how long each Synthesize takes to produce its first
+	// chunk.
+	FirstByteDelay time.Duration
+	// Serial makes one stream synthesize one segment at a time, like a vendor
+	// task that is a single ordered stream. A second Synthesize waits for the
+	// first to finish or be cancelled.
+	Serial bool
+
 	mu       sync.Mutex
 	prewarms int
+	opens    int
+}
+
+func (t *TTS) withEnv() *TTS {
+	t.DialDelay = envMS("GOLIVE_MOCK_TTS_DIAL_MS")
+	t.FirstByteDelay = envMS("GOLIVE_MOCK_TTS_TTFB_MS")
+	t.Serial = envOn("GOLIVE_MOCK_TTS_SERIAL")
+	return t
+}
+
+// Opens reports how many synthesis sessions were opened.
+func (t *TTS) Opens() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.opens
 }
 
 // Prewarms reports how many times any stream this TTS opened was prewarmed.
@@ -258,6 +520,12 @@ func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSS
 	if speed <= 0 {
 		speed = 1
 	}
+	if !sleepCtx(ctx, t.DialDelay) {
+		return nil, ctx.Err()
+	}
+	t.mu.Lock()
+	t.opens++
+	t.mu.Unlock()
 	return &ttsStream{tts: t, rate: rate, speed: speed}, nil
 }
 
@@ -265,6 +533,8 @@ type ttsStream struct {
 	tts   *TTS
 	rate  int
 	speed float64
+	// busy serializes Synthesize when the TTS is Serial.
+	busy sync.Mutex
 }
 
 func (s *ttsStream) SampleRate() int { return s.rate }
@@ -288,6 +558,13 @@ func (s *ttsStream) Synthesize(ctx context.Context, text string) (<-chan provide
 	out := make(chan provider.TTSChunk, 8)
 	go func() {
 		defer close(out)
+		if s.tts.Serial {
+			s.busy.Lock()
+			defer s.busy.Unlock()
+		}
+		if !sleepCtx(ctx, s.tts.FirstByteDelay) {
+			return
+		}
 		chunkSamples := s.rate * s.tts.ChunkMS / 1000
 		if chunkSamples <= 0 {
 			chunkSamples = s.rate / 10

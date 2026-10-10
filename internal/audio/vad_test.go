@@ -199,3 +199,163 @@ func TestEchoFloorMeasuresWhatComesBack(t *testing.T) {
 		t.Errorf("echo floor ran past its bound: %.1f dB", v.EchoFloorDB())
 	}
 }
+
+// TestVADUtteranceIsTheInputNotADoubledOnset pins the audio a recognizer is
+// handed against the audio that actually arrived.
+//
+// The snapshot test above compares the detector with itself, so it could not
+// see the defect this one exists for: the frames that proved an utterance real
+// were held both in the pre-roll ring and in the candidate, and promotion
+// concatenated the two. The first fifth of a second of every utterance went to
+// the recognizer twice. Comparing against the input is the only check that
+// catches it.
+func TestVADUtteranceIsTheInputNotADoubledOnset(t *testing.T) {
+	const rate = RatePipeline
+	// The full default profile: a zero SpeechPadMS means "no pad", and the pad
+	// is half of what this test is about.
+	v := NewVAD(DefaultVADConfig())
+
+	signal := append(quiet(rate, 600), tone(rate, 1000, 0.45)...)
+	signal = append(signal, quiet(rate, 800)...)
+
+	frame := v.FrameSamples()
+	var stop *Decision
+	consumed := 0
+	for off := 0; off+frame <= len(signal); off += frame {
+		d := v.Push(signal[off : off+frame])
+		consumed = off + frame
+		if d.Kind == DecisionStopped {
+			copied := d
+			stop = &copied
+			break
+		}
+	}
+	if stop == nil {
+		t.Fatal("utterance never closed")
+	}
+
+	// The utterance is a contiguous run of input ending at the frame that
+	// closed it.
+	begin := consumed - len(stop.Utterance)
+	if begin < 0 {
+		t.Fatalf("utterance is %d samples but only %d were fed; audio was duplicated",
+			len(stop.Utterance), consumed)
+	}
+	for i, s := range stop.Utterance {
+		if s != signal[begin+i] {
+			t.Fatalf("utterance diverges from the input at sample %d; the onset was duplicated or reordered", i)
+		}
+	}
+
+	// And it carries the whole configured pad in front of the first voiced
+	// sample, not the sliver left over once the candidate had overwritten it.
+	cfg := DefaultVADConfig()
+	onset := 600 * rate / 1000
+	padMS := float64(onset-begin) / float64(rate) * 1000
+	if padMS < float64(cfg.SpeechPadMS)-float64(cfg.FrameMS) {
+		t.Errorf("pre-roll pad is %.0f ms; want about %d", padMS, cfg.SpeechPadMS)
+	}
+	if got, want := stop.StartMS, int64(float64(begin)/float64(rate)*1000); got != want {
+		t.Errorf("start_ms is %d but the utterance begins at %d ms of input", got, want)
+	}
+}
+
+// TestVADKeepsThePrerollAcrossADiscardedCandidate covers the other half of the
+// same bookkeeping: a cough that never became an utterance must still be part
+// of "the audio just before now" when real speech follows it.
+func TestVADKeepsThePrerollAcrossADiscardedCandidate(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(DefaultVADConfig())
+
+	// 80 ms of noise, a 200 ms gap that discards it, then real speech.
+	signal := append(quiet(rate, 400), tone(rate, 80, 0.45)...)
+	signal = append(signal, quiet(rate, 200)...)
+	signal = append(signal, tone(rate, 900, 0.45)...)
+	signal = append(signal, quiet(rate, 800)...)
+
+	frame := v.FrameSamples()
+	consumed := 0
+	for off := 0; off+frame <= len(signal); off += frame {
+		d := v.Push(signal[off : off+frame])
+		consumed = off + frame
+		if d.Kind != DecisionStopped {
+			continue
+		}
+		begin := consumed - len(d.Utterance)
+		for i, s := range d.Utterance {
+			if s != signal[begin+i] {
+				t.Fatalf("utterance diverges from the input at sample %d", i)
+			}
+		}
+		return
+	}
+	t.Fatal("utterance never closed")
+}
+
+func TestVADReportsCandidatesAndResumption(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	frame := v.FrameSamples()
+	push := func(samples []float32) {
+		for off := 0; off+frame <= len(samples); off += frame {
+			v.Push(samples[off : off+frame])
+		}
+	}
+
+	push(quiet(rate, 200))
+	if v.CandidateMS() != 0 {
+		t.Fatalf("silence produced a %.0f ms candidate", v.CandidateMS())
+	}
+	// Under min_speech_ms: a candidate, not yet an utterance.
+	push(tone(rate, 100, 0.45))
+	if v.CandidateMS() <= 0 {
+		t.Fatal("voiced audio under the minimum should be reported as a candidate")
+	}
+	push(tone(rate, 500, 0.45))
+	if v.CandidateMS() != 0 {
+		t.Error("an open utterance is no longer a candidate")
+	}
+	if v.VoicedRunMS() <= 0 {
+		t.Error("an utterance that is being spoken should report a voiced run")
+	}
+
+	push(quiet(rate, 200))
+	if v.VoicedRunMS() != 0 {
+		t.Errorf("voiced run is %.0f ms during a pause", v.VoicedRunMS())
+	}
+	if v.TrailingSilenceMS() < 180 {
+		t.Errorf("trailing silence is %.0f ms after a 200 ms pause", v.TrailingSilenceMS())
+	}
+	push(tone(rate, 100, 0.45))
+	if got := v.VoicedRunMS(); got < 60 || got > 120 {
+		t.Errorf("voiced run after resuming is %.0f ms; want about 100", got)
+	}
+}
+
+// TestVADPatienceIsPerUtterance checks that a longer silence threshold holds an
+// utterance open through a pause that would otherwise have closed it, and that
+// the override is gone by the next one.
+func TestVADPatienceIsPerUtterance(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	base := v.MinSilenceMS()
+
+	feed(v, append(quiet(rate, 200), tone(rate, 800, 0.45)...))
+	v.SetMinSilenceMS(base + 400)
+
+	if d := feed(v, quiet(rate, base+200)); len(d) != 0 && d[len(d)-1].Kind == DecisionStopped {
+		t.Fatal("the utterance closed inside the extended silence window")
+	}
+	closed := false
+	for _, d := range feed(v, quiet(rate, 400)) {
+		if d.Kind == DecisionStopped {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatal("the utterance never closed once the extended window had passed")
+	}
+	if got := v.MinSilenceMS(); got != base {
+		t.Errorf("the override outlived its utterance: min silence is %d, want %d", got, base)
+	}
+}

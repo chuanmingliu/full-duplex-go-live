@@ -43,6 +43,9 @@ type Segmenter struct {
 	first bool
 	// depth tracks bracket nesting so a segment never ends mid-parenthesis.
 	depth int
+	// early is the index of the last clause boundary that was reached before
+	// the first segment was long enough to end there, or -1.
+	early int
 }
 
 // New builds a segmenter. Zero fields in cfg fall back to DefaultConfig.
@@ -60,7 +63,7 @@ func New(cfg Config) *Segmenter {
 	if cfg.MaxChunkChars < cfg.MinChunkChars {
 		cfg.MaxChunkChars = cfg.MinChunkChars
 	}
-	return &Segmenter{cfg: cfg, first: true}
+	return &Segmenter{cfg: cfg, first: true, early: -1}
 }
 
 // Reset clears buffered text and returns to first-segment behaviour. Call it
@@ -69,6 +72,7 @@ func (s *Segmenter) Reset() {
 	s.buf = s.buf[:0]
 	s.first = true
 	s.depth = 0
+	s.early = -1
 }
 
 // Pending reports buffered text not yet emitted.
@@ -87,11 +91,32 @@ func (s *Segmenter) Push(delta string) []string {
 				s.depth--
 			}
 		}
+		// A full-width terminator is never part of a number or an abbreviation,
+		// so it can be judged the moment it arrives. Only the ASCII ones need
+		// the next rune as lookahead — and waiting for it costs one more token
+		// from the backend before the segment that sets time-to-first-audio is
+		// released, on exactly the replies ("好的，") that would have been
+		// fastest.
+		if needsNoLookahead(r) {
+			if seg, ok := s.tryFlushAt(len(s.buf) - 1); ok {
+				out = append(out, seg)
+				continue
+			}
+		}
 		if seg, ok := s.tryFlush(); ok {
 			out = append(out, seg)
 		}
 	}
 	return out
+}
+
+// needsNoLookahead reports whether r ends a clause unambiguously on its own.
+func needsNoLookahead(r rune) bool {
+	switch r {
+	case '。', '！', '？', '…', '，', '、', '；', '：', '\n':
+		return true
+	}
+	return false
 }
 
 // FlushFirst emits whatever is buffered as the first segment, ignoring
@@ -102,7 +127,30 @@ func (s *Segmenter) FlushFirst() string {
 	s.buf = s.buf[:0]
 	s.depth = 0
 	s.first = false
+	s.early = -1
 	return text
+}
+
+// HasEarlyBoundary reports whether the first segment has passed a clause
+// boundary it was too short to end on.
+func (s *Segmenter) HasEarlyBoundary() bool { return s.first && s.early >= 0 }
+
+// FlushFirstAtBoundary emits the first segment up to the last clause boundary
+// it passed while still too short, and keeps the rest for the next one. It
+// returns "" when there is no such boundary.
+//
+// It is the polite form of FlushFirst. Both exist so that the opening of a
+// reply cannot wait indefinitely; this one stops where the sentence itself
+// paused, so the synthesizer is handed "好的，" rather than "好的，我听到你说帮".
+func (s *Segmenter) FlushFirstAtBoundary() string {
+	if !s.HasEarlyBoundary() || s.early >= len(s.buf) {
+		return ""
+	}
+	seg, ok := s.cut(s.early, s.early+1)
+	if !ok {
+		return ""
+	}
+	return seg
 }
 
 // Flush emits whatever is left, typically at end of turn.
@@ -129,7 +177,15 @@ func (s *Segmenter) tryFlush() (string, bool) {
 	if n < 2 {
 		return "", false
 	}
-	idx := n - 2 // candidate boundary; s.buf[n-1] is lookahead
+	return s.tryFlushAt(n - 2) // candidate boundary; s.buf[n-1] is lookahead
+}
+
+// tryFlushAt judges the rune at idx as a possible end of segment.
+func (s *Segmenter) tryFlushAt(idx int) (string, bool) {
+	n := len(s.buf)
+	if idx < 0 || idx >= n {
+		return "", false
+	}
 	candidate := s.buf[idx]
 	length := idx + 1
 
@@ -149,6 +205,15 @@ func (s *Segmenter) tryFlush() (string, bool) {
 	// Never cut inside a bracketed aside unless it has run away entirely.
 	if s.depth > 0 && n < s.cfg.MaxChunkChars*2 {
 		return "", false
+	}
+
+	// A boundary that arrives before the first segment is long enough is not
+	// taken, but it is remembered: if nothing better turns up it is where the
+	// segment will be cut. At least two characters before the punctuation, so
+	// a lone "嗯" is not spoken by itself on the strength of the comma after
+	// it.
+	if s.first && (strong || weak) && length < minChars && length >= 3 && s.depth == 0 {
+		s.early = idx
 	}
 
 	switch {
@@ -179,6 +244,7 @@ func (s *Segmenter) cut(last, from int) (string, bool) {
 	seg := Normalize(string(s.buf[:last+1]))
 	s.buf = append(s.buf[:0], s.buf[from:]...)
 	s.first = false
+	s.early = -1
 	if seg == "" {
 		return "", false
 	}

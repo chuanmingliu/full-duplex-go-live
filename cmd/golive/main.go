@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/config"
+	"github.com/chuanmingliu/golive/internal/duplex"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/server"
@@ -95,6 +96,7 @@ func run() error {
 		return err
 	}
 	prewarm(context.Background(), cfg, log)
+	go warmPhrases(context.Background(), cfg, log)
 
 	metrics.Default().SetBuild(version, commit)
 	srv := server.NewServer(cfg, log)
@@ -192,6 +194,31 @@ func prewarm(ctx context.Context, cfg config.Config, log *slog.Logger) {
 	}
 	if tts, err := provider.OpenTTS(cfg.TTS); err == nil {
 		try(cfg.TTS, tts)
+	}
+}
+
+// warmPhrases synthesizes the sentences this server says on every call — the
+// greeting, the backchannels, the holding lines — once, now, so that no caller
+// waits on a synthesizer for words that never change. Nothing depends on it:
+// a session that finds the cache empty speaks as it always did and fills it.
+func warmPhrases(ctx context.Context, cfg config.Config, log *slog.Logger) {
+	if !cfg.Duplex.PhraseCache {
+		return
+	}
+	tts, err := provider.OpenTTS(cfg.TTS)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	started := time.Now()
+	n, err := duplex.WarmPhrases(ctx, cfg, tts, log)
+	if err != nil {
+		log.Warn("phrase cache only partly warmed", "cached", n, "err", err)
+		return
+	}
+	if n > 0 {
+		log.Info("phrase cache warmed", "phrases", n, "took_ms", time.Since(started).Milliseconds())
 	}
 }
 
