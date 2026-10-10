@@ -42,7 +42,9 @@ case "$(uname -m)" in
 esac
 
 BIN="bin/golive"
-if command -v go >/dev/null 2>&1; then
+# Only where there is source to build: a deploy bundle carries binaries and no
+# go.mod, and on a box that happens to have Go that used to fail the start.
+if command -v go >/dev/null 2>&1 && [ -f go.mod ]; then
   echo "· building from source"
   GOPROXY="${GOPROXY:-direct}" \
     go build -ldflags "-s -w" -o bin/golive ./cmd/golive
