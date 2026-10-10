@@ -74,6 +74,17 @@ type Config struct {
 	// Empty disables storage: store:true is then accepted and ignored, and
 	// those two endpoints answer 404.
 	StoreDir string `json:"store_dir"`
+	// Realtime configures /v1/realtime, the endpoint that speaks the OpenAI
+	// Realtime event protocol over the same engine. It exists for clients that
+	// cannot speak gpt-live-1 — a SIP media gateway, mostly.
+	Realtime RealtimeConfig `json:"realtime"`
+
+	// TelemetryURL, when set, receives a small JSON event for each boundary of
+	// a turn (speech start and stop, final transcript, first token, first
+	// audio) as it happens, for an external latency console. Posting is
+	// asynchronous and lossy by design: it is never on the audio path.
+	TelemetryURL string `json:"telemetry_url"`
+
 	// StoreTTLHours is how long a stored session is kept. gpt-live-1 keeps
 	// recordings thirty days; the default here is one, because this is a disk
 	// on your machine rather than somebody else's.
@@ -389,6 +400,28 @@ type VADProfile struct {
 
 // Default returns a configuration that runs end to end with the mock providers
 // and no credentials at all.
+// RealtimeConfig is the OpenAI-Realtime-compatible endpoint.
+type RealtimeConfig struct {
+	// Enabled serves /v1/realtime, /v1/opening and /v1/pool.
+	Enabled bool `json:"enabled"`
+	// SampleRate is the rate of "pcm16" audio on this endpoint, in both
+	// directions, for a client that does not say. OpenAI's own is 24000. A
+	// media gateway usually has one fixed internal rate and no way to state it
+	// — Active Call's is 16000 — so this is where it is told.
+	SampleRate int `json:"sample_rate"`
+	// Dialect picks the event names for assistant audio: "beta"
+	// (response.audio.delta) or "ga" (response.output_audio.delta). OpenAI
+	// renamed them, and older clients match only the old names.
+	Dialect string `json:"dialect"`
+	// HoldForOpening keeps a new session deaf and silent until POST
+	// /v1/opening releases it. An outbound phone call connects its agent before
+	// anyone has answered, and what arrives in the meantime is ringback.
+	HoldForOpening bool `json:"hold_for_opening"`
+	// HoldTimeoutSeconds releases a held session that nobody released. A call
+	// that has not been answered by then is not going to be.
+	HoldTimeoutSeconds int `json:"hold_timeout_seconds"`
+}
+
 func Default() Config {
 	return Config{
 		Addr:                   ":8080",
@@ -401,14 +434,20 @@ func Default() Config {
 		AuthFailWindowSeconds:  60,
 		ShutdownTimeoutSeconds: 10,
 		StoreTTLHours:          24,
-		ASR:                    "mock",
-		LLM:                    "mock",
-		TTS:                    "mock",
-		Model:                  "golive-1",
-		Voice:                  "",
-		Language:               "zh",
-		Speed:                  1.0,
-		ClientRate:             24000,
+		Realtime: RealtimeConfig{
+			Enabled:            true,
+			SampleRate:         24000,
+			Dialect:            "beta",
+			HoldTimeoutSeconds: 45,
+		},
+		ASR:        "mock",
+		LLM:        "mock",
+		TTS:        "mock",
+		Model:      "golive-1",
+		Voice:      "",
+		Language:   "zh",
+		Speed:      1.0,
+		ClientRate: 24000,
 		Instructions: "You are a calm, friendly voice assistant. Speak warmly and " +
 			"naturally, at an unhurried pace. Keep routine answers to one or two " +
 			"short sentences. Never read out markup, lists or code.",
@@ -563,6 +602,11 @@ func (c *Config) applyEnv() {
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")
 	setString(&c.StoreDir, "GOLIVE_STORE_DIR")
 	setInt(&c.StoreTTLHours, "GOLIVE_STORE_TTL_HOURS")
+	setBool(&c.Realtime.Enabled, "GOLIVE_REALTIME_ENABLED")
+	setInt(&c.Realtime.SampleRate, "GOLIVE_REALTIME_RATE")
+	setString(&c.Realtime.Dialect, "GOLIVE_REALTIME_DIALECT")
+	setBool(&c.Realtime.HoldForOpening, "GOLIVE_REALTIME_HOLD")
+	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
 	setBool(&c.Duplex.SemanticEndpointing, "GOLIVE_SEMANTIC_ENDPOINTING")
 	setBool(&c.Duplex.BackendPrefixWarm, "GOLIVE_BACKEND_PREFIX_WARM")
@@ -635,6 +679,23 @@ func (c *Config) Validate() error {
 	if c.VAD.SnapshotMS > 0 && c.VAD.FrameMS > 0 && c.VAD.SnapshotMS%c.VAD.FrameMS != 0 {
 		return fmt.Errorf("config: vad.snapshot_ms (%d) must be a multiple of vad.frame_ms (%d)",
 			c.VAD.SnapshotMS, c.VAD.FrameMS)
+	}
+	switch c.Realtime.SampleRate {
+	case 0:
+		c.Realtime.SampleRate = 24000
+	case 8000, 16000, 24000, 48000:
+	default:
+		return fmt.Errorf("config: realtime.sample_rate %d is not one of 8000, 16000, 24000, 48000", c.Realtime.SampleRate)
+	}
+	switch c.Realtime.Dialect {
+	case "":
+		c.Realtime.Dialect = "beta"
+	case "beta", "ga":
+	default:
+		return fmt.Errorf("config: realtime.dialect %q must be beta or ga", c.Realtime.Dialect)
+	}
+	if c.Realtime.HoldTimeoutSeconds <= 0 {
+		c.Realtime.HoldTimeoutSeconds = 45
 	}
 	if c.StoreTTLHours < 0 {
 		return fmt.Errorf("config: store_ttl_hours must be >= 0")

@@ -459,6 +459,39 @@ func (e *Engine) Greet() {
 	})
 }
 
+// Say speaks a line the assistant was handed rather than one it composed: the
+// opening of a phone call, released when the call is answered. Like the
+// greeting it is a real turn — interruptible, truncated honestly, recorded in
+// history — and like the greeting it plays from the phrase cache when the line
+// was synthesized ahead of time, which is the point of knowing it in advance.
+func (e *Engine) Say(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	e.post(func() {
+		turn := e.tracker.Begin("", false)
+		e.specTurn = nil
+		e.commitTurn(turn)
+		e.log.Debug("speak: opening line", "turn", turn.ID, "text", text)
+		pipe := e.newSpeechPipe(turn, true)
+		pipe.Push(text)
+		pipe.Close()
+		turn.AppendResponse(text)
+	})
+}
+
+// Interrupt stops whatever the assistant is saying or about to say, as a
+// barge-in would. It is for a client that has decided, by means of its own,
+// that the caller has taken the floor.
+func (e *Engine) Interrupt() {
+	e.post(func() {
+		if e.assistantHasFloor() {
+			e.interrupt()
+		}
+	})
+}
+
 // PushAudio feeds client audio in the negotiated session format. It never
 // blocks for long: a stalled engine must not stall the socket reader, so a full
 // queue drops the oldest frame and says so.

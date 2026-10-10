@@ -85,6 +85,16 @@ type Session struct {
 	seed      *store.Meta
 	createdAt time.Time
 
+	// rt is set when the primary connection speaks the OpenAI Realtime event
+	// protocol rather than gpt-live-1. The session and its engine are the
+	// same; only the wire is translated, in realtime.go. Sidebands on such a
+	// session still speak gpt-live-1, which is what makes one a tap on a phone
+	// call.
+	rt *realtimeState
+	// tel reports turn boundaries to an external latency console. Nil unless
+	// the server has somewhere to send them.
+	tel *telSession
+
 	newEngine   EngineFactory
 	closeMsg    atomic.Pointer[string]
 	audioEvents atomic.Int64
@@ -124,6 +134,11 @@ type SessionOptions struct {
 	Store *store.Store
 	// Seed is the stored session this one is forked from.
 	Seed *store.Meta
+	// Realtime makes the primary connection speak the OpenAI Realtime event
+	// protocol. Nil for a gpt-live-1 session.
+	Realtime *RealtimeOptions
+	// Telemetry receives turn-boundary events, if the server posts them.
+	Telemetry *telPoster
 }
 
 // NewSession wires a connection to the protocol handler.
@@ -151,6 +166,12 @@ func NewSession(opts SessionOptions) *Session {
 		createdAt: time.Now(),
 	}
 	s.lastActive.Store(time.Now().UnixNano())
+	if opts.Realtime != nil {
+		s.rt = newRealtimeState(*opts.Realtime)
+	}
+	if opts.Telemetry != nil {
+		s.tel = newTelSession(opts.Telemetry, s.id, s.rt != nil)
+	}
 	return s
 }
 
@@ -271,6 +292,23 @@ func (s *Session) deliver(only *peer, event any) {
 		event = ev
 	}
 
+	if s.tel != nil && only == nil {
+		s.tel.observe(event, s.cfg)
+	}
+
+	// A Realtime primary is sent the event translated; everything else below
+	// is for connections that speak gpt-live-1, and when the primary is not
+	// one of them and nobody is listening on a sideband there is nothing more
+	// to do — which, at fifty audio chunks a second, is worth not doing.
+	if s.rt != nil {
+		if only == nil || only == s.primary {
+			s.deliverRealtime(event)
+		}
+		if only == s.primary || (only == nil && s.sideCount.Load() == 0) {
+			return
+		}
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		s.log.Error("marshalling server event", "err", err)
@@ -283,7 +321,9 @@ func (s *Session) deliver(only *peer, event any) {
 		s.enqueue(only, data)
 		return
 	}
-	s.enqueue(s.primary, data)
+	if s.rt == nil {
+		s.enqueue(s.primary, data)
+	}
 	if s.sideCount.Load() > 0 {
 		s.sideMu.RLock()
 		for p := range s.sides {
@@ -579,6 +619,9 @@ func (s *Session) pushAudio(p *peer, wire []byte, eventID string) {
 }
 
 func (s *Session) handleEvent(ctx context.Context, p *peer, data []byte) error {
+	if s.rt != nil && p == s.primary {
+		return s.handleRealtimeEvent(ctx, p, data)
+	}
 	eventType, eventID, err := live.DecodeType(data)
 	if err != nil {
 		s.reply(p, live.NewError("invalid_request_error", "malformed_event", err.Error(), ""))
