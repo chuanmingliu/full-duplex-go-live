@@ -289,20 +289,24 @@ func speakClips(ctx context.Context, s stack, sentences []string, rate int) ([]c
 		if sentence == "" {
 			continue
 		}
+		// One sentence the synthesizer would not say is a clip fewer, not a
+		// benchmark not run: the others are still real speech.
 		pcm, err := speakOne(ctx, s, sentence, rate)
 		if err != nil {
-			return nil, fmt.Errorf("-speak %q: %w", sentence, err)
+			fmt.Printf("· could not speak %q, leaving it out: %v\n", sentence, err)
+			continue
 		}
 		pcm = trimSilence(pcm, rate)
 		ms := audio.PCM16(rate).DurationMS(pcm)
 		if ms < 200 {
-			return nil, fmt.Errorf("-speak %q: only %.0f ms of audio came back", sentence, ms)
+			fmt.Printf("· could not speak %q, leaving it out: only %.0f ms of audio came back\n", sentence, ms)
+			continue
 		}
 		fmt.Printf("· spoke %q: %.0f ms\n", sentence, ms)
 		out = append(out, clip{name: fmt.Sprintf("spoken_%02d %s", len(out)+1, trim(sentence, 24)), pcm: pcm})
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("-speak is empty")
+		return nil, fmt.Errorf("-speak: nothing could be spoken")
 	}
 	return out, nil
 }
