@@ -17,7 +17,13 @@ PSTN ──GSM──▶ gateway ──SIP──▶ RustPBX ──▶ Active Call
 
 Active Call connects to whatever is at `ws://127.0.0.1:8765/v1/realtime`, and
 Aria's "Local" brain points there. golive in `telephony` mode listens exactly
-there, so neither needs changing.
+there, so neither needs changing. Aria appends `?call=<call id>` to that URL;
+golive files the session under it, releases the opening to that call when
+`POST /v1/opening` names it, and reports each turn to the console under it.
+
+Anything else asked of `:8765` that golive does not serve is logged as
+`request for an endpoint this server does not have` — worth a grep after the
+first call, since golive is standing where another agent used to.
 
 ## Start it
 

@@ -170,7 +170,7 @@ func NewSession(opts SessionOptions) *Session {
 		s.rt = newRealtimeState(*opts.Realtime)
 	}
 	if opts.Telemetry != nil {
-		s.tel = newTelSession(opts.Telemetry, s.id, s.rt != nil)
+		s.tel = newTelSession(opts.Telemetry, s.id, s.CallID(), s.rt != nil)
 	}
 	return s
 }
@@ -924,6 +924,8 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		"stored", rec != nil,
 		"forked", s.seed != nil,
 		"on_new_query", onNewQueryOr(onNewQuery, s.cfg.Duplex.OnNewQuery),
+		"realtime", s.rt != nil,
+		"call", s.CallID(),
 		"asr", asrName, "llm", llmName, "tts", ttsName)
 
 	s.Emit(live.SessionStartedEvent{

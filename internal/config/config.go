@@ -84,6 +84,11 @@ type Config struct {
 	// audio) as it happens, for an external latency console. Posting is
 	// asynchronous and lossy by design: it is never on the audio path.
 	TelemetryURL string `json:"telemetry_url"`
+	// TelemetryFormat is the shape of those events: "v1", one self-describing
+	// record per boundary with a call id, a turn number and a monotonic
+	// timestamp; or "legacy", the looser {at, component, event} envelope that
+	// came before it.
+	TelemetryFormat string `json:"telemetry_format"`
 
 	// StoreTTLHours is how long a stored session is kept. gpt-live-1 keeps
 	// recordings thirty days; the default here is one, because this is a disk
@@ -607,6 +612,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Realtime.Dialect, "GOLIVE_REALTIME_DIALECT")
 	setBool(&c.Realtime.HoldForOpening, "GOLIVE_REALTIME_HOLD")
 	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
+	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
 	setBool(&c.Duplex.SemanticEndpointing, "GOLIVE_SEMANTIC_ENDPOINTING")
 	setBool(&c.Duplex.BackendPrefixWarm, "GOLIVE_BACKEND_PREFIX_WARM")
@@ -693,6 +699,13 @@ func (c *Config) Validate() error {
 	case "beta", "ga":
 	default:
 		return fmt.Errorf("config: realtime.dialect %q must be beta or ga", c.Realtime.Dialect)
+	}
+	switch c.TelemetryFormat {
+	case "":
+		c.TelemetryFormat = "v1"
+	case "v1", "legacy":
+	default:
+		return fmt.Errorf("config: telemetry_format %q must be v1 or legacy", c.TelemetryFormat)
 	}
 	if c.Realtime.HoldTimeoutSeconds <= 0 {
 		c.Realtime.HoldTimeoutSeconds = 45

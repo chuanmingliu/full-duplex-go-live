@@ -74,6 +74,10 @@ type RealtimeOptions struct {
 	// Hold starts the session deaf and silent until Session.Open.
 	Hold        bool
 	HoldTimeout time.Duration
+	// CallID is the telephone call this connection is the agent for, as the
+	// originator named it: ?call= on the URL. It is how an opening is released
+	// to the right session, and what telemetry is filed under.
+	CallID string
 }
 
 // realtimeState is what translating a session into the Realtime protocol has
@@ -639,10 +643,19 @@ func (s *Session) Open(greeting string) bool {
 	s.rt.mu.Unlock()
 	s.release()
 	if tel := s.tel; tel != nil {
-		tel.emit("s2s", "release", nil)
+		tel.released()
 	}
 	s.withEngine(func(e *duplex.Engine) { e.Say(greeting) })
 	return true
+}
+
+// CallID is the telephone call a Realtime session was opened for, if its
+// client said.
+func (s *Session) CallID() string {
+	if s.rt == nil {
+		return ""
+	}
+	return s.rt.opts.CallID
 }
 
 // Realtime reports whether this session's primary connection speaks the
@@ -682,7 +695,35 @@ func (s *Server) handleRealtime(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("hold"); v != "" {
 		opts.Hold = v == "1" || v == "true"
 	}
+	opts.CallID = cleanCallID(firstNonEmpty(q.Get("call"), q.Get("call_id"), q.Get("callId")))
 	s.serveSession(w, r, nil, &opts)
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// cleanCallID bounds a call id that arrived from outside: it is logged, and
+// posted to a console.
+func cleanCallID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) > 128 {
+		return ""
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == ':':
+		default:
+			return ""
+		}
+	}
+	return id
 }
 
 // openingState is one opening line being synthesized ahead of its call.
@@ -702,14 +743,15 @@ type openingState struct {
 //
 //	POST /v1/opening {"greeting": "…", "warm": false}
 //
-// is sent when the call is answered. Every Realtime session that has not been
-// opened is released and says the line, from the cache, at once; the reply
-// lists them under "kicked". An empty list means no session has attached yet,
-// and the caller tries again.
+// is sent when the call is answered. The session that has not been opened yet
+// is released and says the line, from the cache, at once; the reply lists it
+// under "kicked". An empty list means no session has attached yet, and the
+// caller tries again.
 //
-// The session is not named, because whoever originates the call does not know
-// which socket the gateway opened for it. On a line that carries one call at a
-// time that is not a loss.
+// Which session: the one whose gateway connected with ?call=<id>, when the
+// request names a call ("callId") and one matches. Otherwise every unopened
+// Realtime session — the originator does not know which socket the gateway
+// opened, and on a line that carries one call at a time there is only one.
 func (s *Server) handleOpening(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
@@ -719,15 +761,18 @@ func (s *Server) handleOpening(w http.ResponseWriter, r *http.Request) {
 		Greeting string `json:"greeting"`
 		Text     string `json:"text"`
 		Warm     bool   `json:"warm"`
+		// The call, under any of the names an originator might give it.
+		CallID  string `json:"callId"`
+		CallID2 string `json:"call_id"`
+		Call    string `json:"call"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_json"})
 		return
 	}
-	greeting := strings.TrimSpace(body.Greeting)
-	if greeting == "" {
-		greeting = strings.TrimSpace(body.Text)
-	}
+	greeting := firstNonEmpty(body.Greeting, body.Text)
+	callID := cleanCallID(firstNonEmpty(body.CallID, body.CallID2, body.Call,
+		r.URL.Query().Get("call"), r.URL.Query().Get("callId")))
 	if n := len([]rune(greeting)); n > 400 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "greeting_too_long"})
 		return
@@ -737,8 +782,10 @@ func (s *Server) handleOpening(w http.ResponseWriter, r *http.Request) {
 		st := s.warmOpening(greeting)
 		resp := map[string]any{
 			"ok":     st.err == nil,
+			"callId": callID,
+			"warm":   true,
 			"kicked": []string{},
-			"cached": []map[string]any{{"ready": st.ready, "bytes": st.bytes}},
+			"cached": []map[string]any{{"ready": st.ready, "bytes": st.bytes, "callId": callID}},
 		}
 		if st.err != nil {
 			resp["error"] = st.err.Error()
@@ -753,16 +800,34 @@ func (s *Server) handleOpening(w http.ResponseWriter, r *http.Request) {
 		sessions = append(sessions, sess)
 	}
 	s.mu.Unlock()
+	// The named call's session if there is one; otherwise whoever is waiting.
+	if callID != "" {
+		var named []*Session
+		for _, sess := range sessions {
+			if sess.CallID() == callID {
+				named = append(named, sess)
+			}
+		}
+		if len(named) > 0 {
+			sessions = named
+		}
+	}
 	kicked := []string{}
 	for _, sess := range sessions {
 		if sess.Open(greeting) {
-			kicked = append(kicked, sess.ID())
+			// Named as the originator knows it, when it gave the call a name.
+			kicked = append(kicked, firstNonEmpty(sess.CallID(), sess.ID()))
 		}
 	}
 	if len(kicked) > 0 {
-		s.log.Info("realtime: call answered; session opened", "sessions", kicked, "greeting", greeting != "")
+		s.log.Info("realtime: call answered; session opened",
+			"call", callID, "sessions", kicked, "greeting", greeting != "")
+	} else {
+		s.log.Debug("realtime: asked to open a call with no session waiting", "call", callID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kicked": kicked, "cached": []any{}})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "callId": callID, "warm": false, "kicked": kicked, "cached": []any{},
+	})
 }
 
 // warmOpening starts synthesizing an opening line, once, and reports how far
@@ -820,6 +885,7 @@ func (s *Server) handlePool(w http.ResponseWriter, r *http.Request) {
 	type entry struct {
 		ID       string `json:"id"`
 		Protocol string `json:"protocol"`
+		Call     string `json:"call,omitempty"`
 		Opened   bool   `json:"opened"`
 		AgeMS    int64  `json:"age_ms"`
 	}
@@ -828,7 +894,7 @@ func (s *Server) handlePool(w http.ResponseWriter, r *http.Request) {
 	for _, sess := range s.sessions {
 		e := entry{ID: sess.ID(), Protocol: "gpt-live-1", AgeMS: time.Since(sess.createdAt).Milliseconds()}
 		if is, opened := sess.Realtime(); is {
-			e.Protocol, e.Opened = "openai-realtime", opened
+			e.Protocol, e.Opened, e.Call = "openai-realtime", opened, sess.CallID()
 		}
 		list = append(list, e)
 	}

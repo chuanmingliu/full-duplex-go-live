@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -447,12 +448,12 @@ func TestRealtimeOpeningIsHeldUntilTheCallIsAnswered(t *testing.T) {
 
 type telSink struct {
 	mu  sync.Mutex
-	evs []telEvent
+	evs []map[string]any
 }
 
 func (s *telSink) handler(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
-	var batch []telEvent
+	var batch []map[string]any
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &batch); err != nil {
 		http.Error(w, "bad", http.StatusBadRequest)
 		return
@@ -463,25 +464,28 @@ func (s *telSink) handler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-func (s *telSink) names() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]string, 0, len(s.evs))
-	for _, e := range s.evs {
-		out = append(out, e.Component+"/"+e.Event)
-	}
-	return out
-}
-
-func (s *telSink) find(name string) (telEvent, bool) {
+// find returns the first event with a field equal to a value.
+func (s *telSink) find(field, value string) (map[string]any, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, e := range s.evs {
-		if e.Component+"/"+e.Event == name {
+		if got, _ := e[field].(string); got == value {
 			return e, true
 		}
 	}
-	return telEvent{}, false
+	return nil, false
+}
+
+func (s *telSink) count(field, value string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, e := range s.evs {
+		if got, _ := e[field].(string); got == value {
+			n++
+		}
+	}
+	return n
 }
 
 func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
@@ -490,7 +494,9 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 	defer console.Close()
 
 	ts, _, cfg := gatewayServer(t, func(c *config.Config) { c.TelemetryURL = console.URL + "/ingest" })
-	c := dialRealtime(t, ts, "/v1/realtime")
+	// The originator names the call on the URL it hands the gateway.
+	const call = "out-mv2fd0qg-kbyy"
+	c := dialRealtime(t, ts, "/v1/realtime?call="+call)
 	sendRaw(t, c.conn, activeCallSessionUpdate)
 	c.first("session.updated", 2*time.Second)
 	c.turn(16000, 1400)
@@ -498,42 +504,127 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 
 	// The chain the console derives a turn's latency from, in the order it
 	// reads them.
-	chain := []string{"s2s/ws_open", "vad/speech_start", "vad/speech_stop", "asr/final", "llm/first_token", "tts/first_audio", "s2s/first_audio"}
+	chain := []string{"vad.speech_started", "vad.speech_stopped", "asr.final", "llm.first_token", "tts.first_audio", "phone.audio_sent"}
 	await(t, "the turn's boundaries at the console", 3*time.Second, func() bool {
-		for _, name := range chain {
-			if _, ok := sink.find(name); !ok {
+		for _, point := range chain {
+			if _, ok := sink.find("point", point); !ok {
 				return false
 			}
 		}
 		return true
 	})
-	stop, _ := sink.find("vad/speech_stop")
-	phone, _ := sink.find("s2s/first_audio")
-	if stop.Extra["brain"] != "golive" || !strings.HasPrefix(stop.Extra["session"].(string), "sess_") {
-		t.Errorf("events are not labelled: %+v", stop.Extra)
-	}
-	if got, _ := stop.Extra["silence_ms"].(float64); int(got) != cfg.VAD.MinSilenceMS {
-		t.Errorf("speech_stop reports silence_ms=%v; the pause it waited through is %d ms", stop.Extra["silence_ms"], cfg.VAD.MinSilenceMS)
-	}
-	if e2e := phone.At - stop.At; e2e < 0 || e2e > 3000 {
-		t.Errorf("speech stop to first audio comes to %d ms from these events", e2e)
-	}
-	// One first_audio per turn, not one per chunk.
-	n := 0
-	for _, name := range sink.names() {
-		if name == "s2s/first_audio" {
-			n++
+	var stopNs, sentNs int64
+	for _, point := range chain {
+		ev, _ := sink.find("point", point)
+		if ev["schemaVersion"] != float64(1) || ev["callId"] != call || ev["backend"] != "local" || ev["chain"] != "turn" {
+			t.Errorf("%s is not filed under the call: %v", point, ev)
+		}
+		if ev["turnId"] != float64(1) {
+			t.Errorf("%s has turnId %v; this is the caller's first turn", point, ev["turnId"])
+		}
+		if id, _ := ev["eventId"].(string); id == "" {
+			t.Errorf("%s has no eventId", point)
+		}
+		clock, _ := ev["clockId"].(string)
+		mono, _ := ev["monotonicNs"].(string)
+		if !strings.HasPrefix(clock, "boot:") || mono == "" {
+			t.Errorf("%s carries clockId=%q monotonicNs=%q; spans across processes need both", point, clock, mono)
+		}
+		ns, _ := strconv.ParseInt(mono, 10, 64)
+		switch point {
+		case "vad.speech_stopped":
+			stopNs = ns
+			if got, _ := ev["extra"].(map[string]any)["silence_ms"].(float64); int(got) != cfg.VAD.MinSilenceMS {
+				t.Errorf("speech_stopped reports silence_ms=%v; the pause it waited through is %d ms", got, cfg.VAD.MinSilenceMS)
+			}
+		case "phone.audio_sent":
+			sentNs = ns
 		}
 	}
-	if n != 1 {
-		t.Errorf("first_audio was reported %d times for one turn", n)
+	if e2e := (sentNs - stopNs) / 1e6; e2e < 0 || e2e > 3000 {
+		t.Errorf("speech stopped to audio sent comes to %d ms on the monotonic clock", e2e)
+	}
+	// One per turn, not one per chunk.
+	if n := sink.count("point", "phone.audio_sent"); n != 1 {
+		t.Errorf("phone.audio_sent was reported %d times for one turn", n)
 	}
 
 	c.conn.Close()
-	await(t, "the call's end at the console", 3*time.Second, func() bool {
-		_, ok := sink.find("s2s/ws_close")
+	await(t, "the session's end at the console", 3*time.Second, func() bool {
+		_, ok := sink.find("point", "agent.disconnected")
 		return ok
 	})
+}
+
+// TestTelemetryLegacyEnvelope: the looser shape an older console reads.
+func TestTelemetryLegacyEnvelope(t *testing.T) {
+	sink := &telSink{}
+	console := httptest.NewServer(http.HandlerFunc(sink.handler))
+	defer console.Close()
+
+	ts, _, _ := gatewayServer(t, func(c *config.Config) {
+		c.TelemetryURL = console.URL + "/ingest"
+		c.TelemetryFormat = "legacy"
+	})
+	c := dialRealtime(t, ts, "/v1/realtime") // no call id: the old contract has none
+	sendRaw(t, c.conn, activeCallSessionUpdate)
+	c.first("session.updated", 2*time.Second)
+	c.turn(16000, 1400)
+	await(t, "the turn at the console", 6*time.Second, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		want := map[string]bool{"vad/speech_start": false, "vad/speech_stop": false, "asr/final": false,
+			"llm/first_token": false, "tts/first_audio": false, "s2s/first_audio": false}
+		for _, e := range sink.evs {
+			key, _ := e["component"].(string)
+			ev, _ := e["event"].(string)
+			if _, ok := want[key+"/"+ev]; ok {
+				want[key+"/"+ev] = true
+			}
+		}
+		for _, seen := range want {
+			if !seen {
+				return false
+			}
+		}
+		return true
+	})
+	ev, _ := sink.find("event", "speech_stop")
+	if _, ok := ev["at"].(float64); !ok {
+		t.Errorf("legacy event has no at: %v", ev)
+	}
+	if extra, _ := ev["extra"].(map[string]any); extra["brain"] != "golive" {
+		t.Errorf("legacy event is not labelled: %v", ev)
+	}
+}
+
+// TestOpeningIsReleasedToTheNamedCall: with two calls waiting, pickup of one
+// does not start the other talking.
+func TestOpeningIsReleasedToTheNamedCall(t *testing.T) {
+	ts, _, _ := gatewayServer(t, func(c *config.Config) { c.Realtime.HoldForOpening = true })
+	a := dialRealtime(t, ts, "/v1/realtime?call=out-aaaa-0001")
+	b := dialRealtime(t, ts, "/v1/realtime?call=out-bbbb-0002")
+	for _, c := range []*rtClient{a, b} {
+		sendRaw(t, c.conn, activeCallSessionUpdate)
+		c.first("session.updated", 2*time.Second)
+	}
+
+	got := postJSON(t, ts.URL+"/v1/opening", `{"greeting":"您好。","warm":false,"callId":"out-bbbb-0002"}`)
+	if string(got["kicked"]) != `["out-bbbb-0002"]` {
+		t.Fatalf("kicked = %s; want the call that was answered, by the name it was given", got["kicked"])
+	}
+	await(t, "the answered call's opening", 3*time.Second, func() bool { return b.audioMS(16000) > 0 })
+	time.Sleep(300 * time.Millisecond)
+	if a.audioMS(16000) != 0 || a.count("response.created") != 0 {
+		t.Error("the call that is still ringing was opened too")
+	}
+
+	// A pickup that names no call, or one no session claims, opens whoever is
+	// waiting: an originator that cannot say which is not left with silence.
+	got = postJSON(t, ts.URL+"/v1/opening", `{"greeting":"您好。","warm":false,"callId":"out-unknown-9"}`)
+	if string(got["kicked"]) != `["out-aaaa-0001"]` {
+		t.Errorf("kicked = %s; want the one session still waiting", got["kicked"])
+	}
 }
 
 // --- watching a call from outside it ---

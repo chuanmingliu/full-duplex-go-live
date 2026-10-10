@@ -78,8 +78,8 @@ func NewServer(cfg config.Config, log *slog.Logger) *Server {
 	}
 	s.upgrader.CheckOrigin = s.checkOrigin
 	if cfg.TelemetryURL != "" {
-		s.tel = newTelPoster(cfg.TelemetryURL, log)
-		log.Info("turn telemetry enabled", "url", cfg.TelemetryURL)
+		s.tel = newTelPoster(cfg.TelemetryURL, cfg.TelemetryFormat, log)
+		log.Info("turn telemetry enabled", "url", cfg.TelemetryURL, "format", cfg.TelemetryFormat)
 	}
 	if cfg.StoreDir != "" {
 		st, err := store.Open(cfg.StoreDir, time.Duration(cfg.StoreTTLHours)*time.Hour)
@@ -134,6 +134,15 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("/v1/opening", s.protect(s.handleOpening))
 		mux.HandleFunc("/v1/pool", s.protect(s.handlePool))
 	}
+	// Whatever else is asked for under /v1/ is said out loud. Putting golive
+	// where another agent used to be means inheriting that agent's callers,
+	// and the quickest way to learn what they expect is to see what they ask
+	// for and do not get.
+	mux.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {
+		s.log.Info("request for an endpoint this server does not have",
+			"method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery != "")
+		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "not_found", "path": r.URL.Path})
+	})
 	mux.HandleFunc("/livez", s.handleLivez)
 	mux.HandleFunc("/healthz", s.handleLivez)
 	mux.HandleFunc("/readyz", s.handleReadyz)
