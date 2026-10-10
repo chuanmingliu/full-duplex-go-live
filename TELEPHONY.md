@@ -27,23 +27,34 @@ first call, since golive is standing where another agent used to.
 
 ## Start it
 
-```bash
-# :8765 must be free. If the s2s container holds it:
-docker stop s2s-backend
-ss -lntp | grep ':8765 ' || echo ":8765 is free"
+On the box, from the unpacked bundle:
 
-# provider keys come from an existing .env.local
+```bash
+scripts/phone-brain.sh status     # what holds :8765, PBX and gateway state; changes nothing
+scripts/phone-brain.sh golive     # stop the container on :8765, start golive there
+scripts/phone-brain.sh bench      # this box's real-provider latency, no phone involved
+scripts/phone-brain.sh restore    # stop golive, start that container again
+```
+
+`golive` finds whichever container is listening on the agent port, stops it,
+writes its name down for `restore`, and starts golive on the address that
+container was using. Provider keys are read from `./.env.local`,
+`~/golive-telephony.env` or `~/golive/.env.local`, or from `ENVFILE=`. It uses
+`sudo` for docker when the user is not in the docker group.
+
+`bench` has golive say a handful of sentences with its own synthesizer and plays
+them back to it as the caller, so a real recognizer has real speech to hear on a
+machine with no recordings. It prints last sound → first audio for each turn and
+the per-stage table below. This is the number to get right before a phone is
+involved: the phone can only add to it.
+
+By hand, the same thing is:
+
+```bash
+docker stop s2s-backend                       # :8765 must be free
 ENVFILE=~/golive/.env.local ./start.sh telephony
+curl -s http://127.0.0.1:8765/v1/pool         # "service":"golive"
 ```
-
-Check it from another shell:
-
-```bash
-curl -s http://127.0.0.1:8765/healthz
-curl -s http://127.0.0.1:8765/v1/pool          # sessions in progress; empty for now
-```
-
-To go back: `Ctrl-C`, then `docker start s2s-backend`.
 
 ## Place a call
 
