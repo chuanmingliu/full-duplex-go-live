@@ -7,6 +7,11 @@
 #                                     golive there, check it answers
 #   scripts/phone-brain.sh bench      measure this box's real-provider latency
 #                                     through golive, with no phone involved
+#   scripts/phone-brain.sh net        how this box reaches the providers: its
+#                                     egress, tunnels, and connect times
+#   scripts/phone-brain.sh log [n] [re]   warnings, errors and turn timings from the
+#                                     last n lines of golive's log (default 400);
+#                                     with a regex, every engine line matching it
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -79,6 +84,12 @@ find_owner() {
   return 0
 }
 
+# What a log line may carry that should not be pasted anywhere.
+scrub() { sed -E 's/(secretid|signature|secret|api[_-]?key|key|token|authorization)=[^& "]+/\1=…/Ig; s/(Bearer )[A-Za-z0-9._-]+/\1…/g'; }
+
+env_value() { grep -E "^$1=" "${ENVFILE:-/dev/null}" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"'" ; }
+url_host() { sed -E 's|^[a-z]+://||; s|[/:?].*$||' <<<"$1"; }
+
 pool() { curl -s -m 3 "http://127.0.0.1:$PORT/v1/pool" 2>/dev/null; }
 is_golive() { pool | grep -q '"service":"golive"'; }
 
@@ -91,19 +102,30 @@ find_env() {
   return 1
 }
 
+# golive runs under a small loop that starts it again if it dies: a phone line
+# whose agent crashed once should not stay silent until someone notices.
 stop_golive() {
-  local pid=""
-  [ -f "$STATE.pid" ] && pid=$(cat "$STATE.pid" 2>/dev/null)
-  if [ -z "$pid" ] || [ ! -d "/proc/$pid" ]; then
-    find_owner || true
-    case "$OWNER_COMM" in golive*) pid="$OWNER_PID" ;; *) pid="" ;; esac
+  local sup="" kids="" pid=""
+  : > "$STATE.stop"
+  [ -f "$STATE.pid" ] && sup=$(cat "$STATE.pid" 2>/dev/null)
+  if [ -n "$sup" ] && [ -d "/proc/$sup" ]; then
+    kids=$(pgrep -P "$sup" 2>/dev/null | tr '\n' ' ')
+    # shellcheck disable=SC2086
+    [ -n "$kids" ] && kill $kids 2>/dev/null
+    for _ in $(seq 1 40); do [ -d "/proc/$sup" ] || break; sleep 0.25; done
+    kill "$sup" 2>/dev/null
   fi
-  if [ -n "$pid" ] && grep -q '^golive' "/proc/$pid/comm" 2>/dev/null; then
-    kill "$pid" 2>/dev/null || "${SUDO[@]}" kill "$pid"
-    for _ in $(seq 1 40); do [ -d "/proc/$pid" ] || break; sleep 0.25; done
-    say "stopped golive (pid $pid)"
+  # Whatever of ours is still on the port: one started by hand, or by an
+  # earlier version of this script.
+  if find_owner; then
+    case "$OWNER_COMM" in golive*) pid="$OWNER_PID" ;; esac
+    if [ -n "$pid" ]; then
+      kill "$pid" 2>/dev/null || "${SUDO[@]}" kill "$pid"
+      for _ in $(seq 1 40); do [ -d "/proc/$pid" ] || break; sleep 0.25; done
+    fi
   fi
-  rm -f "$STATE.pid"
+  [ -n "$sup$pid" ] && say "stopped golive"
+  rm -f "$STATE.pid" "$STATE.stop"
 }
 
 case "$CMD" in
@@ -188,6 +210,8 @@ golive)
       exit 1
     fi
   fi
+  # Nothing there: golive was here before and is gone. Listen where it did.
+  [ -z "$bind" ] && [ -f "$STATE.bind" ] && bind=$(cat "$STATE.bind")
   bind="${bind:-127.0.0.1}"
   for _ in $(seq 1 60); do find_owner || break; sleep 0.5; done
   if find_owner; then say ":$PORT is still held by ${OWNER_COMM:-?} pid=${OWNER_PID:-?}"; exit 1; fi
@@ -195,8 +219,23 @@ golive)
   printf '%s\n' "$bind" > "$STATE.bind"
   printf '\n--- %s phone-brain: starting golive %s on %s:%s ---\n' "$(date '+%F %T')" "$(cat VERSION 2>/dev/null | cut -d' ' -f1)" "$bind" "$PORT" >> "$LOG"
   mark=$(wc -l < "$LOG")
-  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" setsid nohup "./$BIN" \
-    -profile "$PROFILE" -env "$ENVFILE" -addr "$bind:$PORT" >> "$LOG" 2>&1 < /dev/null &
+  rm -f "$STATE.stop"
+  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" setsid nohup bash -c '
+    stop="$1"; shift
+    quick=0
+    while :; do
+      began=$(date +%s)
+      "$@"; code=$?
+      [ -f "$stop" ] && exit 0
+      if [ $(( $(date +%s) - began )) -lt 5 ]; then quick=$((quick + 1)); else quick=0; fi
+      if [ "$quick" -ge 5 ]; then
+        printf "\n--- %s golive keeps exiting at once (status %s); giving up ---\n" "$(date "+%F %T")" "$code"
+        exit 1
+      fi
+      printf "\n--- %s golive exited with status %s; starting it again ---\n" "$(date "+%F %T")" "$code"
+      sleep 1
+    done' keepalive "$STATE.stop" "./$BIN" -profile "$PROFILE" -env "$ENVFILE" -addr "$bind:$PORT" \
+    >> "$LOG" 2>&1 < /dev/null &
   echo $! > "$STATE.pid"
 
   # Up means golive itself answering: anything else that got the port back
@@ -217,7 +256,7 @@ golive)
   fi
   # Long enough for the startup warm-up to have reached the synthesizer.
   sleep 4
-  say "golive is up on $bind:$PORT (pid $(cat "$STATE.pid"))"
+  say "golive is up on $bind:$PORT (kept running by pid $(cat "$STATE.pid"))"
   say "/v1/pool : $(pool | cut -c1-300)"
   say "startup  :"
   tail -n +"$((mark + 1))" "$LOG" | grep -E 'level=(INFO|WARN|ERROR)' | grep -vE 'msg=http ' | cut -c1-240 | head -25 | sed 's/^/  /'
@@ -232,11 +271,65 @@ bench)
   # Things a caller says, short and long: a turn's length decides whether there
   # is a pause worth speculating in.
   SPEAK="${SPEAK:-你好，今天天气怎么样？|帮我查一下明天上午去上海的航班有哪些。|你能给我讲一个简短的笑话吗？|我想了解一下你们周末的营业时间。|好的，谢谢。}"
+  mark=$(wc -l < "$LOG" 2>/dev/null || echo 0)
   "./$BENCH" -a "golive=ws://127.0.0.1:$PORT/v1/live" -speak "$SPEAK" -rate 16000 \
     -runs "${RUNS:-15}" -warmup 2 -v -md bench-phone.md -json bench-phone.json
   say
   say "== the same turns, stage by stage (from $LOG)"
-  scripts/call-latency.sh "$LOG" | tail -n "$(( ${RUNS:-15} + 8 ))"
+  tail -n +"$((mark + 1))" "$LOG" > "$STATE.benchlog"
+  scripts/call-latency.sh "$STATE.benchlog"
+  say
+  say "== warnings and errors during the run"
+  grep -E 'level=(WARN|ERROR)|^panic|^fatal error|^goroutine |golive exited|answered without speculating' "$STATE.benchlog" \
+    | scrub | cut -c1-320 | sed -E 's/^time=[0-9-]+T//' | tail -40
+  rm -f "$STATE.benchlog"
+  if is_golive; then say "golive is still up"; else say "golive is NOT answering on :$PORT"; fi
+  ;;
+
+net)
+  find_env || true
+  head1 "how this box leaves the LAN"
+  say "default route : $(ip route show default 2>/dev/null | tr '\n' ';' | cut -c1-200)"
+  say "tunnels       : $(ip -br link 2>/dev/null | grep -Ei '^(tun|tap|wg|utun|tailscale|lantern|ppp|zt)' | awk '{print $1"("$2")"}' | tr '\n' ' ')"
+  say "vpn services  : $(for u in lanternd tailscaled openvpn wg-quick@wg0; do printf '%s=%s ' "$u" "$(systemctl is-active "$u" 2>/dev/null)"; done)"
+  say "proxy env     : $(env | grep -iE '^(https?|all|no)_proxy=' | cut -d= -f1 | tr '\n' ' ')"
+  say "policy rules  : $(ip rule 2>/dev/null | grep -vcE 'lookup (local|main|default)') beyond the defaults"
+  # The address is left out: where the box appears to be is the question.
+  say "seen from a mainland service : $(curl -4 -s -m 6 https://myip.ipip.net 2>/dev/null | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/x.x.x.x/' | tr -d '\n' | cut -c1-120)"
+  say "seen from abroad             : $(curl -4 -s -m 6 https://ipinfo.io/json 2>/dev/null | tr -d '\n' | grep -oE '"(city|region|country|org)": *"[^"]*"' | tr '\n' ' ')"
+
+  head1 "the three providers"
+  llm=$(url_host "$(env_value GOLIVE_BACKEND_BASE_URL)"); llm="${llm:-api.deepseek.com}"
+  tts=$(url_host "$(env_value MINIMAX_TTS_WEBSOCKET_ENDPOINT)"); tts="${tts:-api.minimaxi.com}"
+  printf '%-6s %-28s %-16s %-10s %s\n' "" host address via "dns/tcp/tls ms, three tries"
+  for pair in "asr:asr.cloud.tencent.com" "llm:$llm" "tts:$tts"; do
+    name=${pair%%:*}; host=${pair#*:}
+    ip4=$(getent ahostsv4 "$host" 2>/dev/null | awk 'NR==1{print $1}')
+    dev=$(ip route get "${ip4:-0.0.0.0}" 2>/dev/null | grep -oE 'dev [^ ]+' | head -1 | cut -d' ' -f2)
+    times=""
+    for _ in 1 2 3; do
+      times="$times $(curl -4 -s -m 8 -o /dev/null -w '%{time_namelookup}/%{time_connect}/%{time_appconnect}' "https://$host/" 2>/dev/null \
+        | awk -F/ '{printf "%.0f/%.0f/%.0f", $1*1000, $2*1000, $3*1000}')"
+    done
+    printf '%-6s %-28s %-16s %-10s%s\n' "$name" "$host" "${ip4:-unresolved}" "${dev:-?}" "$times"
+    v6=$(getent ahostsv6 "$host" 2>/dev/null | awk 'NR==1{print $1}' | grep -v '^::ffff:' || true)
+    [ -n "$v6" ] && printf '%-6s %-28s %s\n' "" "(also IPv6)" "$v6"
+  done
+  ;;
+
+log)
+  n="${2:-400}"
+  [ -f "$LOG" ] || { say "no $LOG here"; exit 1; }
+  if [ -n "${3:-}" ]; then
+    # Everything the engine said in the lines that match, e.g. a minute:
+    #   scripts/phone-brain.sh log 100000 'T22:21:'
+    tail -n "$n" "$LOG" | grep -E -- "$3" \
+      | grep -vE 'msg="?(http|server event|server audio|client event|client audio)' | scrub | cut -c1-360
+  else
+    tail -n "$n" "$LOG" \
+      | grep -E 'level=(WARN|ERROR)|^panic|^fatal error|^goroutine |^[[:space:]]+[^[:space:]]|golive exited|golive keeps|phone-brain:|msg="(turn: response latency|session: response latency summary|think: answered[^"]*|session started|realtime:[^"]*)"|msg=listening' \
+      | scrub | cut -c1-360
+  fi
   ;;
 
 sync)
@@ -262,7 +355,7 @@ restore)
   ;;
 
 *)
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
   ;;
 esac
