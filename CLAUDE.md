@@ -51,6 +51,7 @@ Real providers on the test box, no phone, 15 measured turns each
 | c2fbf96 | answer prepared during a mid-thought wait; fixes from the 18:34 call; 20 turns | 878 | 1067 (max 1262) |
 | 779002e | fixes from the 20:18 call, with the first segment raced on two synthesis connections; 28 turns, 2 lost to the synthesizer's rate limit | 851 | 1011 (max 1020) |
 | 507f334 | the same fixes with synthesis hedging off; 20 turns, none refused | 852 | 1024 (max 1048) |
+| f374c41 | each copy of a completion on a connection of its own (one key); 20 turns | 840 | 1076 (max 1143) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
@@ -105,6 +106,18 @@ made on one build.
   in ten: the model has slow spells in which every copy is slow. Each of four
   copies wins about equally often. More copies will not fix the tail; a second,
   independent route to a model would.
+- **A pool of keys, and what a second account was worth.** The owner will not
+  give up the four copies and can supply chat-model keys freely, so each copy
+  now goes down a *lane* — one key on one connection of its own
+  (`internal/provider/deepseek/pool.go`, `provider.WithLane`). Before, all four
+  were streams on one HTTP/2 connection on one account. Measured with
+  `phone-brain.sh llm -pool -runs 40`, fastest copy of each round, first token:
+  two accounts (two copies each) p50 319, p90 416, max 554; one account p50
+  349, p90 504, max 605. Rounds with every copy over 550 ms: 1 of 40 against 2
+  of 40. So a second account is worth something at the tail (~90 ms at p90 in
+  that sample) and does not remove the moments when the whole service is slow.
+  Not separately measured: how much of the improvement over the earlier "one
+  turn in ten" is the connections rather than the keys.
 - **The latency console refuses a batch for one unknown key in `extra`.** It
   takes `coverage`, `endpoint`, `port`, `revision`; anything else is "Invalid
   canonical field: extra" and nothing in the batch is kept. golive sent
@@ -197,10 +210,10 @@ made on one build.
    whether p95 holds with the three causes from the 14:22 call removed.
    `scripts/call-latency.sh` prints p95 and how many turns were over 1200.
 1b. **What is left of the tail is the two vendors' own**: the chat model's slow
-   spells and the synthesizer's slow first audio. Both have a cure that is
-   built and waiting on the owner: a higher synthesis allowance (then
-   `tts_hedge: 2`), and a second route to the chat model on another host
-   (needs its own key) raced against the first.
+   spells and the synthesizer's slow first audio. The owner has said the
+   synthesizer account has no more budget (so `tts_hedge` stays off) and that
+   chat-model keys are free to add: `phone-brain.sh addkey`, then
+   `llm -pool` to see what each addition is worth. Two keys are in the pool.
 2. **Recognition on phone audio is poor** (wrong words in several turns of the
    real calls). The recognizer is run with its 16 kHz engine on audio that is
    8 kHz band-limited by the phone network. `TENCENT_ASR_ENGINE=8k_zh` exists
