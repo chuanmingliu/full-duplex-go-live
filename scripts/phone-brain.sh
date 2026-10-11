@@ -375,8 +375,10 @@ llm)
 
 tts)
   find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
+  shift
   chmod +x "bin/ttsprobe-linux-$ARCH" 2>/dev/null
-  "./bin/ttsprobe-linux-$ARCH" -env "$ENVFILE" -compare-endpoints -runs "${RUNS:-6}"
+  if [ $# -gt 0 ]; then "./bin/ttsprobe-linux-$ARCH" -env "$ENVFILE" "$@"
+  else "./bin/ttsprobe-linux-$ARCH" -env "$ENVFILE" -compare-endpoints -runs "${RUNS:-6}"; fi
   ;;
 
 sync)

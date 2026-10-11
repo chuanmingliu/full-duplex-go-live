@@ -156,7 +156,15 @@ type Config struct {
 	// the caller hears. Later segments are not raced. It costs the first
 	// segment's characters twice and one more request per turn against the
 	// provider's rate limit. 0 or 1 is one connection.
-	TTSHedge     int `json:"tts_hedge"`
+	TTSHedge int `json:"tts_hedge"`
+	// TTSHedgeRPM is how many synthesis requests a minute, across every
+	// session of this process, the hedging may bring the provider's account
+	// to. Past a vendor's rate limit it refuses the request that was going to
+	// be made anyway, and the caller hears nothing: on the test box that cost
+	// two turns in thirty. A first segment is raced only while the last minute
+	// has room for the extra request under this figure, so set it well under
+	// the account's limit. 0 is no limit.
+	TTSHedgeRPM  int `json:"tts_hedge_rpm"`
 	HistoryTurns int `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
@@ -691,6 +699,7 @@ func (c *Config) applyEnv() {
 	setInt(&c.LLMHedge, "GOLIVE_LLM_HEDGE")
 	setInt(&c.LLMHedgeAfterMS, "GOLIVE_LLM_HEDGE_AFTER_MS")
 	setInt(&c.TTSHedge, "GOLIVE_TTS_HEDGE")
+	setInt(&c.TTSHedgeRPM, "GOLIVE_TTS_HEDGE_RPM")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")

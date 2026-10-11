@@ -39,25 +39,80 @@ func IsUrgent(ctx context.Context) bool {
 // then is simply not raced. A session whose second connection cannot be opened
 // is a session without hedging, not a failed one.
 //
+// rpm is how many requests a minute the hedging may bring the provider's
+// account to, across every session of this process; 0 is no limit. A vendor's
+// rate limit is the one thing a second request can make worse — past it the
+// vendor refuses the first request too, and the caller hears nothing at all
+// where they would have heard an answer a tenth of a second late. So a segment
+// is raced only while there is room for it, and the second connection is only
+// dialled while there is room for that.
+//
 // copies < 2 returns inner unchanged.
-func HedgeTTS(inner TTS, copies int, log *slog.Logger) TTS {
+func HedgeTTS(inner TTS, copies, rpm int, log *slog.Logger) TTS {
 	if copies < 2 || inner == nil {
 		return inner
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &hedgedTTS{inner: inner, log: log}
+	return &hedgedTTS{inner: inner, log: log, budget: ttsBudgetFor(inner.Name(), rpm)}
 }
 
 type hedgedTTS struct {
-	inner TTS
-	log   *slog.Logger
+	inner  TTS
+	log    *slog.Logger
+	budget *rpmBudget
+}
+
+// rpmBudget counts requests over the last minute.
+type rpmBudget struct {
+	mu     sync.Mutex
+	limit  int
+	stamps []time.Time
+}
+
+var ttsBudgets sync.Map // provider name → *rpmBudget
+
+func ttsBudgetFor(name string, rpm int) *rpmBudget {
+	if rpm <= 0 {
+		return nil
+	}
+	b, _ := ttsBudgets.LoadOrStore(name, &rpmBudget{limit: rpm})
+	budget := b.(*rpmBudget)
+	budget.mu.Lock()
+	budget.limit = rpm
+	budget.mu.Unlock()
+	return budget
+}
+
+// spend records n requests. With must set they are recorded regardless — they
+// are being made either way — and otherwise only if the minute has room for
+// them, which is what it reports.
+func (b *rpmBudget) spend(n int, must bool) bool {
+	if b == nil {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	cut := 0
+	for cut < len(b.stamps) && now.Sub(b.stamps[cut]) >= time.Minute {
+		cut++
+	}
+	b.stamps = b.stamps[cut:]
+	if !must && len(b.stamps)+n > b.limit {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		b.stamps = append(b.stamps, now)
+	}
+	return true
 }
 
 func (h *hedgedTTS) Name() string { return h.inner.Name() }
 
 func (h *hedgedTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error) {
+	h.budget.spend(1, true)
 	first, err := h.inner.Open(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -89,6 +144,12 @@ type hedgedTTSStream struct {
 func (s *hedgedTTSStream) openSpare() {
 	s.mu.Lock()
 	if s.closed || s.opening || s.spare != nil {
+		s.mu.Unlock()
+		return
+	}
+	if !s.tts.budget.spend(1, false) {
+		// No room this minute for a connection nobody is waiting on. It is
+		// asked for again when the next first segment comes due.
 		s.mu.Unlock()
 		return
 	}
@@ -162,7 +223,18 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 	s.mu.Lock()
 	primary, spare := s.primary, s.spare
 	s.mu.Unlock()
-	if !IsUrgent(ctx) || spare == nil || !spare.busy.CompareAndSwap(false, true) {
+	if IsUrgent(ctx) && spare == nil {
+		s.openSpare()
+	}
+	race := IsUrgent(ctx) && spare != nil && spare.busy.CompareAndSwap(false, true)
+	if race && !s.tts.budget.spend(2, false) {
+		// No room this minute for a second request. One is made, as it would
+		// have been anyway.
+		spare.busy.Store(false)
+		race = false
+	}
+	if !race {
+		s.tts.budget.spend(1, true)
 		return primary.stream.Synthesize(ctx, text)
 	}
 

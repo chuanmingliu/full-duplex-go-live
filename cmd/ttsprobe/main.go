@@ -68,18 +68,21 @@ type sample struct {
 
 func run() error {
 	var (
-		envPath   = flag.String("env", ".env.local", "dotenv file with credentials")
-		runs      = flag.Int("runs", 8, "measured passes over the text set, per variant")
-		warmup    = flag.Int("warmup", 1, "unmeasured passes first; the socket and the vendor cache are cold otherwise")
-		textsFlag = flag.String("texts", "", "comma-separated texts to synthesize (default: a representative set)")
-		compare   = flag.Bool("compare-endpoints", false, "measure the standard and bidirectional endpoints side by side")
-		flushMode = flag.String("flush", "auto", "task_flush: on, off, both, or auto (both when the endpoint is bidirectional)")
-		rate      = flag.Int("rate", provider.PipelineRate, "PCM sample rate")
-		voice     = flag.String("voice", "", "voice id (default: MINIMAX_TTS_VOICE_ID)")
-		jsonOut   = flag.String("json", "", "write raw samples here")
-		adapter   = flag.Bool("adapter", false, "run golive's own MiniMax adapter against both endpoints and report the bytes each segment produced")
-		trace     = flag.Bool("trace", false, "print the frames each endpoint sends for one segment, with and without task_flush, and say what terminated it")
-		traceWait = flag.Duration("trace-wait", 20*time.Second, "how long -trace waits for a terminator before calling it a deadline")
+		envPath    = flag.String("env", ".env.local", "dotenv file with credentials")
+		runs       = flag.Int("runs", 8, "measured passes over the text set, per variant")
+		warmup     = flag.Int("warmup", 1, "unmeasured passes first; the socket and the vendor cache are cold otherwise")
+		textsFlag  = flag.String("texts", "", "comma-separated texts to synthesize (default: a representative set)")
+		compare    = flag.Bool("compare-endpoints", false, "measure the standard and bidirectional endpoints side by side")
+		flushMode  = flag.String("flush", "auto", "task_flush: on, off, both, or auto (both when the endpoint is bidirectional)")
+		rate       = flag.Int("rate", provider.PipelineRate, "PCM sample rate")
+		voice      = flag.String("voice", "", "voice id (default: MINIMAX_TTS_VOICE_ID)")
+		jsonOut    = flag.String("json", "", "write raw samples here")
+		adapter    = flag.Bool("adapter", false, "run golive's own MiniMax adapter against both endpoints and report the bytes each segment produced")
+		trace      = flag.Bool("trace", false, "print the frames each endpoint sends for one segment, with and without task_flush, and say what terminated it")
+		traceWait  = flag.Duration("trace-wait", 20*time.Second, "how long -trace waits for a terminator before calling it a deadline")
+		callTurnsN = flag.Int("call", 0, "pace synthesis as one phone call of this many turns: one session, a short first segment and a sentence per turn; reports first audio and any rate-limit refusals")
+		callEvery  = flag.Duration("every", 6*time.Second, "with -call, how often a turn comes")
+		callHedge  = flag.Int("hedge", 2, "with -call, connections asked for each first segment (tts_hedge)")
 	)
 	flag.Parse()
 
@@ -94,6 +97,9 @@ func run() error {
 
 	if *adapter {
 		return runAdapter(base, *voice, *rate)
+	}
+	if *callTurnsN > 0 {
+		return runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery)
 	}
 
 	if *trace {

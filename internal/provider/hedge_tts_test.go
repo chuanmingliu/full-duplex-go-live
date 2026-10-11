@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,13 +16,19 @@ import (
 type fakeTTS struct {
 	delays   [][]time.Duration
 	openErr  []error // per connection
+	name     string
 	synthErr []error // per connection, on its first synthesis
 
 	mu      sync.Mutex
 	streams []*fakeTTSStream
 }
 
-func (f *fakeTTS) Name() string { return "fake" }
+func (f *fakeTTS) Name() string {
+	if f.name != "" {
+		return f.name
+	}
+	return "fake"
+}
 
 func (f *fakeTTS) Open(ctx context.Context, _ TTSOptions) (TTSStream, error) {
 	f.mu.Lock()
@@ -126,7 +133,7 @@ func heard(t *testing.T, ch <-chan TTSChunk) (from []byte, first time.Duration, 
 
 func openHedged(t *testing.T, f *fakeTTS) TTSStream {
 	t.Helper()
-	s, err := HedgeTTS(f, 2, nil).Open(context.Background(), TTSOptions{})
+	s, err := HedgeTTS(f, 2, 0, nil).Open(context.Background(), TTSOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +226,7 @@ func TestHedgeSurvivesAConnectionThatFails(t *testing.T) {
 	refused := errors.New("rate limited")
 	t.Run("no second connection to be had", func(t *testing.T) {
 		f := &fakeTTS{openErr: []error{nil, refused}}
-		s, err := HedgeTTS(f, 2, nil).Open(context.Background(), TTSOptions{})
+		s, err := HedgeTTS(f, 2, 0, nil).Open(context.Background(), TTSOptions{})
 		if err != nil {
 			t.Fatalf("a session without a spare is a session without hedging, not a failed one: %v", err)
 		}
@@ -291,7 +298,47 @@ func TestHedgedSynthesisStopsWhenTheCallerDoes(t *testing.T) {
 
 func TestHedgeTTSOfOneIsTheSynthesizerItself(t *testing.T) {
 	f := &fakeTTS{}
-	if got := HedgeTTS(f, 1, nil); got != TTS(f) {
+	if got := HedgeTTS(f, 1, 0, nil); got != TTS(f) {
 		t.Error("a hedge of one copy should be the synthesizer, unwrapped")
+	}
+}
+
+// Past a vendor's rate limit it refuses the request that was going to be made
+// anyway. A first segment is raced only while the minute has room for the
+// extra request; when it has not, the segment is synthesized once, as before.
+func TestHedgeStaysInsideItsRequestBudget(t *testing.T) {
+	// The budget is the account's, so it is shared by name across the process.
+	f := &fakeTTS{name: "budgeted-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
+	// Room for: the session's connection, its spare, and one raced segment.
+	s, err := HedgeTTS(f, 2, 4, nil).Open(context.Background(), TTSOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	deadline := time.Now().Add(time.Second)
+	for f.opened() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond)
+
+	ch, _ := s.Synthesize(WithUrgent(context.Background()), "第一句，")
+	heard(t, ch)
+	time.Sleep(120 * time.Millisecond) // the loser is free again
+	raced := f.stream(0).calls.Load() + f.stream(1).calls.Load()
+	if raced != 2 {
+		t.Fatalf("%d syntheses for the first raced segment; want 2", raced)
+	}
+	for i := 0; i < 3; i++ {
+		ch, err := s.Synthesize(WithUrgent(context.Background()), "下一句，")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if from, _, serr := heard(t, ch); serr != nil || len(from) != 3 {
+			t.Fatalf("a segment over budget was not synthesized at all: %v, %v", from, serr)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := f.stream(0).calls.Load() + f.stream(1).calls.Load(); got != raced+3 {
+		t.Errorf("%d syntheses for three segments with the budget spent; want one each", got-raced)
 	}
 }
