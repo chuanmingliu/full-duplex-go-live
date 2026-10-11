@@ -47,6 +47,7 @@ Real providers on the test box, no phone, 15 measured turns each
 | ea3a478 | no guess on trailing words while a final is pending | 978 | 1123 (max 1191) |
 | b8883c6 | four copies; fixes from the 13:09 call; 30 turns | 922 | 1202 (max 1237) |
 | dcf68a8 | shorter first clause; 30 turns | 940 | 1181 (max 1202) |
+| ea5d26d | backend warmed at session open; fixes from the 14:22 call; 20 turns | 904 | 1118 (max 1184) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
@@ -108,6 +109,9 @@ other 16 were 761–1086. **No call yet on the build after it.**
 - **An interruption was being weighed on words that arrive late.** The early
   final used to be skipped while a floor hold was undecided; the slowest turn
   of the 13:09 call was three syllables said over the assistant.
+- **Every bench turn is a first turn.** The bench opens a session per turn, so
+  the slow first completion was in every bench figure before ea5d26d; warming
+  at session open took the bench's median first token from ~430 to 342 ms.
 - **A long prompt costs nothing once cached, and the first completion of a
   call is slow regardless.** 13,116 characters of instructions: ~7k prompt
   tokens served from the provider's cache on every turn, median first token
