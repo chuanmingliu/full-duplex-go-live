@@ -432,3 +432,143 @@ func TestVADKeepsTheBarUpWhileTheLineStillCarriesTheAssistant(t *testing.T) {
 		t.Fatal("the raised bar outlived the echo tail")
 	}
 }
+
+// echoReturns feeds samples and takes a measurement after every frame, as the
+// engine does, returning the times handed out.
+func echoReturns(v *VAD, samples []float32) []float64 {
+	var out []float64
+	frame := v.FrameSamples()
+	for off := 0; off+frame <= len(samples); off += frame {
+		v.Push(samples[off : off+frame])
+		if ms, _, ok := v.TakeEchoReturn(); ok {
+			out = append(out, ms)
+		}
+	}
+	return out
+}
+
+// returningVoice is the assistant's own voice as a phone line hands it back:
+// about -30 dBFS, far over an idle line and far under a caller.
+func returningVoice(rate, ms int) []float32 { return tone(rate, ms, 0.1) }
+
+// The phone leg has no clock of its own, but the line returns what is said
+// into it, so the time from the assistant starting to its voice arriving back
+// on a quiet input is a measurement of the trip there and back.
+func TestEchoReturnIsTimedFromTheAssistantStartingToItsVoiceComingBack(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+
+	if got := echoReturns(v, quiet(rate, 400)); len(got) != 0 {
+		t.Fatalf("an echo return of %v ms was reported before the assistant had said anything", got)
+	}
+	v.SetAssistantSpeaking(true)
+	got := echoReturns(v, append(quiet(rate, 300), returningVoice(rate, 600)...))
+	if len(got) != 1 {
+		t.Fatalf("the voice came back once, 300 ms after it left; measurements: %v", got)
+	}
+	if math.Abs(got[0]-300) > v.FrameMS() {
+		t.Errorf("echo return timed at %.0f ms; the voice came back after 300", got[0])
+	}
+	if ms, _, ok := v.TakeEchoReturn(); ok {
+		t.Errorf("the same measurement (%.0f ms) was handed out a second time", ms)
+	}
+}
+
+// The level that comes with the time is that of the frame the voice arrived in.
+func TestEchoReturnCarriesTheLevelOfWhatCameBack(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	feed(v, quiet(rate, 300))
+	back := returningVoice(rate, 20)
+	v.Push(back)
+	_, level, ok := v.TakeEchoReturn()
+	if !ok {
+		t.Fatal("no echo return was timed")
+	}
+	if want := DBFS(RMS(back)); math.Abs(level-want) > 0.01 {
+		t.Errorf("level reported as %.1f dB; the frame that came back was at %.1f", level, want)
+	}
+	if level < -36 || level > -24 {
+		t.Errorf("the returning voice in this test is at %.1f dB; it is meant to be about -30", level)
+	}
+}
+
+// A sound after the assistant starts is its echo only if the line was quiet
+// before. A caller between two words is not a quiet line, and their next word
+// would be timed as an echo that came back in a few tens of milliseconds.
+func TestNoEchoReturnIsTimedWhenTheCallerIsMakingSound(t *testing.T) {
+	const rate = RatePipeline
+
+	t.Run("in a gap between syllables", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 100, 0.45)...))
+		feed(v, quiet(rate, 60))
+		v.SetAssistantSpeaking(true)
+		got := echoReturns(v, append(quiet(rate, 60), tone(rate, 600, 0.45)...))
+		if len(got) != 0 {
+			t.Fatalf("the caller's next sound was timed as the assistant's echo: %v ms", got)
+		}
+	})
+
+	t.Run("in a pause inside an utterance that is still open", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 600, 0.45)...))
+		// Long enough to count as a quiet line, short of ending the utterance.
+		feed(v, quiet(rate, 240))
+		if v.ActiveMS() == 0 {
+			t.Fatal("the utterance has closed; this test is about one that is still open")
+		}
+		v.SetAssistantSpeaking(true)
+		got := echoReturns(v, append(quiet(rate, 60), tone(rate, 600, 0.45)...))
+		if len(got) != 0 {
+			t.Fatalf("the caller carrying on was timed as the assistant's echo: %v ms", got)
+		}
+	})
+}
+
+// Sound in the very frame the assistant starts in left the caller before the
+// assistant had said anything.
+func TestASoundInTheFrameTheAssistantStartsInIsNotItsEcho(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	if got := echoReturns(v, returningVoice(rate, 600)); len(got) != 0 {
+		t.Fatalf("sound that was already arriving was timed as an echo: %v ms", got)
+	}
+}
+
+// A line with echo cancellation returns nothing. The wait ends, and the caller
+// answering two seconds later is not an echo return of two seconds.
+func TestNoEchoReturnIsTimedWhenNothingComesBack(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	if got := echoReturns(v, quiet(rate, 1600)); len(got) != 0 {
+		t.Fatalf("an echo return was timed on a silent line: %v ms", got)
+	}
+	if got := echoReturns(v, returningVoice(rate, 600)); len(got) != 0 {
+		t.Fatalf("a sound after the wait had run out was timed as an echo: %v ms", got)
+	}
+}
+
+// The origin is the start of the answer. Being told again that the assistant is
+// speaking, part-way through, must not move it.
+func TestEchoReturnIsTimedFromTheStartOfTheAnswerNotAReminderOfIt(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	feed(v, quiet(rate, 100))
+	v.SetAssistantSpeaking(true)
+	got := echoReturns(v, append(quiet(rate, 200), returningVoice(rate, 600)...))
+	if len(got) != 1 {
+		t.Fatalf("the voice came back once; measurements: %v", got)
+	}
+	if math.Abs(got[0]-300) > v.FrameMS() {
+		t.Errorf("echo return timed at %.0f ms; the answer began 300 ms before its voice came back", got[0])
+	}
+}

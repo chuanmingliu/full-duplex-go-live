@@ -244,6 +244,14 @@ type Engine struct {
 	// the summary at close. Loop goroutine only.
 	specHeld      int
 	specAbandoned int
+	// echoReturns are the times the assistant's voice took to come back on the
+	// input, and pausesInside the lengths of the pauses callers carried on
+	// from, both in milliseconds and both for the summary at close.
+	// silentBeforeMS is the open utterance's trailing silence as of the frame
+	// before this one. Loop goroutine only. See measureLine.
+	echoReturns    []float64
+	pausesInside   []int
+	silentBeforeMS float64
 
 	inputMS   atomic.Int64
 	outputMS  atomic.Int64
@@ -452,8 +460,10 @@ func (e *Engine) Close() {
 		e.player.Close()
 		e.wg.Wait()
 		// After wg.Wait: the loop goroutine is the only writer of e.latencies
-		// and it has exited, so reading the slice here needs no lock.
+		// and of what lineSummary reads, and it has exited, so reading them
+		// here needs no lock.
 		e.latencySummary()
+		e.lineSummary()
 		e.ttsMu.Lock()
 		if e.ttsStream != nil {
 			_ = e.ttsStream.Close()
@@ -652,6 +662,7 @@ func (e *Engine) onAudio(pcm []byte) {
 			continue
 		}
 		e.handleDecision(e.vad.Push(samples))
+		e.measureLine()
 	}
 	// Per frame, not per tick: the window between "gone quiet" and "turn over"
 	// is a couple of hundred milliseconds, and a 120 ms tick would spend most
@@ -1839,6 +1850,77 @@ func (e *Engine) latencySummary() {
 			"max_ms", v[len(v)-1])
 	}
 	e.log.Info("session: response latency summary", attrs...)
+}
+
+// insidePauseMinMS is the shortest silence counted as a pause inside an
+// utterance. Under it are the stops and unvoiced consonants of ordinary
+// speech, which no setting of duplex.early_final_ms would be near.
+const insidePauseMinMS = 60
+
+// measureLine keeps two measurements that can only be made frame by frame,
+// and is called after each one. Neither takes part in any decision.
+//
+// The first is how long the assistant's voice takes to come back as echo,
+// which is the only figure there is for the phone leg; the detector times it
+// and it is collected here.
+//
+// The second is how long callers pause inside an utterance. An early final is
+// asked for duplex.early_final_ms into a pause, so lowering it makes every
+// turn faster and splits the recognition at every pause that long or longer
+// that the caller carries on from. Choosing it takes the lengths of those
+// pauses on real calls. A pause is counted when the caller resumes: silence
+// on the frame before, voice on this one, in an utterance that is still open.
+// The last condition is what keeps out the pause that ended the turn, after
+// which the trailing silence also reads zero because there is no utterance.
+func (e *Engine) measureLine() {
+	if ms, level, ok := e.vad.TakeEchoReturn(); ok {
+		e.echoReturns = append(e.echoReturns, ms)
+		e.log.Debug("listen: the assistant's voice came back",
+			"ms", int(ms), "level_db", round1(level))
+	}
+	// VoicedRunMS is above zero only for an open utterance whose latest frame
+	// was voiced.
+	if e.silentBeforeMS >= insidePauseMinMS && e.vad.VoicedRunMS() > 0 {
+		e.pausesInside = append(e.pausesInside, int(e.silentBeforeMS))
+		e.log.Debug("listen: the caller paused inside the utterance",
+			"pause_ms", int(e.silentBeforeMS))
+	}
+	e.silentBeforeMS = e.vad.TrailingSilenceMS()
+}
+
+// lineSummary reports what measureLine collected, once, at close: one line
+// for each measurement that has anything in it.
+func (e *Engine) lineSummary() {
+	if n := len(e.echoReturns); n > 0 {
+		v := append([]float64(nil), e.echoReturns...)
+		sort.Float64s(v)
+		e.log.Info("listen: echo return time",
+			"n", n,
+			"p50_ms", int(v[(n-1)/2]),
+			"min_ms", int(v[0]),
+			"max_ms", int(v[n-1]))
+	}
+	if n := len(e.pausesInside); n > 0 {
+		var under80, under100, under120, longer int
+		for _, ms := range e.pausesInside {
+			switch {
+			case ms < 80:
+				under80++
+			case ms < 100:
+				under100++
+			case ms < 120:
+				under120++
+			default:
+				longer++
+			}
+		}
+		e.log.Info("listen: pauses inside utterances",
+			"n", n,
+			"ms_60_79", under80,
+			"ms_80_99", under100,
+			"ms_100_119", under120,
+			"ms_120_plus", longer)
+	}
 }
 
 // --- backchannel channel ---

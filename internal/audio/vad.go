@@ -6,6 +6,23 @@ import (
 	"time"
 )
 
+// The echo return estimator's constants. See trackEchoReturn.
+const (
+	// echoOnsetMarginDB is how far over the noise floor a frame must sit to be
+	// the assistant's voice arriving back, and, before that, to say the line
+	// was not quiet. It is lower than the margin speech is judged by: an echo
+	// is quieter than a caller, and nothing is decided on it.
+	echoOnsetMarginDB = 8.0
+	// echoQuietBeforeMS is how long the input must have been quiet when the
+	// assistant starts for a sound that follows to be taken as its echo.
+	echoQuietBeforeMS = 200.0
+	// A return sooner than one frame cannot be told from sound that was
+	// already on its way in, and one later than a second and a half is not an
+	// echo of the start of anything.
+	echoReturnMinMS = 20.0
+	echoReturnMaxMS = 1500.0
+)
+
 // DecisionKind is what the VAD concluded about the frame it just consumed.
 type DecisionKind int
 
@@ -223,7 +240,28 @@ type VAD struct {
 	// echoTailUntil is the audio-clock moment the raised bar comes back down.
 	clockAtomic   atomic.Int64
 	echoTailUntil atomic.Int64
+
+	// echoArmAt is the input clock at the moment the assistant last began to
+	// produce audio, left by the goroutine that flips speaking for Push to
+	// collect, and echoNotArmed when there is nothing to collect. The rest of
+	// the echo return estimator is Push's own. See trackEchoReturn.
+	echoArmAt atomic.Int64
+	// quietMS is how long the input has gone without a frame over the onset
+	// bar.
+	quietMS float64
+	// echoArmed is true while a return is being waited for, and echoArmedAtMS
+	// is the clock it is timed from.
+	echoArmed     bool
+	echoArmedAtMS float64
+	// echoReturnMS and echoReturnDB are a measurement nobody has taken yet.
+	echoReturnMS    float64
+	echoReturnDB    float64
+	echoReturnReady bool
 }
+
+// echoNotArmed is echoArmAt with nothing in it. The clock starts at zero, so
+// zero is a moment the assistant can begin at.
+const echoNotArmed = -1
 
 // NewVAD builds a detector. cfg is copied; later mutation has no effect.
 func NewVAD(cfg VADConfig) *VAD {
@@ -233,7 +271,7 @@ func NewVAD(cfg VADConfig) *VAD {
 	if prerollCap < 1 {
 		prerollCap = 1
 	}
-	return &VAD{
+	v := &VAD{
 		cfg:          cfg,
 		frameSamples: frameSamples,
 		frameMS:      float64(cfg.FrameMS),
@@ -242,6 +280,8 @@ func NewVAD(cfg VADConfig) *VAD {
 		noiseFloorDB: cfg.NoiseFloorDB,
 		echoFloorDB:  cfg.NoiseFloorDB,
 	}
+	v.echoArmAt.Store(echoNotArmed)
+	return v
 }
 
 // FrameSamples is the frame size the VAD expects, in samples.
@@ -258,8 +298,15 @@ func (v *VAD) FrameBytes() int { return v.frameSamples * BytesPerSample }
 // duplex: listening never stops, but the bar for interrupting rises while we
 // are talking, so acoustic echo does not read as a barge-in.
 func (v *VAD) SetAssistantSpeaking(speaking bool) {
-	if !speaking && v.speaking.Load() && v.cfg.EchoTailMS > 0 {
+	was := v.speaking.Load()
+	if !speaking && was && v.cfg.EchoTailMS > 0 {
 		v.echoTailUntil.Store(v.clockAtomic.Load() + int64(v.cfg.EchoTailMS))
+	}
+	// Only the start of an answer is timed. Being told again that it is still
+	// speaking must not move the origin to the middle of a sentence, whose
+	// echo is already arriving.
+	if speaking && !was {
+		v.echoArmAt.Store(v.clockAtomic.Load())
 	}
 	v.speaking.Store(speaking)
 }
@@ -322,6 +369,77 @@ func (v *VAD) NoiseFloorDB() float64 { return v.noiseFloorDB }
 // NoiseFloorDB, the caller is on a speakerphone or has echo cancellation off,
 // and the gap is exactly what was cutting answers short before it existed.
 func (v *VAD) EchoFloorDB() float64 { return v.echoFloorDB }
+
+// TakeEchoReturn hands out the time the assistant's voice took to come back,
+// once per measurement: how long after it began producing audio the first
+// sound arrived on a line that had been quiet, and how loud that sound was. ok
+// is false when there is nothing new. It belongs to the goroutine that calls
+// Push.
+//
+// This is the only clock anybody has on the phone leg. What it spans depends on
+// whose echo it is — see "Measuring the phone leg" in TELEPHONY.md — and it
+// reads long: an onset is soft, and the first frame over the bar is some tens
+// of milliseconds after the sound began.
+func (v *VAD) TakeEchoReturn() (ms float64, levelDB float64, ok bool) {
+	if !v.echoReturnReady {
+		return 0, 0, false
+	}
+	v.echoReturnReady = false
+	return v.echoReturnMS, v.echoReturnDB, true
+}
+
+// trackEchoReturn times the assistant's own voice around the loop: out of
+// golive, down the line, and back in as echo. frameStartMS is the clock at the
+// start of the frame just consumed and level is that frame's.
+//
+// Nothing outside golive reports a timestamp, so the phone leg cannot be timed
+// from both ends. But the line returns what is said into it, and both ends of
+// that trip are here: the moment the assistant starts, and the moment the
+// input stops being quiet.
+//
+// The second is only the first's echo if the line was quiet to begin with. A
+// caller still making sound when the answer starts — a breath, a word said
+// over it — would be timed as an echo that came back at once, so a measurement
+// is begun only on a line that has been quiet for echoQuietBeforeMS with no
+// utterance open, and is given up rather than guessed at otherwise. A caller
+// who speaks inside the wait is still taken for the echo; that is what the
+// median is for.
+//
+// It reads levels and writes nothing the voiced decision looks at.
+func (v *VAD) trackEchoReturn(frameStartMS, level float64) {
+	loud := level > v.noiseFloorDB+echoOnsetMarginDB
+
+	if at := v.echoArmAt.Swap(echoNotArmed); at != echoNotArmed {
+		// quietMS does not count this frame yet: the question is what the line
+		// was doing before the assistant began.
+		v.echoArmed = v.quietMS >= echoQuietBeforeMS && !v.open
+		v.echoArmedAtMS = float64(at)
+	}
+
+	if v.echoArmed {
+		waited := frameStartMS - v.echoArmedAtMS
+		switch {
+		case waited > echoReturnMaxMS:
+			// Nothing came back. A sound from here on is somebody speaking.
+			v.echoArmed = false
+		case loud:
+			// The first sound is the only candidate there is: a second one
+			// would be timed from the wrong place.
+			if waited >= echoReturnMinMS {
+				v.echoReturnMS = waited
+				v.echoReturnDB = level
+				v.echoReturnReady = true
+			}
+			v.echoArmed = false
+		}
+	}
+
+	if loud {
+		v.quietMS = 0
+	} else {
+		v.quietMS += v.frameMS
+	}
+}
 
 // TrailingSilenceMS reports how long the open utterance has been unvoiced, and
 // zero when no utterance is open.
@@ -426,12 +544,15 @@ func (v *VAD) Push(frame []float32) Decision {
 		copy(fixed, frame)
 		frame = fixed
 	}
+	frameStartMS := v.clockMS
 	v.clockMS += v.frameMS
 	v.clockAtomic.Store(int64(v.clockMS))
 
 	level := DBFS(RMS(frame))
 	zcr := ZeroCrossingRate(frame)
 	marginDB, minSpeechMS := v.thresholds()
+	// Before the floor adapts to this frame, like the voiced decision below.
+	v.trackEchoReturn(frameStartMS, level)
 
 	// The floor starts at the configured value rather than at the first frame.
 	// Seeding from frame one looks smarter and is actively wrong: a caller who

@@ -146,6 +146,56 @@ printed. Dial once from the page after changing the prompt, and that is what
 `call` places from then on. `instructions_sha` on the `realtime:
 session.update` log line says whether two calls were given the same prompt.
 
+## Measuring the phone leg
+
+Nothing outside golive reports a timestamp, so the gateway, the PBX and the
+phone network have never been timed. The line does return the assistant's own
+voice, and golive times that. At the end of a call:
+
+```
+listen: echo return time n=14 p50_ms=420 min_ms=380 max_ms=640
+```
+
+(The figures here are made up to show the shape of the line.) Each one is the
+time from golive starting to send an answer's audio to the first sound arriving
+back on the input. One is taken only when the line had been quiet for 200 ms
+and the caller was not mid-utterance when the answer began, and only if the
+sound came back within 1.5 s. Each is also logged at debug as `listen: the
+assistant's voice came back`, with `ms` and `level_db`.
+
+What it spans depends on whose echo it is:
+
+- The far handset's: the assistant's voice went out through the gateway and
+  the network to the phone and came back the same way. That is the phone leg,
+  both directions.
+- The gateway's own: the voice turned round inside the box and never reached
+  the network. That is the local part only.
+
+The size says which. Under about 150 ms suggests the gateway; several hundred
+suggests the whole round trip.
+
+It reads 20–60 ms long, because speech begins softly and the first frame loud
+enough to count is not the first frame of the sound. A caller who starts
+speaking in the same second is timed as an echo, so read `p50_ms`, not
+`max_ms`. No line is logged when nothing was measured, which is what a line
+with echo cancellation gives.
+
+This has run against synthetic audio in tests and not yet on a call.
+
+A second line at the end of a call is for choosing `duplex.early_final_ms`:
+
+```
+listen: pauses inside utterances n=31 ms_60_79=12 ms_80_99=8 ms_100_119=5 ms_120_plus=6
+```
+
+These are pauses of 60 ms or more that the caller carried on from, counted by
+length; the pause that ended the turn is not among them. Lowering
+`early_final_ms` begins every answer sooner by the difference, and every pause
+at least that long costs a recognition split in two. At 120, that is the pauses
+under `ms_120_plus`. At 80, it is those and the two columns before it. Each
+pause is logged at debug as `listen: the caller paused inside the utterance`,
+with `pause_ms`.
+
 ## The synthesizer's first audio
 
 About 180 ms at the median and over 300 one turn in ten, and on an answer's
