@@ -68,16 +68,39 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 14:22 | dcf68a8, the owner's 13k-character prompt | 19 | 972 | 1561 | 3 |
 | 10-11 18:34 | ea5d26d, same prompt | 15 | 926 | 1481 | 1 |
 | 10-11 20:18 | c2fbf96, same prompt, 9 minutes | 70 | 932 | 1308 (p95 1266) | 5 |
+| 10-11 21:51 | f374c41, same prompt, two chat-model accounts, 8 minutes | 52 | 882 | 1354 (**p95 1097**) | 2 |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
-1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861.
+1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
+p95 717.
 
-The 20:18 call is the first with enough turns for a p95 that means something:
-**1266 ms, 66 over.** Of its five turns over 1200, three had the synthesizer's
+The 20:18 call was the first with enough turns for a p95 that means something:
+1266 ms, 66 over. Of its five turns over 1200, three had the synthesizer's
 first audio at 355–589 ms (median 182), one was a turn closed on stale
 hypotheses 5 ms before the final for them arrived, one an answer thrown away
-over a trailing "啊". All five have a fix in the build after it. **No call yet
-on that build.**
+over a trailing "啊".
+
+**The 21:51 call is the first to meet the goal: p95 1097 on 52 turns, 103 ms
+inside.** p90 1070; 48 of the 52 turns were answered on a guess that held. Its
+two turns over 1200 are one of each vendor's:
+
+- 1354: the chat model. Every copy was slow at once, on both accounts: one
+  lane's stream opened in 115 ms and then said nothing for 700 ms, one took
+  814 ms to open and won, the two on the second account had not opened by
+  then. More keys do not help with this; a second vendor would.
+- 1336: the synthesizer's first audio at 613 ms (the other 51 turns: 152–239).
+
+That is 2 in 52, about 4%, and p95 holds only while it stays under 5%. One
+call does not show that: two slow turns in 52 is consistent with a true rate
+anywhere from under 1% to about 13%. Pool the next calls on this build with it
+before calling the goal met.
+
+Also on that call: the console took all of golive's events (367 sent, none
+refused) — the first call with the corrected event ids; no rate limit and no
+refused key; the four lanes shared the work evenly and each copy won about a
+quarter of the time (15/20/20/13); 23 replies were cut short by the caller
+speaking, with one warning that a barge-in looked like the assistant's own
+voice returning. Whether all 23 were meant has not been checked with the owner.
 
 On fewer than ~40 turns p95 is the worst turn or the one before it; pool calls
 made on one build.
@@ -206,8 +229,9 @@ made on one build.
 
 ## What to work on, in order
 
-1. **A call on the current build**, dialled by the owner from the page, to see
-   whether p95 holds with the three causes from the 14:22 call removed.
+1. **More calls on f374c41**, dialled by the owner from the page, pooled with
+   the 21:51 call (52 turns, 2 over), until the count is past ~150 turns or the
+   rate over 1200 is plainly above or below 5%.
    `scripts/call-latency.sh` prints p95 and how many turns were over 1200.
 1b. **What is left of the tail is the two vendors' own**: the chat model's slow
    spells and the synthesizer's slow first audio. The owner has said the
