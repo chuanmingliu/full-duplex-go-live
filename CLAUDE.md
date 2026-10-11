@@ -72,6 +72,8 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 22:21 | f374c41 again, 7 minutes | 41 | 933 | 2674 (p95 1344) | 5 |
 | | **both calls on f374c41** | **93** | **900** | 2674 (**p95 1336**, p90 1140) | **7** |
 | 10-11 23:08 | 4b029b3, same prompt, 7 minutes | 37 | 841 | 4603 (**p95 1058**, p90 982) | 1 |
+| 10-11 23:34 | e517e3a (same engine), redialled from the box with `phone-brain.sh call`, 2 minutes | 15 | 943 | 1143 | 0 |
+| | **both calls since 4b029b3** | **52** | | 4603 (**p95 1091**) | **1** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
 1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
@@ -274,7 +276,8 @@ made on one build.
   when a call that brought instructions is answered). So after one dial from
   the page, the owner's prompt can be redialled from the box: the owner writes
   "call" in the session and a runner job runs it. `call show` says what is
-  kept. The originator's own source on the box is root-owned and not readable;
+  kept. Verified at 23:34: the redial reached golive with the same 13,116
+  characters and the same `instructions_sha` as the page dial before it. The originator's own source on the box is root-owned and not readable;
   a button inside it is not something a session can add.
 - **The box reaches its providers through a VPN client's tunnel** (names
   resolve to 198.18.x.x; TCP connects in 1 ms because the client terminates it
