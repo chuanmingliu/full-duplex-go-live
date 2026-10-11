@@ -116,10 +116,18 @@ when the session opens and again as the opening line starts
 About 180 ms at the median and over 300 one turn in ten, and on an answer's
 first segment all of it is silence. `tts_hedge: 2` gives each session a second
 connection and asks both for that first segment, playing whichever produces
-audio first (`tts hedge: a copy produced audio first` at debug level). It costs
-the segment's characters twice and one more request per turn against the
-provider's rate limit; a session that cannot get a second connection carries
-on without one.
+audio first. On the bench it took p95 from ~1070 to ~1010 ms.
+
+**It is off in the telephony profile, because the synthesizer account on the
+test box cannot afford it.** Paced like one phone call (`phone-brain.sh tts
+-call 36 -every 5s -hedge 2`: 36 requests a minute), the account began refusing
+requests after 65 seconds ("status 1002: rate limit exceeded(RPM)") and went on
+refusing. That fits an allowance of about 20 synthesis requests a minute with a
+burst of about 20 — and a refused request is an answer the caller never hears.
+A nine-minute, 70-turn call without hedging ran at 16–19 a minute: under it,
+not by much. With a higher allowance, set `tts_hedge: 2` and `tts_hedge_rpm`
+to well under the account's limit; a first segment is raced only while the last
+minute has room for the extra request.
 
 ## A line that is never quiet, and a line that returns the assistant's voice
 

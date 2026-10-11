@@ -49,6 +49,7 @@ Real providers on the test box, no phone, 15 measured turns each
 | dcf68a8 | shorter first clause; 30 turns | 940 | 1181 (max 1202) |
 | ea5d26d | backend warmed at session open; fixes from the 14:22 call; 20 turns | 904 | 1118 (max 1184) |
 | c2fbf96 | answer prepared during a mid-thought wait; fixes from the 18:34 call; 20 turns | 878 | 1067 (max 1262) |
+| 779002e | fixes from the 20:18 call, with the first segment raced on two synthesis connections; 28 turns, 2 lost to the synthesizer's rate limit | 851 | 1011 (max 1020) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
@@ -152,10 +153,16 @@ made on one build.
   console takes a producer of any shape and a count of a few digits. The id is
   now `boot:<id>:golive-<component>-r<run>:<count>`. **Probe the console with a
   new id shape before deploying one.**
-- **The synthesizer has a tail too.** MiniMax first audio: 182 ms at the
-  median, over 300 on 7 of 70 turns, 589 at worst. `tts_hedge: 2` races the
-  first segment of each answer on two connections (`provider.WithUrgent` marks
-  it); later segments go to one.
+- **The synthesizer has a tail too, and the account cannot afford the cure.**
+  MiniMax first audio: 182 ms at the median, over 300 on 7 of 70 turns, 589 at
+  worst. `tts_hedge: 2` races the first segment of each answer on two
+  connections (`provider.WithUrgent` marks it) and on the bench took p95 from
+  ~1070 to 1011. But the account allows about 20 synthesis requests a minute
+  (burst ~20): paced like a call at 36 a minute it was refused from the 65th
+  second on (`ttsprobe -call 36 -every 5s -hedge 2`), and the hedged bench lost
+  2 turns in 30. A refused request is an answer nobody hears. **Hedging is off
+  in the telephony profile.** A 70-turn call without it ran at 16–19 requests a
+  minute — under the limit, not by much; a faster conversation would hit it.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
