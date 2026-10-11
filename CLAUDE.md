@@ -16,7 +16,8 @@ Providers in use: Tencent realtime ASR, DeepSeek (`deepseek-chat`), MiniMax
 
 ## The goal
 
-**End-to-end latency within 1200 ms, on a phone call.** This is the thing to
+**End-to-end latency within 1200 ms at p95, on a phone call.** The owner said
+so in as many words: the figure is a p95, not a median. This is the thing to
 optimise; everything else is in service of it.
 
 Two definitions are in use. Quote both, and say which.
@@ -44,6 +45,8 @@ Real providers on the test box, no phone, 15 measured turns each
 | 42b5f54 | early final + two copies of each completion; pause 380 | **943** | 1244 |
 | 42b5f54 | same, one copy per completion (minutes later) | 952 | 1431 |
 | ea3a478 | no guess on trailing words while a final is pending | 978 | 1123 (max 1191) |
+| b8883c6 | four copies; fixes from the 13:09 call; 30 turns | 922 | 1202 (max 1237) |
+| dcf68a8 | shorter first clause; 30 turns | 940 | 1181 (max 1202) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
@@ -51,10 +54,15 @@ Stage medians of the 943 ms run, from the caller's last sound:
 | ---: | ---: | ---: | ---: | ---: |
 | 120 | ~211 | +415 | +70 | +216 |
 
-Phone calls through golive: placed on the morning of 2026-10-11, all before
-the early final. The 12 turns read from the log: last sound → first audio p50 1210, p90 1334; turn
-judged over → first audio p50 830, p90 954 (pause 380). **No call has been
-placed on the current build yet.**
+Phone calls through golive, last sound → first audio, from the log:
+
+| When | Build | Turns | p50 | worst | over 1200 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 10-11 morning | before the early final, pause 380 | 12 | 1210 | 1334 (p90) | about half |
+| 10-11 13:09 | ea3a478 | 9 | 862 | 1382 | 2 |
+
+By the console's definition the 13:09 call was p50 482, worst 1002. **No call
+yet on the build after it**, which is where the fixes from that call are.
 
 ## What was learned, so it is not learned again
 
@@ -74,15 +82,38 @@ placed on the current build yet.**
 - **The chat model's first token is the largest term and is not one number**:
   170–880 ms for the same request within one run. `llm_hedge: 2` takes the
   faster of two. It bought ~70 ms at the median and ~190 ms at p95.
+- **Copies of a completion are independent within a minute, not across
+  them.** One copy is over 600 ms nearly half the time and two left one turn in
+  eight slow, as predicted. Four should have left one in a hundred and left one
+  in ten: the model has slow spells in which every copy is slow. Each of four
+  copies wins about equally often. More copies will not fix the tail; a second,
+  independent route to a model would.
 - **The latency console refuses a batch for one unknown key in `extra`.** It
   takes `coverage`, `endpoint`, `port`, `revision`; anything else is "Invalid
   canonical field: extra" and nothing in the batch is kept. golive sent
   `agent` on every event, so none of its turns were ever there. Fixed in
-  8382c52; not yet seen working on a call.
-- **The phone gateway sends no turn detection golive acts on.** Its
-  `session.update` is 31 KB of instructions; calls run on the profile's
-  `vad.min_silence_ms`. The originator's "requested silence 150 ms" setting
-  belongs to the other agent. `realtime: session.update` now logs the shape.
+  8382c52 and seen working on the 13:09 call (61 events, none refused).
+- **The phone gateway does send turn detection, in camelCase**
+  (`silenceDurationMs: 150`), which read as nothing until the shape of its
+  `session.update` was logged. Both spellings are read now; the telephony
+  profile declines it (`honor_turn_detection: false`) because 150 ms on an
+  energy detector answers every hesitation and, since the early final, buys no
+  latency.
+- **A final asked for in a pause ends in "。" whatever was said.** Read as the
+  recognizer's opinion it made "就是。", "呃。" and "我想问你一下啊。" finished
+  turns on a real call. Ignored now for deciding whether the caller is done.
+- **An interruption was being weighed on words that arrive late.** The early
+  final used to be skipped while a floor hold was undecided; the slowest turn
+  of the 13:09 call was three syllables said over the assistant.
+- **Dialling from the box**: `POST /api/outbound/dial` needs `to`; the locked
+  number is `ALLOWED_CALLEE` in the originator's env file on the box. A job can
+  read it there and dial without it ever being printed. Never copy it out.
+- **The box reaches its providers through a VPN client's tunnel** (names
+  resolve to 198.18.x.x; TCP connects in 1 ms because the client terminates it
+  locally) and over Wi-Fi. Domestic traffic is sent on directly — TLS to the
+  chat model is 30 ms — but every provider round trip passes through that
+  process, and one morning it sent the recognizer's traffic abroad. What it
+  costs per round trip could not be measured without root.
 - **A phone line is never quiet, and returns the assistant's voice.** The
   second call held a finished question open for 3.3 s on line noise and threw
   the answer away eight times. See "A line that is never quiet" in
@@ -99,10 +130,14 @@ placed on the current build yet.**
 
 ## What to work on, in order
 
-1. **A call on the current build.** Read the turns with
-   `scripts/call-latency.sh`, check the console shows golive's turns
-   (`telemetry: the latency console took the first events`), and listen for the
-   two line problems above.
+1. **A call on the current build**, to see the fixes from the 13:09 call on a
+   line: interruptions, fragments, and whether p95 holds.
+   `scripts/call-latency.sh` prints p95 and how many turns were over 1200.
+1b. **The chat model's slow spells are what is left of the tail.** Options, all
+   the owner's to choose: a second route to the same model (another host of
+   DeepSeek needs its own key) raced against the first; a different model;
+   or racing the first synthesis request as well (the synthesizer's first audio
+   is 200 ms at the median and 300+ one turn in seven).
 2. **Recognition on phone audio is poor** (wrong words in several turns of the
    real calls). The recognizer is run with its 16 kHz engine on audio that is
    8 kHz band-limited by the phone network. `TENCENT_ASR_ENGINE=8k_zh` exists
