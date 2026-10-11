@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,9 @@ import (
 // minLanes is how many connections the pool keeps apart when there are fewer
 // keys than that: enough for the copies a completion is sent in.
 const minLanes = 4
+
+// maxLanes bounds what DEEPSEEK_LANES can ask for.
+const maxLanes = 16
 
 type lane struct {
 	n      int
@@ -113,6 +117,15 @@ func (l *LLM) build() {
 		n := len(l.keys)
 		if n < minLanes {
 			n = minLanes
+		}
+		// More copies of a completion than that want more lanes than that: a
+		// copy that shares a connection with another is not a copy apart.
+		// DEEPSEEK_LANES says how many, up to a sane ceiling.
+		if want, err := strconv.Atoi(strings.TrimSpace(os.Getenv("DEEPSEEK_LANES"))); err == nil && want > n {
+			if want > maxLanes {
+				want = maxLanes
+			}
+			n = want
 		}
 		for i := 0; i < n; i++ {
 			client := l.HTTP

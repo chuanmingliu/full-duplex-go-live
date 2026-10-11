@@ -43,6 +43,7 @@ func runPool(llm provider.LLM, label, model, instructions string, runs, warmup i
 		llm  provider.LLM
 		per  [][]time.Duration // per lane
 		best []time.Duration   // fastest of each round
+		all  [][]time.Duration // each measured round, by lane; zero is a failure
 		fail int
 	}
 	arr := []*arrangement{
@@ -68,6 +69,7 @@ func runPool(llm provider.LLM, label, model, instructions string, runs, warmup i
 			if round < warmup {
 				continue
 			}
+			a.all = append(a.all, firsts)
 			var best time.Duration
 			for lane, f := range firsts {
 				if f == 0 {
@@ -111,6 +113,33 @@ func runPool(llm provider.LLM, label, model, instructions string, runs, warmup i
 			}
 			fmt.Printf("   fastest of each round  %2d/%-2d  %5d / %5d / %5d / %5d      rounds with every lane over 550 ms: %d\n",
 				len(a.best), runs, pct(a.best, 0), pct(a.best, 0.5), pct(a.best, 0.9), pct(a.best, 1), over)
+		}
+		// What fewer copies would have waited for, in the same rounds: the
+		// fastest of the first k lanes. Read down the column to see what each
+		// doubling of the copies bought.
+		for k := 1; k < lanes; k *= 2 {
+			var firstK []time.Duration
+			over := 0
+			for _, round := range a.all {
+				var best time.Duration
+				for _, f := range round[:k] {
+					if f > 0 && (best == 0 || f < best) {
+						best = f
+					}
+				}
+				if best > 0 {
+					firstK = append(firstK, best)
+					if best > 550*time.Millisecond {
+						over++
+					}
+				}
+			}
+			if len(firstK) == 0 {
+				continue
+			}
+			sort.Slice(firstK, func(i, j int) bool { return firstK[i] < firstK[j] })
+			fmt.Printf("   fastest of lanes 1-%-2d   %2d/%-2d  %5d / %5d / %5d / %5d      over 550 ms: %d\n",
+				k, len(firstK), runs, pct(firstK, 0), pct(firstK, 0.5), pct(firstK, 0.9), pct(firstK, 1), over)
 		}
 		if a.fail > 0 {
 			fmt.Printf("   failed requests: %d\n", a.fail)

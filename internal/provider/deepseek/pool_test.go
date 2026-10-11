@@ -158,6 +158,38 @@ func TestOneKeyStillGetsAConnectionPerLane(t *testing.T) {
 	}
 }
 
+// Eight copies of a completion want eight connections, shared evenly between
+// the keys there are.
+func TestMoreLanesCanBeAskedFor(t *testing.T) {
+	t.Setenv("DEEPSEEK_LANES", "8")
+	ps := newPoolServer(t)
+	l := &LLM{BaseURL: ps.URL, APIKey: "sk-a", DefaultModel: "m", HTTP: newHTTPClient(), keys: []string{"sk-a", "sk-b"}}
+	if l.Lanes() != 8 {
+		t.Fatalf("%d lanes with DEEPSEEK_LANES=8", l.Lanes())
+	}
+	for lane := 0; lane < 8; lane++ {
+		if _, err := complete(t, l, provider.WithLane(context.Background(), lane)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conns, perKey := map[string]bool{}, map[string]int{}
+	for _, h := range ps.hits() {
+		conns[h.conn] = true
+		perKey[h.key]++
+	}
+	if len(conns) != 8 {
+		t.Errorf("eight lanes used %d connection(s)", len(conns))
+	}
+	if perKey["sk-a"] != 4 || perKey["sk-b"] != 4 {
+		t.Errorf("requests per key: %v; want four each", perKey)
+	}
+
+	t.Setenv("DEEPSEEK_LANES", "500")
+	if n := (&LLM{APIKey: "sk-a", HTTP: newHTTPClient()}).Lanes(); n != maxLanes {
+		t.Errorf("%d lanes when 500 were asked for; the ceiling is %d", n, maxLanes)
+	}
+}
+
 // A key the vendor refuses — wrong, or out of credit — would otherwise cost one
 // copy of every completion for as long as the process ran.
 func TestARefusedKeyIsRestedAndNeverNamed(t *testing.T) {
