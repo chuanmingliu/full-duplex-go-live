@@ -145,6 +145,8 @@ type Engine struct {
 	userSince   time.Time
 	speechEndAt time.Time
 	speechEndMS int64
+	// resumeNoted keeps the "sound resumed" line to one per guess.
+	resumeNoted bool
 	// speechEndSilenceMS is the trailing silence that utterance was closed on.
 	speechEndSilenceMS int64
 	asrRun             *asrRun
@@ -263,8 +265,16 @@ type asrRun struct {
 	startMS  int64
 	endMS    int64
 	lastText string
-	openedAt time.Time
-	sendDone bool
+	// changedAt is when lastText last changed — changedAtMS the same moment
+	// on the detector's audio clock — and activeAtChange how much of the
+	// utterance had been voiced by then: together, how long the caller has
+	// gone without producing a new word, and how much sound there has been
+	// since. See maybeSettle.
+	changedAt      time.Time
+	changedAtMS    float64
+	activeAtChange float64
+	openedAt       time.Time
+	sendDone       bool
 	// sendDoneAt is when the utterance was closed and a final asked for.
 	sendDoneAt time.Time
 	// ended is set once the stream has closed its results, final or not.
@@ -318,6 +328,7 @@ func New(opts Options, deps Deps) *Engine {
 		GapToleranceMS:     opts.Cfg.VAD.GapToleranceMS,
 		BargeInMarginDB:    opts.Cfg.VAD.BargeInMarginDB,
 		BargeInMinSpeechMS: opts.Cfg.VAD.BargeInMinSpeechMS,
+		EchoTailMS:         opts.Cfg.VAD.EchoTailMS,
 	}
 	vad := audio.NewVAD(vcfg)
 
@@ -633,6 +644,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	e.maybePredialASR()
 	e.applyPatience()
 	e.maybeSpeculate()
+	e.maybeSettle()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {
@@ -650,6 +662,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		}
 		e.userOpen = true
 		e.userSince = time.Now()
+		e.resumeNoted = false
 		e.watch.Reset()
 		e.specTurn = nil
 		e.specWhy = ""

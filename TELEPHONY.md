@@ -59,20 +59,53 @@ curl -s http://127.0.0.1:8765/v1/pool         # "service":"golive"
 
 ## How long a pause ends a turn
 
-A Realtime client says so in `turn_detection.silence_duration_ms`, and golive
-takes it from there (`realtime.honor_turn_detection`), not from its own
-`vad.min_silence_ms`. The call originator on the test box asks for 150 ms.
-golive will not go below `realtime.min_silence_floor_ms` (200): its detector
-judges frames by energy, and the stops inside a word are silence at that scale.
-The log says what was asked and what is in force:
+golive's own figure is `vad.min_silence_ms` (280 in the telephony profile). A
+Realtime client may ask for another in `turn_detection.silence_duration_ms`, and
+golive takes it (`realtime.honor_turn_detection`), never going below
+`realtime.min_silence_floor_ms` (200): its detector judges frames by energy,
+and the stops inside a word are silence at that scale.
+
+On the test box the phone gateway's `session.update` has not been seen to carry
+one, so calls run on the profile's figure. Each session logs what it was sent,
+without the content, and what it did about it:
 
 ```
+realtime: session.update bytes=31819 session_keys=[...] turn_detection=none instructions_chars=... tools=...
 realtime: end-of-turn silence taken from the client's turn detection asked_ms=150 using_ms=200 floor_ms=200
 ```
 
 This pause is the first thing a caller waits through on every turn. Each
 `turn: response latency` line carries the one that turn actually ended on
 (`end_silence_ms`), which is longer when the caller was judged to be mid-thought.
+
+## A line that is never quiet, and a line that returns the assistant's voice
+
+Two things a phone line does that a headset does not. Both were read off the
+second real call, where the caller spoke five times before getting an answer.
+
+**The silence never comes.** Line noise sat on the detector's threshold, so the
+utterance stayed open for 3.3 s after the caller's last word. golive now ends
+the turn on the evidence it does have: the recognizer's words have not changed
+for `duplex.settled_close_ms` (600) and less than half of that time was voiced.
+
+```
+listen: no new words and the line never went quiet; taking the turn
+```
+
+And sound resuming after a pause no longer throws away the answer begun in that
+pause; only the *words* changing does.
+
+**The assistant hears itself.** The end of its own sentence comes back through
+the caller's handset after golive has finished sending it, and opens a turn.
+`vad.barge_in_margin_db` (16) is how far above the room a sound must be to
+interrupt, and `vad.echo_tail_ms` (600) keeps that bar up after the assistant
+stops. If the log still says
+
+```
+this barge-in looks like the assistant's own voice returning
+```
+
+raise the margin towards what the line suggests (`echo_floor_db` on that line).
 
 ## Place a call
 

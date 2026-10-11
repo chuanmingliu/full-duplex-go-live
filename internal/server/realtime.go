@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -443,6 +444,41 @@ type realtimeTurnDetection struct {
 	SilenceDurationMS int    `json:"silence_duration_ms"`
 }
 
+// sessionUpdateShape describes a session.update without its content: which
+// settings the client sent, and its turn detection as sent. What a client asks
+// for and what this server reads are not the same list, and a setting that is
+// silently not acted on — an end-of-turn silence under a key this server does
+// not look at — costs latency on every turn with nothing in the log to say so.
+func sessionUpdateShape(data []byte) (keys []string, turnDetection string) {
+	var raw struct {
+		Session map[string]json.RawMessage `json:"session"`
+	}
+	if json.Unmarshal(data, &raw) != nil {
+		return nil, ""
+	}
+	for k := range raw.Session {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	td := raw.Session["turn_detection"]
+	if td == nil {
+		var audio struct {
+			Input map[string]json.RawMessage `json:"input"`
+		}
+		if json.Unmarshal(raw.Session["audio"], &audio) == nil {
+			td = audio.Input["turn_detection"]
+		}
+	}
+	turnDetection = "none"
+	if td != nil {
+		turnDetection = string(td)
+		if len(turnDetection) > 240 {
+			turnDetection = turnDetection[:240] + "…"
+		}
+	}
+	return keys, turnDetection
+}
+
 func (s *Session) realtimeError(code, message, eventID string) {
 	s.reply(s.primary, live.NewError("invalid_request_error", code, message, eventID))
 }
@@ -468,6 +504,10 @@ func (s *Session) handleRealtimeEvent(ctx context.Context, p *peer, data []byte)
 			s.realtimeError("malformed_event", err.Error(), eventID)
 			return err
 		}
+		keys, turnDetection := sessionUpdateShape(data)
+		s.log.Info("realtime: session.update", "bytes", len(data), "session_keys", keys,
+			"turn_detection", turnDetection, "instructions_chars", len([]rune(ev.Session.Instructions)),
+			"tools", len(ev.Session.Tools))
 		s.mu.Lock()
 		started, current := s.started, s.config
 		s.mu.Unlock()

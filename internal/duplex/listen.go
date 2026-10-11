@@ -284,7 +284,7 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	// Before anything else: if an interruption is being held pending the
 	// transcript, this is the evidence it was waiting for.
 	if e.hold != nil && e.judgeHold(text, ev.res.Final) {
-		run.lastText = text
+		e.noteWords(run, text)
 		return
 	}
 	// While the hold is still undecided the utterance may yet be swallowed
@@ -294,7 +294,7 @@ func (e *Engine) onASREvent(ev asrEvent) {
 		e.emitInputTranscript(run, text, ev.res.Final)
 	}
 
-	run.lastText = text
+	e.noteWords(run, text)
 	if ev.res.Final {
 		e.onFinalTranscript(run, text)
 		e.drainDeferred()
@@ -447,6 +447,73 @@ func (e *Engine) applyPatience() {
 	}
 }
 
+// noteWords records a hypothesis, and when it last changed.
+func (e *Engine) noteWords(run *asrRun, text string) {
+	if text != run.lastText || run.changedAt.IsZero() {
+		run.changedAt = time.Now()
+		run.changedAtMS = e.vad.ClockMS()
+		run.activeAtChange = e.vad.ActiveMS()
+	}
+	run.lastText = text
+}
+
+// maybeSettle ends a turn the detector cannot.
+//
+// The detector closes an utterance on silence, and silence is a property of
+// the line as much as of the speaker. A caller in a room, in a car, or on a
+// carrier that fills pauses with noise can finish a question and never produce
+// the 380 quiet milliseconds that say so: a real call held "今天天气怎么样啊？"
+// open for 3.3 seconds that way, with the transcript complete and unchanged
+// the whole time.
+//
+// The recognizer is the witness that does not depend on the line. Speech makes
+// words and noise does not, so a hypothesis that has stood still for
+// duplex.settled_close_ms, through sound that was mostly not voiced, is a
+// finished turn. Both halves are needed: a transcript also stands still when
+// the recognizer has fallen behind someone who is still talking, and what
+// tells that apart is that they are, audibly, still talking.
+func (e *Engine) maybeSettle() {
+	d := e.opts.Cfg.Duplex
+	if d.SettledCloseMS <= 0 || !e.userOpen || e.muted || e.hold != nil {
+		return
+	}
+	run := e.asrRun
+	if run == nil || run.sendDone || run.changedAt.IsZero() || strings.TrimSpace(run.lastText) == "" {
+		return
+	}
+	wait := d.SettledCloseMS
+	if e.patience > wait {
+		// Words that end on something nobody stops on get the longer wait
+		// here too.
+		wait = e.patience
+	}
+	// Timed on the audio, not the wall: what matters is how much the caller
+	// has been heard to say nothing new through, and audio that has not
+	// arrived yet is not evidence of anything.
+	quiet := e.vad.ClockMS() - run.changedAtMS
+	if quiet < float64(wait) {
+		return
+	}
+	voiced := e.vad.ActiveMS() - run.activeAtChange
+	if voiced*2 > quiet {
+		return
+	}
+	e.log.Info("listen: no new words and the line never went quiet; taking the turn",
+		"words_unchanged_ms", int(quiet),
+		"voiced_since_ms", int(voiced),
+		"text", run.lastText,
+		"noise_floor_db", round1(e.vad.NoiseFloorDB()))
+	stop := e.vad.Stop()
+	if stop.Kind != audio.DecisionStopped {
+		return
+	}
+	// The caller's last word was at least this long ago. The detector's own
+	// figure is how long the line has been quiet, which is the thing that
+	// could not be relied on.
+	stop.SilenceMS = quiet
+	e.handleDecision(stop)
+}
+
 // --- answering early ---
 
 // liveSpeculation returns the turn currently running on a guess, if any.
@@ -486,9 +553,20 @@ func (e *Engine) maybeSpeculate() {
 	if !e.opts.Speculative || e.muted {
 		return
 	}
+	// Sound resuming after the pause is not, by itself, the speaker carrying
+	// on. It used to be taken for that and the guess abandoned on the spot,
+	// which is right in a quiet room and wrong on a line that is never quiet:
+	// a real call asked one question, went silent, and had its guess thrown
+	// away and remade eight times in three seconds by the noise on the line,
+	// while the answer it kept discarding sat finished. What says the speaker
+	// carried on is new words — onASREvent abandons the guess the moment the
+	// transcript moves — and nothing of the guess is audible until the turn is
+	// confirmed, so keeping it costs nothing if they did.
 	if spec := e.liveSpeculation(); spec != nil && e.userOpen &&
-		e.vad.VoicedRunMS() >= resumeVoicedMS {
-		e.abandonSpeculation("the speaker carried on")
+		e.vad.VoicedRunMS() >= resumeVoicedMS && !e.resumeNoted {
+		e.resumeNoted = true
+		e.log.Debug("listen: sound resumed after the pause; keeping the guess until the words change",
+			"turn", spec.ID)
 	}
 
 	run := e.asrRun
@@ -592,6 +670,7 @@ func (e *Engine) speculateAtClose() {
 func (e *Engine) startSpeculativeTurn(text string) {
 	turn := e.tracker.Begin(text, true)
 	e.specTurn = turn
+	e.resumeNoted = false
 	e.log.Debug("think: speculating on a stable partial",
 		"turn", turn.ID, "text", text, "utterance_open", e.userOpen)
 	e.beginGeneration(turn, "speculative", true)

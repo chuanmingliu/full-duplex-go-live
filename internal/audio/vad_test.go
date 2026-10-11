@@ -385,3 +385,50 @@ func TestVADStopCarriesThePauseItWasJudgedOn(t *testing.T) {
 		}
 	}
 }
+
+// TestVADKeepsTheBarUpWhileTheLineStillCarriesTheAssistant: on a phone call the
+// end of the assistant's sentence comes back through the caller's handset
+// after this side has finished sending it. Heard as speech, it opens a turn
+// nobody took — and that turn's "words" cancel whatever the caller says next.
+func TestVADKeepsTheBarUpWhileTheLineStillCarriesTheAssistant(t *testing.T) {
+	const rate = RatePipeline
+	// The tail of our own voice returning: well above an idle line, well under
+	// somebody talking into the handset.
+	echo := func() []float32 { return append(quiet(rate, 100), tone(rate, 400, 0.02)...) }
+	opens := func(v *VAD, samples []float32) bool {
+		for _, d := range feed(v, samples) {
+			if d.Kind == DecisionStarted {
+				return true
+			}
+		}
+		return false
+	}
+	finishSpeaking := func(cfg VADConfig) *VAD {
+		v := NewVAD(cfg)
+		v.SetAssistantSpeaking(true)
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(false)
+		return v
+	}
+	base := VADConfig{SampleRate: rate, BargeInMarginDB: 20, BargeInMinSpeechMS: 320}
+
+	if !opens(finishSpeaking(base), echo()) {
+		t.Fatal("with no echo tail the returning voice should open an utterance; this test proves nothing otherwise")
+	}
+
+	tailed := base
+	tailed.EchoTailMS = 700
+	v := finishSpeaking(tailed)
+	if opens(v, echo()) {
+		t.Fatal("the assistant's own voice, still on the line, was taken for the caller")
+	}
+	// The caller answering at once is still heard.
+	if !opens(finishSpeaking(tailed), append(quiet(rate, 100), tone(rate, 600, 0.4)...)) {
+		t.Fatal("a caller replying straight after the assistant was not heard")
+	}
+	// And once the line has drained, a quiet caller is too.
+	feed(v, quiet(rate, 400))
+	if !opens(v, echo()) {
+		t.Fatal("the raised bar outlived the echo tail")
+	}
+}

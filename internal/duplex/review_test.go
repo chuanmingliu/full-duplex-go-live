@@ -354,3 +354,75 @@ func TestSpeakableTextHasSomethingToPronounce(t *testing.T) {
 		}
 	}
 }
+
+// A line that is never quiet never gives the detector the silence it ends a
+// turn on. A real call asked "今天天气怎么样啊？", stopped, and was held open for
+// 3.3 seconds by the noise on the line — the transcript finished and unchanged
+// the whole time, a guess at the answer made and thrown away eight times. The
+// recognizer is the witness that does not depend on the line: words that have
+// stood still through sound that is mostly not voice are a finished turn.
+func TestTurnEndsWhenTheWordsSettleOnALineThatIsNeverQuiet(t *testing.T) {
+	// Loud enough for the detector to call voiced, too faint for the mock
+	// recognizer to count as speech: what line noise is to a real one.
+	noise := func(e *Engine, rate int) {
+		for i := 0; i < 12; i++ {
+			pushPaced(e, voiced(rate, 120, 0.007), rate)
+			pause(e, rate, 180)
+		}
+	}
+	run := func(t *testing.T, settledMS int) *collector {
+		cfg := parityConfig()
+		cfg.Duplex.SettledCloseMS = settledMS
+		c := newCollector(cfg.ClientRate)
+		e := startEngine(t, Options{Cfg: cfg, Delegation: live.DelegationResponses, Speculative: true},
+			Deps{ASR: voicedASR("今天天气怎么样"), LLM: mock.NewLLM(), Emit: c.emit})
+		speak(e, cfg.ClientRate, 1500)
+		noise(e, cfg.ClientRate)
+		return c
+	}
+
+	t.Run("waiting for silence alone, the turn is still open", func(t *testing.T) {
+		c := run(t, 0)
+		if n := c.count(live.ExtSpeechStopped); n != 0 {
+			t.Fatalf("the detector closed the utterance %d time(s) in the noise; this line is not noisy enough to prove anything", n)
+		}
+		if n := c.count(live.ServerDelegationCreated); n != 0 {
+			t.Fatalf("the turn was answered without ever ending")
+		}
+	})
+
+	t.Run("with the words as witness, it ends and is answered", func(t *testing.T) {
+		c := run(t, 600)
+		waitFor(t, "the turn to be taken", 2*time.Second, func() bool {
+			return c.count(live.ExtSpeechStopped) == 1 && c.count(live.ServerDelegationCreated) == 1
+		})
+		ds := c.delegations()
+		if got := ds[0].Delegation.Transcript; normalizeForCompare(got) != "今天天气怎么样" {
+			t.Errorf("the turn answered is %q; the caller said 今天天气怎么样", got)
+		}
+		waitFor(t, "the answer", 3*time.Second, func() bool { return c.audioMS() > 0 })
+		if c.count(live.ServerError) != 0 {
+			t.Errorf("errors: %v", c.errorCodes())
+		}
+	})
+}
+
+// The other half of that: a transcript also stands still when the recognizer
+// has fallen behind someone who is still talking. They are, audibly, still
+// talking, and their turn is not over.
+func TestSettledWordsDoNotEndTheTurnOfSomeoneStillTalking(t *testing.T) {
+	cfg := parityConfig()
+	cfg.Duplex.SettledCloseMS = 600
+	c := newCollector(cfg.ClientRate)
+	// A recognizer that has heard all it is going to: seven characters, then
+	// nothing, however long the caller goes on.
+	e := startEngine(t, Options{Cfg: cfg, Delegation: live.DelegationResponses, Speculative: true},
+		Deps{ASR: voicedASR("今天天气怎么样"), LLM: mock.NewLLM(), Emit: c.emit})
+	speak(e, cfg.ClientRate, 3600)
+	if n := c.count(live.ExtSpeechStopped); n != 0 {
+		t.Fatalf("the turn was taken from a caller who was still speaking")
+	}
+	if n := c.count(live.ServerDelegationCreated); n != 0 {
+		t.Fatalf("a turn was answered while the caller was still speaking")
+	}
+}

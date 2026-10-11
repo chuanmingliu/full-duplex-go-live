@@ -272,6 +272,16 @@ type DuplexConfig struct {
 	// half a sentence. Ignored unless it is longer than vad.min_silence_ms and
 	// SemanticEndpointing is on; 0 disables it.
 	PatientSilenceMS int `json:"patient_silence_ms"`
+	// SettledCloseMS ends a turn when the caller's words have not changed for
+	// this long although the line never went quiet enough for the detector to
+	// end it. The detector waits for silence, and a line with a room, a car or
+	// a carrier's noise on it can go seconds without any: a real call held a
+	// finished question open for 3.3 s that way. The recognizer is the better
+	// witness there — speech makes words, noise does not. It applies only
+	// while less than half of that time was voiced, so a recognizer that has
+	// merely fallen behind a talking caller does not end their turn. 0 turns
+	// it off.
+	SettledCloseMS int `json:"settled_close_ms"`
 
 	// ASRPredial opens the recognizer's connection when the detector first
 	// suspects speech, rather than when it is sure. The detector takes
@@ -401,6 +411,10 @@ type VADProfile struct {
 	GapToleranceMS     int     `json:"gap_tolerance_ms"`
 	BargeInMarginDB    float64 `json:"barge_in_margin_db"`
 	BargeInMinSpeechMS int     `json:"barge_in_min_speech_ms"`
+	// EchoTailMS keeps the barge-in bar raised for this long after the
+	// assistant stops sending audio: on a phone line the caller is still
+	// hearing it, and its echo is still coming back. 0 for a line with none.
+	EchoTailMS int `json:"echo_tail_ms"`
 }
 
 // Default returns a configuration that runs end to end with the mock providers
@@ -524,6 +538,7 @@ func Default() Config {
 			SpeculativeSettleMS:        80,
 			SemanticEndpointing:        true,
 			PatientSilenceMS:           700,
+			SettledCloseMS:             600,
 			ASRPredial:                 true,
 			TTSNativeRate:              true,
 			PhraseCache:                true,

@@ -92,6 +92,12 @@ type VADConfig struct {
 	BargeInMarginDB float64
 	// BargeInMinSpeechMS likewise raises MinSpeechMS during playback.
 	BargeInMinSpeechMS int
+	// EchoTailMS keeps that raised bar up for this long after the assistant
+	// stops producing audio. On a phone line the caller is still hearing it —
+	// a gateway's playout buffer, the carrier, the handset — and what comes
+	// back through their microphone in that time is the end of the assistant's
+	// own sentence, arriving after this side believes it has finished.
+	EchoTailMS int
 }
 
 // DefaultVADConfig returns values tuned for 16 kHz conversational speech on a
@@ -213,6 +219,10 @@ type VAD struct {
 	// listening and speaking are concurrent by design, so it is atomic rather
 	// than plain.
 	speaking atomic.Bool
+	// clockAtomic mirrors clockMS for the goroutine that flips speaking, and
+	// echoTailUntil is the audio-clock moment the raised bar comes back down.
+	clockAtomic   atomic.Int64
+	echoTailUntil atomic.Int64
 }
 
 // NewVAD builds a detector. cfg is copied; later mutation has no effect.
@@ -247,7 +257,62 @@ func (v *VAD) FrameBytes() int { return v.frameSamples * BytesPerSample }
 // producing audio. This is the single most important switch for simulated full
 // duplex: listening never stops, but the bar for interrupting rises while we
 // are talking, so acoustic echo does not read as a barge-in.
-func (v *VAD) SetAssistantSpeaking(speaking bool) { v.speaking.Store(speaking) }
+func (v *VAD) SetAssistantSpeaking(speaking bool) {
+	if !speaking && v.speaking.Load() && v.cfg.EchoTailMS > 0 {
+		v.echoTailUntil.Store(v.clockAtomic.Load() + int64(v.cfg.EchoTailMS))
+	}
+	v.speaking.Store(speaking)
+}
+
+// assistantAudible reports whether the caller can still be hearing the
+// assistant: it is producing audio, or stopped less than EchoTailMS ago.
+func (v *VAD) assistantAudible() bool {
+	return v.speaking.Load() || int64(v.clockMS) < v.echoTailUntil.Load()
+}
+
+// ClockMS is how much audio the detector has been given, in milliseconds. It
+// is the clock to time the caller by: it advances with what they said, not
+// with how long the process took to hear it.
+func (v *VAD) ClockMS() float64 { return v.clockMS }
+
+// ActiveMS reports how much of the open utterance has been voiced, and zero
+// when none is open.
+func (v *VAD) ActiveMS() float64 {
+	if !v.open {
+		return 0
+	}
+	return v.activeMS
+}
+
+// Stop closes the open utterance now, without waiting for the silence that
+// would normally close it, and returns the same decision that silence would
+// have. It returns DecisionNone when no utterance is open.
+//
+// The detector decides on energy, and a line that is never quiet — a room, a
+// car, a carrier's noise — never gives it the silence it is waiting for. The
+// caller who knows from other evidence that the speaker has finished, such as a
+// transcript that stopped growing, ends the utterance here.
+func (v *VAD) Stop() Decision {
+	if !v.open {
+		return Decision{Kind: DecisionNone}
+	}
+	return v.stop()
+}
+
+func (v *VAD) stop() Decision {
+	d := Decision{
+		Kind:      DecisionStopped,
+		Utterance: v.utterance,
+		Snapshot:  v.snapshotAcc,
+		ActiveMS:  v.activeMS,
+		StartMS:   v.startMS,
+		EndMS:     int64(v.clockMS),
+		BargeIn:   v.bargeIn,
+		SilenceMS: v.silenceMS,
+	}
+	v.Reset()
+	return d
+}
 
 // NoiseFloorDB exposes the adaptive floor for diagnostics.
 func (v *VAD) NoiseFloorDB() float64 { return v.noiseFloorDB }
@@ -344,7 +409,7 @@ func (v *VAD) Reset() {
 func (v *VAD) thresholds() (marginDB float64, minSpeechMS int) {
 	marginDB = v.cfg.SpeechMarginDB
 	minSpeechMS = v.cfg.MinSpeechMS
-	if v.speaking.Load() {
+	if v.assistantAudible() {
 		marginDB += v.cfg.BargeInMarginDB
 		if v.cfg.BargeInMinSpeechMS > minSpeechMS {
 			minSpeechMS = v.cfg.BargeInMinSpeechMS
@@ -362,6 +427,7 @@ func (v *VAD) Push(frame []float32) Decision {
 		frame = fixed
 	}
 	v.clockMS += v.frameMS
+	v.clockAtomic.Store(int64(v.clockMS))
 
 	level := DBFS(RMS(frame))
 	zcr := ZeroCrossingRate(frame)
@@ -541,23 +607,7 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 	closing := v.silenceMS >= float64(v.MinSilenceMS()) || totalMS >= float64(v.cfg.MaxSpeechMS)
 
 	if closing {
-		utterance := v.utterance
-		tail := v.snapshotAcc
-		activeMS := v.activeMS
-		startMS := v.startMS
-		bargeIn := v.bargeIn
-		silenceMS := v.silenceMS
-		v.Reset()
-		return Decision{
-			Kind:      DecisionStopped,
-			Utterance: utterance,
-			Snapshot:  tail,
-			ActiveMS:  activeMS,
-			StartMS:   startMS,
-			EndMS:     int64(v.clockMS),
-			BargeIn:   bargeIn,
-			SilenceMS: silenceMS,
-		}
+		return v.stop()
 	}
 
 	if v.sinceSnap >= float64(v.cfg.SnapshotMS) {

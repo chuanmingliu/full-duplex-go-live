@@ -299,11 +299,13 @@ bench)
   # is a pause worth speculating in.
   SPEAK="${SPEAK:-你好，今天天气怎么样？|帮我查一下明天上午去上海的航班有哪些。|你能给我讲一个简短的笑话吗？|我想了解一下你们周末的营业时间。|好的，谢谢。}"
   mark=$(wc -l < "$LOG" 2>/dev/null || echo 0)
-  # The end-of-turn silence a phone call gets: the call originator asks for
-  # 150 ms and realtime.min_silence_floor_ms makes it 200. SILENCE=380 is the
-  # server's own; SILENCE=0 leaves it to the server.
-  silence="${SILENCE:-200}"
-  say "· end-of-turn silence asked for: ${silence} ms"
+  # The end-of-turn silence is the server's own unless SILENCE says otherwise:
+  # that is what a phone call gets, since the gateway's session.update has been
+  # seen to carry no turn detection this server acts on. SILENCE=200 asks for
+  # the shortest a client may have.
+  silence="${SILENCE:-0}"
+  if [ "$silence" = 0 ]; then say "· end-of-turn silence: the server's own (vad.min_silence_ms in the profile)"
+  else say "· end-of-turn silence asked for: ${silence} ms"; fi
   "./$BENCH" -a "golive=ws://127.0.0.1:$PORT/v1/live" -speak "$SPEAK" -rate 16000 -min-silence-ms "$silence" \
     ${KEEP_CLIPS:+-keep-clips "$KEEP_CLIPS"} -runs "${RUNS:-15}" -warmup 2 -v -md bench-phone.md -json bench-phone.json
   say
