@@ -381,6 +381,46 @@ tts)
   else "./bin/ttsprobe-linux-$ARCH" -env "$ENVFILE" -compare-endpoints -runs "${RUNS:-6}"; fi
   ;;
 
+keys)
+  # How many chat-model keys the pool has. Counts only: a key is never printed.
+  find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
+  one=$(grep -cE '^DEEPSEEK_API_KEY=.+' "$ENVFILE" || true)
+  list=$(grep -m1 '^DEEPSEEK_API_KEYS=' "$ENVFILE" | cut -d= -f2- | tr ',; ' '\n\n\n' | grep -c . || true)
+  file=$(grep -m1 '^DEEPSEEK_API_KEYS_FILE=' "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
+  infile=0
+  [ -n "$file" ] && [ -f "$file" ] && infile=$(sed 's/#.*//' "$file" | grep -c '[^[:space:]]' || true)
+  say "env file              : $ENVFILE"
+  say "DEEPSEEK_API_KEY      : $one"
+  say "DEEPSEEK_API_KEYS     : $list"
+  say "DEEPSEEK_API_KEYS_FILE: ${file:-(not set)}${file:+ — $infile key(s)}"
+  say "(a key listed twice counts once in the pool; golive logs the pool it built at debug level as key=N)"
+  ;;
+
+addkey)
+  # Add one chat-model key to the pool without it reaching the screen or the
+  # shell history. Run it once per key, then: scripts/phone-brain.sh restart
+  find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
+  file=$(grep -m1 '^DEEPSEEK_API_KEYS_FILE=' "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
+  if [ -z "$file" ]; then
+    file="$HOME/golive-deepseek.keys"
+    printf '\nDEEPSEEK_API_KEYS_FILE=%s\n' "$file" >> "$ENVFILE"
+    say "added DEEPSEEK_API_KEYS_FILE=$file to $ENVFILE"
+  fi
+  touch "$file" && chmod 600 "$file"
+  printf 'paste one key and press Enter (it is not shown): '
+  IFS= read -rs key; echo
+  key=$(printf '%s' "$key" | tr -d '[:space:]"'"'"'')
+  [ -n "$key" ] || { say "nothing entered; nothing changed"; exit 1; }
+  if grep -qxF "$key" "$file" || grep -qF "DEEPSEEK_API_KEY=$key" "$ENVFILE"; then
+    say "that key is already in the pool; nothing changed"
+  else
+    printf '%s\n' "$key" >> "$file"
+    say "added. $file now holds $(sed 's/#.*//' "$file" | grep -c '[^[:space:]]') key(s)"
+  fi
+  unset key
+  say "to use them: scripts/phone-brain.sh restart    to measure them: scripts/phone-brain.sh llm -pool"
+  ;;
+
 sync)
   "${SUDO[@]}" systemctl start gateway-port-sync.service
   "${SUDO[@]}" journalctl -u gateway-port-sync --no-pager -n 12 | cut -c1-200

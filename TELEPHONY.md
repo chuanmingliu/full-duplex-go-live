@@ -99,11 +99,26 @@ off. Each `turn: response latency` line carries the pause that turn ended on
 The largest term, and not one number: the same request seconds apart has
 measured anywhere from 170 to 880 ms, and nearly half of them over 600.
 `llm_hedge: 4` sends each completion four times and uses whichever copy
-speaks first (`llm hedge: a copy answered first`
-at debug level). It costs the losing copies' input tokens (they are cancelled at the winner's
-first word). Two copies left about one turn in eight over 1200 ms on a call;
-the p95 target needs the tail gone. `llm_hedge_after_ms` delays
-the second copy, to spend it only on slow turns; 0 sends both at once.
+speaks first (`llm hedge: a copy answered first` at debug level). It costs the
+losing copies' input tokens (they are cancelled at the winner's first word).
+
+Copies only help if they are slow independently, and on one key they were not:
+one turn in ten had every copy slow. So the copies go down **lanes** — each a
+key and a connection of its own — and the keys are a pool:
+
+```bash
+scripts/phone-brain.sh addkey      # once per key; pasted unseen, kept in a 0600 file
+scripts/phone-brain.sh keys        # how many the pool has (counts, never the keys)
+scripts/phone-brain.sh restart     # golive reads them at start
+scripts/phone-brain.sh llm -pool   # what they are worth: a key per lane against all lanes on one key
+```
+
+Four keys give each of four copies an account of its own. A session keeps the
+same lanes for its whole length, because the vendor's prompt cache belongs to
+an account; the warm-up request at the start of a call goes to every lane and
+is allowed to finish on each. A key the vendor refuses (wrong, out of credit)
+is rested for ten minutes and the log says which by position: `llm: a key was
+refused; resting it key=2 of=4`.
 
 The first completion of a call is slower than the rest whatever the prompt
 (1101 ms on a call whose others were near 450). `duplex.backend_prefix_warm_start`

@@ -33,7 +33,7 @@ func HedgeLLM(inner LLM, copies int, after time.Duration, log *slog.Logger) LLM 
 	if log == nil {
 		log = slog.Default()
 	}
-	return &hedgedLLM{inner: inner, copies: copies, after: after, log: log}
+	return &hedgedLLM{inner: inner, copies: copies, after: after, log: log, lane: ReserveLanes(copies)}
 }
 
 type hedgedLLM struct {
@@ -41,16 +41,31 @@ type hedgedLLM struct {
 	copies int
 	after  time.Duration
 	log    *slog.Logger
+	// lane is the first of this wrapper's lanes in the provider's pool: copy n
+	// of every completion goes to lane+n. See WithLane.
+	lane int
 }
 
 func (h *hedgedLLM) Name() string { return h.inner.Name() }
 
-// Prewarm implements Prewarmer when the model behind does.
+// Prewarm implements Prewarmer when the model behind does: every lane this
+// wrapper's copies will use is made ready, not only the first.
 func (h *hedgedLLM) Prewarm(ctx context.Context) error {
-	if p, ok := h.inner.(Prewarmer); ok {
-		return p.Prewarm(ctx)
+	p, ok := h.inner.(Prewarmer)
+	if !ok {
+		return nil
 	}
-	return nil
+	errs := make(chan error, h.copies)
+	for n := 0; n < h.copies; n++ {
+		go func(n int) { errs <- p.Prewarm(WithLane(ctx, h.lane+n)) }(n)
+	}
+	var first error
+	for n := 0; n < h.copies; n++ {
+		if err := <-errs; err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 // errHedgeEmpty is a copy that closed its stream without a word.
@@ -66,7 +81,69 @@ type hedgeLead struct {
 	closed bool
 }
 
+// streamEvery sends one copy down every lane and lets each finish. What comes
+// back is the first lane's completion, or the first that succeeded.
+func (h *hedgedLLM) streamEvery(ctx context.Context, req LLMRequest) (<-chan LLMDelta, error) {
+	out := make(chan LLMDelta, 64)
+	go func() {
+		defer close(out)
+		type done struct {
+			n      int
+			deltas []LLMDelta
+			err    error
+		}
+		results := make(chan done, h.copies)
+		for n := 0; n < h.copies; n++ {
+			go func(n int) {
+				ch, err := h.inner.Stream(WithLane(ctx, h.lane+n), req)
+				if err != nil {
+					results <- done{n: n, err: err}
+					return
+				}
+				var got []LLMDelta
+				for d := range ch {
+					if d.Err != nil {
+						err = d.Err
+						continue
+					}
+					got = append(got, d)
+				}
+				results <- done{n: n, deltas: got, err: err}
+			}(n)
+		}
+		best := done{n: -1}
+		var lastErr error
+		for i := 0; i < h.copies; i++ {
+			r := <-results
+			if r.err != nil {
+				lastErr = r.err
+				continue
+			}
+			if best.n < 0 || r.n < best.n {
+				best = r
+			}
+		}
+		if best.n < 0 {
+			if lastErr != nil {
+				out <- LLMDelta{Err: lastErr}
+			}
+			return
+		}
+		for _, d := range best.deltas {
+			select {
+			case out <- d:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
 func (h *hedgedLLM) Stream(ctx context.Context, req LLMRequest) (<-chan LLMDelta, error) {
+	if EveryCopy(ctx) {
+		return h.streamEvery(ctx, req)
+	}
 	out := make(chan LLMDelta, 64)
 	all, cancelAll := context.WithCancel(ctx)
 	started := time.Now()
@@ -79,7 +156,7 @@ func (h *hedgedLLM) Stream(ctx context.Context, req LLMRequest) (<-chan LLMDelta
 		cancels := make([]context.CancelFunc, 0, h.copies)
 		launch := func() {
 			n := len(cancels)
-			actx, cancel := context.WithCancel(all)
+			actx, cancel := context.WithCancel(WithLane(all, h.lane+n))
 			cancels = append(cancels, cancel)
 			go func() {
 				ch, err := h.inner.Stream(actx, req)

@@ -979,7 +979,10 @@ func (e *Engine) warmPrefix(reason string) {
 	req := e.backendRequest(e.snapshotMessages(nil, front), front)
 	req.MaxTokens = 1
 	go func() {
-		ctx, cancel := context.WithTimeout(e.ctx, 5*time.Second)
+		// Every copy, to its end: with a pool of keys behind the backend each
+		// copy goes to a different account, and each account keeps its own
+		// cache. Racing them would warm one.
+		ctx, cancel := context.WithTimeout(provider.WithEveryCopy(e.ctx), 5*time.Second)
 		defer cancel()
 		started := time.Now()
 		deltas, err := e.deps.LLM.Stream(ctx, req)

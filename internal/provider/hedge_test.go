@@ -234,3 +234,124 @@ func TestHedgeStopsWhenTheCallerDoes(t *testing.T) {
 		t.Errorf("copies left running after the caller cancelled: %v", cancelled)
 	}
 }
+
+// laneLLM records the lane each request was sent down, and whether it was
+// allowed to finish.
+type laneLLM struct {
+	wait time.Duration // lane n answers after n × wait
+
+	mu        sync.Mutex
+	lanes     []int
+	finished  int
+	cancelled int
+}
+
+func (l *laneLLM) Name() string { return "lanes" }
+
+func (l *laneLLM) Stream(ctx context.Context, _ LLMRequest) (<-chan LLMDelta, error) {
+	lane, ok := Lane(ctx)
+	if !ok {
+		lane = -1
+	}
+	l.mu.Lock()
+	n := len(l.lanes)
+	l.lanes = append(l.lanes, lane)
+	l.mu.Unlock()
+	out := make(chan LLMDelta)
+	go func() {
+		defer close(out)
+		select {
+		case <-time.After(time.Duration(n%4) * l.wait):
+		case <-ctx.Done():
+			l.mu.Lock()
+			l.cancelled++
+			l.mu.Unlock()
+			return
+		}
+		select {
+		case out <- LLMDelta{Text: "好"}:
+			l.mu.Lock()
+			l.finished++
+			l.mu.Unlock()
+		case <-ctx.Done():
+			l.mu.Lock()
+			l.cancelled++
+			l.mu.Unlock()
+		}
+	}()
+	return out, nil
+}
+
+// Copies that share an account and a connection are slow together. Each copy
+// goes down a lane of its own, the same ones every time, and two sessions do
+// not start on the same lane.
+func TestHedgedCopiesEachGetALaneOfTheirOwn(t *testing.T) {
+	inner := &laneLLM{}
+	h := HedgeLLM(inner, 3, 0, nil)
+	for i := 0; i < 2; i++ {
+		ch, _ := h.Stream(context.Background(), LLMRequest{})
+		collect(t, ch)
+		time.Sleep(20 * time.Millisecond)
+	}
+	inner.mu.Lock()
+	lanes := append([]int(nil), inner.lanes...)
+	inner.mu.Unlock()
+	if len(lanes) != 6 {
+		t.Fatalf("%d requests for two completions of three copies", len(lanes))
+	}
+	first := map[int]bool{lanes[0]: true, lanes[1]: true, lanes[2]: true}
+	if len(first) != 3 {
+		t.Errorf("three copies went down lanes %v; want three different ones", lanes[:3])
+	}
+	for _, l := range lanes[3:] {
+		if !first[l] {
+			t.Errorf("the second completion used lane %d; the first used %v, and a session's cache lives where it has been", l, lanes[:3])
+		}
+	}
+	for _, l := range lanes {
+		if l < 0 {
+			t.Fatalf("a copy was sent with no lane at all: %v", lanes)
+		}
+	}
+
+	other := &laneLLM{}
+	ch, _ := HedgeLLM(other, 3, 0, nil).Stream(context.Background(), LLMRequest{})
+	collect(t, ch)
+	time.Sleep(20 * time.Millisecond)
+	other.mu.Lock()
+	defer other.mu.Unlock()
+	for _, l := range other.lanes {
+		if first[l] {
+			t.Errorf("a second session was given lane %d, which the first already has (%v)", l, lanes[:3])
+		}
+	}
+}
+
+// A request made to warm each account's cache has to reach each account and
+// finish there. Raced, the fastest would be warmed and the rest cut off.
+func TestEveryCopyRunsToItsEndWhenAskedTo(t *testing.T) {
+	raced := &laneLLM{wait: 40 * time.Millisecond}
+	ch, _ := HedgeLLM(raced, 4, 0, nil).Stream(context.Background(), LLMRequest{})
+	collect(t, ch)
+	time.Sleep(200 * time.Millisecond)
+	raced.mu.Lock()
+	if raced.finished != 1 || raced.cancelled != 3 {
+		t.Fatalf("a raced completion let %d copies finish and cancelled %d; this proves nothing", raced.finished, raced.cancelled)
+	}
+	raced.mu.Unlock()
+
+	inner := &laneLLM{wait: 40 * time.Millisecond}
+	ch, err := HedgeLLM(inner, 4, 0, nil).Stream(WithEveryCopy(context.Background()), LLMRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, serr, _ := collect(t, ch)
+	if serr != nil || text != "好" {
+		t.Errorf("got %q, err %v; want one copy's answer, once", text, serr)
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	if inner.finished != 4 || inner.cancelled != 0 {
+		t.Errorf("%d of 4 copies finished and %d were cancelled", inner.finished, inner.cancelled)
+	}
+}

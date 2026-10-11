@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/config"
@@ -76,6 +78,13 @@ type LLM struct {
 	APIKey       string
 	DefaultModel string
 	HTTP         *http.Client
+
+	// lanes is the pool: see lane. Built on first use, so that a client put
+	// together by hand — a test, a probe — has one without asking.
+	lanesOnce sync.Once
+	lanes     []*lane
+	keys      []string
+	next      atomic.Uint64
 }
 
 // New builds a client under the shared GOLIVE_BACKEND_* overrides.
@@ -93,7 +102,7 @@ func New(keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 // — and the shared pair remains as the fallback, which keeps every existing
 // .env working unchanged.
 func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
-	key, err := config.EnvRequired(keyEnv)
+	keys, err := poolKeys(keyEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -111,20 +120,25 @@ func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 	return &LLM{
 		name:         name,
 		BaseURL:      strings.TrimRight(base, "/"),
-		APIKey:       key,
+		APIKey:       keys[0],
 		DefaultModel: model,
-		HTTP: &http.Client{
-			// No overall timeout: a streaming completion is long-lived by
-			// design and the engine cancels through the context instead. The
-			// transport timeouts below still bound a hung connection.
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost:   4,
-				IdleConnTimeout:       300 * time.Second,
-				ResponseHeaderTimeout: 20 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-			},
-		},
+		HTTP:         newHTTPClient(),
+		keys:         keys,
 	}, nil
+}
+
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		// No overall timeout: a streaming completion is long-lived by
+		// design and the engine cancels through the context instead. The
+		// transport timeouts below still bound a hung connection.
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       300 * time.Second,
+			ResponseHeaderTimeout: 20 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+		},
+	}
 }
 
 // Name implements provider.LLM.
@@ -149,7 +163,7 @@ func (l *LLM) Prewarm(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp, err := l.HTTP.Do(req)
+	resp, err := l.pick(ctx).client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -319,12 +333,13 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	if err != nil {
 		return nil, err
 	}
+	ln := l.pick(ctx)
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+l.APIKey)
+	httpReq.Header.Set("Authorization", "Bearer "+ln.key)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	started := time.Now()
-	resp, err := l.HTTP.Do(httpReq)
+	resp, err := ln.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("llm: request failed: %w", err)
 	}
@@ -334,8 +349,9 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		// message is surfaced to operators, so it must never carry the request
 		// text back out.
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("llm: %s returned HTTP %d: %s",
-			l.BaseURL, resp.StatusCode, summarizeError(snippet))
+		l.rest(ln, resp.StatusCode)
+		return nil, fmt.Errorf("llm: %s returned HTTP %d on key %d of %d: %s",
+			l.BaseURL, resp.StatusCode, ln.keyN+1, len(l.keys), summarizeError(snippet))
 	}
 
 	// prompt_chars, not just the message count, because size is what costs.
@@ -352,6 +368,8 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	// the latency it buys makes the trade visible on every turn.
 	slog.Debug("llm: stream open",
 		"base_url", l.BaseURL,
+		"lane", ln.n,
+		"key", ln.keyN+1,
 		"model", model,
 		"messages", len(msgs),
 		"prompt_chars", promptChars(msgs),

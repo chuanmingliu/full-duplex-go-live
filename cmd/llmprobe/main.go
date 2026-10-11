@@ -73,6 +73,7 @@ func run() error {
 		runs     = flag.Int("runs", 8, "measured requests per candidate")
 		warmup   = flag.Int("warmup", 1, "unmeasured requests per candidate first, to pay for the connection")
 		thinking = flag.Bool("thinking", false, "leave reasoning on, where a model has it")
+		pool     = flag.Bool("pool", false, "measure the baseline's key pool: one request down every lane at once, with a key per lane and then with every lane on one key")
 	)
 	flag.Var(&extra, "try", "another candidate, as label|base URL|model|KEY_ENV; repeatable")
 	flag.Parse()
@@ -120,6 +121,9 @@ func run() error {
 	if len(cands) == 0 {
 		return fmt.Errorf("nothing to probe")
 	}
+	if *pool {
+		return runPool(cands[0].llm, cands[0].label, cands[0].model, instructions, *runs, *warmup, !*thinking)
+	}
 
 	results := make([][]sample, len(cands))
 	total := *warmup + *runs
@@ -165,7 +169,11 @@ func run() error {
 }
 
 func ask(c candidate, instructions, question string, noThinking bool) sample {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return askOn(context.Background(), c, instructions, question, noThinking)
+}
+
+func askOn(parent context.Context, c candidate, instructions, question string, noThinking bool) sample {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	started := time.Now()
 	deltas, err := c.llm.Stream(ctx, provider.LLMRequest{
