@@ -12,6 +12,11 @@
 #   scripts/phone-brain.sh log [n] [re]   warnings, errors and turn timings from the
 #                                     last n lines of golive's log (default 400);
 #                                     with a regex, every engine line matching it
+#   scripts/phone-brain.sh llm [args] the backend's time to first token from this
+#                                     box; extra arguments go to llmprobe, e.g.
+#                                     -try 'label|base URL|model|KEY_ENV'
+#   scripts/phone-brain.sh tts        the synthesizer's time to first audio, on its
+#                                     standard and its bidirectional endpoint
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -332,6 +337,19 @@ log)
   fi
   ;;
 
+llm)
+  find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
+  shift
+  chmod +x "bin/llmprobe-linux-$ARCH" 2>/dev/null
+  "./bin/llmprobe-linux-$ARCH" -env "$ENVFILE" -profile "$PROFILE" -runs "${RUNS:-10}" "$@"
+  ;;
+
+tts)
+  find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
+  chmod +x "bin/ttsprobe-linux-$ARCH" 2>/dev/null
+  "./bin/ttsprobe-linux-$ARCH" -env "$ENVFILE" -compare-endpoints -runs "${RUNS:-6}"
+  ;;
+
 sync)
   "${SUDO[@]}" systemctl start gateway-port-sync.service
   "${SUDO[@]}" journalctl -u gateway-port-sync --no-pager -n 12 | cut -c1-200
@@ -355,7 +373,7 @@ restore)
   ;;
 
 *)
-  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
   ;;
 esac

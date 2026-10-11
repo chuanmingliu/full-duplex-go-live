@@ -237,6 +237,26 @@ func promptChars(msgs []chatMessage) int {
 	return n
 }
 
+// completionsURL is where a base URL's chat completions live.
+//
+// Most vendors serve them at <base>/v1/chat/completions and document the base
+// without the version, which is what a bare base gets. Some document it with
+// the version already on — and not always v1: Volcengine's is /api/v3, Zhipu's
+// /api/paas/v4 — and appending /v1 to those asks for a path that does not
+// exist. A base that already ends in a version segment, or in the full path,
+// is taken at its word.
+func completionsURL(base string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/chat/completions") {
+		return base
+	}
+	last := base[strings.LastIndex(base, "/")+1:]
+	if len(last) >= 2 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
+		return base + "/chat/completions"
+	}
+	return base + "/v1/chat/completions"
+}
+
 type chatChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -295,7 +315,7 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		l.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+		completionsURL(l.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

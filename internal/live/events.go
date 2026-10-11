@@ -633,6 +633,12 @@ type TurnMetricsEvent struct {
 	// other figure here is relative to.
 	SpeechEndMS int64 `json:"speech_end_ms"`
 
+	// TurnStartMS is speech end to the moment the turn's answer was begun.
+	// Negative for a speculative turn: that is how much of the caller's pause
+	// the backend was already working through, and with LLMFirstTokenMS it
+	// gives the backend's own time to first token, which no other pair of
+	// figures here does.
+	TurnStartMS int64 `json:"turn_start_ms"`
 	// ASRFinalMS is speech end to the final transcript.
 	ASRFinalMS int64 `json:"asr_final_ms"`
 	// LLMFirstTokenMS is speech end to the backend's first token. Negative when
