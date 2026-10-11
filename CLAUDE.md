@@ -43,6 +43,7 @@ Real providers on the test box, no phone, 15 measured turns each
 | 2e2457b | pause 280; a slow hour for the chat model | 1229 | 1572 |
 | 42b5f54 | early final + two copies of each completion; pause 380 | **943** | 1244 |
 | 42b5f54 | same, one copy per completion (minutes later) | 952 | 1431 |
+| ea3a478 | no guess on trailing words while a final is pending | 978 | 1123 (max 1191) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
