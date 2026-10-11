@@ -47,21 +47,60 @@ func IsUrgent(ctx context.Context) bool {
 // is raced only while there is room for it, and the second connection is only
 // dialled while there is room for that.
 //
+// after, when it is more than zero, is the frugal form, for an account whose
+// rate limit has no room for a second request on every turn. The first
+// connection is asked alone, and the second only when after has passed with no
+// audio from the first — which, set just past where the synthesizer usually
+// answers, is one segment in ten or twenty, and exactly the ones worth a
+// second request. It is what a slow first audio costs that changes: after
+// plus an ordinary synthesis, rather than however long the first connection
+// takes. Measured on two calls, 93 turns: 180 ms at the median, and 350, 402,
+// 491, 613, 1284 and 1763 ms on the six worst.
+//
+// In that form every segment is covered, not only the urgent one, with three
+// times the wait for the rest: a later segment is synthesized under cover of
+// audio already playing, so it has that long before its lateness is heard —
+// but on one of those calls a second segment did not arrive in 3.3 s, and the
+// caller sat in silence in the middle of an answer. And a first connection
+// that fails outright is followed by the second at once.
+//
 // copies < 2 returns inner unchanged.
-func HedgeTTS(inner TTS, copies, rpm int, log *slog.Logger) TTS {
+func HedgeTTS(inner TTS, copies, rpm int, after time.Duration, log *slog.Logger) TTS {
 	if copies < 2 || inner == nil {
 		return inner
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &hedgedTTS{inner: inner, log: log, budget: ttsBudgetFor(inner.Name(), rpm)}
+	if after < 0 {
+		after = 0
+	}
+	return &hedgedTTS{inner: inner, log: log, after: after, budget: ttsBudgetFor(inner.Name(), rpm)}
 }
 
 type hedgedTTS struct {
 	inner  TTS
 	log    *slog.Logger
+	after  time.Duration
 	budget *rpmBudget
+}
+
+// laterSegmentPatience is how many times longer than an urgent segment a
+// later one is given before the second connection is asked for it.
+const laterSegmentPatience = 3
+
+// hedgeDelay says whether a segment is hedged and how long the first
+// connection has to itself: none, for an urgent segment when both are asked
+// at once.
+func (h *hedgedTTS) hedgeDelay(urgent bool) (wait time.Duration, hedged bool) {
+	switch {
+	case h.after <= 0:
+		return 0, urgent
+	case urgent:
+		return h.after, true
+	default:
+		return h.after * laterSegmentPatience, true
+	}
 }
 
 // rpmBudget counts requests over the last minute.
@@ -223,33 +262,51 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 	s.mu.Lock()
 	primary, spare := s.primary, s.spare
 	s.mu.Unlock()
-	if IsUrgent(ctx) && spare == nil {
+	wait, hedged := s.tts.hedgeDelay(IsUrgent(ctx))
+	if hedged && spare == nil {
 		s.openSpare()
 	}
-	race := IsUrgent(ctx) && spare != nil && spare.busy.CompareAndSwap(false, true)
-	if race && !s.tts.budget.spend(2, false) {
-		// No room this minute for a second request. One is made, as it would
-		// have been anyway.
-		spare.busy.Store(false)
-		race = false
-	}
-	if !race {
+	if !hedged || spare == nil {
 		s.tts.budget.spend(1, true)
 		return primary.stream.Synthesize(ctx, text)
+	}
+	if wait > 0 {
+		// One request now. The second is asked for, and accounted for, only
+		// if this one is slow.
+		s.tts.budget.spend(1, true)
+	} else {
+		race := spare.busy.CompareAndSwap(false, true)
+		if race && !s.tts.budget.spend(2, false) {
+			// No room this minute for a second request. One is made, as it
+			// would have been anyway.
+			spare.busy.Store(false)
+			race = false
+		}
+		if !race {
+			s.tts.budget.spend(1, true)
+			return primary.stream.Synthesize(ctx, text)
+		}
 	}
 
 	primary.busy.Store(true)
 	slots := [2]*ttsSlot{primary, spare}
 	var cancels [2]context.CancelFunc
 	var started [2]chan ttsStarted
-	for i, slot := range slots {
+	// ask puts the segment to one connection. After the first call it is only
+	// ever called from the goroutine below.
+	ask := func(n int) {
 		cctx, cancel := context.WithCancel(ctx)
-		cancels[i] = cancel
-		started[i] = make(chan ttsStarted, 1)
-		go func(slot *ttsSlot, res chan<- ttsStarted) {
+		cancels[n] = cancel
+		res := make(chan ttsStarted, 1)
+		started[n] = res
+		go func(slot *ttsSlot) {
 			ch, err := slot.stream.Synthesize(cctx, text)
 			res <- ttsStarted{ch: ch, err: err}
-		}(slot, started[i])
+		}(slots[n])
+	}
+	ask(0)
+	if wait == 0 {
+		ask(1)
 	}
 
 	out := make(chan TTSChunk, 64)
@@ -258,11 +315,42 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 		defer close(out)
 		// For each copy: the channel its Synthesize will report on (nil once it
 		// has), its audio (nil until then, and again once it is out of the
-		// race), and whether its connection is fit to use again.
+		// race), whether it is out of the race — as the second is until it is
+		// asked — and whether its connection is fit to use again.
 		waiting := [2]<-chan ttsStarted{started[0], started[1]}
 		var audio [2]<-chan TTSChunk
-		var out2, broken [2]bool
+		var broken [2]bool
+		out2 := [2]bool{false, wait > 0}
 		var lastErr error
+
+		var patience <-chan time.Time
+		if wait > 0 {
+			t := time.NewTimer(wait)
+			defer t.Stop()
+			patience = t.C
+		}
+		asked := wait == 0
+		// second asks the spare connection as well, if it is free and the
+		// minute has room for the request. It is tried once per segment.
+		second := func(why string) {
+			if patience == nil {
+				return
+			}
+			patience = nil
+			if !slots[1].busy.CompareAndSwap(false, true) {
+				return
+			}
+			if !s.tts.budget.spend(1, false) {
+				slots[1].busy.Store(false)
+				s.tts.log.Debug("tts hedge: no room this minute for a second request",
+					"waited_ms", time.Since(began).Milliseconds())
+				return
+			}
+			ask(1)
+			waiting[1], out2[1], asked = started[1], false, true
+			s.tts.log.Debug("tts hedge: asking the second connection too",
+				"why", why, "waited_ms", time.Since(began).Milliseconds())
+		}
 
 		// leave takes a copy out of the race: it is cancelled, whatever it
 		// still has to say is read and dropped, and its connection is free
@@ -298,11 +386,14 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 					}
 				}
 				return
+			case <-patience:
+				second("no audio yet")
 			case st := <-waiting[0]:
 				waiting[0] = nil
 				if st.err != nil {
 					lastErr, broken[0] = st.err, true
 					leave(0)
+					second("the first connection failed")
 				} else {
 					audio[0] = st.ch
 				}
@@ -322,6 +413,9 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 						lastErr, broken[0] = c.Err, true
 					}
 					leave(0)
+					if c.Err != nil {
+						second("the first connection failed")
+					}
 				}
 			case c, ok := <-audio[1]:
 				if ok && c.Err == nil {
@@ -335,8 +429,8 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 			}
 		}
 		if winner < 0 {
-			// Neither produced audio. An error is the caller's to act on; two
-			// empty syntheses are an empty synthesis.
+			// Nothing produced audio. An error is the caller's to act on; an
+			// empty synthesis is an empty synthesis.
 			if lastErr != nil {
 				select {
 				case out <- TTSChunk{Err: lastErr}:
@@ -359,8 +453,10 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 		if broken[1-winner] {
 			s.replaceIfSpare(slots[1-winner])
 		}
-		s.tts.log.Debug("tts hedge: a copy produced audio first",
-			"copy", winner+1, "ms", time.Since(began).Milliseconds())
+		if asked {
+			s.tts.log.Debug("tts hedge: a copy produced audio first",
+				"copy", winner+1, "ms", time.Since(began).Milliseconds())
+		}
 
 		ch := audio[winner]
 		defer slots[winner].busy.Store(false)

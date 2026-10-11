@@ -133,16 +133,29 @@ first segment all of it is silence. `tts_hedge: 2` gives each session a second
 connection and asks both for that first segment, playing whichever produces
 audio first. On the bench it took p95 from ~1070 to ~1010 ms.
 
-**It is off in the telephony profile, because the synthesizer account on the
-test box cannot afford it.** Paced like one phone call (`phone-brain.sh tts
--call 36 -every 5s -hedge 2`: 36 requests a minute), the account began refusing
-requests after 65 seconds ("status 1002: rate limit exceeded(RPM)") and went on
-refusing. That fits an allowance of about 20 synthesis requests a minute with a
-burst of about 20 — and a refused request is an answer the caller never hears.
-A nine-minute, 70-turn call without hedging ran at 16–19 a minute: under it,
-not by much. With a higher allowance, set `tts_hedge: 2` and `tts_hedge_rpm`
-to well under the account's limit; a first segment is raced only while the last
-minute has room for the extra request.
+**Asking both every time is more than the synthesizer account on the test box
+can afford.** Paced like one phone call (`phone-brain.sh tts -call 36 -every 5s
+-hedge 2`: 36 requests a minute), the account began refusing requests after 65
+seconds ("status 1002: rate limit exceeded(RPM)") and went on refusing. That
+fits an allowance of about 20 synthesis requests a minute with a burst of about
+20 — and a refused request is an answer the caller never hears. A nine-minute,
+70-turn call without hedging ran at 16–19 a minute: under it, not by much.
+
+**So the profile asks the second connection only when the first is slow**:
+`tts_hedge_after_ms: 220`. A synthesis that produces audio inside 220 ms — nine
+in ten do — is one request, as before. One that has not is put to the second
+connection as well, and the caller hears whichever speaks, so a slow first
+audio costs 220 ms plus an ordinary synthesis rather than whatever the first
+connection takes. That was 1284 and 1763 ms on two consecutive turns of one
+call, with a second segment that had not arrived after 3.3 s; later segments
+are covered too, with three times the wait, since they play behind audio
+already going out. `tts_hedge_rpm: 18` still applies: the second request is not
+made in a minute that has no room for it. The log says when it happens (`tts
+hedge: asking the second connection too`, then `a copy produced audio first`).
+
+`phone-brain.sh tts -call 30 -every 5s -hedge 2 -after 220ms` paces it like a
+call and prints the same lines. With an account that has the allowance, `"tts_hedge_after_ms": 0`
+asks both at once for every first segment.
 
 ## A line that is never quiet, and a line that returns the assistant's voice
 

@@ -800,3 +800,45 @@ func TestSettledCloseWaitsForAFinalThatIsOnItsWay(t *testing.T) {
 		}
 	})
 }
+
+// "嗯。" is a whole turn — the caller's yes — and the commonest one on a call.
+// The length floor is there for a fragment of a hypothesis; applied to a final
+// asked for in a pause it left every such turn to be answered from nothing
+// once the pause had run out: twelve turns of ninety-three on two calls, and
+// four of the five slowest of one.
+func TestAShortTurnIsBegunOnItsEarlyFinalToo(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	if cfg.opts.Cfg.Duplex.SpeculativeMinChars < 4 {
+		t.Fatalf("speculative_min_chars is %d; this test is about a turn shorter than it", cfg.opts.Cfg.Duplex.SpeculativeMinChars)
+	}
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("嗯")
+	asr.msPerRune = 300
+	asr.fullStop = true
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+	speak(e, rate, 400)
+	pause(e, rate, 300) // a hundred short of ending the turn
+
+	begun := false
+	for _, h := range c.speculativeHints() {
+		if normalizeForCompare(h) == "嗯" {
+			begun = true
+		}
+	}
+	if !begun {
+		t.Fatalf("300 ms into the pause no answer had been begun on the caller's \"嗯\"; guesses so far: %q", c.speculativeHints())
+	}
+	if n := c.count(live.ExtSpeechStopped); n != 0 {
+		t.Fatalf("the turn was taken %d time(s) before the pause had run out", n)
+	}
+
+	pause(e, rate, 500)
+	waitFor(t, "the turn to be confirmed", 2*time.Second, func() bool {
+		return c.count(live.ServerDelegationCreated) == 1
+	})
+	if ds := c.delegations(); ds[0].Delegation.Reason != "speculative" {
+		t.Errorf("the turn was answered from %q; the answer begun in the pause should have stood", ds[0].Delegation.Reason)
+	}
+	waitFor(t, "the answer", 3*time.Second, func() bool { return c.audioMS() > 0 })
+}

@@ -164,8 +164,17 @@ type Config struct {
 	// two turns in thirty. A first segment is raced only while the last minute
 	// has room for the extra request under this figure, so set it well under
 	// the account's limit. 0 is no limit.
-	TTSHedgeRPM  int `json:"tts_hedge_rpm"`
-	HistoryTurns int `json:"history_turns"`
+	TTSHedgeRPM int `json:"tts_hedge_rpm"`
+	// TTSHedgeAfterMS, above zero, makes the hedging frugal: the second
+	// connection is asked only for a segment the first has produced no audio
+	// for after this long, so the extra request is spent on the slow
+	// syntheses alone — one in ten at 220 ms against a median of 180 — and an
+	// account with no room for two requests a turn can still be spared its
+	// worst ones (1.3 and 1.8 s on one call). It then covers every segment,
+	// later ones with three times the wait. 0 asks both at once for each
+	// first segment.
+	TTSHedgeAfterMS int `json:"tts_hedge_after_ms"`
+	HistoryTurns    int `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//
@@ -700,6 +709,7 @@ func (c *Config) applyEnv() {
 	setInt(&c.LLMHedgeAfterMS, "GOLIVE_LLM_HEDGE_AFTER_MS")
 	setInt(&c.TTSHedge, "GOLIVE_TTS_HEDGE")
 	setInt(&c.TTSHedgeRPM, "GOLIVE_TTS_HEDGE_RPM")
+	setInt(&c.TTSHedgeAfterMS, "GOLIVE_TTS_HEDGE_AFTER_MS")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")

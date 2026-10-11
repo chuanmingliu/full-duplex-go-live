@@ -133,7 +133,7 @@ func heard(t *testing.T, ch <-chan TTSChunk) (from []byte, first time.Duration, 
 
 func openHedged(t *testing.T, f *fakeTTS) TTSStream {
 	t.Helper()
-	s, err := HedgeTTS(f, 2, 0, nil).Open(context.Background(), TTSOptions{})
+	s, err := HedgeTTS(f, 2, 0, 0, nil).Open(context.Background(), TTSOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestHedgeSurvivesAConnectionThatFails(t *testing.T) {
 	refused := errors.New("rate limited")
 	t.Run("no second connection to be had", func(t *testing.T) {
 		f := &fakeTTS{openErr: []error{nil, refused}}
-		s, err := HedgeTTS(f, 2, 0, nil).Open(context.Background(), TTSOptions{})
+		s, err := HedgeTTS(f, 2, 0, 0, nil).Open(context.Background(), TTSOptions{})
 		if err != nil {
 			t.Fatalf("a session without a spare is a session without hedging, not a failed one: %v", err)
 		}
@@ -298,7 +298,7 @@ func TestHedgedSynthesisStopsWhenTheCallerDoes(t *testing.T) {
 
 func TestHedgeTTSOfOneIsTheSynthesizerItself(t *testing.T) {
 	f := &fakeTTS{}
-	if got := HedgeTTS(f, 1, 0, nil); got != TTS(f) {
+	if got := HedgeTTS(f, 1, 0, 0, nil); got != TTS(f) {
 		t.Error("a hedge of one copy should be the synthesizer, unwrapped")
 	}
 }
@@ -310,7 +310,7 @@ func TestHedgeStaysInsideItsRequestBudget(t *testing.T) {
 	// The budget is the account's, so it is shared by name across the process.
 	f := &fakeTTS{name: "budgeted-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
 	// Room for: the session's connection, its spare, and one raced segment.
-	s, err := HedgeTTS(f, 2, 4, nil).Open(context.Background(), TTSOptions{})
+	s, err := HedgeTTS(f, 2, 4, 0, nil).Open(context.Background(), TTSOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,5 +340,155 @@ func TestHedgeStaysInsideItsRequestBudget(t *testing.T) {
 	}
 	if got := f.stream(0).calls.Load() + f.stream(1).calls.Load(); got != raced+3 {
 		t.Errorf("%d syntheses for three segments with the budget spent; want one each", got-raced)
+	}
+}
+
+func openHedgedAfter(t *testing.T, f *fakeTTS, rpm int, after time.Duration) TTSStream {
+	t.Helper()
+	s, err := HedgeTTS(f, 2, rpm, after, nil).Open(context.Background(), TTSOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	deadline := time.Now().Add(time.Second)
+	for f.opened() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond)
+	return s
+}
+
+// The frugal form, for an account with no room for two requests a turn: a
+// synthesis that answers in its usual time is the only request made.
+func TestDelayedHedgeMakesOneRequestWhenTheFirstIsPrompt(t *testing.T) {
+	f := &fakeTTS{}
+	s := openHedgedAfter(t, f, 0, 60*time.Millisecond)
+
+	for i := 0; i < 3; i++ {
+		ch, err := s.Synthesize(WithUrgent(context.Background()), "您点开链接，")
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, _, serr := heard(t, ch)
+		if serr != nil || len(from) != 3 || from[0] != 0 {
+			t.Fatalf("segment %d: audio %v, err %v; want three chunks from the first connection", i, from, serr)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := f.stream(1).calls.Load(); n != 0 {
+		t.Errorf("the second connection was asked %d times for syntheses that answered at once; want 0", n)
+	}
+}
+
+// And one that does not answer is not waited out: the second connection is
+// asked once the first has had its time, and the caller hears whichever
+// speaks. This is the 1284 and 1763 ms first audio of the 22:21 call.
+func TestDelayedHedgeAsksTheSecondConnectionWhenTheFirstIsSlow(t *testing.T) {
+	f := &fakeTTS{delays: [][]time.Duration{{600 * time.Millisecond}, {20 * time.Millisecond}}}
+	s := openHedgedAfter(t, f, 0, 60*time.Millisecond)
+
+	ch, err := s.Synthesize(WithUrgent(context.Background()), "加上之后点链接，")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want three chunks from the second connection", from, serr)
+	}
+	if first < 60*time.Millisecond || first > 250*time.Millisecond {
+		t.Errorf("first audio after %s; want the wait (60 ms) plus the second connection's 20, not the first connection's 600", first)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if f.stream(0).cancelled.Load() != 1 {
+		t.Error("the connection that lost was not cancelled")
+	}
+	// The connection that spoke is the session's now.
+	ch, _ = s.Synthesize(context.Background(), "就能看到报价了。")
+	if from, _, _ := heard(t, ch); len(from) == 0 || from[0] != 1 {
+		t.Errorf("the next segment came from %v; want the connection that answered", from)
+	}
+	if f.stream(0).overlaps.Load()+f.stream(1).overlaps.Load() != 0 {
+		t.Error("a connection was given two syntheses at once")
+	}
+}
+
+// A later segment plays behind audio already going out, so it is given three
+// times as long — but not for ever: on that call one never arrived in 3.3 s.
+func TestDelayedHedgeCoversLaterSegmentsWithMorePatience(t *testing.T) {
+	f := &fakeTTS{delays: [][]time.Duration{
+		{100 * time.Millisecond, 700 * time.Millisecond},
+		{20 * time.Millisecond},
+	}}
+	s := openHedgedAfter(t, f, 0, 50*time.Millisecond)
+
+	// 100 ms is past an urgent segment's 50 and inside a later one's 150.
+	ch, _ := s.Synthesize(context.Background(), "按提示输入车牌号，")
+	if from, _, serr := heard(t, ch); serr != nil || len(from) != 3 || from[0] != 0 {
+		t.Fatalf("audio %v, err %v; want the first connection's", from, serr)
+	}
+	if n := f.stream(1).calls.Load(); n != 0 {
+		t.Fatalf("the second connection was asked for a later segment that took 100 ms; it has 150")
+	}
+	ch, _ = s.Synthesize(context.Background(), "就能实时看到报价了。")
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want the second connection's", from, serr)
+	}
+	if first < 150*time.Millisecond || first > 400*time.Millisecond {
+		t.Errorf("first audio after %s; want about 170 ms", first)
+	}
+}
+
+// The second request is the one thing that can run the account into its rate
+// limit, so it is not made when the minute has no room for it.
+func TestDelayedHedgeStaysInsideItsRequestBudget(t *testing.T) {
+	f := &fakeTTS{
+		name:   "delayed-budget-" + strconv.FormatInt(time.Now().UnixNano(), 36),
+		delays: [][]time.Duration{{10 * time.Millisecond, 10 * time.Millisecond, 200 * time.Millisecond, 200 * time.Millisecond}},
+	}
+	// Room for the two connections, three segments and one second request.
+	s := openHedgedAfter(t, f, 6, 50*time.Millisecond)
+	for i := 0; i < 2; i++ {
+		ch, _ := s.Synthesize(WithUrgent(context.Background()), "好的，")
+		heard(t, ch)
+	}
+	// Slow, and there is room: the second connection is asked, and wins.
+	ch, _ := s.Synthesize(WithUrgent(context.Background()), "您稍等，")
+	if from, _, serr := heard(t, ch); serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want the second connection's", from, serr)
+	}
+	time.Sleep(150 * time.Millisecond)
+	// Slow again, and the minute is spent. The connections changed places, so
+	// the slow one is the fake's second; script it.
+	f.delays = [][]time.Duration{nil, {0, 200 * time.Millisecond}}
+	asked := f.stream(0).calls.Load()
+	ch, _ = s.Synthesize(WithUrgent(context.Background()), "我看一下，")
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want it synthesized, once, by the session's connection", from, serr)
+	}
+	if first < 180*time.Millisecond {
+		t.Errorf("first audio after %s from a connection that takes 200 ms", first)
+	}
+	if n := f.stream(0).calls.Load(); n != asked {
+		t.Error("a second request was made with no room in the minute for it")
+	}
+}
+
+// A connection that fails outright is not waited on at all.
+func TestDelayedHedgeGoesToTheSecondConnectionWhenTheFirstFails(t *testing.T) {
+	f := &fakeTTS{synthErr: []error{errors.New("connection reset")}}
+	s := openHedgedAfter(t, f, 0, 300*time.Millisecond)
+
+	ch, err := s.Synthesize(WithUrgent(context.Background()), "您点开链接，")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want the second connection's, and no error", from, serr)
+	}
+	if first > 200*time.Millisecond {
+		t.Errorf("first audio after %s; the second connection should have been asked at once, not after the 300 ms wait", first)
 	}
 }

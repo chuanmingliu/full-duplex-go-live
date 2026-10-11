@@ -15,6 +15,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -33,12 +35,23 @@ var callTurns = [][2]string{
 	{"这个真没法估，", "每辆车情况不同，报出来不准反而误导您。"},
 }
 
-func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every time.Duration) error {
+func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every, after time.Duration) error {
 	c := *base
 	if voice != "" {
 		c.VoiceID = voice
 	}
-	tts := provider.HedgeTTS(&c, hedge, 0, nil)
+	// The hedge says, at debug level, each time it asks the second connection
+	// and which one spoke first.
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey || a.Key == slog.LevelKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	}))
+	tts := provider.HedgeTTS(&c, hedge, 0, after, log)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stream, err := tts.Open(ctx, provider.TTSOptions{SampleRate: rate, Voice: c.VoiceID})
@@ -47,9 +60,16 @@ func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every time
 	}
 	defer stream.Close()
 
-	fmt.Printf("ttsprobe -call: one session, %d turns, one every %s, %d connection(s) asked for each first segment\n",
-		turns, every, max(hedge, 1))
-	fmt.Printf("requests a minute: about %.0f\n\n", float64(max(hedge, 1)+1)*float64(time.Minute)/float64(every))
+	if hedge >= 2 && after > 0 {
+		fmt.Printf("ttsprobe -call: one session, %d turns, one every %s, the second connection asked after %s without audio (3x that for a second segment)\n",
+			turns, every, after)
+		fmt.Printf("requests a minute: about %.0f, plus one for each time the second connection is asked\n\n",
+			2*float64(time.Minute)/float64(every))
+	} else {
+		fmt.Printf("ttsprobe -call: one session, %d turns, one every %s, %d connection(s) asked for each first segment\n",
+			turns, every, max(hedge, 1))
+		fmt.Printf("requests a minute: about %.0f\n\n", float64(max(hedge, 1)+1)*float64(time.Minute)/float64(every))
+	}
 	time.Sleep(time.Second) // the second connection dials in the background
 
 	var firsts []int

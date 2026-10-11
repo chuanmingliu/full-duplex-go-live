@@ -83,6 +83,7 @@ func run() error {
 		callTurnsN = flag.Int("call", 0, "pace synthesis as one phone call of this many turns: one session, a short first segment and a sentence per turn; reports first audio and any rate-limit refusals")
 		callEvery  = flag.Duration("every", 6*time.Second, "with -call, how often a turn comes")
 		callHedge  = flag.Int("hedge", 2, "with -call, connections asked for each first segment (tts_hedge)")
+		callAfter  = flag.Duration("after", 0, "with -call, ask the second connection only when the first has produced no audio for this long (tts_hedge_after_ms); 0 asks both at once")
 	)
 	flag.Parse()
 
@@ -99,7 +100,7 @@ func run() error {
 		return runAdapter(base, *voice, *rate)
 	}
 	if *callTurnsN > 0 {
-		return runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery)
+		return runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery, *callAfter)
 	}
 
 	if *trace {

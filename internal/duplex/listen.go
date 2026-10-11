@@ -531,11 +531,14 @@ func (e *Engine) speculateOnFinal(text string) {
 		e.specWhy = "the words so far read as an unfinished thought"
 		return
 	}
-	if n := len([]rune(text)); n < e.opts.Cfg.Duplex.SpeculativeMinChars && class != endpoint.Complete {
-		e.specWhy = fmt.Sprintf("the words so far are %d characters; speculative_min_chars is %d",
-			n, e.opts.Cfg.Duplex.SpeculativeMinChars)
-		return
-	}
+	// No floor on length here. speculative_min_chars keeps a guess from being
+	// made on a fragment of a hypothesis — "今天" on its way to being a
+	// sentence. This is not a hypothesis: the caller has stopped, the
+	// recognizer has been told so and has said what it heard, and if they do
+	// carry on the connection listening for that will say so and the guess is
+	// dropped. And the short turns are the common ones: on two calls, every
+	// one of the twelve turns answered without a head start was a "嗯。" or a
+	// "嗯嗯。", and they were four of the five slowest of the second call.
 	e.startSpeculativeTurn(text)
 }
 
