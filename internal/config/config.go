@@ -137,6 +137,18 @@ type Config struct {
 	Temperature                  float64 `json:"temperature"`
 	MaxOutputTokens              int     `json:"max_output_tokens"`
 	DisableThinking              bool    `json:"disable_thinking"`
+	// LLMHedge is how many copies of each completion may be sent to the chat
+	// model, the first to produce output being the one used. The model's time
+	// to first token is the largest term in a turn's latency and varies
+	// several-fold from one identical request to the next; the faster of two
+	// is reliably nearer the fast end. The cost is the losing copy's tokens.
+	// 0 or 1 sends one.
+	LLMHedge int `json:"llm_hedge"`
+	// LLMHedgeAfterMS is how long a copy is given to produce its first output
+	// before the next is sent. 0 sends them together, which is the most
+	// latency this buys; a figure near the model's usual time to first token
+	// spends the extra request only on the slow turns.
+	LLMHedgeAfterMS int `json:"llm_hedge_after_ms"`
 	HistoryTurns                 int     `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
@@ -282,6 +294,23 @@ type DuplexConfig struct {
 	// merely fallen behind a talking caller does not end their turn. 0 turns
 	// it off.
 	SettledCloseMS int `json:"settled_close_ms"`
+	// EarlyFinalMS asks the recognizer for its final transcript this far into
+	// a pause, instead of when the pause has run its whole length and ended
+	// the turn.
+	//
+	// A streaming recognizer's hypotheses trail the audio — by 300 ms and more
+	// on the one measured — so through most of a pause the words so far are
+	// not yet all there to guess on, and the answer was being started only
+	// once the turn had closed and the final had come back: the whole of
+	// vad.min_silence_ms plus a round trip, on every turn. Ending the
+	// recognition early gets the final a round trip after the request, and the
+	// answer is begun on it while the rest of the pause is still being waited
+	// out. If the caller carries on, what they say next is recognized on a
+	// fresh connection and joined to what was already settled.
+	//
+	// It needs duplex.speculative, and should be longer than the stops inside
+	// a word (vad.gap_tolerance_ms is the scale). 0 turns it off.
+	EarlyFinalMS int `json:"early_final_ms"`
 
 	// ASRPredial opens the recognizer's connection when the detector first
 	// suspects speech, rather than when it is sure. The detector takes
@@ -629,6 +658,8 @@ func (c *Config) applyEnv() {
 	setString(&c.Instructions, "GOLIVE_INSTRUCTIONS")
 	setString(&c.Greeting, "GOLIVE_GREETING")
 	setString(&c.BackendModel, "GOLIVE_BACKEND_MODEL")
+	setInt(&c.LLMHedge, "GOLIVE_LLM_HEDGE")
+	setInt(&c.LLMHedgeAfterMS, "GOLIVE_LLM_HEDGE_AFTER_MS")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")

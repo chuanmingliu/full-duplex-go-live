@@ -59,7 +59,7 @@ curl -s http://127.0.0.1:8765/v1/pool         # "service":"golive"
 
 ## How long a pause ends a turn
 
-golive's own figure is `vad.min_silence_ms` (280 in the telephony profile). A
+golive's own figure is `vad.min_silence_ms` (380 in the telephony profile). A
 Realtime client may ask for another in `turn_detection.silence_duration_ms`, and
 golive takes it (`realtime.honor_turn_detection`), never going below
 `realtime.min_silence_floor_ms` (200): its detector judges frames by energy,
@@ -74,9 +74,29 @@ realtime: session.update bytes=31819 session_keys=[...] turn_detection=none inst
 realtime: end-of-turn silence taken from the client's turn detection asked_ms=150 using_ms=200 floor_ms=200
 ```
 
-This pause is the first thing a caller waits through on every turn. Each
-`turn: response latency` line carries the one that turn actually ended on
+The pause is no longer what a caller waits through. `duplex.early_final_ms`
+(120) asks the recognizer for its final that far into the pause, and the answer
+is begun on it while the rest of the pause runs out; the turn is still taken
+only when the pause has, and nothing is heard before then. In the log:
+
+```
+asr: asking for a final on the words so far; a continuation is listening
+asr: final for the words so far ... took_ms=95 pause_ms=215
+asr: the turn closed on words already final
+```
+
+So a longer pause costs nothing until it is longer than the answer takes to
+prepare (about a second), and can be chosen for how rarely it cuts a caller
+off. Each `turn: response latency` line carries the pause that turn ended on
 (`end_silence_ms`), which is longer when the caller was judged to be mid-thought.
+
+## The chat model's first token
+
+The largest term, and not one number: the same request seconds apart has
+measured anywhere from 170 to 880 ms. `llm_hedge: 2` sends each completion
+twice and uses whichever copy speaks first (`llm hedge: a copy answered first`
+at debug level). It costs the losing copy's tokens. `llm_hedge_after_ms` delays
+the second copy, to spend it only on slow turns; 0 sends both at once.
 
 ## A line that is never quiet, and a line that returns the assistant's voice
 

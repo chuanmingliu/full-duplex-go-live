@@ -150,7 +150,12 @@ type Engine struct {
 	// speechEndSilenceMS is the trailing silence that utterance was closed on.
 	speechEndSilenceMS int64
 	asrRun             *asrRun
-	asrSeq             uint64
+	// earlyRun is a recognition ended early, in a pause, whose final is still
+	// on its way while asrRun — its continuation — listens to what follows.
+	// See maybeEarlyFinal.
+	earlyRun    *asrRun
+	earlyFinals int
+	asrSeq      uint64
 	// asrStandby is a recognizer connection dialled on the first suspicion of
 	// speech, waiting to be adopted by the utterance if there turns out to be
 	// one. See maybePredialASR.
@@ -293,6 +298,16 @@ type asrRun struct {
 	// while a floor hold was undecided, so the first one after it must go out
 	// even if the text has not changed since.
 	held bool
+
+	// An utterance whose recognition was ended early in a pause carries on in
+	// a continuation: prefix is what the recognitions before this one settled
+	// on, raw what this one has heard by itself, and activeAtOpen how much of
+	// the utterance had been voiced when it took over — so, how much has been
+	// since. lastText is always the whole utterance.
+	continuation bool
+	prefix       string
+	raw          string
+	activeAtOpen float64
 }
 
 // New builds an engine. Call Start before pushing audio.
@@ -643,6 +658,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	e.expireHold()
 	e.maybePredialASR()
 	e.applyPatience()
+	e.maybeEarlyFinal()
 	e.maybeSpeculate()
 	e.maybeSettle()
 }
@@ -745,7 +761,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			BargeIn:   d.BargeIn,
 			SilenceMS: int64(d.SilenceMS),
 		})
-		e.closeASR(false)
+		e.closeUtteranceASR(d)
 		e.speculateAtClose()
 		e.publishState()
 	}
@@ -756,6 +772,7 @@ func (e *Engine) onTick() {
 	e.expireHold()
 	e.expireStandby()
 	e.expireFinalWait()
+	e.expireEarlyFinal()
 	e.observeTTFA()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()

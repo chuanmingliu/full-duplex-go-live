@@ -34,6 +34,14 @@ const (
 	// are kept off the append-only transcript, because the last word of a
 	// hypothesis is the one a recognizer is most likely to change its mind on.
 	transcriptHoldback = 2
+	// earlyFinalMinVoicedMS is how much voice a recognition must have heard
+	// before it may be ended early in a pause. The first of an utterance has
+	// always heard more; this is for the ones after it, so that a click in the
+	// pause does not buy another connection.
+	earlyFinalMinVoicedMS = 160
+	// continuationQuietMS is how little voice a continuation may have heard
+	// and still be known to hold no words: two frames, which is a click.
+	continuationQuietMS = 40
 )
 
 // --- recognizer connection ---
@@ -131,12 +139,17 @@ func (e *Engine) concludeWithoutFinal(run *asrRun) {
 	if run.finalSeen || !run.sendDone {
 		return
 	}
-	run.finalSeen = true
 	text := strings.TrimSpace(run.lastText)
 	if text != "" {
 		e.log.Warn("asr: the recognizer ended without a final transcript; taking its last hypothesis as one",
 			"run", run.id, "text", text)
 	}
+	e.conclude(run, text)
+}
+
+// conclude ends an utterance on text, as its final transcript would have.
+func (e *Engine) conclude(run *asrRun, text string) {
+	run.finalSeen = true
 	if e.hold != nil && e.judgeHold(text, true) {
 		return
 	}
@@ -151,6 +164,11 @@ func (e *Engine) openASR(startMS int64) {
 	if e.deps.ASR == nil {
 		return
 	}
+	e.startRun(startMS)
+}
+
+// startRun opens a recognition and makes it the current one.
+func (e *Engine) startRun(startMS int64) *asrRun {
 	// Adopt the connection dialled when this utterance was only a suspicion,
 	// if there is one; otherwise dial now. Either way this returns at once —
 	// the loop goroutine no longer waits on a vendor's handshake — and the
@@ -198,11 +216,16 @@ func (e *Engine) openASR(startMS int64) {
 		case <-e.ctx.Done():
 		}
 	}(run.id, stream)
+	return run
 }
 
 // closeASR ends the current recognition. hard tears the stream down without
 // waiting for a final result; the soft form asks for one.
 func (e *Engine) closeASR(hard bool) {
+	if hard && e.earlyRun != nil {
+		_ = e.earlyRun.stream.Close()
+		e.earlyRun = nil
+	}
 	run := e.asrRun
 	if run == nil {
 		return
@@ -233,6 +256,10 @@ func (e *Engine) awaitingFinal() bool {
 }
 
 func (e *Engine) onASREvent(ev asrEvent) {
+	if early := e.earlyRun; early != nil && early.id == ev.run {
+		e.onEarlyRunEvent(early, ev)
+		return
+	}
 	run := e.asrRun
 	if run == nil || run.id != ev.run {
 		return // a stale stream's result; the utterance it belongs to is gone
@@ -268,10 +295,14 @@ func (e *Engine) onASREvent(ev asrEvent) {
 		return
 	}
 
-	text := strings.TrimSpace(ev.res.Text)
-	if text == "" && !ev.res.Final {
+	raw := strings.TrimSpace(ev.res.Text)
+	if raw == "" && !ev.res.Final {
 		return
 	}
+	// A continuation hears only what followed the pause its predecessor was
+	// ended in; the utterance is both.
+	run.raw = raw
+	text := joinTranscript(run.prefix, raw)
 	if ev.res.Final {
 		run.finalSeen = true
 		e.log.Debug("asr: final",
@@ -316,6 +347,230 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	// Otherwise no speculation check here. Whether to guess mid-utterance
 	// depends on whether the speaker has paused, which is an acoustic question,
 	// so it is answered on the audio path in maybeSpeculate.
+}
+
+// --- a final asked for early ---
+
+// maybeEarlyFinal asks the recognizer for its final word on the utterance so
+// far, a little way into a pause, and carries on listening on a new connection.
+//
+// Starting the answer during the pause, on the words so far, is the largest
+// head start a cascade has — and it depends on those words being there. A
+// streaming recognizer's hypotheses trail the audio by a few hundred
+// milliseconds; measured against the one in use, the last partial at the close
+// of a 280 ms pause was still short of the sentence on most turns, so the guess
+// made there was wrong, was thrown away when the final arrived, and the answer
+// began from nothing a round trip after the turn had closed. The pause was
+// waited through in full and bought nothing.
+//
+// What a recognizer does do promptly is finish: told the audio has ended, it
+// returns the final in about a tenth of a second. So the audio is ended here,
+// EarlyFinalMS into the pause, and the answer is begun on that final while the
+// rest of the pause runs out. The turn is still not taken until the detector
+// says so, and nothing of the answer is heard before then.
+//
+// Should the caller carry on, the connection that just finished cannot hear
+// them, so a continuation is opened at the same moment and given every frame
+// from here. Its words are joined to what was settled, and the guess is
+// dropped as soon as there are any — the same rule as for any other guess.
+func (e *Engine) maybeEarlyFinal() {
+	d := e.opts.Cfg.Duplex
+	if d.EarlyFinalMS <= 0 || !e.opts.Speculative || e.deps.ASR == nil {
+		return
+	}
+	if !e.userOpen || e.muted || e.hold != nil || e.earlyRun != nil {
+		return
+	}
+	run := e.asrRun
+	if run == nil || run.sendDone || run.ended {
+		return
+	}
+	if e.vad.TrailingSilenceMS() < float64(d.EarlyFinalMS) {
+		return
+	}
+	// Only a recognition that has heard speech is worth a final. The one that
+	// opened the utterance always has; a continuation has only if the caller
+	// did carry on.
+	if e.vad.ActiveMS()-run.activeAtOpen < earlyFinalMinVoicedMS {
+		return
+	}
+
+	run.sendDone = true
+	run.sendDoneAt = time.Now()
+	if err := run.stream.CloseSend(); err != nil {
+		e.log.Warn("asr close-send failed", "err", err)
+	}
+	e.earlyRun = run
+	e.earlyFinals++
+
+	next := e.startRun(run.startMS)
+	next.continuation = true
+	next.itemID = run.itemID
+	next.endMS = run.endMS
+	next.activeAtOpen = e.vad.ActiveMS()
+	// Until the final lands, the best account of what came before is the last
+	// hypothesis; and to everything that reads this run, the utterance so far
+	// is still the utterance so far.
+	next.prefix = run.lastText
+	next.lastText = run.lastText
+	next.changedAt, next.changedAtMS, next.activeAtChange = run.changedAt, run.changedAtMS, run.activeAtChange
+	next.prevHyp, next.committed, next.shown, next.held = run.prevHyp, run.committed, run.shown, run.held
+	e.log.Debug("asr: asking for a final on the words so far; a continuation is listening",
+		"run", run.id, "continuation", next.id,
+		"pause_ms", int(e.vad.TrailingSilenceMS()), "so_far", run.lastText)
+}
+
+// onEarlyRunEvent takes what a recognition ended early still has to say, which
+// is its final or the news that there will not be one.
+func (e *Engine) onEarlyRunEvent(run *asrRun, ev asrEvent) {
+	text := run.lastText
+	switch {
+	case ev.done:
+		e.log.Debug("asr: a recognition ended early closed without a final; taking its last hypothesis",
+			"run", run.id, "text", text)
+	case ev.res.Err != nil:
+		e.log.Warn("asr error on a recognition ended early; taking its last hypothesis",
+			"run", run.id, "err", ev.res.Err)
+	case ev.res.Final:
+		text = joinTranscript(run.prefix, strings.TrimSpace(ev.res.Text))
+	default:
+		// A hypothesis for audio already sent. The final is right behind it.
+		return
+	}
+	e.earlyRun = nil
+	run.finalSeen = true
+	_ = run.stream.Close()
+	e.onEarlyFinal(run, text)
+}
+
+// expireEarlyFinal gives up on an early final that is not coming.
+func (e *Engine) expireEarlyFinal() {
+	run := e.earlyRun
+	if run == nil || time.Since(run.sendDoneAt) < finalWaitMax {
+		return
+	}
+	e.log.Warn("asr: no final arrived for a recognition ended early; going on with its last hypothesis",
+		"run", run.id, "waited_ms", time.Since(run.sendDoneAt).Milliseconds())
+	e.earlyRun = nil
+	run.finalSeen = true
+	_ = run.stream.Close()
+	e.onEarlyFinal(run, run.lastText)
+}
+
+// onEarlyFinal settles the words up to the pause and, if the pause is still
+// running, begins the answer on them.
+func (e *Engine) onEarlyFinal(run *asrRun, text string) {
+	cur := e.asrRun
+	if cur == nil || !cur.continuation || cur.finalSeen {
+		return // the utterance has been concluded without it
+	}
+	e.log.Debug("asr: final for the words so far",
+		"run", run.id, "text", text,
+		"took_ms", time.Since(run.sendDoneAt).Milliseconds(),
+		"pause_ms", int(e.vad.TrailingSilenceMS()))
+	cur.prefix = text
+	full := joinTranscript(text, cur.raw)
+	if e.hold == nil {
+		e.emitInputTranscript(cur, full, false)
+	}
+	e.noteWords(cur, full)
+
+	if spec := e.liveSpeculation(); spec != nil &&
+		normalizeForCompare(spec.Transcript) != normalizeForCompare(full) {
+		e.abandonSpeculation("the final for the words so far is not what was guessed")
+	}
+	if cur.sendDone {
+		// The turn closed in the meantime, on a continuation that had heard
+		// something and owes a final of its own.
+		e.speculateAtClose()
+		return
+	}
+	if !e.userOpen || cur.raw != "" || e.vad.VoicedRunMS() >= resumeVoicedMS {
+		return // they are talking again; what they say decides the rest
+	}
+	e.speculateOnFinal(full)
+}
+
+// speculateOnFinal begins the answer on words the recognizer has finished
+// with, in a pause that has not yet ended the turn.
+//
+// The gates are maybeSpeculate's, less the ones that exist because a partial
+// may not be the whole of what was said: this is.
+func (e *Engine) speculateOnFinal(text string) {
+	if !e.opts.Speculative || e.muted || e.hold != nil || text == "" || e.liveSpeculation() != nil {
+		return
+	}
+	if e.bcSet.Matches(text) {
+		e.specWhy = "the words so far are an acknowledgement, not a question"
+		return
+	}
+	class := e.classify(text)
+	if class == endpoint.Incomplete {
+		e.specWhy = "the words so far read as an unfinished thought"
+		return
+	}
+	if n := len([]rune(text)); n < e.opts.Cfg.Duplex.SpeculativeMinChars && class != endpoint.Complete {
+		e.specWhy = fmt.Sprintf("the words so far are %d characters; speculative_min_chars is %d",
+			n, e.opts.Cfg.Duplex.SpeculativeMinChars)
+		return
+	}
+	e.startSpeculativeTurn(text)
+}
+
+// closeUtteranceASR ends recognition for an utterance the detector has closed.
+//
+// Ordinarily that is asking for the final and waiting for it. When the final
+// was asked for early and the caller said nothing after, it is already here —
+// or already asked for — and the continuation that was listening in case they
+// carried on has only a pause to report.
+func (e *Engine) closeUtteranceASR(d audio.Decision) {
+	run := e.asrRun
+	if run == nil || !run.continuation || run.sendDone || d.ActiveMS-run.activeAtOpen > continuationQuietMS {
+		e.closeASR(false)
+		return
+	}
+	_ = run.stream.Close()
+	if prev := e.earlyRun; prev != nil {
+		// The pause ended the turn before the early final arrived. It is now
+		// simply this utterance's final, and is waited for as one.
+		e.earlyRun = nil
+		prev.endMS = run.endMS
+		e.asrRun = prev
+		return
+	}
+	run.sendDone = true
+	run.sendDoneAt = time.Now()
+	run.ended = true
+	e.asrRun = nil
+	e.log.Debug("asr: the turn closed on words already final", "run", run.id, "text", run.prefix)
+	e.conclude(run, run.prefix)
+	e.drainDeferred()
+}
+
+// joinTranscript puts what earlier recognitions of an utterance settled on in
+// front of what the current one has heard.
+//
+// A recognizer closes whatever it is given with a full stop. One that was
+// given the first half of a sentence has closed a clause, not a sentence.
+func joinTranscript(prefix, text string) string {
+	if prefix == "" {
+		return text
+	}
+	if text == "" {
+		return prefix
+	}
+	r := []rune(prefix)
+	switch r[len(r)-1] {
+	case '。':
+		r[len(r)-1] = '，'
+	case '.':
+		r[len(r)-1] = ','
+	}
+	sep := ""
+	if last, first := r[len(r)-1], []rune(text)[0]; last < 0x80 && first < 0x80 && last != ' ' {
+		sep = " "
+	}
+	return string(r) + sep + text
 }
 
 // --- the caller's transcript ---
@@ -569,6 +824,11 @@ func (e *Engine) maybeSpeculate() {
 			"turn", spec.ID)
 	}
 
+	// One guess at a time. A guess can now be begun off this path, on a final
+	// asked for early in the pause, and the watch below knows nothing of it.
+	if e.liveSpeculation() != nil {
+		return
+	}
 	run := e.asrRun
 	if run == nil || run.lastText == "" {
 		e.specWhy = "no partial transcript yet"
