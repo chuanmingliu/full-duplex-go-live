@@ -725,6 +725,14 @@ func (s *Session) withEngine(f func(*duplex.Engine)) {
 	}
 }
 
+// The range a session may ask its end-of-turn silence to be in. Below the
+// floor, the gaps inside words close turns; above the ceiling the session is
+// simply not answering.
+const (
+	minSessionSilenceMS = 100
+	maxSessionSilenceMS = 3000
+)
+
 func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, eventID string) error {
 	var ev live.SessionStartEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
@@ -851,6 +859,15 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		// than falling back to it.
 		if g.Greeting != nil {
 			greeting = *g.Greeting
+		}
+		if g.MinSilenceMS != 0 {
+			if g.MinSilenceMS < minSessionSilenceMS || g.MinSilenceMS > maxSessionSilenceMS {
+				s.reply(p, live.NewError("invalid_request_error", "invalid_min_silence_ms",
+					fmt.Sprintf("golive.min_silence_ms %d must be between %d and %d",
+						g.MinSilenceMS, minSessionSilenceMS, maxSessionSilenceMS), eventID))
+				return fmt.Errorf("live: bad min_silence_ms %d", g.MinSilenceMS)
+			}
+			cfg.VAD.MinSilenceMS = g.MinSilenceMS
 		}
 		if g.Backchannel != nil {
 			backchannel = *g.Backchannel

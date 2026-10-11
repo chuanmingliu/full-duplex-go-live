@@ -359,3 +359,29 @@ func TestVADPatienceIsPerUtterance(t *testing.T) {
 		t.Errorf("the override outlived its utterance: min silence is %d, want %d", got, base)
 	}
 }
+
+// A stop says how long the speaker had already been quiet. That pause is part
+// of what a caller waits through, and it is not always the configured one: a
+// session may ask for a shorter silence, and a turn held open mid-thought
+// closes on a longer one.
+func TestVADStopCarriesThePauseItWasJudgedOn(t *testing.T) {
+	for _, silence := range []int{200, 380} {
+		cfg := DefaultVADConfig()
+		cfg.MinSilenceMS = silence
+		v := NewVAD(cfg)
+		var stop *Decision
+		audio := append(tone(cfg.SampleRate, 600, 0.3), quiet(cfg.SampleRate, 900)...)
+		for _, d := range feed(v, audio) {
+			if d.Kind == DecisionStopped {
+				d := d
+				stop = &d
+			}
+		}
+		if stop == nil {
+			t.Fatalf("min silence %d: the utterance never closed", silence)
+		}
+		if got := int(stop.SilenceMS); got < silence || got > silence+cfg.FrameMS {
+			t.Errorf("min silence %d: the stop reports a pause of %d ms", silence, got)
+		}
+	}
+}

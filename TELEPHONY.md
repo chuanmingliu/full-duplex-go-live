@@ -32,6 +32,7 @@ On the box, from the unpacked bundle:
 ```bash
 scripts/phone-brain.sh status     # what holds :8765, PBX and gateway state; changes nothing
 scripts/phone-brain.sh golive     # stop the container on :8765, start golive there
+scripts/phone-brain.sh restart    # replace a running golive with a new build; no sudo
 scripts/phone-brain.sh bench      # this box's real-provider latency, no phone involved
 scripts/phone-brain.sh restore    # stop golive, start that container again
 ```
@@ -55,6 +56,23 @@ docker stop s2s-backend                       # :8765 must be free
 ENVFILE=~/golive/.env.local ./start.sh telephony
 curl -s http://127.0.0.1:8765/v1/pool         # "service":"golive"
 ```
+
+## How long a pause ends a turn
+
+A Realtime client says so in `turn_detection.silence_duration_ms`, and golive
+takes it from there (`realtime.honor_turn_detection`), not from its own
+`vad.min_silence_ms`. The call originator on the test box asks for 150 ms.
+golive will not go below `realtime.min_silence_floor_ms` (200): its detector
+judges frames by energy, and the stops inside a word are silence at that scale.
+The log says what was asked and what is in force:
+
+```
+realtime: end-of-turn silence taken from the client's turn detection asked_ms=150 using_ms=200 floor_ms=200
+```
+
+This pause is the first thing a caller waits through on every turn. Each
+`turn: response latency` line carries the one that turn actually ended on
+(`end_silence_ms`), which is longer when the caller was judged to be mid-thought.
 
 ## Place a call
 

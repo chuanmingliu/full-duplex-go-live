@@ -534,8 +534,15 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 		switch point {
 		case "vad.speech_stopped":
 			stopNs = ns
-			if got, _ := ev["extra"].(map[string]any)["silence_ms"].(float64); int(got) != cfg.VAD.MinSilenceMS {
-				t.Errorf("speech_stopped reports silence_ms=%v; the pause it waited through is %d ms", got, cfg.VAD.MinSilenceMS)
+			// The pause this session's turns end on is the one its client
+			// asked for in turn_detection, not the server's own — and the
+			// figure reported has to be the one actually waited through.
+			const asked = 500
+			if cfg.VAD.MinSilenceMS == asked {
+				t.Fatalf("the server's own silence is also %d ms; this proves nothing", asked)
+			}
+			if got, _ := ev["extra"].(map[string]any)["silence_ms"].(float64); int(got) != asked {
+				t.Errorf("speech_stopped reports silence_ms=%v; the pause it waited through is %d ms", got, asked)
 			}
 		case "phone.audio_sent":
 			sentNs = ns
@@ -737,5 +744,68 @@ func TestRealtimeCanBeSwitchedOff(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("%s answered %d with realtime.enabled false", path, resp.StatusCode)
 		}
+	}
+}
+
+// A Realtime client states how long a silence ends a turn, and a call
+// originator tuning for its line sets it on purpose. The server used to read
+// past it and wait its own 380 ms, which on a call asking for 150 was the
+// larger part of a quarter of a second added to every answer.
+func TestRealtimeTurnDetectionSetsTheEndOfTurnSilence(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*config.Config)
+		update string
+		want   int // the engine's vad.min_silence_ms
+		echo   string
+	}{
+		{
+			name:   "asked for more than the floor",
+			update: `{"type":"session.update","session":{"turn_detection":{"type":"server_vad","silence_duration_ms":260}}}`,
+			want:   260,
+			echo:   `"silence_duration_ms":260`,
+		},
+		{
+			name:   "asked for less than this detector can be trusted with",
+			update: `{"type":"session.update","session":{"turn_detection":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":80,"silence_duration_ms":150}}}`,
+			want:   200,
+			echo:   `"silence_duration_ms":200`,
+		},
+		{
+			name:   "the newer session shape",
+			update: `{"type":"session.update","session":{"type":"realtime","audio":{"input":{"turn_detection":{"type":"server_vad","silence_duration_ms":500}}}}}`,
+			want:   500,
+			echo:   `"silence_duration_ms":500`,
+		},
+		{
+			name:   "a server told to keep its own",
+			mutate: func(c *config.Config) { c.Realtime.HonorTurnDetection = false },
+			update: `{"type":"session.update","session":{"turn_detection":{"type":"server_vad","silence_duration_ms":150}}}`,
+			want:   380,
+		},
+		{
+			name:   "a client that does not say",
+			update: `{"type":"session.update","session":{"voice":"alloy"}}`,
+			want:   380,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, seen, _ := gatewayServer(t, tc.mutate)
+			c := dialRealtime(t, ts, "/v1/realtime")
+			c.first("session.created", 2*time.Second)
+			sendRaw(t, c.conn, tc.update)
+			updated := c.first("session.updated", 2*time.Second)
+			if got := seen.last(t).Cfg.VAD.MinSilenceMS; got != tc.want {
+				t.Errorf("the engine closes a turn after %d ms of silence, want %d", got, tc.want)
+			}
+			session := string(updated["session"])
+			if tc.echo != "" && !strings.Contains(session, tc.echo) {
+				t.Errorf("session.updated does not report the silence in force (%s): %s", tc.echo, session)
+			}
+			if tc.echo == "" && strings.Contains(session, "silence_duration_ms") {
+				t.Errorf("session.updated reports a silence nobody set: %s", session)
+			}
+		})
 	}
 }

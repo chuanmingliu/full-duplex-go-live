@@ -16,8 +16,9 @@
 #   seg     the first clause handed to the synthesizer
 #   tts     the first synthesized audio
 #   audio   the first audio written towards the caller
-#   +pause  audio plus the silence threshold (the second argument, default
-#           380): the caller's last sound → first audio leaving golive
+#   +pause  audio plus the pause the turn was judged on (from the log; the
+#           second argument, default 380, for logs that predate it): the
+#           caller's last sound → first audio leaving golive
 #
 # Nothing here includes what the gateway, the PBX and the carrier add on the
 # way to the handset.
@@ -51,10 +52,13 @@ BEGIN {
   out = field("first_audio_out_ms"); spec = field("speculative")
   seg = field("first_segment_ms"); tts = field("tts_first_audio_ms")
   start = field("turn_start_ms")
-  heard = out + pause
+  # The pause this turn was judged on, where the log has it; the assumed one
+  # for a log written before it did.
+  sil = field("end_silence_ms"); p = (sil == "" || sil + 0 <= 0) ? pause : sil + 0
+  heard = out + p
   if (start == "") { st = "-"; tf = "-" } else { st = start + 0; tf = llm - start; m++; F[m] = tf; S[m] = st }
   printf "%-9s %-8s %-5s %6s %6d %6d %6s %6d %6d %7d %7d\n", t, field("turn"), spec, st, asr, llm, tf, seg, tts, out, heard
-  n++; a[n] = out + 0; b[n] = heard + 0; if (spec == "true") s++
+  n++; a[n] = out + 0; b[n] = heard + 0; P[n] = p; if (spec == "true") s++
   L[n] = llm + 0; G[n] = seg - llm; T[n] = tts - seg; A[n] = asr + 0
 }
 END {
@@ -62,6 +66,8 @@ END {
   printf "\n%d turns, %d speculative.\n", n, s
   p50 = median(b, n)
   printf "last sound → first audio:  p50 %d   p90 %d   max %d ms\n", p50, pct(b, n, 0.9), b[n]
+  ma = median(a, n)
+  printf "turn judged over → first audio (what the latency console calls the reply):  p50 %d   p90 %d ms;  pause p50 %d ms\n", ma, pct(a, n, 0.9), median(P, n)
   printf "medians:  asr final %d   llm first token %d", median(A, n), median(L, n)
   if (m) printf " (started %d, ttft %d)", median(S, m), median(F, m)
   printf "   wait for a clause %d   tts first audio %d ms\n", median(G, n), median(T, n)

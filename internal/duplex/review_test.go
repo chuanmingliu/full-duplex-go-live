@@ -332,3 +332,25 @@ func TestQueuedInputIsBounded(t *testing.T) {
 		t.Errorf("instructions grew to %d characters", got)
 	}
 }
+
+// The splitter can cut a closing quote or a dash off as a segment of its own.
+// It has nothing in it to pronounce; sending it cost a synthesizer round trip
+// and the connection, which was dropped when no audio came back.
+func TestSpeakableTextHasSomethingToPronounce(t *testing.T) {
+	for text, want := range map[string]bool{
+		"”":      false,
+		"……":     false,
+		"——":     false,
+		" 。":     false,
+		"\"":     false,
+		"好":      true,
+		"“好的。”":  true,
+		"3":      true,
+		"ok.":    true,
+		"— 那就这样": true,
+	} {
+		if got := speakable(text); got != want {
+			t.Errorf("speakable(%q) = %v, want %v", text, got, want)
+		}
+	}
+}

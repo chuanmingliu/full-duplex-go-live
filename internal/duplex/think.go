@@ -163,7 +163,7 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	// wrong zero. A speculative turn is stamped when speech actually ends, and
 	// a turn nobody spoke has no origin at all.
 	if spoken && !e.userOpen && !e.speechEndAt.IsZero() {
-		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
+		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS, e.speechEndSilenceMS)
 	}
 	// Something the caller said earlier and was never answered — they carried
 	// on after a pause that closed the turn, or asked again before the answer

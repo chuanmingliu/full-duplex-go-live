@@ -35,6 +35,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
@@ -144,8 +145,10 @@ type Engine struct {
 	userSince   time.Time
 	speechEndAt time.Time
 	speechEndMS int64
-	asrRun      *asrRun
-	asrSeq      uint64
+	// speechEndSilenceMS is the trailing silence that utterance was closed on.
+	speechEndSilenceMS int64
+	asrRun             *asrRun
+	asrSeq             uint64
 	// asrStandby is a recognizer connection dialled on the first suspicion of
 	// speech, waiting to be adopted by the utterance if there turns out to be
 	// one. See maybePredialASR.
@@ -702,6 +705,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// creation.
 		e.speechEndAt = time.Now()
 		e.speechEndMS = d.EndMS
+		e.speechEndSilenceMS = int64(d.SilenceMS)
 		// ...but only for a turn this utterance actually produced. A turn that
 		// was already live when the caller started talking belongs to an
 		// earlier utterance, or to none at all — the greeting is the clearest
@@ -710,7 +714,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// still in the future, so every figure came out negative. It is not
 		// waiting for anything the caller said, and it has no origin.
 		if turn := e.tracker.Current(); turn != nil && turn != e.turnBeforeUtterance {
-			turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
+			turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS, e.speechEndSilenceMS)
 		}
 		e.writeASR(d.Snapshot)
 		if e.asrRun != nil {
@@ -722,10 +726,11 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			"active_ms", int(d.ActiveMS),
 			"barge_in", d.BargeIn)
 		e.deps.Emit(live.SpeechEvent{
-			Envelope: live.Envelope{Type: live.ExtSpeechStopped},
-			StartMS:  d.StartMS,
-			EndMS:    d.EndMS,
-			BargeIn:  d.BargeIn,
+			Envelope:  live.Envelope{Type: live.ExtSpeechStopped},
+			StartMS:   d.StartMS,
+			EndMS:     d.EndMS,
+			BargeIn:   d.BargeIn,
+			SilenceMS: int64(d.SilenceMS),
 		})
 		e.closeASR(false)
 		e.speculateAtClose()
@@ -977,6 +982,12 @@ func (p *speechPipe) current() bool {
 func (p *speechPipe) speak(text string) bool {
 	text = strings.TrimSpace(text)
 	if text == "" {
+		return true
+	}
+	if !speakable(text) {
+		// A closing quote, a dash, an ellipsis: a segment the splitter cut off
+		// on its own. A synthesizer returns no audio for it, and that used to
+		// cost a round trip to find out and a dropped connection afterwards.
 		return true
 	}
 	if p.ctx.Err() != nil || !p.current() {
@@ -1685,6 +1696,7 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 		Revision:        turn.Revision,
 		Speculative:     turn.Speculative,
 		SpeechEndMS:     tm.SpeechEndMS,
+		EndSilenceMS:    tm.EndSilenceMS,
 		ASRFinalMS:      ms(tm.TranscriptFinal),
 		TurnStartMS:     ms(tm.StartedAt),
 		LLMFirstTokenMS: ms(tm.FirstToken),
@@ -1711,6 +1723,7 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	e.log.Info("turn: response latency",
 		"turn", turn.ID,
 		"first_audio_out_ms", ev.FirstAudioOutMS,
+		"end_silence_ms", ev.EndSilenceMS,
 		"asr_final_ms", ev.ASRFinalMS,
 		"turn_start_ms", ev.TurnStartMS,
 		"llm_first_token_ms", ev.LLMFirstTokenMS,
@@ -2004,6 +2017,16 @@ func retryable(err error) bool {
 	s := strings.ToLower(err.Error())
 	for _, n := range []string{"429", "502", "503", "504", "unavailable", "timeout", "connection reset", "try again"} {
 		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// speakable reports whether text has anything in it to pronounce.
+func speakable(text string) bool {
+	for _, r := range text {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return true
 		}
 	}

@@ -309,6 +309,12 @@ type GoliveConfig struct {
 	// OnNewQuery overrides what happens to an in-flight answer when the user
 	// speaks again: "cut", "finish_sentence" or "queue".
 	OnNewQuery string `json:"on_new_query,omitempty"`
+	// MinSilenceMS is how long the caller must be quiet before their turn is
+	// taken as over, for this session. Zero leaves the server's
+	// vad.min_silence_ms. It is the single largest term in how quickly an
+	// answer can start, and the right value belongs to the line: a phone
+	// caller pauses differently from someone at a desk.
+	MinSilenceMS int `json:"min_silence_ms,omitempty"`
 	// Greeting is spoken the moment the session opens, before the caller says
 	// anything. A pointer so the three cases stay distinct: absent uses the
 	// server default, an empty string explicitly suppresses it, and any other
@@ -602,6 +608,9 @@ type SpeechEvent struct {
 	StartMS int64 `json:"start_ms"`
 	EndMS   int64 `json:"end_ms,omitempty"`
 	BargeIn bool  `json:"barge_in,omitempty"`
+	// SilenceMS, on a stop, is the pause the stop was judged on: the caller's
+	// last sound was this long before the event.
+	SilenceMS int64 `json:"silence_ms,omitempty"`
 }
 
 // AudioTruncatedEvent is golive.output_audio.truncated: the assistant was cut
@@ -632,6 +641,14 @@ type TurnMetricsEvent struct {
 	// SpeechEndMS is the session-relative clock at VAD close: the origin every
 	// other figure here is relative to.
 	SpeechEndMS int64 `json:"speech_end_ms"`
+
+	// EndSilenceMS is how long the caller had already been silent at that
+	// origin: the pause the turn's end was judged on. A caller's wait is from
+	// their last sound, so every figure below is that much short of what they
+	// experienced, and by a different amount when the pause is not the default
+	// — a client that asked for a shorter one, a turn held open for a caller
+	// mid-thought.
+	EndSilenceMS int64 `json:"end_silence_ms"`
 
 	// TurnStartMS is speech end to the moment the turn's answer was begun.
 	// Negative for a speculative turn: that is how much of the caller's pause

@@ -425,6 +425,16 @@ type RealtimeConfig struct {
 	// HoldTimeoutSeconds releases a held session that nobody released. A call
 	// that has not been answered by then is not going to be.
 	HoldTimeoutSeconds int `json:"hold_timeout_seconds"`
+	// HonorTurnDetection takes the end-of-turn silence from the client's
+	// turn_detection.silence_duration_ms instead of vad.min_silence_ms. That
+	// is what the field means in the protocol, and a client that sets it —
+	// a call originator tuning for its line — expects to be obeyed.
+	HonorTurnDetection bool `json:"honor_turn_detection"`
+	// MinSilenceFloorMS is the least silence a client can ask for. The
+	// detector here judges frames by energy, and at frame scale the stops and
+	// unvoiced consonants inside a word are silence; a model-based detector
+	// can be asked for 150 ms, this one cannot yet be trusted with it.
+	MinSilenceFloorMS int `json:"min_silence_floor_ms"`
 }
 
 func Default() Config {
@@ -444,6 +454,8 @@ func Default() Config {
 			SampleRate:         24000,
 			Dialect:            "beta",
 			HoldTimeoutSeconds: 45,
+			HonorTurnDetection: true,
+			MinSilenceFloorMS:  200,
 		},
 		ASR:        "mock",
 		LLM:        "mock",
@@ -611,6 +623,8 @@ func (c *Config) applyEnv() {
 	setInt(&c.Realtime.SampleRate, "GOLIVE_REALTIME_RATE")
 	setString(&c.Realtime.Dialect, "GOLIVE_REALTIME_DIALECT")
 	setBool(&c.Realtime.HoldForOpening, "GOLIVE_REALTIME_HOLD")
+	setBool(&c.Realtime.HonorTurnDetection, "GOLIVE_REALTIME_HONOR_TURN_DETECTION")
+	setInt(&c.Realtime.MinSilenceFloorMS, "GOLIVE_REALTIME_MIN_SILENCE_FLOOR_MS")
 	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
 	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
@@ -709,6 +723,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Realtime.HoldTimeoutSeconds <= 0 {
 		c.Realtime.HoldTimeoutSeconds = 45
+	}
+	if c.Realtime.MinSilenceFloorMS <= 0 {
+		c.Realtime.MinSilenceFloorMS = 200
 	}
 	if c.StoreTTLHours < 0 {
 		return fmt.Errorf("config: store_ttl_hours must be >= 0")

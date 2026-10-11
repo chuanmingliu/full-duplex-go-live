@@ -101,6 +101,7 @@ type Turn struct {
 	startedAt       time.Time
 	speechEndAt     time.Time
 	speechEndMS     int64
+	endSilenceMS    int64
 	transcriptFinal time.Time
 	firstToken      time.Time
 	firstSegment    time.Time
@@ -114,6 +115,7 @@ type Timings struct {
 	StartedAt       time.Time
 	SpeechEndAt     time.Time
 	SpeechEndMS     int64
+	EndSilenceMS    int64
 	TranscriptFinal time.Time
 	FirstToken      time.Time
 	FirstSegment    time.Time
@@ -130,6 +132,7 @@ func (t *Turn) Timings() Timings {
 		StartedAt:       t.startedAt,
 		SpeechEndAt:     t.speechEndAt,
 		SpeechEndMS:     t.speechEndMS,
+		EndSilenceMS:    t.endSilenceMS,
 		TranscriptFinal: t.transcriptFinal,
 		FirstToken:      t.firstToken,
 		FirstSegment:    t.firstSegment,
@@ -231,11 +234,12 @@ func (t *Turn) awaitCommit(done <-chan struct{}) bool {
 // every latency this turn reports. It is set once: a turn that began
 // speculatively is stamped when speech actually ends, and one begun from a
 // final transcript inherits the VAD's timestamp at creation.
-func (t *Turn) MarkSpeechEnd(at time.Time, sessionMS int64) {
+func (t *Turn) MarkSpeechEnd(at time.Time, sessionMS, silenceMS int64) {
 	t.mu.Lock()
 	if t.speechEndAt.IsZero() {
 		t.speechEndAt = at
 		t.speechEndMS = sessionMS
+		t.endSilenceMS = silenceMS
 	}
 	t.mu.Unlock()
 }

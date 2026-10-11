@@ -77,6 +77,7 @@ func run() error {
 		clipGlob  = flag.String("clips", "", "glob of 16-bit PCM WAV files to speak; empty uses synthetic audio")
 		speak     = flag.String("speak", "", "sentences for the first stack to say aloud, separated by '|', then played back to every stack as the caller; real speech for a real recognizer, with no recordings needed")
 		keepClips = flag.String("keep-clips", "", "with -speak, also write the spoken clips into this directory as WAV")
+		minSil    = flag.Int("min-silence-ms", 0, "ask each stack for this end-of-turn silence (golive.min_silence_ms / turn_detection.silence_duration_ms); 0 leaves the service's own")
 		runs      = flag.Int("runs", 10, "measured runs per stack")
 		warmup    = flag.Int("warmup", 1, "unmeasured runs per stack first, to pay connection setup")
 		rate      = flag.Int("rate", 24000, "session PCM rate")
@@ -138,7 +139,7 @@ func run() error {
 		clip := clips[i%len(clips)]
 		measured := i >= *warmup
 		for _, s := range stacks {
-			r := drive(ctx, s, clip, *rate, *silenceMS, time.Duration(*timeout)*time.Second)
+			r := drive(ctx, s, clip, *rate, *silenceMS, *minSil, time.Duration(*timeout)*time.Second)
 			r.Index = i - *warmup
 			r.Measured = measured
 			results = append(results, r)
@@ -432,7 +433,7 @@ func writeClips(dir string, clips []clip, rate int) error {
 }
 
 // drive runs one turn against one stack and returns what the client observed.
-func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout time.Duration) result {
+func drive(ctx context.Context, s stack, c clip, rate, silenceMS, minSilenceMS int, timeout time.Duration) result {
 	r := result{Stack: s.name, Clip: c.name}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
@@ -550,7 +551,7 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 		return conn.WriteMessage(websocket.TextMessage, data)
 	}
 
-	if err := sendSessionConfig(send, s.kind, rate); err != nil {
+	if err := sendSessionConfig(send, s.kind, rate, minSilenceMS); err != nil {
 		r.Err = "session config: " + err.Error()
 		return r
 	}
@@ -671,7 +672,7 @@ done:
 	return r
 }
 
-func sendSessionConfig(send func(any) error, kind string, rate int) error {
+func sendSessionConfig(send func(any) error, kind string, rate, minSilenceMS int) error {
 	if kind == "golive" {
 		// No greeting: it would still be playing when the clip starts, and the
 		// first thing measured would be the caller interrupting it.
@@ -681,18 +682,22 @@ func sendSessionConfig(send func(any) error, kind string, rate int) error {
 			Session: live.SessionConfig{
 				Audio:      &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: rate}},
 				Delegation: &live.DelegationConfig{Type: live.DelegationResponses},
-				Golive:     &live.GoliveConfig{Greeting: &quiet},
+				Golive:     &live.GoliveConfig{Greeting: &quiet, MinSilenceMS: minSilenceMS},
 			},
 		})
 	}
 	// OpenAI Realtime (GA shape), which is what the Python cascade speaks.
+	input := map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": rate}}
+	if minSilenceMS > 0 {
+		input["turn_detection"] = map[string]any{"type": "server_vad", "silence_duration_ms": minSilenceMS}
+	}
 	return send(map[string]any{
 		"type":     "session.update",
 		"event_id": "bench",
 		"session": map[string]any{
 			"type": "realtime",
 			"audio": map[string]any{
-				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": rate}},
+				"input":  input,
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": rate}},
 			},
 		},

@@ -43,6 +43,10 @@ type Decision struct {
 
 	// BargeIn marks an utterance that opened while the assistant was speaking.
 	BargeIn bool
+
+	// SilenceMS, on DecisionStopped, is the trailing silence that closed the
+	// utterance: how long ago the speaker's last sound was.
+	SilenceMS float64
 }
 
 // VADConfig tunes detection. Zero values are replaced by the defaults in
@@ -542,6 +546,7 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 		activeMS := v.activeMS
 		startMS := v.startMS
 		bargeIn := v.bargeIn
+		silenceMS := v.silenceMS
 		v.Reset()
 		return Decision{
 			Kind:      DecisionStopped,
@@ -551,6 +556,7 @@ func (v *VAD) pushOpen(frame []float32, voiced bool) Decision {
 			StartMS:   startMS,
 			EndMS:     int64(v.clockMS),
 			BargeIn:   bargeIn,
+			SilenceMS: silenceMS,
 		}
 	}
 

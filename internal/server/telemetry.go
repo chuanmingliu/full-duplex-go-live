@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -193,15 +194,23 @@ func (p *telPoster) run() {
 			}
 			continue
 		}
+		reply, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 300 {
 			if p.failed.Add(n) == n {
 				p.log.Warn("telemetry: the latency console refused the events",
-					"url", p.url, "status", resp.StatusCode, "format", p.format)
+					"url", p.url, "status", resp.StatusCode, "format", p.format,
+					"reply", string(reply), "first_event", string(batch[0]))
 			}
 			continue
 		}
-		p.sent.Add(n)
+		if p.sent.Add(n) == n {
+			// Once: a console that answers 200 and keeps nothing looks exactly
+			// like one that is working, from here. What it said about the first
+			// batch is the only evidence there will be.
+			p.log.Info("telemetry: the latency console took the first events",
+				"url", p.url, "status", resp.StatusCode, "events", n, "reply", string(reply))
+		}
 	}
 }
 
@@ -214,6 +223,15 @@ func (p *telPoster) stats() map[string]any {
 		"failed":  p.failed.Load(),
 		"dropped": p.dropped.Load(),
 	}
+}
+
+// stopSilenceMS is the pause a stop was judged on: the event's own figure, or
+// the configured one from an engine that does not report it.
+func stopSilenceMS(ev live.SpeechEvent, cfg config.Config) int64 {
+	if ev.SilenceMS > 0 {
+		return ev.SilenceMS
+	}
+	return int64(cfg.VAD.MinSilenceMS)
 }
 
 // telSession turns one session's events into the console's.
@@ -280,7 +298,7 @@ func (t *telSession) observe(event any, cfg config.Config) {
 			// caller's last sound. It is latency they feel and this event's
 			// timestamp does not include, so it is stated.
 			t.emit("vad", "speech_stop", "vad.speech_stopped", "turn", turn,
-				map[string]any{"silence_ms": cfg.VAD.MinSilenceMS})
+				map[string]any{"silence_ms": stopSilenceMS(ev, cfg)})
 		}
 
 	case live.TranscriptDelta:

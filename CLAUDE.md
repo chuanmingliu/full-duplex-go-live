@@ -25,6 +25,11 @@ phone leg — Active Call, RustPBX, the GSM gateway, the carrier, both ways — 
 top and has not been measured. Until it is, treat ~900–950 ms at golive as the
 working target.
 
+The owner's latency console (on the test box, `:8768`) defines its headline
+span as `vad.speech_stopped → phone.audio_sent`: the turn judged over → first
+audio written towards the phone. That is the `audio` column here, and it does
+not include the pause. Quote both, and say which.
+
 ## Where it stands
 
 | What | Figure |
@@ -43,7 +48,19 @@ is `vad.min_silence_ms` = 380 after the last sound):
 
 So the path is: 380 pause + 0 + 450 + 94 + 293 ≈ 1217.
 
+Since those runs: golive takes the end-of-turn silence from the client's
+`turn_detection` (the call originator asks for 150 ms; the floor makes it 200),
+where it used to wait its own 380. Expected to take ~180 ms off "last sound →
+first audio" on calls; not yet measured on the box.
+
 ## What to work on, in order
+
+0. **golive's events are not in the latency console.** A snapshot of the
+   console after five answered calls held only the originator's events — no
+   `vad.*`, `asr.final`, `llm.first_token`, `tts.first_audio` or
+   `phone.audio_sent` from golive. Whether they are refused or never arrive is
+   not known; golive now logs the console's reply to its first batch
+   (`telemetry: the latency console took the first events` / `refused`).
 
 1. **Turn-taking on a real line.** On the second call the caller spoke five
    times in ten seconds before getting an answer, and one answer came ~6.6 s
@@ -95,8 +112,13 @@ runbook. Things the runbook does not say:
 - It is not reachable from a cloud shell. The owner copies the bundle over and
   runs commands; outbound calls are originated by Aria, the call originator on
   that box, which is also reachable at its public hostname.
-- `scripts/phone-brain.sh` is the whole procedure: `status`, `golive`, `bench`,
-  `net`, `log`, `llm`, `tts`, `sync`, `restore`. It needs `sudo` for docker.
+- `runner.sh` (kept in `~/golive` on the owner's Mac, not in this repo) runs
+  job files left in `~/golive/.runner/in` on the box over ssh and writes their
+  output to `.runner/out`. With it running, a session that can write that
+  folder can deploy and bench without the owner pasting anything. No sudo:
+  use `phone-brain.sh restart`, not `golive`.
+- `scripts/phone-brain.sh` is the whole procedure: `status`, `golive`, `restart`,
+  `bench`, `net`, `log`, `llm`, `tts`, `sync`, `restore`. It needs `sudo` for docker.
   golive runs under a keep-alive loop it starts; it is not a system service, so
   after a reboot run `phone-brain.sh golive` again.
 - The GSM gateway changes its SIP port when it re-registers (seen three times

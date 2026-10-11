@@ -5,6 +5,8 @@
 #                                     the PBX and gateway around it. Changes nothing.
 #   scripts/phone-brain.sh golive     stop the container on the agent port, start
 #                                     golive there, check it answers
+#   scripts/phone-brain.sh restart    replace a running golive with the build in bin/;
+#                                     needs no sudo
 #   scripts/phone-brain.sh bench      measure this box's real-provider latency
 #                                     through golive, with no phone involved
 #   scripts/phone-brain.sh net        how this box reaches the providers: its
@@ -133,6 +135,62 @@ stop_golive() {
   rm -f "$STATE.pid" "$STATE.stop"
 }
 
+# start_golive <bind>: run golive under its keep-alive loop and wait for it to
+# answer. Everything in here runs as the invoking user; none of it needs root.
+start_golive() {
+  local bind="$1" mark ok=""
+  [ -x "$BIN" ] || chmod +x bin/* 2>/dev/null
+  [ -x "$BIN" ] || { say "no binary at $BIN"; exit 1; }
+  for _ in $(seq 1 60); do find_owner || break; sleep 0.5; done
+  if find_owner; then say ":$PORT is still held by ${OWNER_COMM:-?} pid=${OWNER_PID:-?}"; exit 1; fi
+
+  printf '%s\n' "$bind" > "$STATE.bind"
+  printf '\n--- %s phone-brain: starting golive %s on %s:%s ---\n' "$(date '+%F %T')" "$(cat VERSION 2>/dev/null | cut -d' ' -f1)" "$bind" "$PORT" >> "$LOG"
+  mark=$(wc -l < "$LOG")
+  rm -f "$STATE.stop"
+  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" setsid nohup bash -c '
+    stop="$1"; shift
+    quick=0
+    while :; do
+      began=$(date +%s)
+      "$@"; code=$?
+      [ -f "$stop" ] && exit 0
+      if [ $(( $(date +%s) - began )) -lt 5 ]; then quick=$((quick + 1)); else quick=0; fi
+      if [ "$quick" -ge 5 ]; then
+        printf "\n--- %s golive keeps exiting at once (status %s); giving up ---\n" "$(date "+%F %T")" "$code"
+        exit 1
+      fi
+      printf "\n--- %s golive exited with status %s; starting it again ---\n" "$(date "+%F %T")" "$code"
+      sleep 1
+    done' keepalive "$STATE.stop" "./$BIN" -profile "$PROFILE" -env "$ENVFILE" -addr "$bind:$PORT" \
+    >> "$LOG" 2>&1 < /dev/null &
+  echo $! > "$STATE.pid"
+
+  # Up means golive itself answering: anything else that got the port back
+  # first would answer a health check too.
+  for _ in $(seq 1 40); do
+    if is_golive; then ok=1; break; fi
+    [ -d "/proc/$(cat "$STATE.pid")" ] || break
+    sleep 0.5
+  done
+  if [ -z "$ok" ]; then
+    say "golive is not answering on :$PORT. Its log:"
+    tail -n +"$((mark + 1))" "$LOG" | tail -25
+    find_owner && say "the port is held by ${OWNER_COMM:-?} pid=${OWNER_PID:-?} container=${OWNER_CONTAINER:-none}"
+    stop_golive
+    if [ -f "$STATE.container" ]; then say; say "put the old agent back with: scripts/phone-brain.sh restore"; fi
+    exit 1
+  fi
+  # Long enough for the startup warm-up to have reached the synthesizer.
+  sleep 4
+  say "golive is up on $bind:$PORT (kept running by pid $(cat "$STATE.pid"))"
+  say "/v1/pool : $(pool | cut -c1-300)"
+  say "startup  :"
+  tail -n +"$((mark + 1))" "$LOG" | grep -E 'level=(INFO|WARN|ERROR)' | grep -vE 'msg=http ' | cut -c1-240 | head -25 | sed 's/^/  /'
+  say
+  say "log      : $(pwd)/$LOG"
+}
+
 case "$CMD" in
 
 status)
@@ -191,8 +249,6 @@ status)
 
 golive)
   need_docker
-  [ -x "$BIN" ] || chmod +x bin/* 2>/dev/null
-  [ -x "$BIN" ] || { say "no binary at $BIN"; exit 1; }
   find_env || { say "no provider keys: put them in ./.env.local or ~/golive-telephony.env, or set ENVFILE"; exit 1; }
   say "provider keys from $ENVFILE"
 
@@ -217,57 +273,23 @@ golive)
   fi
   # Nothing there: golive was here before and is gone. Listen where it did.
   [ -z "$bind" ] && [ -f "$STATE.bind" ] && bind=$(cat "$STATE.bind")
-  bind="${bind:-127.0.0.1}"
-  for _ in $(seq 1 60); do find_owner || break; sleep 0.5; done
-  if find_owner; then say ":$PORT is still held by ${OWNER_COMM:-?} pid=${OWNER_PID:-?}"; exit 1; fi
+  start_golive "${bind:-127.0.0.1}"
+  say "next     : scripts/phone-brain.sh bench     (no phone needed)"
+  ;;
 
-  printf '%s\n' "$bind" > "$STATE.bind"
-  printf '\n--- %s phone-brain: starting golive %s on %s:%s ---\n' "$(date '+%F %T')" "$(cat VERSION 2>/dev/null | cut -d' ' -f1)" "$bind" "$PORT" >> "$LOG"
-  mark=$(wc -l < "$LOG")
-  rm -f "$STATE.stop"
-  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" setsid nohup bash -c '
-    stop="$1"; shift
-    quick=0
-    while :; do
-      began=$(date +%s)
-      "$@"; code=$?
-      [ -f "$stop" ] && exit 0
-      if [ $(( $(date +%s) - began )) -lt 5 ]; then quick=$((quick + 1)); else quick=0; fi
-      if [ "$quick" -ge 5 ]; then
-        printf "\n--- %s golive keeps exiting at once (status %s); giving up ---\n" "$(date "+%F %T")" "$code"
-        exit 1
-      fi
-      printf "\n--- %s golive exited with status %s; starting it again ---\n" "$(date "+%F %T")" "$code"
-      sleep 1
-    done' keepalive "$STATE.stop" "./$BIN" -profile "$PROFILE" -env "$ENVFILE" -addr "$bind:$PORT" \
-    >> "$LOG" 2>&1 < /dev/null &
-  echo $! > "$STATE.pid"
-
-  # Up means golive itself answering: anything else that got the port back
-  # first would answer a health check too.
-  ok=""
-  for _ in $(seq 1 40); do
-    if is_golive; then ok=1; break; fi
-    [ -d "/proc/$(cat "$STATE.pid")" ] || break
-    sleep 0.5
-  done
-  if [ -z "$ok" ]; then
-    say "golive is not answering on :$PORT. Its log:"
-    tail -n +"$((mark + 1))" "$LOG" | tail -25
-    find_owner && say "the port is held by ${OWNER_COMM:-?} pid=${OWNER_PID:-?} container=${OWNER_CONTAINER:-none}"
-    stop_golive
-    if [ -f "$STATE.container" ]; then say; say "put the old agent back with: scripts/phone-brain.sh restore"; fi
+restart)
+  # golive is ours, so replacing it with the build in bin/ needs no root and no
+  # docker. For a box where it already holds the port; otherwise use 'golive'.
+  SUDO=()
+  find_env || { say "no provider keys: put them in ./.env.local or ~/golive-telephony.env, or set ENVFILE"; exit 1; }
+  bind="${BIND:-}"
+  if find_owner && ! is_golive; then
+    say ":$PORT is held by ${OWNER_COMM:-something} that is not golive; use: scripts/phone-brain.sh golive"
     exit 1
   fi
-  # Long enough for the startup warm-up to have reached the synthesizer.
-  sleep 4
-  say "golive is up on $bind:$PORT (kept running by pid $(cat "$STATE.pid"))"
-  say "/v1/pool : $(pool | cut -c1-300)"
-  say "startup  :"
-  tail -n +"$((mark + 1))" "$LOG" | grep -E 'level=(INFO|WARN|ERROR)' | grep -vE 'msg=http ' | cut -c1-240 | head -25 | sed 's/^/  /'
-  say
-  say "log      : $(pwd)/$LOG"
-  say "next     : scripts/phone-brain.sh bench     (no phone needed)"
+  [ -z "$bind" ] && [ -f "$STATE.bind" ] && bind=$(cat "$STATE.bind")
+  stop_golive
+  start_golive "${bind:-127.0.0.1}"
   ;;
 
 bench)
@@ -277,8 +299,13 @@ bench)
   # is a pause worth speculating in.
   SPEAK="${SPEAK:-你好，今天天气怎么样？|帮我查一下明天上午去上海的航班有哪些。|你能给我讲一个简短的笑话吗？|我想了解一下你们周末的营业时间。|好的，谢谢。}"
   mark=$(wc -l < "$LOG" 2>/dev/null || echo 0)
-  "./$BENCH" -a "golive=ws://127.0.0.1:$PORT/v1/live" -speak "$SPEAK" -rate 16000 \
-    -runs "${RUNS:-15}" -warmup 2 -v -md bench-phone.md -json bench-phone.json
+  # The end-of-turn silence a phone call gets: the call originator asks for
+  # 150 ms and realtime.min_silence_floor_ms makes it 200. SILENCE=380 is the
+  # server's own; SILENCE=0 leaves it to the server.
+  silence="${SILENCE:-200}"
+  say "· end-of-turn silence asked for: ${silence} ms"
+  "./$BENCH" -a "golive=ws://127.0.0.1:$PORT/v1/live" -speak "$SPEAK" -rate 16000 -min-silence-ms "$silence" \
+    ${KEEP_CLIPS:+-keep-clips "$KEEP_CLIPS"} -runs "${RUNS:-15}" -warmup 2 -v -md bench-phone.md -json bench-phone.json
   say
   say "== the same turns, stage by stage (from $LOG)"
   tail -n +"$((mark + 1))" "$LOG" > "$STATE.benchlog"
@@ -373,7 +400,7 @@ restore)
   ;;
 
 *)
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
   ;;
 esac

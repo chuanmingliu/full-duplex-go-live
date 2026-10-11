@@ -108,6 +108,11 @@ type realtimeState struct {
 	held   atomic.Bool
 	opened atomic.Bool
 	timer  *time.Timer
+
+	// silenceMS is the end-of-turn silence taken from the client's turn
+	// detection, zero when the server's own is in use. Written once, before
+	// the session starts.
+	silenceMS int
 }
 
 func newRealtimeState(opts RealtimeOptions) *realtimeState {
@@ -174,7 +179,7 @@ func (rt *realtimeState) translate(event any) []map[string]any {
 	case live.SessionStartedEvent:
 		return []map[string]any{{
 			"type":    "session.updated",
-			"session": realtimeSession(ev.Session),
+			"session": withTurnDetection(realtimeSession(ev.Session), rt.silenceMS),
 		}}
 
 	case live.SpeechEvent:
@@ -353,6 +358,15 @@ func (rt *realtimeState) finish(status string) []map[string]any {
 	}
 }
 
+// withTurnDetection reports the end-of-turn silence actually in force, which
+// is the client's request only where the floor allowed it.
+func withTurnDetection(session map[string]any, silenceMS int) map[string]any {
+	if silenceMS > 0 {
+		session["turn_detection"] = map[string]any{"type": "server_vad", "silence_duration_ms": silenceMS}
+	}
+	return session
+}
+
 // realtimeSession is the session object in the shape a Realtime client expects,
 // in both its older flat form and the newer nested one.
 func realtimeSession(c live.SessionConfig) map[string]any {
@@ -405,9 +419,13 @@ type realtimeSessionUpdate struct {
 		OutputAudioFormat string            `json:"output_audio_format"`
 		Tools             []json.RawMessage `json:"tools"`
 		ToolChoice        any               `json:"tool_choice"`
-		Audio             *struct {
+		// TurnDetection is where the beta dialect puts it; the GA dialect
+		// moved it under audio.input. Either is read.
+		TurnDetection *realtimeTurnDetection `json:"turn_detection"`
+		Audio         *struct {
 			Input *struct {
-				Format *live.AudioFormat `json:"format"`
+				Format        *live.AudioFormat      `json:"format"`
+				TurnDetection *realtimeTurnDetection `json:"turn_detection"`
 			} `json:"input"`
 			Output *struct {
 				Format *live.AudioFormat `json:"format"`
@@ -415,6 +433,14 @@ type realtimeSessionUpdate struct {
 			} `json:"output"`
 		} `json:"audio"`
 	} `json:"session"`
+}
+
+// realtimeTurnDetection is the part of a client's turn detection this server
+// can act on. The threshold is a probability from a model this server does not
+// run, and has no equivalent here.
+type realtimeTurnDetection struct {
+	Type              string `json:"type"`
+	SilenceDurationMS int    `json:"silence_duration_ms"`
 }
 
 func (s *Session) realtimeError(code, message, eventID string) {
@@ -573,6 +599,31 @@ func (s *Session) startRealtime(ctx context.Context, p *peer, ev *realtimeSessio
 			}
 			if u.Audio.Output != nil && u.Audio.Output.Voice != "" {
 				voice = u.Audio.Output.Voice
+			}
+		}
+		td := u.TurnDetection
+		if u.Audio != nil && u.Audio.Input != nil && u.Audio.Input.TurnDetection != nil {
+			td = u.Audio.Input.TurnDetection
+		}
+		if td != nil && td.SilenceDurationMS > 0 {
+			rc := s.cfg.Realtime
+			want := td.SilenceDurationMS
+			switch {
+			case !rc.HonorTurnDetection:
+				s.log.Info("realtime: the client asked for an end-of-turn silence; keeping the server's",
+					"asked_ms", want, "using_ms", s.cfg.VAD.MinSilenceMS)
+			default:
+				use := want
+				if use < rc.MinSilenceFloorMS {
+					use = rc.MinSilenceFloorMS
+				}
+				if use > maxSessionSilenceMS {
+					use = maxSessionSilenceMS
+				}
+				start.Session.Golive.MinSilenceMS = use
+				s.rt.silenceMS = use
+				s.log.Info("realtime: end-of-turn silence taken from the client's turn detection",
+					"asked_ms", want, "using_ms", use, "floor_ms", rc.MinSilenceFloorMS)
 			}
 		}
 		if len(u.Tools) > 0 {

@@ -89,7 +89,9 @@
     "sample_rate": 16000,
     "dialect": "beta",
     "hold_for_opening": true,
-    "hold_timeout_seconds": 45
+    "hold_timeout_seconds": 45,
+    "honor_turn_detection": true,
+    "min_silence_floor_ms": 200
   },
   "telemetry_url": "http://127.0.0.1:8768/ingest"
 }
