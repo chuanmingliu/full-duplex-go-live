@@ -131,7 +131,12 @@ func (p *telPoster) post(pt telPoint, callID, sessionID string, t0 time.Time) {
 			// to one — a browser, a test — has nothing to report under it.
 			return
 		}
-		extra["agent"] = "golive"
+		// The console's contract fixes which keys an event's extra may carry,
+		// and refuses the whole batch for one it does not know: every event
+		// golive sent was being turned away for saying which agent it came
+		// from. What the console does take from every producer is how far down
+		// the path the event was observed.
+		extra = map[string]any{"coverage": "application"}
 		var turn any
 		if pt.turn > 0 {
 			turn = pt.turn

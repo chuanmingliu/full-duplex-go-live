@@ -493,7 +493,7 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 	console := httptest.NewServer(http.HandlerFunc(sink.handler))
 	defer console.Close()
 
-	ts, _, cfg := gatewayServer(t, func(c *config.Config) { c.TelemetryURL = console.URL + "/ingest" })
+	ts, _, _ := gatewayServer(t, func(c *config.Config) { c.TelemetryURL = console.URL + "/ingest" })
 	// The originator names the call on the URL it hands the gateway.
 	const call = "out-mv2fd0qg-kbyy"
 	c := dialRealtime(t, ts, "/v1/realtime?call="+call)
@@ -534,20 +534,27 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 		switch point {
 		case "vad.speech_stopped":
 			stopNs = ns
-			// The pause this session's turns end on is the one its client
-			// asked for in turn_detection, not the server's own — and the
-			// figure reported has to be the one actually waited through.
-			const asked = 500
-			if cfg.VAD.MinSilenceMS == asked {
-				t.Fatalf("the server's own silence is also %d ms; this proves nothing", asked)
-			}
-			if got, _ := ev["extra"].(map[string]any)["silence_ms"].(float64); int(got) != asked {
-				t.Errorf("speech_stopped reports silence_ms=%v; the pause it waited through is %d ms", got, asked)
-			}
 		case "phone.audio_sent":
 			sentNs = ns
 		}
 	}
+	// The console refuses a whole batch for one key in extra it does not know.
+	// These are the ones it was found to take; "agent", "protocol", "barge_in"
+	// and "silence_ms" each cost golive every event it sent.
+	accepted := map[string]bool{"coverage": true, "endpoint": true, "port": true, "revision": true}
+	sink.mu.Lock()
+	for _, ev := range sink.evs {
+		extra, _ := ev["extra"].(map[string]any)
+		for k := range extra {
+			if !accepted[k] {
+				t.Errorf("%v carries extra[%q]; the console turns the batch away for it", ev["point"], k)
+			}
+		}
+		if extra["coverage"] != "application" {
+			t.Errorf("%v does not say where on the path it was observed: extra=%v", ev["point"], extra)
+		}
+	}
+	sink.mu.Unlock()
 	if e2e := (sentNs - stopNs) / 1e6; e2e < 0 || e2e > 3000 {
 		t.Errorf("speech stopped to audio sent comes to %d ms on the monotonic clock", e2e)
 	}
