@@ -65,9 +65,10 @@ END {
   if (!n) { print "no answered turns in this log"; exit }
   printf "\n%d turns, %d speculative.\n", n, s
   p50 = median(b, n)
-  printf "last sound → first audio:  p50 %d   p90 %d   max %d ms\n", p50, pct(b, n, 0.9), b[n]
+  over = 0; for (i = 1; i <= n; i++) if (b[i] > 1200) over++
+  printf "last sound → first audio:  p50 %d   p90 %d   p95 %d   max %d ms;  %d of %d over 1200\n", p50, pct(b, n, 0.9), pct(b, n, 0.95), b[n], over, n
   ma = median(a, n)
-  printf "turn judged over → first audio (what the latency console calls the reply):  p50 %d   p90 %d ms;  pause p50 %d ms\n", ma, pct(a, n, 0.9), median(P, n)
+  printf "turn judged over → first audio (what the latency console calls the reply):  p50 %d   p90 %d   p95 %d ms;  pause p50 %d ms\n", ma, pct(a, n, 0.9), pct(a, n, 0.95), median(P, n)
   printf "medians:  asr final %d   llm first token %d", median(A, n), median(L, n)
   if (m) printf " (started %d, ttft %d)", median(S, m), median(F, m)
   printf "   wait for a clause %d   tts first audio %d ms\n", median(G, n), median(T, n)

@@ -442,6 +442,21 @@ type realtimeSessionUpdate struct {
 type realtimeTurnDetection struct {
 	Type              string `json:"type"`
 	SilenceDurationMS int    `json:"silence_duration_ms"`
+	// The same setting as some gateways write it. The phone gateway on the
+	// test box sends {"silenceDurationMs":150,"prefixPaddingMs":80,…}, which
+	// read as no setting at all until its session.update was logged.
+	SilenceDurationMsCamel int `json:"silenceDurationMs"`
+}
+
+// silenceMS is the end-of-turn silence asked for, under either spelling.
+func (t *realtimeTurnDetection) silenceMS() int {
+	if t == nil {
+		return 0
+	}
+	if t.SilenceDurationMS > 0 {
+		return t.SilenceDurationMS
+	}
+	return t.SilenceDurationMsCamel
 }
 
 // sessionUpdateShape describes a session.update without its content: which
@@ -645,9 +660,9 @@ func (s *Session) startRealtime(ctx context.Context, p *peer, ev *realtimeSessio
 		if u.Audio != nil && u.Audio.Input != nil && u.Audio.Input.TurnDetection != nil {
 			td = u.Audio.Input.TurnDetection
 		}
-		if td != nil && td.SilenceDurationMS > 0 {
+		if td.silenceMS() > 0 {
 			rc := s.cfg.Realtime
-			want := td.SilenceDurationMS
+			want := td.silenceMS()
 			switch {
 			case !rc.HonorTurnDetection:
 				s.log.Info("realtime: the client asked for an end-of-turn silence; keeping the server's",

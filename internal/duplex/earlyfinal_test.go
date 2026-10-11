@@ -23,6 +23,10 @@ type trailingASR struct {
 	partialLag time.Duration
 	finalDelay time.Duration
 
+	// fullStop closes every final with "。", as a recognizer does with whatever
+	// audio it is told has ended.
+	fullStop bool
+
 	mu     sync.Mutex
 	offset int
 	opens  int
@@ -117,6 +121,9 @@ func (s *trailingStream) CloseSend() error {
 	s.asr.mu.Lock()
 	s.asr.offset = s.from + len([]rune(text))
 	s.asr.mu.Unlock()
+	if s.asr.fullStop && text != "" {
+		text += "。"
+	}
 	time.AfterFunc(s.asr.finalDelay, func() { s.send(provider.ASRResult{Text: text, Final: true}, true) })
 	return nil
 }
@@ -387,5 +394,78 @@ func TestNoGuessIsMadeOnTrailingWordsWhileTheFinalIsOnItsWay(t *testing.T) {
 		if normalizeForCompare(h) != phrase {
 			t.Errorf("a guess was made on %q, with the final for the whole sentence already asked for", h)
 		}
+	}
+}
+
+// A recognizer told the audio has ended puts a full stop on whatever it was
+// given. Asked in a pause, that is punctuation by default, not a judgement —
+// and read as one it made "就是。" a finished turn: on a real call it was
+// answered, as were "呃。" and "我想问你一下啊。".
+func TestTheFullStopOnAnEarlyFinalDoesNotEndTheSentence(t *testing.T) {
+	const phrase = "就是那个保险多少钱"
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.SemanticEndpointing = true
+	cfg.opts.Cfg.Duplex.PatientSilenceMS = 900
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR(phrase)
+	asr.fullStop = true
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+
+	speak(e, rate, 340)  // 就是
+	pause(e, rate, 550)  // longer than the 400 ms that ends a finished turn
+	speak(e, rate, 1100) // 那个保险多少钱
+	pause(e, rate, 1200)
+
+	waitFor(t, "the turn to be answered", 3*time.Second, func() bool {
+		return c.count(live.ServerDelegationCreated) >= 1
+	})
+	time.Sleep(200 * time.Millisecond)
+	for _, h := range c.speculativeHints() {
+		if normalizeForCompare(h) == "就是" {
+			t.Errorf("an answer was begun on %q", h)
+		}
+	}
+	if n := c.count(live.ExtSpeechStopped); n != 1 {
+		t.Fatalf("the caller's one sentence was taken as %d turns", n)
+	}
+	ds := c.delegations()
+	if len(ds) != 1 || normalizeForCompare(ds[0].Delegation.Transcript) != phrase {
+		t.Fatalf("turns answered: %+v; want the one sentence", ds)
+	}
+}
+
+// Talking over the assistant: whether that is an interruption is decided on
+// words, and on a real call the words were a hypothesis 340 ms behind the
+// audio — three syllables, a stop, and the turn had all but closed before
+// anything said the caller had spoken. The final asked for early is those
+// words, in time to give the floor up and begin the answer inside the pause.
+func TestAnInterruptionIsJudgedOnAFinalAskedForEarly(t *testing.T) {
+	const phrase = "你先停一停"
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 900
+	cfg.opts.Greeting = "您好，我是车险管家小翠儿，看到您的爱车快到报价期了给您来电，想跟您确认几件事情"
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR(phrase)
+	asr.partialLag = 2 * time.Second // nothing arrives before the pause is over
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+	e.Greet()
+	waitFor(t, "the greeting to hold the floor", 5*time.Second, func() bool { return c.audioMS() > 200 })
+
+	speak(e, rate, 800)
+	pause(e, rate, 330) // inside the 400 ms that ends the turn
+	if got := c.speculativeHints(); len(got) == 0 || normalizeForCompare(got[len(got)-1]) != phrase {
+		t.Fatalf("330 ms after the caller stopped, no answer had been begun on what they said; guesses: %q", got)
+	}
+	if n := c.count(live.ExtSpeechStopped); n != 0 {
+		t.Fatalf("the turn had already closed; this proves nothing about the pause")
+	}
+	pause(e, rate, 600)
+	waitFor(t, "the turn to be answered", 3*time.Second, func() bool {
+		return c.count(live.ServerDelegationCreated) == 1
+	})
+	if c.count(live.ServerError) != 0 {
+		t.Errorf("errors: %v", c.errorCodes())
 	}
 }

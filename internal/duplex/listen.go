@@ -382,7 +382,12 @@ func (e *Engine) maybeEarlyFinal() {
 	if d.EarlyFinalMS <= 0 || !e.opts.Speculative || e.deps.ASR == nil {
 		return
 	}
-	if !e.userOpen || e.muted || e.hold != nil || e.earlyRun != nil {
+	// Not held back while an interruption is being weighed. That weighing
+	// waits on words, and on a real call it waited for a hypothesis that
+	// trailed the audio by 340 ms: the caller said three syllables over the
+	// assistant, stopped, and the turn had all but closed before anything
+	// arrived to say they had spoken. The final is those words, sooner.
+	if !e.userOpen || e.muted || e.earlyRun != nil {
 		return
 	}
 	run := e.asrRun
@@ -473,6 +478,15 @@ func (e *Engine) onEarlyFinal(run *asrRun, text string) {
 		"pause_ms", int(e.vad.TrailingSilenceMS()))
 	cur.prefix = text
 	full := joinTranscript(text, cur.raw)
+	// An interruption being weighed is weighed on this, as on any hypothesis:
+	// words that are not an acknowledgement give the floor up now. Not as a
+	// final, though — the caller may not have finished — and not when there
+	// are no words: silence so far settles nothing while the utterance is
+	// still open.
+	if e.hold != nil && full != "" && e.judgeHold(full, false) {
+		e.noteWords(cur, full)
+		return
+	}
 	if e.hold == nil {
 		e.emitInputTranscript(cur, full, false)
 	}
@@ -507,7 +521,7 @@ func (e *Engine) speculateOnFinal(text string) {
 		e.specWhy = "the words so far are an acknowledgement, not a question"
 		return
 	}
-	class := e.classify(text)
+	class := e.classify(withoutForcedStop(text))
 	if class == endpoint.Incomplete {
 		e.specWhy = "the words so far read as an unfinished thought"
 		return
@@ -548,6 +562,26 @@ func (e *Engine) closeUtteranceASR(d audio.Decision) {
 	e.log.Debug("asr: the turn closed on words already final", "run", run.id, "text", run.prefix)
 	e.conclude(run, run.prefix)
 	e.drainDeferred()
+}
+
+// pauseWords is the utterance so far as it should be read for whether the
+// speaker has finished.
+//
+// A recognizer told that the audio has ended puts a full stop on whatever it
+// was given. On the final for a whole turn that is its opinion and it had the
+// audio; on a final asked for in a pause it is punctuation by default, and it
+// was being read as the recognizer saying the sentence was over — on a real
+// call "就是。", "呃。" and "我想问你一下啊。" were each taken as a finished turn
+// and answered. A question mark is still evidence; the full stop is not.
+func pauseWords(run *asrRun) string {
+	if run.continuation && run.raw == "" {
+		return withoutForcedStop(run.lastText)
+	}
+	return run.lastText
+}
+
+func withoutForcedStop(text string) string {
+	return strings.TrimRight(strings.TrimSpace(text), "。.")
 }
 
 // joinTranscript puts what earlier recognitions of an utterance settled on in
@@ -691,7 +725,7 @@ func (e *Engine) applyPatience() {
 		return
 	}
 	want := 0
-	if run.lastText != "" && e.classify(run.lastText) == endpoint.Incomplete {
+	if run.lastText != "" && e.classify(pauseWords(run)) == endpoint.Incomplete {
 		want = d.PatientSilenceMS
 	}
 	if want == e.patience {
@@ -865,7 +899,7 @@ func (e *Engine) maybeSpeculate() {
 	}
 
 	d := e.opts.Cfg.Duplex
-	class := e.classify(run.lastText)
+	class := e.classify(pauseWords(run))
 	if class == endpoint.Incomplete {
 		// "我想问一下那个" is not a question yet. Guessing on it would start an
 		// answer to half a sentence; the turn will be taken at the end of the

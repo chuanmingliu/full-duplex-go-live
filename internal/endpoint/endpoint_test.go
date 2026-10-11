@@ -34,6 +34,10 @@ func TestClassify(t *testing.T) {
 
 		// Trailing off.
 		{"我想问一下那个", Incomplete},
+		// Heard on a call, and answered as though it were the question.
+		{"诶，我想问你一下啊", Incomplete},
+		{"我想问您一下", Incomplete},
+		{"就是", Incomplete},
 		{"帮我查一下明天的天气然后", Incomplete},
 		{"我昨天买的那个保险但是", Incomplete},
 		{"请问", Incomplete},

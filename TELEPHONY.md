@@ -65,13 +65,17 @@ golive takes it (`realtime.honor_turn_detection`), never going below
 `realtime.min_silence_floor_ms` (200): its detector judges frames by energy,
 and the stops inside a word are silence at that scale.
 
-On the test box the phone gateway's `session.update` has not been seen to carry
-one, so calls run on the profile's figure. Each session logs what it was sent,
-without the content, and what it did about it:
+The phone gateway on the test box does ask — `silenceDurationMs: 150`, spelled
+in camelCase, which golive reads as well — but the telephony profile sets
+`honor_turn_detection: false` and keeps its own 380. That figure was chosen for
+a speech model's detector; 150 (200 after the floor) on this one answers a
+caller's every hesitation, and since the early final below it would buy no
+latency. Each session logs what it was sent, without the content, and what it
+did about it:
 
 ```
-realtime: session.update bytes=31819 session_keys=[...] turn_detection=none instructions_chars=... tools=...
-realtime: end-of-turn silence taken from the client's turn detection asked_ms=150 using_ms=200 floor_ms=200
+realtime: session.update bytes=554 session_keys=[...] turn_detection={"silenceDurationMs":150,...} ...
+realtime: the client asked for an end-of-turn silence; keeping the server's asked_ms=150 using_ms=380
 ```
 
 The pause is no longer what a caller waits through. `duplex.early_final_ms`
@@ -93,9 +97,12 @@ off. Each `turn: response latency` line carries the pause that turn ended on
 ## The chat model's first token
 
 The largest term, and not one number: the same request seconds apart has
-measured anywhere from 170 to 880 ms. `llm_hedge: 2` sends each completion
-twice and uses whichever copy speaks first (`llm hedge: a copy answered first`
-at debug level). It costs the losing copy's tokens. `llm_hedge_after_ms` delays
+measured anywhere from 170 to 880 ms, and nearly half of them over 600.
+`llm_hedge: 4` sends each completion four times and uses whichever copy
+speaks first (`llm hedge: a copy answered first`
+at debug level). It costs the losing copies' input tokens (they are cancelled at the winner's
+first word). Two copies left about one turn in eight over 1200 ms on a call;
+the p95 target needs the tail gone. `llm_hedge_after_ms` delays
 the second copy, to spend it only on slow turns; 0 sends both at once.
 
 ## A line that is never quiet, and a line that returns the assistant's voice

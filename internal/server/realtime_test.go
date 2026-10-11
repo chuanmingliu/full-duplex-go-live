@@ -779,6 +779,12 @@ func TestRealtimeTurnDetectionSetsTheEndOfTurnSilence(t *testing.T) {
 			echo:   `"silence_duration_ms":200`,
 		},
 		{
+			name:   "spelled the way the phone gateway spells it",
+			update: `{"type":"session.update","session":{"turn_detection":{"createResponse":true,"interruptResponse":true,"prefixPaddingMs":80,"silenceDurationMs":260,"threshold":0.5,"type":"server_vad"}}}`,
+			want:   260,
+			echo:   `"silence_duration_ms":260`,
+		},
+		{
 			name:   "the newer session shape",
 			update: `{"type":"session.update","session":{"type":"realtime","audio":{"input":{"turn_detection":{"type":"server_vad","silence_duration_ms":500}}}}}`,
 			want:   500,
