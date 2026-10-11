@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist clean tidy
+.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist bundle clean tidy
 
 all: vet test build
 
@@ -95,5 +95,24 @@ dist:
 	done
 	@ls -lh $(BIN)
 
+## bundle: everything a phone-line box with no Go needs, in one archive: linux
+## binaries, the telephony profile, the scripts. Unpack it there and run
+## scripts/phone-brain.sh golive. See TELEPHONY.md.
+BUNDLE := dist/golive-telephony
+bundle:
+	@rm -rf $(BUNDLE) && mkdir -p $(BUNDLE)/bin $(BUNDLE)/configs $(BUNDLE)/scripts
+	@for c in golive golivebench golivectl llmprobe ttsprobe; do \
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" \
+			-o $(BUNDLE)/bin/$$c-linux-amd64 ./cmd/$$c || exit 1; \
+	done
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" \
+		-o $(BUNDLE)/bin/golive-linux-arm64 ./cmd/golive
+	@cp configs/*.json configs/sim.env $(BUNDLE)/configs/
+	@cp scripts/*.sh $(BUNDLE)/scripts/
+	@cp start.sh TELEPHONY.md .env.example $(BUNDLE)/
+	@echo "$(COMMIT) $$(date -u +%FT%TZ) $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" > $(BUNDLE)/VERSION
+	@tar -C dist -czf dist/golive-telephony.tar.gz golive-telephony
+	@echo "dist/golive-telephony.tar.gz  $$(cat $(BUNDLE)/VERSION)"
+
 clean:
-	rm -rf $(BIN) *.wav golive.log bench.md bench.json bench-sim.md bench-sim.json
+	rm -rf $(BIN) dist *.wav golive.log bench.md bench.json bench-sim.md bench-sim.json
