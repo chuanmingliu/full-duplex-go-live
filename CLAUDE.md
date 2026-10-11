@@ -71,10 +71,12 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 21:51 | f374c41, same prompt, two chat-model accounts, 8 minutes | 52 | 882 | 1354 (**p95 1097**) | 2 |
 | 10-11 22:21 | f374c41 again, 7 minutes | 41 | 933 | 2674 (p95 1344) | 5 |
 | | **both calls on f374c41** | **93** | **900** | 2674 (**p95 1336**, p90 1140) | **7** |
+| 10-11 23:08 | 4b029b3, same prompt, 7 minutes | 37 | 841 | 4603 (**p95 1058**, p90 982) | 1 |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
 1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
-p95 717; 22:21 p50 553, p95 964; both on f374c41 p50 518, p90 760, p95 956.
+p95 717; 22:21 p50 553, p95 964; both on f374c41 p50 518, p90 760, p95 956;
+23:08 p50 461, p90 602, p95 678.
 
 The 20:18 call was the first with enough turns for a p95 that means something:
 1266 ms, 66 over. Of its five turns over 1200, three had the synthesizer's
@@ -119,8 +121,24 @@ on f374c41.** The second call's five had two causes:
 Fixed in c9a0738 and the commit after it: short turns are begun on their early
 final; opening clauses are remembered (`phrase_cache_learn_chars`); a second
 synthesis connection is asked when the first is slow (`tts_hedge_after_ms`).
-See below for what the last of these is and is not good for. **No call yet on
-that build.**
+See below for what the last of these is and is not good for.
+
+**The 23:08 call on 4b029b3: p95 1058 on 37 turns, one over.** All 37 turns
+had an answer prepared (none "answered without speculating"); four ordinary
+turns opened from the phrase cache ("好的，" twice, "您说，我听着。", "您别急，")
+and were among the fastest of the call. The one slow turn was 4603 ms: the
+synthesizer stalled for four seconds on both connections — the second, asked
+after 260 ms, had nothing for 3.7 s and both spoke at the same moment. On the
+segment after it the first connection stalled again and the second won (611 ms
+against over 1.4 s), the only time it has. That is a stall of three to eight
+seconds once in each of three runs (22:26, the 22:44 probe, 23:09). 37 turns is
+too few to call the goal met; pool further calls on this build.
+
+A five-minute probe afterwards (40 turns paced like a call, with a TLS
+handshake a second to the synthesizer's host and to the chat model's) saw no
+stall: worst first audio 624 ms, every handshake under 160 ms. So whether a
+stall is the path to the vendor or the vendor is still not known; rerun it
+(`.runner` job 063 is the recipe) until one is caught.
 
 On fewer than ~40 turns p95 is the worst turn or the one before it; pool calls
 made on one build.
@@ -250,6 +268,14 @@ made on one build.
 - **Dialling from the box**: `POST /api/outbound/dial` needs `to`; the locked
   number is `ALLOWED_CALLEE` in the originator's env file on the box. A job can
   read it there and dial without it ever being printed. Never copy it out.
+  `scripts/phone-brain.sh call` does exactly that, with the instructions and
+  opening line of the last answered call, which golive keeps in
+  `~/golive-last-call.json` on the box (`last_call_file`, mode 600, written
+  when a call that brought instructions is answered). So after one dial from
+  the page, the owner's prompt can be redialled from the box: the owner writes
+  "call" in the session and a runner job runs it. `call show` says what is
+  kept. The originator's own source on the box is root-owned and not readable;
+  a button inside it is not something a session can add.
 - **The box reaches its providers through a VPN client's tunnel** (names
   resolve to 198.18.x.x; TCP connects in 1 ms because the client terminates it
   locally) and over Wi-Fi. Domestic traffic is sent on directly — TLS to the
@@ -272,8 +298,9 @@ made on one build.
 
 ## What to work on, in order
 
-1. **Calls on the build after c9a0738**, dialled by the owner from the page.
-   Pool them with each other, not with f374c41. In the log, look for `speak:
+1. **Calls on 4b029b3 and later**, dialled by the owner from the page or by
+   `phone-brain.sh call` when the owner asks for one. Pool them with each
+   other (23:08: 37 turns, 1 over), not with f374c41. In the log, look for `speak:
    segment played from the phrase cache` on ordinary turns, `tts hedge: a copy
    produced audio first copy=2` (the second connection winning — it never has
    yet), and `think: answered without speculating` (should be gone for short

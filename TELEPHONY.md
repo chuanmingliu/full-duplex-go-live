@@ -126,6 +126,26 @@ spends the ringing on it: a one-token request with the session's instructions
 when the session opens and again as the opening line starts
 (`think: prefix warmed reason=...`).
 
+## Placing the same call again, from the box
+
+The prompt for a call is written in the originator's web page and kept in that
+browser, so a call placed from anywhere else carries none of it. golive keeps
+what the last answered call was given — its instructions and its opening line
+— in a file only its own user can read (`last_call_file`; `phone-brain.sh`
+sets it to `~/golive-last-call.json`), whenever a call that brought
+instructions is answered. Then:
+
+```bash
+scripts/phone-brain.sh call show   # what is kept: when, how long, a hash. Not the words.
+scripts/phone-brain.sh call        # dial it: same instructions, same opening line
+```
+
+`call` reads the one number the originator allows from the originator's env
+file and posts the dial to it locally; neither the number nor the prompt is
+printed. Dial once from the page after changing the prompt, and that is what
+`call` places from then on. `instructions_sha` on the `realtime:
+session.update` log line says whether two calls were given the same prompt.
+
 ## The synthesizer's first audio
 
 About 180 ms at the median and over 300 one turn in ten, and on an answer's

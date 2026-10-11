@@ -2,10 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -114,6 +117,11 @@ type realtimeState struct {
 	// detection, zero when the server's own is in use. Written once, before
 	// the session starts.
 	silenceMS int
+
+	// instructions and voice are what the client's session.update asked for,
+	// as it asked. Written once, before the session starts.
+	instructions string
+	voice        string
 }
 
 func newRealtimeState(opts RealtimeOptions) *realtimeState {
@@ -522,6 +530,7 @@ func (s *Session) handleRealtimeEvent(ctx context.Context, p *peer, data []byte)
 		keys, turnDetection := sessionUpdateShape(data)
 		s.log.Info("realtime: session.update", "bytes", len(data), "session_keys", keys,
 			"turn_detection", turnDetection, "instructions_chars", len([]rune(ev.Session.Instructions)),
+			"instructions_sha", shortSHA(ev.Session.Instructions),
 			"tools", len(ev.Session.Tools))
 		s.mu.Lock()
 		started, current := s.started, s.config
@@ -632,6 +641,7 @@ func (s *Session) startRealtime(ctx context.Context, p *peer, ev *realtimeSessio
 	if ev != nil {
 		u := ev.Session
 		start.Session.Instructions = u.Instructions
+		s.rt.instructions = u.Instructions
 		voice = u.Voice
 		switch strings.ToLower(u.InputAudioFormat) {
 		case "g711_ulaw":
@@ -688,6 +698,7 @@ func (s *Session) startRealtime(ctx context.Context, p *peer, ev *realtimeSessio
 			}
 		}
 	}
+	s.rt.voice = voice
 	start.Session.Audio = &live.AudioConfig{
 		Format: &format,
 		Output: &live.OutputAudio{Voice: voice},
@@ -753,6 +764,59 @@ func (s *Session) Open(greeting string) bool {
 	}
 	s.withEngine(func(e *duplex.Engine) { e.Say(greeting) })
 	return true
+}
+
+// lastCall is a phone call as it was asked for: enough to ask for it again.
+type lastCall struct {
+	SavedAt      string `json:"saved_at"`
+	Call         string `json:"call,omitempty"`
+	Instructions string `json:"instructions"`
+	Greeting     string `json:"greeting"`
+	Voice        string `json:"voice,omitempty"`
+	SHA          string `json:"instructions_sha"`
+}
+
+// shortSHA names a text without saying it: enough to tell whether two calls
+// were given the same instructions.
+func shortSHA(text string) string {
+	if text == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:6])
+}
+
+// keepLastCall writes down what the call just answered was asked to be, when
+// the server has been given somewhere to keep it (last_call_file). A call with
+// no instructions of its own is not kept: it would replace a prompt worth
+// redialling with nothing.
+func (s *Server) keepLastCall(sess *Session, greeting, callID string) {
+	path := s.cfg.LastCallFile
+	if path == "" || sess == nil || sess.rt == nil || sess.rt.instructions == "" {
+		return
+	}
+	rec := lastCall{
+		SavedAt:      time.Now().Format(time.RFC3339),
+		Call:         callID,
+		Instructions: sess.rt.instructions,
+		Greeting:     greeting,
+		Voice:        sess.rt.voice,
+		SHA:          shortSHA(sess.rt.instructions),
+	}
+	data, err := json.Marshal(rec)
+	if err == nil {
+		tmp := path + ".tmp"
+		if err = os.WriteFile(tmp, data, 0o600); err == nil {
+			err = os.Rename(tmp, path)
+		}
+	}
+	if err != nil {
+		s.log.Warn("realtime: could not keep this call's prompt for redialling", "err", err)
+		return
+	}
+	s.log.Info("realtime: kept this call's prompt for redialling",
+		"instructions_chars", len([]rune(rec.Instructions)), "instructions_sha", rec.SHA,
+		"greeting_chars", len([]rune(greeting)))
 }
 
 // CallID is the telephone call a Realtime session was opened for, if its
@@ -919,15 +983,18 @@ func (s *Server) handleOpening(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	kicked := []string{}
+	var opened *Session
 	for _, sess := range sessions {
 		if sess.Open(greeting) {
 			// Named as the originator knows it, when it gave the call a name.
 			kicked = append(kicked, firstNonEmpty(sess.CallID(), sess.ID()))
+			opened = sess
 		}
 	}
 	if len(kicked) > 0 {
 		s.log.Info("realtime: call answered; session opened",
 			"call", callID, "sessions", kicked, "greeting", greeting != "")
+		s.keepLastCall(opened, greeting, callID)
 	} else {
 		s.log.Debug("realtime: asked to open a call with no session waiting", "call", callID)
 	}

@@ -19,6 +19,10 @@
 #                                     -try 'label|base URL|model|KEY_ENV'
 #   scripts/phone-brain.sh tts        the synthesizer's time to first audio, on its
 #                                     standard and its bidirectional endpoint
+#   scripts/phone-brain.sh call       place the last answered call again: the same
+#                                     instructions and opening line, to the one
+#                                     number the originator allows. `call show`
+#                                     says what is kept without dialling.
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -30,6 +34,10 @@
 #   ENVFILE=…       provider keys; looked for in the usual places otherwise
 #   BIND=…          listen address; defaults to what the previous agent used
 #   PROFILE=…       golive profile; configs/telephony.json otherwise
+#   LAST_CALL=…     where golive keeps the last answered call's instructions
+#                   and opening line (~/golive-last-call.json), for `call`
+#   ARIA_ENV=…      the originator's env file, read for the number it allows
+#                   (~/aria/.env); ARIA_URL=… its address (http://127.0.0.1:3000)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -37,6 +45,7 @@ PORT="${PORT:-8765}"
 STATE=".phone-brain"
 LOG="${LOGFILE:-golive-telephony.log}"
 PROFILE="${PROFILE:-configs/telephony.json}"
+LAST_CALL="${LAST_CALL:-$HOME/golive-last-call.json}"
 CMD="${1:-status}"
 
 case "$(uname -m)" in
@@ -148,7 +157,7 @@ start_golive() {
   printf '\n--- %s phone-brain: starting golive %s on %s:%s ---\n' "$(date '+%F %T')" "$(cat VERSION 2>/dev/null | cut -d' ' -f1)" "$bind" "$PORT" >> "$LOG"
   mark=$(wc -l < "$LOG")
   rm -f "$STATE.stop"
-  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" setsid nohup bash -c '
+  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" GOLIVE_LAST_CALL_FILE="${GOLIVE_LAST_CALL_FILE:-$LAST_CALL}" setsid nohup bash -c '
     stop="$1"; shift
     quick=0
     while :; do
@@ -419,6 +428,48 @@ addkey)
   fi
   unset key
   say "to use them: scripts/phone-brain.sh restart    to measure them: scripts/phone-brain.sh llm -pool"
+  ;;
+
+call)
+  # Place the last answered call again. The prompt is composed in the
+  # originator's web page and lives in that browser; golive writes down what
+  # each answered call was given (last_call_file), and this sends it back to
+  # the originator with the one number it will dial. Neither the number nor the
+  # instructions are printed.
+  [ -s "$LAST_CALL" ] || { say "nothing kept yet at $LAST_CALL: place one call from the originator's page first"; exit 1; }
+  python3 - "$LAST_CALL" "${ARIA_ENV:-$HOME/aria/.env}" "${ARIA_URL:-http://127.0.0.1:3000}" "${2:-}" <<'PY'
+import json, re, sys, urllib.request
+kept_path, env_path, base, mode = sys.argv[1:5]
+kept = json.load(open(kept_path, encoding="utf-8"))
+print("kept at %s from call %s: instructions %d characters (sha %s), opening line %d characters" % (
+    kept.get("saved_at", "?"), kept.get("call") or "?", len(kept.get("instructions", "")),
+    kept.get("instructions_sha", "?"), len(kept.get("greeting", ""))))
+if mode == "show":
+    sys.exit(0)
+to = ""
+try:
+    for line in open(env_path, encoding="utf-8"):
+        if line.startswith("ALLOWED_CALLEE="):
+            to = line.split("=", 1)[1].strip().strip("\"'")
+except OSError as err:
+    sys.exit("cannot read the originator's env file: %s" % err.strerror)
+if not to:
+    sys.exit("no ALLOWED_CALLEE in the originator's env file")
+body = {"to": to, "instructions": kept.get("instructions", ""), "greeting": kept.get("greeting", "")}
+req = urllib.request.Request(base.rstrip("/") + "/api/outbound/dial", data=json.dumps(body).encode(),
+                             headers={"Content-Type": "application/json"}, method="POST")
+def hide(text):
+    return re.sub(r"\+?\d{7,}", "<number>", text)
+try:
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        status, text = resp.status, resp.read().decode("utf-8", "replace")
+except urllib.error.HTTPError as err:
+    status, text = err.code, err.read().decode("utf-8", "replace")
+except OSError as err:
+    sys.exit("the originator did not answer at %s: %s" % (base, err))
+print("originator answered %d: %s" % (status, hide(text)[:400]))
+sys.exit(0 if status == 200 else 1)
+PY
   ;;
 
 sync)

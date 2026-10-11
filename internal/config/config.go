@@ -74,6 +74,15 @@ type Config struct {
 	// Empty disables storage: store:true is then accepted and ignored, and
 	// those two endpoints answer 404.
 	StoreDir string `json:"store_dir"`
+	// LastCallFile, when set, is where the instructions and opening line of the
+	// last answered phone call are kept, readable by the server's user alone.
+	//
+	// An originator's operator composes the prompt in a browser, and it lives
+	// there: a call placed from anywhere else carries none of it. With this
+	// file a call can be placed again from the machine itself exactly as the
+	// last one was (scripts/phone-brain.sh call). It is the conversation's
+	// instructions at rest on disk, so it is off unless a path is given.
+	LastCallFile string `json:"last_call_file"`
 	// Realtime configures /v1/realtime, the endpoint that speaks the OpenAI
 	// Realtime event protocol over the same engine. It exists for clients that
 	// cannot speak gpt-live-1 — a SIP media gateway, mostly.
@@ -724,6 +733,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")
 	setString(&c.StoreDir, "GOLIVE_STORE_DIR")
+	setString(&c.LastCallFile, "GOLIVE_LAST_CALL_FILE")
 	setInt(&c.StoreTTLHours, "GOLIVE_STORE_TTL_HOURS")
 	setBool(&c.Realtime.Enabled, "GOLIVE_REALTIME_ENABLED")
 	setInt(&c.Realtime.SampleRate, "GOLIVE_REALTIME_RATE")
