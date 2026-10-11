@@ -64,16 +64,20 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 13:09 | ea3a478 | 9 | 862 | 1382 | 2 |
 | 10-11 14:22 | dcf68a8, the owner's 13k-character prompt | 19 | 972 | 1561 | 3 |
 | 10-11 18:34 | ea5d26d, same prompt | 15 | 926 | 1481 | 1 |
+| 10-11 20:18 | c2fbf96, same prompt, 9 minutes | 70 | 932 | 1308 (p95 1266) | 5 |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
-1181; 18:34 p50 546, p95 805. The one slow turn of the 18:34 call was a
-fragment the engine waited 700 ms on as a mid-thought and then answered from
-nothing; the answer is now prepared during that wait. **No call yet on the
-build after it.**
+1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861.
 
-On samples this small p95 is the worst turn or the one before it: one turn in
-fifteen over 1200 is a miss. Pool the calls made on one build before saying the
-target is met.
+The 20:18 call is the first with enough turns for a p95 that means something:
+**1266 ms, 66 over.** Of its five turns over 1200, three had the synthesizer's
+first audio at 355–589 ms (median 182), one was a turn closed on stale
+hypotheses 5 ms before the final for them arrived, one an answer thrown away
+over a trailing "啊". All five have a fix in the build after it. **No call yet
+on that build.**
+
+On fewer than ~40 turns p95 is the worst turn or the one before it; pool calls
+made on one build.
 
 ## What was learned, so it is not learned again
 
@@ -140,9 +144,22 @@ target is met.
 - **A deadline on the first clause will flush one character** if that is all
   the model has produced: "加", then "上了吗？". The flush now waits for
   `stream_first_chunk_chars`.
-- **Event ids must survive a restart.** They were boot id + component + a
-  count from one, so each restart reissued the ids of the process before it and
-  the console refused them as duplicates. The count now starts at the clock.
+- **Event ids must survive a restart, and the count in them must stay short.**
+  They were boot id + producer + a count from one, so each restart reissued the
+  ids of the process before it and the console refused them as duplicates.
+  Starting the count from the clock made them unique and all invalid ("Invalid
+  canonical field: eventId"): a whole 70-turn call's events were refused. The
+  console takes a producer of any shape and a count of a few digits. The id is
+  now `boot:<id>:golive-<component>-r<run>:<count>`. **Probe the console with a
+  new id shape before deploying one.**
+- **The synthesizer has a tail too.** MiniMax first audio: 182 ms at the
+  median, over 300 on 7 of 70 turns, 589 at worst. `tts_hedge: 2` races the
+  first segment of each answer on two connections (`provider.WithUrgent` marks
+  it); later segments go to one.
+- **The settled close must not fire while an early final is pending**: it
+  judges "no new words" on hypotheses that trail the audio.
+- **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
+  begun on "也可以是吧" when the final says "也可以是吧，啊".
 - **Dialling from the box**: `POST /api/outbound/dial` needs `to`; the locked
   number is `ALLOWED_CALLEE` in the originator's env file on the box. A job can
   read it there and dial without it ever being printed. Never copy it out.

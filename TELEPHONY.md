@@ -111,6 +111,16 @@ spends the ringing on it: a one-token request with the session's instructions
 when the session opens and again as the opening line starts
 (`think: prefix warmed reason=...`).
 
+## The synthesizer's first audio
+
+About 180 ms at the median and over 300 one turn in ten, and on an answer's
+first segment all of it is silence. `tts_hedge: 2` gives each session a second
+connection and asks both for that first segment, playing whichever produces
+audio first (`tts hedge: a copy produced audio first` at debug level). It costs
+the segment's characters twice and one more request per turn against the
+provider's rate limit; a session that cannot get a second connection carries
+on without one.
+
 ## A line that is never quiet, and a line that returns the assistant's voice
 
 Two things a phone line does that a headset does not. Both were read off the

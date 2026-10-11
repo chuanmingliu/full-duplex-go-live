@@ -342,8 +342,7 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	// A guess already in flight was made on words that have since changed.
 	// Finding that out now, rather than when the final transcript lands, is
 	// the difference between restarting the backend and restarting it late.
-	if spec := e.liveSpeculation(); spec != nil &&
-		normalizeForCompare(text) != normalizeForCompare(spec.Transcript) {
+	if spec := e.liveSpeculation(); spec != nil && !sameWords(text, spec.Transcript) {
 		e.abandonSpeculation("the transcript moved on")
 	}
 	// The utterance is over and this is the newest account of it: nothing
@@ -495,8 +494,7 @@ func (e *Engine) onEarlyFinal(run *asrRun, text string) {
 	}
 	e.noteWords(cur, full)
 
-	if spec := e.liveSpeculation(); spec != nil &&
-		normalizeForCompare(spec.Transcript) != normalizeForCompare(full) {
+	if spec := e.liveSpeculation(); spec != nil && !sameWords(spec.Transcript, full) {
 		e.abandonSpeculation("the final for the words so far is not what was guessed")
 	}
 	if cur.sendDone {
@@ -776,6 +774,14 @@ func (e *Engine) maybeSettle() {
 	if d.SettledCloseMS <= 0 || !e.userOpen || e.muted || e.hold != nil {
 		return
 	}
+	// "No new words" is being judged on hypotheses that trail the audio. With
+	// a final for the words so far asked for and a tenth of a second away, it
+	// is about to be judged on the words themselves: on a real call the turn
+	// was taken 200 ms after the caller's last sound, five milliseconds before
+	// that final arrived with half a sentence the hypotheses had not reached.
+	if e.earlyRun != nil {
+		return
+	}
 	run := e.asrRun
 	if run == nil || run.sendDone || run.changedAt.IsZero() || strings.TrimSpace(run.lastText) == "" {
 		return
@@ -1037,7 +1043,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 	}
 
 	if spec := e.liveSpeculation(); spec != nil {
-		if normalizeForCompare(spec.Transcript) == normalizeForCompare(text) {
+		if sameWords(spec.Transcript, text) {
 			// The guess held: the audio already flowing is correct, and the
 			// final transcript costs nothing. This is the whole point of
 			// speculating.

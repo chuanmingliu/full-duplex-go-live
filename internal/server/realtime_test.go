@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -826,17 +825,38 @@ func TestRealtimeTurnDetectionSetsTheEndOfTurnSilence(t *testing.T) {
 
 // A restarted service must not reissue the event ids of the one before it: the
 // console refuses an id it has seen, and the boot id that prefixes them is the
-// same for every process since the machine came up.
-func TestTelemetrySequenceDoesNotRestartWithTheProcess(t *testing.T) {
-	first := time.Now()
-	const eventsOfABusyDay = 500_000
-	// Restarted a quarter of an hour later, as a deploy does.
-	if next := sequenceBase(first.Add(15 * time.Minute)); next <= sequenceBase(first)+eventsOfABusyDay {
-		t.Errorf("a process started 15 minutes after another begins numbering at %d; the first, begun at %d, may have reached past it",
-			next, sequenceBase(first))
+// same for every process since the machine came up. Nor may the count in the id
+// grow long: the console refuses those too.
+func TestTelemetryEventIDsAreUniqueAcrossRestartsAndShort(t *testing.T) {
+	start := time.Now()
+	if runToken(start) == runToken(start.Add(time.Second)) {
+		t.Error("two processes started a second apart would issue the same ids")
 	}
-	a := newTelPoster("http://127.0.0.1:1/ingest", "v1", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if got := a.seq.Load(); got < first.UnixMilli() {
-		t.Errorf("a new poster begins numbering at %d, as though no process had run before it", got)
+	sink := &telSink{}
+	console := httptest.NewServer(http.HandlerFunc(sink.handler))
+	defer console.Close()
+	ts, _, _ := gatewayServer(t, func(c *config.Config) { c.TelemetryURL = console.URL + "/ingest" })
+	c := dialRealtime(t, ts, "/v1/realtime?call=out-ids-test")
+	sendRaw(t, c.conn, activeCallSessionUpdate)
+	c.first("session.updated", 2*time.Second)
+	await(t, "the session's first event at the console", 3*time.Second, func() bool {
+		_, ok := sink.find("point", "agent.connected")
+		return ok
+	})
+	ev, _ := sink.find("point", "agent.connected")
+	id, _ := ev["eventId"].(string)
+	parts := strings.Split(id, ":")
+	if len(parts) < 4 {
+		t.Fatalf("eventId %q; want boot:<id>:<producer>:<count>", id)
+	}
+	producer, count := parts[len(parts)-2], parts[len(parts)-1]
+	if !strings.HasPrefix(producer, "golive-s2s-r") || len(producer) <= len("golive-s2s-r") {
+		t.Errorf("producer %q does not say which run of the process this is", producer)
+	}
+	if n, err := strconv.Atoi(count); err != nil || n < 1 || n > 1000 {
+		t.Errorf("the first event of a process is numbered %q; the console takes only a short count", count)
+	}
+	if seq, _ := ev["sequence"].(float64); strconv.Itoa(int(seq)) != count {
+		t.Errorf("sequence %v and the count in the id %q differ", ev["sequence"], count)
 	}
 }

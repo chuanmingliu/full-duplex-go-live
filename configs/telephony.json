@@ -25,6 +25,7 @@
   "disable_thinking": true,
   "llm_hedge": 4,
   "llm_hedge_after_ms": 0,
+  "tts_hedge": 2,
   "history_turns": 16,
   "duplex": {
     "backchannel": false,

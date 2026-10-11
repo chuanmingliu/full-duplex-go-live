@@ -149,7 +149,15 @@ type Config struct {
 	// latency this buys; a figure near the model's usual time to first token
 	// spends the extra request only on the slow turns.
 	LLMHedgeAfterMS int `json:"llm_hedge_after_ms"`
-	HistoryTurns    int `json:"history_turns"`
+	// TTSHedge, at 2, gives each session a second synthesis connection and
+	// asks both for the first segment of every answer, playing whichever
+	// produces audio first. The synthesizer's first audio is ~180 ms at the
+	// median and over 300 one turn in ten; on a first segment that is silence
+	// the caller hears. Later segments are not raced. It costs the first
+	// segment's characters twice and one more request per turn against the
+	// provider's rate limit. 0 or 1 is one connection.
+	TTSHedge     int `json:"tts_hedge"`
+	HistoryTurns int `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//
@@ -682,6 +690,7 @@ func (c *Config) applyEnv() {
 	setString(&c.BackendModel, "GOLIVE_BACKEND_MODEL")
 	setInt(&c.LLMHedge, "GOLIVE_LLM_HEDGE")
 	setInt(&c.LLMHedgeAfterMS, "GOLIVE_LLM_HEDGE_AFTER_MS")
+	setInt(&c.TTSHedge, "GOLIVE_TTS_HEDGE")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")

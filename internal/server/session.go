@@ -800,6 +800,7 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		s.reply(p, live.NewError("server_error", "tts_unavailable", err.Error(), eventID))
 		return err
 	}
+	tts = provider.HedgeTTS(tts, s.cfg.TTSHedge, s.log)
 
 	history := seeded
 	if history == nil {

@@ -678,3 +678,125 @@ func TestFirstSegmentIsNotCutToASyllableByItsDeadline(t *testing.T) {
 		t.Errorf("the first thing sent to the synthesizer was %q; all of it: %q", first, said)
 	}
 }
+
+func TestSameWords(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{"也可以是吧。", "也可以是吧，啊。", true},
+		{"也可以是吧，啊。", "也可以是吧。", true},
+		{"多少钱？", "多少钱", true},
+		{"可以", "可以吗", false}, // a particle that makes it a question is not a trailing sound
+		{"你直接说多少钱？", "你直接说多少钱？行吗？", false},
+		{"", "啊", false},
+		{"好的", "好的呃嗯", true},
+	} {
+		if got := sameWords(tc.a, tc.b); got != tc.want {
+			t.Errorf("sameWords(%q, %q) = %v; want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+// urgencyTTS records, for each synthesis, whether it was marked as one a
+// caller is waiting on.
+type urgencyTTS struct {
+	inner provider.TTS
+	mu    sync.Mutex
+	marks []bool
+}
+
+func (u *urgencyTTS) Name() string { return u.inner.Name() }
+
+func (u *urgencyTTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	s, err := u.inner.Open(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &urgencyStream{TTSStream: s, tts: u}, nil
+}
+
+type urgencyStream struct {
+	provider.TTSStream
+	tts *urgencyTTS
+}
+
+func (s *urgencyStream) Synthesize(ctx context.Context, text string) (<-chan provider.TTSChunk, error) {
+	s.tts.mu.Lock()
+	s.tts.marks = append(s.tts.marks, provider.IsUrgent(ctx))
+	s.tts.mu.Unlock()
+	return s.TTSStream.Synthesize(ctx, text)
+}
+
+// Only an answer's first segment is silence the caller hears; the rest is
+// synthesized under cover of it. The synthesizer is told which is which, so
+// that only the first is worth asking for twice.
+func TestOnlyTheFirstSegmentOfAnAnswerIsUrgent(t *testing.T) {
+	cfg := parityConfig()
+	c := newCollector(cfg.ClientRate)
+	tts := &urgencyTTS{inner: mock.NewTTS()}
+	llm := &dripLLM{
+		parts: []string{"好的，我来帮您查一下。", "明天上午有三班去上海的航班。", "最早的一班是八点。"},
+		gaps:  []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond},
+	}
+	e := startEngine(t, Options{Cfg: cfg, Delegation: live.DelegationResponses, Speculative: true},
+		Deps{ASR: voicedASR("你好帮我查一下"), LLM: llm, TTS: tts, Emit: c.emit})
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 900)
+	waitFor(t, "the whole answer to be synthesized", 5*time.Second, func() bool {
+		tts.mu.Lock()
+		defer tts.mu.Unlock()
+		return len(tts.marks) >= 2
+	})
+	time.Sleep(400 * time.Millisecond)
+	tts.mu.Lock()
+	marks := append([]bool(nil), tts.marks...)
+	tts.mu.Unlock()
+	if !marks[0] {
+		t.Errorf("the answer's first segment was not marked urgent: %v", marks)
+	}
+	for i, m := range marks[1:] {
+		if m {
+			t.Errorf("segment %d was marked urgent; only the first is waited on: %v", i+2, marks)
+		}
+	}
+}
+
+// "No new words for 600 ms" is judged on hypotheses, which trail the audio.
+// With the final for the words so far asked for and on its way, that judgement
+// is about to be made on the words themselves — and on a real call the turn
+// was taken five milliseconds before that final arrived with half a sentence
+// the hypotheses had not reached, 200 ms after the caller's last sound.
+func TestSettledCloseWaitsForAFinalThatIsOnItsWay(t *testing.T) {
+	run := func(t *testing.T, earlyMS int) *collector {
+		cfg := earlyFinalConfig(earlyMS)
+		cfg.opts.Cfg.Duplex.SettledCloseMS = 600
+		cfg.opts.Cfg.Duplex.SemanticEndpointing = false
+		rate := cfg.opts.Cfg.ClientRate
+		c := newCollector(rate)
+		asr := newTrailingASR("今天")
+		asr.msPerRune = 400
+		asr.partialLag = 100 * time.Millisecond
+		asr.finalDelay = 3 * time.Second // still on its way throughout
+		e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+		speak(e, rate, 600) // "今", as far as the hypotheses go
+		// A caller feeling for the rest of the sentence: mostly quiet, never
+		// quiet for the 400 ms that would end the turn.
+		for i := 0; i < 4; i++ {
+			pause(e, rate, 250)
+			speak(e, rate, 80)
+		}
+		pause(e, rate, 100)
+		return c
+	}
+	t.Run("with no final coming, the settled words end the turn", func(t *testing.T) {
+		if c := run(t, 0); c.count(live.ExtSpeechStopped) == 0 {
+			t.Fatal("the turn was not taken on settled words; this caller does not exercise the rule")
+		}
+	})
+	t.Run("with a final on its way, it is waited for", func(t *testing.T) {
+		if c := run(t, 120); c.count(live.ExtSpeechStopped) != 0 {
+			t.Fatal("the turn was taken on hypotheses while the final for those very words was on its way")
+		}
+	})
+}

@@ -794,8 +794,11 @@ func (e *Engine) onTick() {
 // speechPipe converts a stream of text deltas into paced audio. One pipe is
 // alive at a time; starting a new one aborts the old.
 type speechPipe struct {
-	e      *Engine
-	turn   *Turn
+	e    *Engine
+	turn *Turn
+	// begun is set once the pipe has asked for its first synthesis. That one
+	// is the one a caller waits on in silence; see provider.WithUrgent.
+	begun  bool
 	in     chan string
 	done   chan struct{}
 	ctx    context.Context
@@ -1087,7 +1090,12 @@ func (p *speechPipe) speak(text string) bool {
 	// turns — every answer after it is a fragment too.
 	segCtx, cancelSeg := context.WithCancel(p.ctx)
 	defer cancelSeg()
-	chunks, err := stream.Synthesize(segCtx, text)
+	synthCtx := segCtx
+	if !p.begun {
+		p.begun = true
+		synthCtx = provider.WithUrgent(segCtx)
+	}
+	chunks, err := stream.Synthesize(synthCtx, text)
 	if err != nil {
 		p.e.log.Error("tts synthesize failed", "err", err)
 		p.e.deps.Emit(live.NewError("server_error", "tts_error", err.Error(), ""))
@@ -2085,6 +2093,30 @@ func speakable(text string) bool {
 		}
 	}
 	return false
+}
+
+// sameWords reports whether two accounts of an utterance say the same thing:
+// identical once punctuation is set aside, or one the other with nothing after
+// it but the sounds people trail off on. "也可以是吧" and "也可以是吧，啊" are one
+// turn, and on a real call the answer begun on the first was thrown away and
+// begun again when the recognizer reported the second.
+func sameWords(a, b string) bool {
+	na, nb := normalizeForCompare(a), normalizeForCompare(b)
+	if na == nb {
+		return true
+	}
+	if len(na) > len(nb) {
+		na, nb = nb, na
+	}
+	if na == "" || !strings.HasPrefix(nb, na) {
+		return false
+	}
+	for _, r := range nb[len(na):] {
+		if !strings.ContainsRune("啊呀哦噢哈嗯呃额唔诶欸哎", r) {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeForCompare(s string) string {

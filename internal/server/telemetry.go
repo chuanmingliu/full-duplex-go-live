@@ -77,8 +77,10 @@ type telPoster struct {
 	client *http.Client
 
 	clockID string
-	mono    func() (int64, bool)
-	seq     atomic.Int64
+	// run tells this process's events from those of the one before it.
+	runID string
+	mono  func() (int64, bool)
+	seq   atomic.Int64
 
 	sent    atomic.Int64
 	failed  atomic.Int64
@@ -94,22 +96,25 @@ func newTelPoster(url, format string, log *slog.Logger) *telPoster {
 		client: &http.Client{Timeout: 2 * time.Second},
 	}
 	p.clockID, p.mono = hostClock()
-	p.seq.Store(sequenceBase(time.Now()))
+	p.runID = runToken(time.Now())
 	go p.run()
 	return p
 }
 
-// sequenceBase is where a process starts numbering its events.
+// runToken names one run of this process in the ids of its events.
 //
-// An event's id is the host's boot id, the component and this number, and the
-// console refuses an id it has seen. The boot id is the same for every process
-// started since the machine came up, so a count from one made a restarted
-// service reissue the ids of the one before it: after a day of deploys, events
-// of a live call were turned away as duplicates of the morning's. The clock in
-// milliseconds at start is ahead of anything an earlier process can have
-// reached, short of one that sustained a thousand events a second for its
-// whole life.
-func sequenceBase(start time.Time) int64 { return start.UnixMilli() }
+// An event's id is the host's boot id, a producer and a count, and the console
+// refuses an id it has seen. The boot id is the same for every process started
+// since the machine came up, so with nothing else to tell them apart a
+// restarted service reissued the ids of the one before it: after a day of
+// deploys, events of a live call were turned away as duplicates of the
+// morning's.
+//
+// The count itself has to stay small. Starting it from the clock made the ids
+// unique and every one of them invalid — the console takes a producer of any
+// shape and a count of only a few digits, which was found by losing a whole
+// call's events to it.
+func runToken(start time.Time) string { return "r" + strconv.FormatInt(start.Unix(), 36) }
 
 // post encodes a point for the console and queues it. It never blocks.
 func (p *telPoster) post(pt telPoint, callID, sessionID string, t0 time.Time) {
@@ -160,7 +165,7 @@ func (p *telPoster) post(pt telPoint, callID, sessionID string, t0 time.Time) {
 		}
 		body = map[string]any{
 			"schemaVersion": 1,
-			"eventId":       p.clockID + ":golive-" + pt.component + ":" + strconv.FormatInt(seq, 10),
+			"eventId":       p.clockID + ":golive-" + pt.component + "-" + p.runID + ":" + strconv.FormatInt(seq, 10),
 			"callId":        callID,
 			"turnId":        turn,
 			"backend":       "local",
