@@ -149,7 +149,7 @@ type Config struct {
 	// latency this buys; a figure near the model's usual time to first token
 	// spends the extra request only on the slow turns.
 	LLMHedgeAfterMS int `json:"llm_hedge_after_ms"`
-	HistoryTurns                 int     `json:"history_turns"`
+	HistoryTurns    int `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//

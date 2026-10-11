@@ -164,11 +164,12 @@ func (e *Engine) openASR(startMS int64) {
 	if e.deps.ASR == nil {
 		return
 	}
-	e.startRun(startMS)
+	e.startRun(startMS, "")
 }
 
-// startRun opens a recognition and makes it the current one.
-func (e *Engine) startRun(startMS int64) *asrRun {
+// startRun opens a recognition and makes it the current one. itemID names the
+// utterance it belongs to when that is one already being recognized.
+func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 	// Adopt the connection dialled when this utterance was only a suspicion,
 	// if there is one; otherwise dial now. Either way this returns at once —
 	// the loop goroutine no longer waits on a vendor's handshake — and the
@@ -184,10 +185,13 @@ func (e *Engine) startRun(startMS int64) *asrRun {
 	}
 
 	e.asrSeq++
+	if itemID == "" {
+		itemID = fmt.Sprintf("user_%d", e.asrSeq)
+	}
 	run := &asrRun{
 		id:       e.asrSeq,
 		stream:   stream,
-		itemID:   fmt.Sprintf("user_%d", e.asrSeq),
+		itemID:   itemID,
 		startMS:  startMS,
 		endMS:    startMS,
 		openedAt: time.Now(),
@@ -403,9 +407,8 @@ func (e *Engine) maybeEarlyFinal() {
 	e.earlyRun = run
 	e.earlyFinals++
 
-	next := e.startRun(run.startMS)
+	next := e.startRun(run.startMS, run.itemID)
 	next.continuation = true
-	next.itemID = run.itemID
 	next.endMS = run.endMS
 	next.activeAtOpen = e.vad.ActiveMS()
 	// Until the final lands, the best account of what came before is the last
@@ -827,6 +830,14 @@ func (e *Engine) maybeSpeculate() {
 	// One guess at a time. A guess can now be begun off this path, on a final
 	// asked for early in the pause, and the watch below knows nothing of it.
 	if e.liveSpeculation() != nil {
+		return
+	}
+	// A final for the words so far has been asked for and is a round trip
+	// away. Until it lands, the words in hand are the hypothesis that was
+	// trailing the audio when it was asked for — on the real recognizer,
+	// "你好，今天天气" for "你好，今天天气怎么样？" — and a guess made on them is
+	// made to be thrown away fifty milliseconds later.
+	if e.earlyRun != nil {
 		return
 	}
 	run := e.asrRun

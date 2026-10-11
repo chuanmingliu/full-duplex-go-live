@@ -1,6 +1,6 @@
 # Working on golive
 
-Notes for whoever picks this up next. State as of 2026-10-11, branch
+Notes for whoever picks this up next. State as of 2026-10-11 midday, branch
 `telephony-realtime` (PR #3, stacked on PR #2 `perf-and-live-parity`, stacked on
 PR #1 `prod-hardening`).
 
@@ -19,74 +19,97 @@ Providers in use: Tencent realtime ASR, DeepSeek (`deepseek-chat`), MiniMax
 **End-to-end latency within 1200 ms, on a phone call.** This is the thing to
 optimise; everything else is in service of it.
 
-The figure measured so far is the caller's last sound → first audio leaving
-golive (`+pause` / "last sound → first audio" in `scripts/call-latency.sh`). The
-phone leg — Active Call, RustPBX, the GSM gateway, the carrier, both ways — is on
-top and has not been measured. Until it is, treat ~900–950 ms at golive as the
-working target.
+Two definitions are in use. Quote both, and say which.
 
-The owner's latency console (on the test box, `:8768`) defines its headline
-span as `vad.speech_stopped → phone.audio_sent`: the turn judged over → first
-audio written towards the phone. That is the `audio` column here, and it does
-not include the pause. Quote both, and say which.
+- **Last sound → first audio**: the caller's last sound to the first audio
+  leaving golive. `+pause` in `scripts/call-latency.sh`; what the bench
+  measures client-side. This is what a caller waits through, less the phone leg.
+- **Turn judged over → first audio**: the owner's latency console (test box,
+  `:8768`) calls this the reply: `vad.speech_stopped → phone.audio_sent`. It is
+  the `audio` column, and it does not include the pause that ended the turn.
+
+The phone leg — Active Call, RustPBX, the GSM gateway, the carrier, both ways —
+is on top of either and has not been measured.
 
 ## Where it stands
 
-| What | Figure |
-| --- | --- |
-| Real providers on the test box, no phone, 15 turns (`phone-brain.sh bench`) | p50 1159, p90 1395, min 927, max 1448 ms |
-| Same, previous build, 15 turns | p50 1248 ms |
-| Simulated providers (`make bench-sim`), before → after PR #2 | 1755 → 1324 ms |
-| Phone calls through golive | 2 placed 2026-10-11; audio fine both ways; per-turn figures not yet read from the log |
+Real providers on the test box, no phone, 15 measured turns each
+(`phone-brain.sh bench`), last sound → first audio:
 
-Stage medians of the 1159 ms run, in ms from the turn being judged over (which
-is `vad.min_silence_ms` = 380 after the last sound):
+| Build | What changed | p50 | p95 |
+| --- | --- | ---: | ---: |
+| d45e519 | first deploy | 1248 | |
+| 9da7702 | pause 380 | 1159 | 1395 (p90) |
+| 2e2457b | pause 280; a slow hour for the chat model | 1229 | 1572 |
+| 42b5f54 | early final + two copies of each completion; pause 380 | **943** | 1244 |
+| 42b5f54 | same, one copy per completion (minutes later) | 952 | 1431 |
 
-| answer begun | ASR final | LLM first token | first clause to TTS | TTS first audio |
-| --- | --- | --- | --- | --- |
-| 0 | 103 | 450 (its own ttft: 450; probe alone: 385) | +94 | +293 (probe alone: ~240) |
+Stage medians of the 943 ms run, from the caller's last sound:
 
-So the path is: 380 pause + 0 + 450 + 94 + 293 ≈ 1217.
+| final asked for | final back, answer begun | LLM first token | first clause to TTS | first audio |
+| ---: | ---: | ---: | ---: | ---: |
+| 120 | ~211 | +415 | +70 | +216 |
 
-Since those runs: golive takes the end-of-turn silence from the client's
-`turn_detection` (the call originator asks for 150 ms; the floor makes it 200),
-where it used to wait its own 380. Expected to take ~180 ms off "last sound →
-first audio" on calls; not yet measured on the box.
+Phone calls through golive: placed on the morning of 2026-10-11, all before
+the early final. The 12 turns read from the log: last sound → first audio p50 1210, p90 1334; turn
+judged over → first audio p50 830, p90 954 (pause 380). **No call has been
+placed on the current build yet.**
+
+## What was learned, so it is not learned again
+
+- **The pause was being waited through for nothing.** The recognizer's partials
+  trail the audio by 300 ms and more, so the words in hand during the pause were
+  short of the sentence, the guess made on them was thrown away at the final,
+  and the answer began a round trip after the turn closed. What the recognizer
+  does do promptly is finish: told the audio has ended, the final is back in
+  ~95 ms. `duplex.early_final_ms` ends the recognition 120 ms into the pause,
+  begins the answer on that final, and opens a continuation to hear anything
+  that follows. The pause length then stops mattering to latency until it
+  exceeds the time the answer takes to prepare — choose it for turn-taking.
+- **It also makes semantic endpointing work.** "你好，" followed by a 400 ms
+  pause used to be taken as a turn, because "你好" had not arrived as a partial
+  when the pause ran out. With the final in hand 215 ms in, the engine knows it
+  is an opener and waits.
+- **The chat model's first token is the largest term and is not one number**:
+  170–880 ms for the same request within one run. `llm_hedge: 2` takes the
+  faster of two. It bought ~70 ms at the median and ~190 ms at p95.
+- **The latency console refuses a batch for one unknown key in `extra`.** It
+  takes `coverage`, `endpoint`, `port`, `revision`; anything else is "Invalid
+  canonical field: extra" and nothing in the batch is kept. golive sent
+  `agent` on every event, so none of its turns were ever there. Fixed in
+  8382c52; not yet seen working on a call.
+- **The phone gateway sends no turn detection golive acts on.** Its
+  `session.update` is 31 KB of instructions; calls run on the profile's
+  `vad.min_silence_ms`. The originator's "requested silence 150 ms" setting
+  belongs to the other agent. `realtime: session.update` now logs the shape.
+- **A phone line is never quiet, and returns the assistant's voice.** The
+  second call held a finished question open for 3.3 s on line noise and threw
+  the answer away eight times. See "A line that is never quiet" in
+  `TELEPHONY.md`: `duplex.settled_close_ms`, `vad.echo_tail_ms`,
+  `vad.barge_in_margin_db`. Written from that one call's log; **not yet
+  verified on a line.**
+- `deepseek-v4-flash` on the same key: 8 of 10 completions came back empty and
+  the rest took over a second. MiniMax's bidirectional endpoint is ~2 s slower
+  on a clause that does not end a sentence.
+- Bench clips are synthesized afresh on each run, so a pause inside one
+  ("好的，谢谢。") is sometimes longer than the end-of-turn silence and the clip
+  is, correctly, heard as two turns. A first-audio figure of a few hundred ms
+  is that.
 
 ## What to work on, in order
 
-0. **golive's events are not in the latency console.** A snapshot of the
-   console after five answered calls held only the originator's events — no
-   `vad.*`, `asr.final`, `llm.first_token`, `tts.first_audio` or
-   `phone.audio_sent` from golive. Whether they are refused or never arrive is
-   not known; golive now logs the console's reply to its first batch
-   (`telemetry: the latency console took the first events` / `refused`).
-
-1. **Turn-taking on a real line.** On the second call the caller spoke five
-   times in ten seconds before getting an answer, and one answer came ~6.6 s
-   after the question began. Not yet diagnosed. Suspects: each new utterance
-   cancelling an answer that was about to start (`on_new_query: cut`), and
-   golive hearing its own voice back from the line as speech. Read the engine's
-   lines for that call first (`phone-brain.sh log 6000 '<regex>'`).
-2. **Speculation rarely starts mid-pause with the real recognizer.** In 12 of
-   17 bench turns the answer was begun at the close of the turn or at the ASR
-   final, not during the pause; the 5 that did start early (~160 ms) were the
-   fastest. Tencent's partials lag the audio, so the hypothesis is not still for
-   `speculative_settle_ms` until the stream is ended. Idea not yet built: end
-   the recognizer's stream early in the pause to get the final sooner, and open
-   a new one if the caller resumes. Estimated worth 150–200 ms; unmeasured.
-3. **The chat model's first token** (385–450 ms) is the largest single term.
-   `scripts/phone-brain.sh llm -try 'label|base|model|KEY_ENV'` compares
-   candidates from the box. `deepseek-v4-flash` on the same key is untested.
-4. **Smaller things seen in logs:** a doubled phrase in one transcript
-   ("…明天上午去上海的，明天上午去上海的航班…", clip or engine unknown); a segment
-   that was only a closing quote sent to the synthesizer; MiniMax's per-minute
-   request limit reached by `ttsprobe` and once by the bench.
-
-Not worth trying again: MiniMax's bidirectional endpoint (≈2 s slower on a
-clause that does not end a sentence; no better with flush). Shortening the
-pause (the LLM, not the pause, is on the critical path while speculation
-holds).
+1. **A call on the current build.** Read the turns with
+   `scripts/call-latency.sh`, check the console shows golive's turns
+   (`telemetry: the latency console took the first events`), and listen for the
+   two line problems above.
+2. **Recognition on phone audio is poor** (wrong words in several turns of the
+   real calls). The recognizer is run with its 16 kHz engine on audio that is
+   8 kHz band-limited by the phone network. `TENCENT_ASR_ENGINE=8k_zh` exists
+   but the adapter would have to send 8 kHz audio. Not tried.
+3. **The remaining terms**, largest first: LLM first token (415), TTS first
+   audio (216), final round trip (95), first clause (70).
+4. The phone leg has never been measured. The console has the events to do it
+   once golive's are accepted.
 
 ## Build and test
 

@@ -357,3 +357,35 @@ func TestJoinTranscript(t *testing.T) {
 		}
 	}
 }
+
+// Between asking for the final and getting it, the words in hand are the
+// hypothesis that was trailing the audio. On the real recognizer a guess was
+// made on them — "你好，今天天气" — fifty milliseconds before the final said
+// "你好，今天天气怎么样？", and thrown away: a completion bought for nothing on
+// every turn.
+func TestNoGuessIsMadeOnTrailingWordsWhileTheFinalIsOnItsWay(t *testing.T) {
+	const phrase = "今天天气怎么样"
+	cfg := earlyFinalConfig(120)
+	// The window for a guess on a hypothesis falls inside the final's round
+	// trip, as it does with the phone profile and the real recognizer.
+	cfg.opts.Cfg.Duplex.SpeculativeStableMS = 180
+	cfg.opts.Cfg.Duplex.SpeculativeEagerMS = 160
+	cfg.opts.Cfg.Duplex.SpeculativeSettleMS = 20
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR(phrase)
+	asr.partialLag = 300 * time.Millisecond
+	asr.finalDelay = 150 * time.Millisecond
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+
+	speak(e, rate, 1200)
+	pause(e, rate, 900)
+	waitFor(t, "the turn to be answered", 3*time.Second, func() bool {
+		return c.count(live.ServerDelegationCreated) >= 1
+	})
+	for _, h := range c.speculativeHints() {
+		if normalizeForCompare(h) != phrase {
+			t.Errorf("a guess was made on %q, with the final for the whole sentence already asked for", h)
+		}
+	}
+}
