@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -820,5 +821,22 @@ func TestRealtimeTurnDetectionSetsTheEndOfTurnSilence(t *testing.T) {
 				t.Errorf("session.updated reports a silence nobody set: %s", session)
 			}
 		})
+	}
+}
+
+// A restarted service must not reissue the event ids of the one before it: the
+// console refuses an id it has seen, and the boot id that prefixes them is the
+// same for every process since the machine came up.
+func TestTelemetrySequenceDoesNotRestartWithTheProcess(t *testing.T) {
+	first := time.Now()
+	const eventsOfABusyDay = 500_000
+	// Restarted a quarter of an hour later, as a deploy does.
+	if next := sequenceBase(first.Add(15 * time.Minute)); next <= sequenceBase(first)+eventsOfABusyDay {
+		t.Errorf("a process started 15 minutes after another begins numbering at %d; the first, begun at %d, may have reached past it",
+			next, sequenceBase(first))
+	}
+	a := newTelPoster("http://127.0.0.1:1/ingest", "v1", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if got := a.seq.Load(); got < first.UnixMilli() {
+		t.Errorf("a new poster begins numbering at %d, as though no process had run before it", got)
 	}
 }

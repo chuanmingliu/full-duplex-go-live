@@ -74,6 +74,7 @@
     "settled_close_ms": 600,
     "backend_prefix_warm_start": true,
     "ignore_hesitations": true,
+    "speculate_while_patient": true,
     "early_final_ms": 120
   },
   "vad": {

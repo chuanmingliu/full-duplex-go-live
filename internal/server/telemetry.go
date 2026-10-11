@@ -94,9 +94,22 @@ func newTelPoster(url, format string, log *slog.Logger) *telPoster {
 		client: &http.Client{Timeout: 2 * time.Second},
 	}
 	p.clockID, p.mono = hostClock()
+	p.seq.Store(sequenceBase(time.Now()))
 	go p.run()
 	return p
 }
+
+// sequenceBase is where a process starts numbering its events.
+//
+// An event's id is the host's boot id, the component and this number, and the
+// console refuses an id it has seen. The boot id is the same for every process
+// started since the machine came up, so a count from one made a restarted
+// service reissue the ids of the one before it: after a day of deploys, events
+// of a live call were turned away as duplicates of the morning's. The clock in
+// milliseconds at start is ahead of anything an earlier process can have
+// reached, short of one that sustained a thousand events a second for its
+// whole life.
+func sequenceBase(start time.Time) int64 { return start.UnixMilli() }
 
 // post encodes a point for the console and queues it. It never blocks.
 func (p *telPoster) post(pt telPoint, callID, sessionID string, t0 time.Time) {

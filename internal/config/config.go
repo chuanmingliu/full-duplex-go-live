@@ -284,6 +284,15 @@ type DuplexConfig struct {
 	// half a sentence. Ignored unless it is longer than vad.min_silence_ms and
 	// SemanticEndpointing is on; 0 disables it.
 	PatientSilenceMS int `json:"patient_silence_ms"`
+	// SpeculateWhilePatient begins the answer during the longer wait
+	// PatientSilenceMS gives a caller who seems to be mid-thought, instead of
+	// only once that wait has run out. The wait is for the caller; preparing
+	// the answer does not need it, and a turn that does end there was being
+	// answered a whole backend round later than any other — 1400 ms and more
+	// after the caller's last sound. Nothing is heard before the turn is taken,
+	// so what it costs is a completion thrown away each time they do carry on.
+	// It applies to a guess made on a final asked for early (EarlyFinalMS).
+	SpeculateWhilePatient bool `json:"speculate_while_patient"`
 	// SettledCloseMS ends a turn when the caller's words have not changed for
 	// this long although the line never went quiet enough for the detector to
 	// end it. The detector waits for silence, and a line with a room, a car or

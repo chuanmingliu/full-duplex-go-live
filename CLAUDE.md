@@ -62,11 +62,17 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 morning | before the early final, pause 380 | 12 | 1210 | 1334 (p90) | about half |
 | 10-11 13:09 | ea3a478 | 9 | 862 | 1382 | 2 |
 | 10-11 14:22 | dcf68a8, the owner's 13k-character prompt | 19 | 972 | 1561 | 3 |
+| 10-11 18:34 | ea5d26d, same prompt | 15 | 926 | 1481 | 1 |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
-1181. The three slow turns of the 14:22 call each had a cause that has since
-been fixed (first completion of the call; an afterthought; a bare "呃"); the
-other 16 were 761–1086. **No call yet on the build after it.**
+1181; 18:34 p50 546, p95 805. The one slow turn of the 18:34 call was a
+fragment the engine waited 700 ms on as a mid-thought and then answered from
+nothing; the answer is now prepared during that wait. **No call yet on the
+build after it.**
+
+On samples this small p95 is the worst turn or the one before it: one turn in
+fifteen over 1200 is a miss. Pool the calls made on one build before saying the
+target is met.
 
 ## What was learned, so it is not learned again
 
@@ -126,6 +132,16 @@ other 16 were 761–1086. **No call yet on the build after it.**
 - **A bare "呃" is not a turn.** It was being waited on for 700 ms as a
   mid-thought and then answered anyway. `duplex.ignore_hesitations` leaves it
   with the caller.
+- **A mid-thought wait was costing a whole backend round on top of itself.**
+  Words that read as unfinished get 700 ms before the turn is taken, and the
+  answer was begun only then: 700 + ~780. `duplex.speculate_while_patient`
+  begins it on the early final, during the wait.
+- **A deadline on the first clause will flush one character** if that is all
+  the model has produced: "加", then "上了吗？". The flush now waits for
+  `stream_first_chunk_chars`.
+- **Event ids must survive a restart.** They were boot id + component + a
+  count from one, so each restart reissued the ids of the process before it and
+  the console refused them as duplicates. The count now starts at the clock.
 - **Dialling from the box**: `POST /api/outbound/dial` needs `to`; the locked
   number is `ALLOWED_CALLEE` in the originator's env file on the box. A job can
   read it there and dial without it ever being printed. Never copy it out.

@@ -524,8 +524,12 @@ func (e *Engine) speculateOnFinal(text string) {
 		e.specWhy = "the words so far are an acknowledgement, not a question"
 		return
 	}
+	if e.opts.Cfg.Duplex.IgnoreHesitations && endpoint.Hesitation(text) {
+		e.specWhy = "the words so far are only a hesitation"
+		return
+	}
 	class := e.classify(withoutForcedStop(text))
-	if class == endpoint.Incomplete {
+	if class == endpoint.Incomplete && !e.opts.Cfg.Duplex.SpeculateWhilePatient {
 		e.specWhy = "the words so far read as an unfinished thought"
 		return
 	}

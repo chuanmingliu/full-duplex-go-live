@@ -865,6 +865,19 @@ func (p *speechPipe) alive() bool {
 	}
 }
 
+// firstFlushRetry is how soon a first segment too short to speak at its
+// deadline is looked at again.
+const firstFlushRetry = 30 * time.Millisecond
+
+// firstFlushFloor is the least a first segment may hold when it is cut for
+// time rather than at a boundary.
+func (p *speechPipe) firstFlushFloor() int {
+	if n := p.e.opts.Cfg.Duplex.StreamFirstChunkChars; n > 3 {
+		return n
+	}
+	return 3
+}
+
 func (p *speechPipe) run() {
 	// Whatever was waiting for the floor — a function result to read back,
 	// something an application asked to have said — gets another look the
@@ -924,6 +937,14 @@ consume:
 			// if not.
 			forced := seg.FlushFirstAtBoundary()
 			if forced == "" {
+				// Not a syllable, though. A backend that has produced one
+				// character by the deadline has it cut from its word — a real
+				// call said "加", and then "上了吗？" — and the caller is better
+				// served by the few tens of milliseconds the next ones take.
+				if floor := p.firstFlushFloor(); len([]rune(seg.Pending())) < floor {
+					firstDeadline = time.After(firstFlushRetry)
+					continue
+				}
 				forced = seg.FlushFirst()
 			}
 			if forced == "" {

@@ -574,3 +574,107 @@ func TestBackendIsWarmedWhenTheSessionOpens(t *testing.T) {
 		t.Errorf("the warming request does not carry the session's instructions:\n%s", dump(reqs[0].Messages))
 	}
 }
+
+// A caller who seems to be mid-thought is given longer before the turn is
+// taken. Preparing the answer does not need that wait, and on a real call a
+// turn that did end there was answered 1481 ms after the caller's last sound:
+// the 700 ms of patience, and then the whole of the backend on top.
+func TestAnswerIsPreparedWhileWaitingOnAnUnfinishedThought(t *testing.T) {
+	const phrase = "帮我查一下明天的天气然后"
+	run := func(t *testing.T, during bool) (*collector, *Engine, int) {
+		cfg := earlyFinalConfig(120)
+		cfg.opts.Cfg.Duplex.SemanticEndpointing = true
+		cfg.opts.Cfg.Duplex.PatientSilenceMS = 1000
+		cfg.opts.Cfg.Duplex.SpeculateWhilePatient = during
+		rate := cfg.opts.Cfg.ClientRate
+		c := newCollector(rate)
+		e := startEngine(t, cfg.opts, Deps{ASR: newTrailingASR(phrase), LLM: mock.NewLLM(), Emit: c.emit})
+		speak(e, rate, 1900)
+		pause(e, rate, 700) // past the 400 ms that ends a finished turn; inside the patient 1000
+		return c, e, rate
+	}
+	t.Run("left until the wait is over", func(t *testing.T) {
+		c, _, _ := run(t, false)
+		if n := c.count(live.ExtSpeechStopped); n != 0 {
+			t.Fatalf("the turn was taken %d time(s) inside the patient wait; this proves nothing", n)
+		}
+		if got := c.speculativeHints(); len(got) != 0 {
+			t.Fatalf("an answer was begun during the wait without being asked to: %q", got)
+		}
+	})
+	t.Run("begun during it", func(t *testing.T) {
+		c, e, rate := run(t, true)
+		if n := c.count(live.ExtSpeechStopped); n != 0 {
+			t.Fatalf("the turn was taken %d time(s) inside the patient wait", n)
+		}
+		got := c.speculativeHints()
+		if len(got) != 1 || normalizeForCompare(got[0]) != phrase {
+			t.Fatalf("700 ms into the wait the answer had not been begun on what the caller said; guesses: %q", got)
+		}
+		if ms := c.audioMS(); ms != 0 {
+			t.Fatalf("%v ms of the answer was heard while the caller still had the turn", ms)
+		}
+		pause(e, rate, 600)
+		waitFor(t, "the turn to be confirmed", 2*time.Second, func() bool {
+			return c.count(live.ServerDelegationCreated) == 1
+		})
+		if r := c.delegations()[0].Delegation.Reason; r != "speculative" {
+			t.Errorf("the turn was answered from %q; the answer prepared during the wait should have stood", r)
+		}
+	})
+}
+
+// dripLLM says its parts with a wait before each.
+type dripLLM struct {
+	parts []string
+	gaps  []time.Duration
+}
+
+func (d *dripLLM) Name() string { return "drip" }
+
+func (d *dripLLM) Stream(ctx context.Context, _ provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	out := make(chan provider.LLMDelta)
+	go func() {
+		defer close(out)
+		for i, part := range d.parts {
+			select {
+			case <-time.After(d.gaps[i]):
+			case <-ctx.Done():
+				return
+			}
+			select {
+			case out <- provider.LLMDelta{Text: part}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// The deadline on the first segment exists so that an opening clause with no
+// punctuation in sight is not waited on for ever. It is not a licence to speak
+// a syllable: a backend that had produced one character by the deadline had it
+// cut from its word, and a real call heard "加" — and then "上了吗？".
+func TestFirstSegmentIsNotCutToASyllableByItsDeadline(t *testing.T) {
+	cfg := parityConfig()
+	cfg.Duplex.StreamFirstChunkChars = 4
+	cfg.Duplex.StreamFirstChunkDeadlineMS = 100
+	cfg.Duplex.StreamFirstChunkGraceMS = 30
+	c := newCollector(cfg.ClientRate)
+	tts := &countingTTS{inner: mock.NewTTS()}
+	llm := &dripLLM{
+		parts: []string{"加", "上了吗？加上之后就能收到报价链接，", "点开就能看到报价。"},
+		gaps:  []time.Duration{10 * time.Millisecond, 400 * time.Millisecond, 50 * time.Millisecond},
+	}
+	e := startEngine(t, Options{Cfg: cfg, Delegation: live.DelegationResponses, Speculative: true},
+		Deps{ASR: voicedASR("你好帮我查一下"), LLM: llm, TTS: tts, Emit: c.emit})
+	speak(e, cfg.ClientRate, 1200)
+	pause(e, cfg.ClientRate, 900)
+	waitFor(t, "the answer to be synthesized", 4*time.Second, func() bool { return len(tts.synthesized()) >= 1 && c.audioMS() > 0 })
+	time.Sleep(300 * time.Millisecond)
+	said := tts.synthesized()
+	if first := said[0]; len([]rune(first)) < 4 {
+		t.Errorf("the first thing sent to the synthesizer was %q; all of it: %q", first, said)
+	}
+}
