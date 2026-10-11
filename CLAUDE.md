@@ -50,6 +50,7 @@ Real providers on the test box, no phone, 15 measured turns each
 | ea5d26d | backend warmed at session open; fixes from the 14:22 call; 20 turns | 904 | 1118 (max 1184) |
 | c2fbf96 | answer prepared during a mid-thought wait; fixes from the 18:34 call; 20 turns | 878 | 1067 (max 1262) |
 | 779002e | fixes from the 20:18 call, with the first segment raced on two synthesis connections; 28 turns, 2 lost to the synthesizer's rate limit | 851 | 1011 (max 1020) |
+| 507f334 | the same fixes with synthesis hedging off; 20 turns, none refused | 852 | 1024 (max 1048) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
@@ -195,11 +196,11 @@ made on one build.
 1. **A call on the current build**, dialled by the owner from the page, to see
    whether p95 holds with the three causes from the 14:22 call removed.
    `scripts/call-latency.sh` prints p95 and how many turns were over 1200.
-1b. **The chat model's slow spells are what is left of the tail.** Options, all
-   the owner's to choose: a second route to the same model (another host of
-   DeepSeek needs its own key) raced against the first; a different model;
-   or racing the first synthesis request as well (the synthesizer's first audio
-   is 200 ms at the median and 300+ one turn in seven).
+1b. **What is left of the tail is the two vendors' own**: the chat model's slow
+   spells and the synthesizer's slow first audio. Both have a cure that is
+   built and waiting on the owner: a higher synthesis allowance (then
+   `tts_hedge: 2`), and a second route to the chat model on another host
+   (needs its own key) raced against the first.
 2. **Recognition on phone audio is poor** (wrong words in several turns of the
    real calls). The recognizer is run with its 16 kHz engine on audio that is
    8 kHz band-limited by the phone network. `TENCENT_ASR_ENGINE=8k_zh` exists
