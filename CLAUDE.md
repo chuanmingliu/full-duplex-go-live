@@ -48,6 +48,7 @@ Real providers on the test box, no phone, 15 measured turns each
 | b8883c6 | four copies; fixes from the 13:09 call; 30 turns | 922 | 1202 (max 1237) |
 | dcf68a8 | shorter first clause; 30 turns | 940 | 1181 (max 1202) |
 | ea5d26d | backend warmed at session open; fixes from the 14:22 call; 20 turns | 904 | 1118 (max 1184) |
+| c2fbf96 | answer prepared during a mid-thought wait; fixes from the 18:34 call; 20 turns | 878 | 1067 (max 1262) |
 
 Stage medians of the 943 ms run, from the caller's last sound:
 
