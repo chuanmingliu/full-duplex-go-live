@@ -157,7 +157,12 @@ start_golive() {
   printf '\n--- %s phone-brain: starting golive %s on %s:%s ---\n' "$(date '+%F %T')" "$(cat VERSION 2>/dev/null | cut -d' ' -f1)" "$bind" "$PORT" >> "$LOG"
   mark=$(wc -l < "$LOG")
   rm -f "$STATE.stop"
-  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" GOLIVE_LAST_CALL_FILE="${GOLIVE_LAST_CALL_FILE:-$LAST_CALL}" setsid nohup bash -c '
+  # A lane — a connection of its own — for each copy of a completion the
+  # profile asks for; the chat-model adapter keeps four unless told otherwise.
+  local copies
+  copies=$(grep -oE '"llm_hedge": *[0-9]+' "$PROFILE" 2>/dev/null | grep -oE '[0-9]+$' | head -1)
+  GOLIVE_LOG_LEVEL="${GOLIVE_LOG_LEVEL:-debug}" GOLIVE_LAST_CALL_FILE="${GOLIVE_LAST_CALL_FILE:-$LAST_CALL}" \
+  DEEPSEEK_LANES="${DEEPSEEK_LANES:-${GOLIVE_LLM_HEDGE:-${copies:-4}}}" setsid nohup bash -c '
     stop="$1"; shift
     quick=0
     while :; do

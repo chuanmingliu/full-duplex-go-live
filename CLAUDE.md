@@ -263,6 +263,37 @@ made on one build.
   cache is the process's and is lost on restart.
 - **`speculative_min_chars` is for hypotheses, not for a final asked for in a
   pause.** Applied to both it left every "嗯。" to be answered from nothing.
+- **Where a turn's time goes now** (55 turns on 4b029b3/e517e3a, medians, from
+  the caller's last sound): 120 ms waited before the final is asked for; +91
+  for it to come back (so the answer is begun ~211 ms in, 169 before the turn
+  closes); +120 to the chat model's response headers and +235 more to its
+  first token (361 for the fastest of four copies); +105 collecting the first
+  clause; +195 for the synthesizer's first audio; 0 between that audio and the
+  wire. About 225 ms of the ~870 is golive's own waiting and the rest is three
+  vendors' round trips. The recognizer is sent 20 ms frames as they arrive,
+  the synthesizer one `task_continue` per segment on a warm connection, the
+  detector has no hangover: there is nothing left to tidy on the path.
+- **The chat model's speed depends on the hour more than on anything here.**
+  `llm -pool`, first token of the fastest copy: 602 ms at the median at 23:53
+  (every single copy ~667), and 161–202 ms from 00:08 on the same night. The
+  23:34 call's turns were 100 ms slower at the median than the 23:08 call's
+  for that reason alone. Compare builds within the same half hour.
+- **Eight copies against four, in the same rounds** (`DEEPSEEK_LANES=8
+  phone-brain.sh llm -pool`, which now prints what the first 1, 2 and 4 lanes
+  of each round would have waited for). After midnight, twice: p50 170 and 161
+  for eight against 183 and 180 for the first four; p90 198 and 219 against
+  225 and 317. In the slow hour: p50 602 against 617, p90 678 against 687. No
+  sign that eight at once slow each other. So eight is worth 15–20 ms at the
+  median and 30–100 at p90, for twice the requests, and the owner has said
+  chat-model spend is not the constraint: the telephony profile sends eight
+  (`llm_hedge: 8`; `phone-brain.sh` sets `DEEPSEEK_LANES` to match). It does
+  nothing for the minutes when the whole service is slow.
+- **The owner's latency console has only golive's own events** (`coverage:
+  application`; its `tts_phone` span is 0 because golive reports both ends).
+  Nothing times the phone leg. golive now does, by its own echo: `listen: echo
+  return time` at the end of a call, and `listen: pauses inside utterances`
+  for choosing `early_final_ms` from data ("Measuring the phone leg" in
+  `TELEPHONY.md`). Neither has yet been seen on a call.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
@@ -301,22 +332,35 @@ made on one build.
 
 ## What to work on, in order
 
-1. **Calls on 4b029b3 and later**, dialled by the owner from the page or by
-   `phone-brain.sh call` when the owner asks for one. Pool them with each
-   other (23:08: 37 turns, 1 over), not with f374c41. In the log, look for `speak:
-   segment played from the phrase cache` on ordinary turns, `tts hedge: a copy
-   produced audio first copy=2` (the second connection winning — it never has
-   yet), and `think: answered without speculating` (should be gone for short
-   turns). `scripts/call-latency.sh` prints p95 and how many turns were over
-   1200.
-1b. **What is left of the tail is the two vendors' own**: the chat model's slow
-   spells and the synthesizer's stalls, and both hit every connection to the
-   vendor at once. The cure for either is a second, independent route: another
-   chat-model vendor in the race; for synthesis, the same account's HTTP
-   endpoint is the one untried thing that keeps the voice. The owner has said the
-   synthesizer account has no more budget and that
-   chat-model keys are free to add: `phone-brain.sh addkey`, then
-   `llm -pool` to see what each addition is worth. Two keys are in the pool.
+1. **Calls on 1287536 and later** (eight copies; the echo and pause
+   measurements), dialled from the page or with `phone-brain.sh call`. Pool
+   them with each other. Read first: `listen: echo return time` (the phone
+   leg), `listen: pauses inside utterances` (whether `early_final_ms` can go
+   from 120 to 100 or 80: each pause at or over the new value that the caller
+   carries on from is a recognition split in two), `llm hedge: a copy answered
+   first` (do copies 5–8 win their share).
+1b. **What is left is mostly decisions, not iterations.** Ranked by what they
+   would buy, none taken without the owner:
+   - *A faster or second chat-model vendor in the race.* The chat model is 361
+     of ~870 ms and several times slower in its busy hours; a second vendor
+     also covers the minutes when every DeepSeek copy is slow.
+     `llmprobe -try 'label|base URL|model|KEY_ENV'` measures a candidate.
+   - *Answers that open with words already in the phrase cache.* Such turns
+     skip the synthesizer (515–756 ms from last sound against ~870) and are
+     immune to its stalls; one answer in eight does it by chance. Asking the
+     model to open with one of a few short clauses would make it most turns,
+     and changes how the assistant talks. With that, `min_silence_ms` (380)
+     becomes the floor and is the next thing to lower.
+   - *A holding phrase on a slow turn* (`holding_filler`, built, off): from
+     the cache, once a turn has waited 1.5× this call's median — about 1.2 s
+     from last sound. It does not make the answer faster; it ends the dead air
+     of a 4.6 s synthesizer stall. First audio would then be the phrase, so
+     report it separately from the answer's.
+   - *The network path on the box*: provider traffic leaves through a VPN
+     client's tunnel over Wi-Fi. Wired, and routed directly, is worth a few
+     tens of ms per vendor round trip and possibly the synthesizer's stalls.
+     Needs root on the box.
+   - *The synthesizer's HTTP endpoint as a second route* in a stall; untried.
 2. **Recognition on phone audio is poor** (wrong words in several turns of the
    real calls). The recognizer is run with its 16 kHz engine on audio that is
    8 kHz band-limited by the phone network. `TENCENT_ASR_ENGINE=8k_zh` exists
