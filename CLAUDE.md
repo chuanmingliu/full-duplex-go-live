@@ -60,9 +60,12 @@ Phone calls through golive, last sound → first audio, from the log:
 | --- | --- | ---: | ---: | ---: | ---: |
 | 10-11 morning | before the early final, pause 380 | 12 | 1210 | 1334 (p90) | about half |
 | 10-11 13:09 | ea3a478 | 9 | 862 | 1382 | 2 |
+| 10-11 14:22 | dcf68a8, the owner's 13k-character prompt | 19 | 972 | 1561 | 3 |
 
-By the console's definition the 13:09 call was p50 482, worst 1002. **No call
-yet on the build after it**, which is where the fixes from that call are.
+By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
+1181. The three slow turns of the 14:22 call each had a cause that has since
+been fixed (first completion of the call; an afterthought; a bare "呃"); the
+other 16 were 761–1086. **No call yet on the build after it.**
 
 ## What was learned, so it is not learned again
 
@@ -105,6 +108,20 @@ yet on the build after it**, which is where the fixes from that call are.
 - **An interruption was being weighed on words that arrive late.** The early
   final used to be skipped while a floor hold was undecided; the slowest turn
   of the 13:09 call was three syllables said over the assistant.
+- **A long prompt costs nothing once cached, and the first completion of a
+  call is slow regardless.** 13,116 characters of instructions: ~7k prompt
+  tokens served from the provider's cache on every turn, median first token
+  444 ms — the same as with a 70-character prompt. But the first completion
+  took 1101 ms with the cache already holding the prompt.
+  `duplex.backend_prefix_warm_start` sends a one-token request while the phone
+  rings and again as the greeting starts.
+- **The owner's prompt lives in the originator's web page**, in that page's
+  browser storage, and is sent only by a dial made from the page. A dial from
+  the box (`to` + `greeting`) runs on the profile's own short instructions.
+  For a test of the real prompt the owner dials from the page.
+- **A bare "呃" is not a turn.** It was being waited on for 700 ms as a
+  mid-thought and then answered anyway. `duplex.ignore_hesitations` leaves it
+  with the caller.
 - **Dialling from the box**: `POST /api/outbound/dial` needs `to`; the locked
   number is `ALLOWED_CALLEE` in the originator's env file on the box. A job can
   read it there and dial without it ever being printed. Never copy it out.
@@ -130,8 +147,8 @@ yet on the build after it**, which is where the fixes from that call are.
 
 ## What to work on, in order
 
-1. **A call on the current build**, to see the fixes from the 13:09 call on a
-   line: interruptions, fragments, and whether p95 holds.
+1. **A call on the current build**, dialled by the owner from the page, to see
+   whether p95 holds with the three causes from the 14:22 call removed.
    `scripts/call-latency.sh` prints p95 and how many turns were over 1200.
 1b. **The chat model's slow spells are what is left of the tail.** Options, all
    the owner's to choose: a second route to the same model (another host of

@@ -100,6 +100,26 @@ var incompleteWords = setOf(
 	"about", "is", "are", "was", "can", "could", "would", "should", "want", "need", "its",
 )
 
+// Hesitation reports whether text is nothing but the sound of someone about to
+// speak: "呃", "额额", "um". Not "嗯" or "啊", which answer questions.
+func Hesitation(text string) bool {
+	norm := normalize(text)
+	if norm == "" {
+		return false
+	}
+	if hesitationWords[norm] {
+		return true
+	}
+	for _, r := range norm {
+		if r != '呃' && r != '额' && r != '唔' {
+			return false
+		}
+	}
+	return true
+}
+
+var hesitationWords = setOf("um", "uh", "er", "erm", "uhm", "umm", "uhh")
+
 // Classify judges a transcript whose speaker has paused. It looks only at how
 // the text ends, so it costs the same for a word as for a paragraph.
 func Classify(text string) Class {

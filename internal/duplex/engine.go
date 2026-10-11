@@ -395,6 +395,7 @@ func (e *Engine) Start(ctx context.Context) {
 	// The session has just opened and nobody is waiting on anything yet, which
 	// makes this the cheapest moment in the whole call to pay for handshakes.
 	e.prewarm("session open")
+	e.post(func() { e.warmAtOpening("session open") })
 }
 
 // prewarm opens the provider connections a turn is about to need, off the
@@ -485,6 +486,7 @@ func (e *Engine) Greet() {
 		pipe.Push(text)
 		pipe.Close()
 		turn.AppendResponse(text)
+		e.warmAtOpening("greeting")
 	})
 }
 
@@ -507,6 +509,7 @@ func (e *Engine) Say(text string) {
 		pipe.Push(text)
 		pipe.Close()
 		turn.AppendResponse(text)
+		e.warmAtOpening("opening line")
 	})
 }
 

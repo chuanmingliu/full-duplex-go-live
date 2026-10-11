@@ -37,8 +37,11 @@ const (
 	// earlyFinalMinVoicedMS is how much voice a recognition must have heard
 	// before it may be ended early in a pause. The first of an utterance has
 	// always heard more; this is for the ones after it, so that a click in the
-	// pause does not buy another connection.
-	earlyFinalMinVoicedMS = 160
+	// pause does not buy another connection. A click is two or three frames; a
+	// syllable is five and up, and at 160 this missed a real one — "行吗", said
+	// as an afterthought on a call, whose answer then began only when the turn
+	// closed.
+	earlyFinalMinVoicedMS = 100
 	// continuationQuietMS is how little voice a continuation may have heard
 	// and still be known to hold no words: two frames, which is a click.
 	continuationQuietMS = 40
@@ -969,6 +972,9 @@ func (e *Engine) speculateAtClose() {
 	if run.lastText == "" || e.bcSet.Matches(run.lastText) {
 		return
 	}
+	if e.opts.Cfg.Duplex.IgnoreHesitations && endpoint.Hesitation(run.lastText) {
+		return
+	}
 	e.startSpeculativeTurn(run.lastText)
 }
 
@@ -1015,6 +1021,14 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		// Nothing was said after all. Drop any speculation so its audio never
 		// reaches the user.
 		e.abandonSpeculation("the recognizer found no words")
+		return
+	}
+	if e.opts.Cfg.Duplex.IgnoreHesitations && endpoint.Hesitation(text) {
+		// "呃。" and then nothing: the caller drew breath to speak and has not
+		// yet. There is no question in it to answer, and answering it talks
+		// over the one that is coming.
+		e.log.Debug("listen: only a hesitation; leaving the turn with the caller", "text", text)
+		e.abandonSpeculation("the caller only hesitated")
 		return
 	}
 

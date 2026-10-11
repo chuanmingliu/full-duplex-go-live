@@ -334,6 +334,19 @@ type DuplexConfig struct {
 	// long prompt, and whether that trade is worth anything depends entirely on
 	// the provider: measure before leaving it on.
 	BackendPrefixWarm bool `json:"backend_prefix_warm"`
+	// BackendPrefixWarmStart sends that same one-token request when the session
+	// opens and again when its opening line is spoken, and at no other time.
+	// The first completion of a call was measured at 1100 ms to its first token
+	// with every later one near 450 — on a prompt the provider already had
+	// cached, so it is the first use that is slow, not the first sight. A phone
+	// call spends seconds ringing and then seconds on its greeting before the
+	// caller can have said anything; this spends them.
+	BackendPrefixWarmStart bool `json:"backend_prefix_warm_start"`
+	// IgnoreHesitations leaves a turn that was only a hesitation — "呃", "um" —
+	// unanswered. The caller has not said anything yet; an answer to it is an
+	// answer to nothing, and on a real call it was cut off 200 ms in by the
+	// sentence the hesitation was the start of.
+	IgnoreHesitations bool `json:"ignore_hesitations"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`

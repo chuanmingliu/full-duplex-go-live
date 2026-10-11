@@ -105,6 +105,12 @@ first word). Two copies left about one turn in eight over 1200 ms on a call;
 the p95 target needs the tail gone. `llm_hedge_after_ms` delays
 the second copy, to spend it only on slow turns; 0 sends both at once.
 
+The first completion of a call is slower than the rest whatever the prompt
+(1101 ms on a call whose others were near 450). `duplex.backend_prefix_warm_start`
+spends the ringing on it: a one-token request with the session's instructions
+when the session opens and again as the opening line starts
+(`think: prefix warmed reason=...`).
+
 ## A line that is never quiet, and a line that returns the assistant's voice
 
 Two things a phone line does that a headset does not. Both were read off the

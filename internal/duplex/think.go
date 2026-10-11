@@ -948,7 +948,24 @@ func (e *Engine) SetBackend(b BackendOptions) {
 // provider without such a cache can use, which is why it is off unless asked
 // for. See duplex.backend_prefix_warm.
 func (e *Engine) maybeWarmPrefix() {
-	if !e.opts.Cfg.Duplex.BackendPrefixWarm || e.deps.LLM == nil {
+	if !e.opts.Cfg.Duplex.BackendPrefixWarm {
+		return
+	}
+	e.warmPrefix("utterance opened")
+}
+
+// warmAtOpening is the same request at the two moments of a call when nobody
+// can be waiting on the backend: when the session opens, and when the opening
+// line starts to play. See duplex.backend_prefix_warm_start.
+func (e *Engine) warmAtOpening(reason string) {
+	if !e.opts.Cfg.Duplex.BackendPrefixWarmStart {
+		return
+	}
+	e.warmPrefix(reason)
+}
+
+func (e *Engine) warmPrefix(reason string) {
+	if e.deps.LLM == nil {
 		return
 	}
 	if e.clientMode() && !e.clientAuto() {
@@ -977,6 +994,6 @@ func (e *Engine) maybeWarmPrefix() {
 				e.cachedTok.Add(int64(d.Usage.CachedInputTokens))
 			}
 		}
-		e.log.Debug("think: prefix warmed", "ms", time.Since(started).Milliseconds())
+		e.log.Debug("think: prefix warmed", "reason", reason, "ms", time.Since(started).Milliseconds())
 	}()
 }

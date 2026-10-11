@@ -2,6 +2,7 @@ package duplex
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -467,5 +468,109 @@ func TestAnInterruptionIsJudgedOnAFinalAskedForEarly(t *testing.T) {
 	})
 	if c.count(live.ServerError) != 0 {
 		t.Errorf("errors: %v", c.errorCodes())
+	}
+}
+
+// An afterthought — one syllable said after a pause — is speech too. The bar
+// a continuation had to clear before it could be ended early was set above it,
+// and on a real call "…多少钱？" + "行吗" had its answer begun only when the
+// turn closed.
+func TestAnAfterthoughtGetsItsOwnEarlyFinal(t *testing.T) {
+	const phrase = "你直接说多少钱吗"
+	cfg := earlyFinalConfig(120)
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR(phrase)
+	asr.msPerRune = 120
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+
+	speak(e, rate, 900) // 你直接说多少钱
+	pause(e, rate, 220) // the first early final
+	speak(e, rate, 140) // 吗
+	pause(e, rate, 300) // a hundred short of ending the turn
+	whole := false
+	for _, h := range c.speculativeHints() {
+		whole = whole || normalizeForCompare(h) == phrase
+	}
+	if !whole {
+		t.Fatalf("300 ms after the afterthought no answer had been begun on the whole of it; guesses: %q", c.speculativeHints())
+	}
+	if n := c.count(live.ExtSpeechStopped); n != 0 {
+		t.Fatalf("the turn had already closed; this proves nothing about the pause")
+	}
+}
+
+// "呃。" and then nothing. The caller drew breath to speak and has not yet;
+// on a real call the answer to it was cut off 200 ms in by the sentence the
+// hesitation was the start of.
+func TestABareHesitationIsNotAnswered(t *testing.T) {
+	run := func(t *testing.T, ignore bool) *collector {
+		cfg := earlyFinalConfig(120)
+		cfg.opts.Cfg.Duplex.IgnoreHesitations = ignore
+		cfg.opts.Cfg.Duplex.SemanticEndpointing = true
+		rate := cfg.opts.Cfg.ClientRate
+		c := newCollector(rate)
+		asr := newTrailingASR("呃")
+		asr.msPerRune = 250
+		asr.fullStop = true
+		e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+		speak(e, rate, 400)
+		pause(e, rate, 1500)
+		time.Sleep(300 * time.Millisecond)
+		return c
+	}
+	t.Run("answered when hesitations count as turns", func(t *testing.T) {
+		if c := run(t, false); c.count(live.ServerDelegationCreated) == 0 {
+			t.Fatal("the hesitation was not answered even with the setting off; this proves nothing")
+		}
+	})
+	t.Run("left with the caller when they do not", func(t *testing.T) {
+		c := run(t, true)
+		if n := c.count(live.ExtSpeechStopped); n != 1 {
+			t.Fatalf("the utterance closed %d time(s)", n)
+		}
+		if n := c.count(live.ServerDelegationCreated); n != 0 {
+			t.Errorf("a hesitation was answered: %+v", c.delegations())
+		}
+		if ms := c.audioMS(); ms != 0 {
+			t.Errorf("%v ms of audio was played in answer to a hesitation", ms)
+		}
+		if finals := finalInputTranscripts(c); len(finals) != 1 {
+			t.Errorf("the caller's hesitation should still be on the transcript, once: %q", finals)
+		}
+	})
+}
+
+// The first completion of a call is the slow one — 1100 ms to a first token on
+// a call where every later one was near 450 — and a call spends seconds
+// ringing before anyone can be waiting on it.
+func TestBackendIsWarmedWhenTheSessionOpens(t *testing.T) {
+	const persona = "你是电话客服小翠儿。"
+	run := func(t *testing.T, warm bool) []provider.LLMRequest {
+		cfg := parityConfig()
+		cfg.Duplex.BackendPrefixWarmStart = warm
+		c := newCollector(cfg.ClientRate)
+		llm := &recordingLLM{inner: mock.NewLLM()}
+		startEngine(t, Options{Cfg: cfg, Delegation: live.DelegationResponses, Speculative: true, Instructions: persona},
+			Deps{ASR: voicedASR("你好"), LLM: llm, Emit: c.emit})
+		time.Sleep(300 * time.Millisecond)
+		return llm.requests()
+	}
+	if reqs := run(t, false); len(reqs) != 0 {
+		t.Fatalf("%d request(s) were made to the backend before anyone spoke, unasked", len(reqs))
+	}
+	reqs := run(t, true)
+	if len(reqs) != 1 {
+		t.Fatalf("%d request(s) at session open; want the one that warms the backend", len(reqs))
+	}
+	if reqs[0].MaxTokens != 1 {
+		t.Errorf("the warming request asks for %d tokens; it should ask for one", reqs[0].MaxTokens)
+	}
+	found := false
+	for _, m := range reqs[0].Messages {
+		found = found || strings.Contains(m.Content, persona)
+	}
+	if !found {
+		t.Errorf("the warming request does not carry the session's instructions:\n%s", dump(reqs[0].Messages))
 	}
 }

@@ -2,6 +2,17 @@ package endpoint
 
 import "testing"
 
+func TestHesitation(t *testing.T) {
+	for text, want := range map[string]bool{
+		"呃": true, "呃。": true, "额额": true, "呃……": true, "Um.": true, "uh": true,
+		"嗯": false, "啊": false, "呃，多少钱": false, "好的": false, "": false, "。": false, "umbrella": false,
+	} {
+		if got := Hesitation(text); got != want {
+			t.Errorf("Hesitation(%q) = %v; want %v", text, got, want)
+		}
+	}
+}
+
 func TestClassify(t *testing.T) {
 	cases := []struct {
 		text string
