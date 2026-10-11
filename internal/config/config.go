@@ -361,6 +361,16 @@ type DuplexConfig struct {
 	// says — the greeting, acknowledgements, holding fillers — so they play
 	// from memory instead of being synthesized again on every call.
 	PhraseCache bool `json:"phrase_cache"`
+	// PhraseCacheLearnChars, above zero, also keeps any segment of an ordinary
+	// answer that is at most this many characters long, and plays it from
+	// memory the next time those words come up in that voice. An assistant
+	// opens most of its answers with one of a handful of clauses — "好的，",
+	// "是的，", "您说，" — and each is a synthesis the caller waits through in
+	// silence: 180 ms when the synthesizer is prompt, and a second or more when
+	// it stalls, which no second connection to the same vendor helped with. On
+	// two calls one answer in eight opened with words already said on them.
+	// Needs phrase_cache. 0 keeps only the fixed phrases.
+	PhraseCacheLearnChars int `json:"phrase_cache_learn_chars"`
 	// BackendPrefixWarm sends the backend a one-token request carrying the
 	// conversation so far when the caller starts speaking, so a provider with a
 	// prefix cache has it loaded by the time the real request follows. It

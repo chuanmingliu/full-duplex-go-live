@@ -142,20 +142,37 @@ fits an allowance of about 20 synthesis requests a minute with a burst of about
 70-turn call without hedging ran at 16–19 a minute: under it, not by much.
 
 **So the profile asks the second connection only when the first is slow**:
-`tts_hedge_after_ms: 220`. A synthesis that produces audio inside 220 ms — nine
-in ten do — is one request, as before. One that has not is put to the second
-connection as well, and the caller hears whichever speaks, so a slow first
-audio costs 220 ms plus an ordinary synthesis rather than whatever the first
-connection takes. That was 1284 and 1763 ms on two consecutive turns of one
-call, with a second segment that had not arrived after 3.3 s; later segments
-are covered too, with three times the wait, since they play behind audio
-already going out. `tts_hedge_rpm: 18` still applies: the second request is not
-made in a minute that has no room for it. The log says when it happens (`tts
-hedge: asking the second connection too`, then `a copy produced audio first`).
+`tts_hedge_after_ms: 260`. A synthesis that produces audio inside 260 ms — all
+but one in twenty — is one request, as before. One that has not is put to the
+second connection as well, and the caller hears whichever speaks. Later
+segments are covered too, with three times the wait, since they play behind
+audio already going out; a first connection that fails outright is followed by
+the second at once. `tts_hedge_rpm: 18` still applies: the second request is
+not made in a minute that has no room for it. The log says when it happens
+(`tts hedge: asking the second connection too`, then `a copy produced audio
+first`).
 
-`phone-brain.sh tts -call 30 -every 5s -hedge 2 -after 220ms` paces it like a
-call and prints the same lines. With an account that has the allowance, `"tts_hedge_after_ms": 0`
-asks both at once for every first segment.
+**What it does not cure is the synthesizer stalling as a whole.** On one call
+its first audio took 1284 and 1763 ms on consecutive turns, with a second
+segment that had not arrived after 3.3 s, while the chat model and the
+recognizer answered as usual. Paced like a call with the second connection
+asked after 220 ms (`phone-brain.sh tts -call 20 -every 7s -hedge 2 -after
+220ms`), the one stall in twenty turns — 1847 ms — was a stall on both
+connections: the second, asked 1.6 s before the first finally spoke, had
+nothing either. And at 220 ms the second connection was asked on nine turns of
+the twenty and won none: the first answered within ten milliseconds each time.
+So the wait is 260, the second connection is insurance against one connection
+going bad, and the stalls are not a matter of load either — over two calls
+the slow syntheses came at 13–17 requests in the minute before them, and
+thirty-eight made at 20–31 a minute were as quick as any.
+
+**What does help is not asking.** `duplex.phrase_cache_learn_chars: 12` keeps
+the audio of any segment of an answer up to twelve characters long and plays
+it from memory the next time those words come up in that voice: "好的，",
+"是的，", "您说，我听着呢。", "再见。". On two calls one answer in eight opened
+with words already said on them. Such a turn's first audio does not wait on
+the synthesizer at all (`speak: segment played from the phrase cache`). The
+cache is the process's, so it carries from call to call until a restart.
 
 ## A line that is never quiet, and a line that returns the assistant's voice
 

@@ -26,7 +26,7 @@
   "llm_hedge": 4,
   "llm_hedge_after_ms": 0,
   "tts_hedge": 2,
-  "tts_hedge_after_ms": 220,
+  "tts_hedge_after_ms": 260,
   "tts_hedge_rpm": 18,
   "history_turns": 16,
   "duplex": {
@@ -73,6 +73,7 @@
     "asr_predial": true,
     "tts_native_rate": true,
     "phrase_cache": true,
+    "phrase_cache_learn_chars": 12,
     "client_delegation": "always",
     "settled_close_ms": 600,
     "backend_prefix_warm_start": true,

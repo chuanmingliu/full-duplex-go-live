@@ -1026,6 +1026,17 @@ func (p *speechPipe) confirmed() bool {
 	return p.ctx.Err() == nil && p.current()
 }
 
+// remembers reports whether text is looked for in the phrase cache and kept
+// there once said: everything a pipe of fixed phrases says, and of an ordinary
+// answer the segments short enough to be said again — its opening clauses.
+func (p *speechPipe) remembers(text string) bool {
+	if p.cacheable {
+		return true
+	}
+	d := p.e.opts.Cfg.Duplex
+	return d.PhraseCache && d.PhraseCacheLearnChars > 0 && len([]rune(text)) <= d.PhraseCacheLearnChars
+}
+
 // current reports whether this pipe may still produce. Under a soft stop the
 // turn is allowed to be stale: the player is holding a grace open for exactly
 // the sentence being synthesized here, and abandoning it now would cut the
@@ -1055,7 +1066,8 @@ func (p *speechPipe) speak(text string) bool {
 	// the synthesizer again — and on a hit this path needs no synthesis
 	// connection at all, which is why a cached greeting can start before the
 	// handshake with the vendor has finished.
-	if p.cacheable {
+	remembered := p.remembers(text)
+	if remembered {
 		if cached, ok := Phrases().Get(p.e.phraseKey(text)); ok {
 			return p.speakCached(text, cached)
 		}
@@ -1142,7 +1154,7 @@ func (p *speechPipe) speak(text string) bool {
 		if len(chunk.PCM) == 0 {
 			continue
 		}
-		if p.cacheable {
+		if remembered {
 			keep = append(keep, chunk.PCM...)
 		}
 		pcm, err := audio.ResamplePCM16(chunk.PCM, stream.SampleRate(), p.e.opts.ClientRate)
@@ -1218,7 +1230,7 @@ func (p *speechPipe) speak(text string) bool {
 	})
 	// Only a segment that ran to its end is kept: the loop above returns early
 	// on every interruption, so reaching here means keep is the whole of it.
-	if p.cacheable && len(keep) > 0 {
+	if remembered && len(keep) > 0 {
 		Phrases().Put(p.e.phraseKey(text), PhraseAudio{PCM: keep, Rate: stream.SampleRate()})
 	}
 	p.e.log.Debug("speak: segment synthesized",

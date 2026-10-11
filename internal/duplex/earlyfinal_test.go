@@ -842,3 +842,98 @@ func TestAShortTurnIsBegunOnItsEarlyFinalToo(t *testing.T) {
 	}
 	waitFor(t, "the answer", 3*time.Second, func() bool { return c.audioMS() > 0 })
 }
+
+// textsTTS records what the synthesizer is asked to say.
+type textsTTS struct {
+	inner provider.TTS
+	mu    sync.Mutex
+	texts []string
+}
+
+func (u *textsTTS) Name() string { return u.inner.Name() }
+
+func (u *textsTTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	s, err := u.inner.Open(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &textsStream{TTSStream: s, tts: u}, nil
+}
+
+func (u *textsTTS) asked() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.texts...)
+}
+
+type textsStream struct {
+	provider.TTSStream
+	tts *textsTTS
+}
+
+func (s *textsStream) Synthesize(ctx context.Context, text string) (<-chan provider.TTSChunk, error) {
+	s.tts.mu.Lock()
+	s.tts.texts = append(s.tts.texts, text)
+	s.tts.mu.Unlock()
+	return s.TTSStream.Synthesize(ctx, text)
+}
+
+// An assistant opens most answers with one of a handful of clauses, and each
+// is a synthesis the caller waits through — 180 ms on a good day, 1.3 and
+// 1.8 s on two turns of a real call, on both of the vendor's connections at
+// once. Words that short, once said, are played from memory the next time.
+func TestAnOpeningClauseSaidBeforeIsNotSynthesizedAgain(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	const opener, rest = "好的，", "我来帮您查一下明天上午去上海的航班。"
+
+	call := func(t *testing.T, learn int) (asked []string, heardMS float64) {
+		cfg := parityConfig()
+		cfg.Duplex.PhraseCache = true
+		cfg.Duplex.PhraseCacheLearnChars = learn
+		c := newCollector(cfg.ClientRate)
+		tts := &textsTTS{inner: mock.NewTTS()}
+		llm := &dripLLM{parts: []string{opener, rest}, gaps: []time.Duration{10 * time.Millisecond, 150 * time.Millisecond}}
+		e := startEngine(t, Options{Cfg: cfg, Delegation: live.DelegationResponses, Speculative: true},
+			Deps{ASR: voicedASR("你好帮我查一下"), LLM: llm, TTS: tts, Emit: c.emit})
+		speak(e, cfg.ClientRate, 1200)
+		pause(e, cfg.ClientRate, 900)
+		waitFor(t, "the answer to be said", 5*time.Second, func() bool {
+			return strings.Contains(c.allOutput(), "航班")
+		})
+		time.Sleep(300 * time.Millisecond)
+		return tts.asked(), c.audioMS()
+	}
+	count := func(texts []string, want string) (n int) {
+		for _, s := range texts {
+			if s == want {
+				n++
+			}
+		}
+		return n
+	}
+
+	first, firstMS := call(t, 6)
+	if count(first, opener) != 1 || count(first, rest) != 1 {
+		t.Fatalf("the first call asked the synthesizer for %q; this test needs the opening clause as a segment of its own", first)
+	}
+	second, secondMS := call(t, 6)
+	if n := count(second, opener); n != 0 {
+		t.Errorf("%q was synthesized again on the next call (%d time(s)); asked for: %q", opener, n, second)
+	}
+	if count(second, rest) != 1 {
+		t.Errorf("the rest of the answer is not short and should have been synthesized as ever; asked for: %q", second)
+	}
+	if secondMS < firstMS*0.9 || secondMS > firstMS*1.1 {
+		t.Errorf("the caller heard %.0f ms of answer the second time and %.0f the first; the remembered clause should sound the same", secondMS, firstMS)
+	}
+
+	t.Run("not unless asked for", func(t *testing.T) {
+		Phrases().Reset()
+		call(t, 0)
+		again, _ := call(t, 0)
+		if count(again, opener) != 1 {
+			t.Errorf("with phrase_cache_learn_chars at 0 an answer's words were not sent to the synthesizer: %q", again)
+		}
+	})
+}

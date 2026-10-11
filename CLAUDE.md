@@ -69,10 +69,12 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 18:34 | ea5d26d, same prompt | 15 | 926 | 1481 | 1 |
 | 10-11 20:18 | c2fbf96, same prompt, 9 minutes | 70 | 932 | 1308 (p95 1266) | 5 |
 | 10-11 21:51 | f374c41, same prompt, two chat-model accounts, 8 minutes | 52 | 882 | 1354 (**p95 1097**) | 2 |
+| 10-11 22:21 | f374c41 again, 7 minutes | 41 | 933 | 2674 (p95 1344) | 5 |
+| | **both calls on f374c41** | **93** | **900** | 2674 (**p95 1336**, p90 1140) | **7** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
 1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
-p95 717.
+p95 717; 22:21 p50 553, p95 964; both on f374c41 p50 518, p90 760, p95 956.
 
 The 20:18 call was the first with enough turns for a p95 that means something:
 1266 ms, 66 over. Of its five turns over 1200, three had the synthesizer's
@@ -99,8 +101,26 @@ Also on that call: the console took all of golive's events (367 sent, none
 refused) — the first call with the corrected event ids; no rate limit and no
 refused key; the four lanes shared the work evenly and each copy won about a
 quarter of the time (15/20/20/13); 23 replies were cut short by the caller
-speaking, with one warning that a barge-in looked like the assistant's own
-voice returning. Whether all 23 were meant has not been checked with the owner.
+speaking, all of them on purpose (the owner said so).
+
+**The 22:21 call, same build, missed: p95 1344 on 41 turns, five over. The
+two together are 93 turns at p95 1336, seven over (7.5%). The goal is not met
+on f374c41.** The second call's five had two causes:
+
+- The synthesizer stalled for eight seconds at 22:26: first audio at 1284 and
+  1763 ms on consecutive turns, and a second segment that had not arrived
+  after 3.3 s — the silence in the middle of an answer that the caller said
+  "嗯" into. The chat model and the recognizer were as usual in those seconds.
+  Three more of its first audios were 350–491 ms.
+- Four of the five were answers to "嗯。", begun from nothing when the pause
+  ran out. Every turn without a head start on both calls — twelve of 93 — was
+  a two or three character turn, turned away by `speculative_min_chars`.
+
+Fixed in c9a0738 and the commit after it: short turns are begun on their early
+final; opening clauses are remembered (`phrase_cache_learn_chars`); a second
+synthesis connection is asked when the first is slow (`tts_hedge_after_ms`).
+See below for what the last of these is and is not good for. **No call yet on
+that build.**
 
 On fewer than ~40 turns p95 is the worst turn or the one before it; pool calls
 made on one build.
@@ -197,9 +217,32 @@ made on one build.
   ~1070 to 1011. But the account allows about 20 synthesis requests a minute
   (burst ~20): paced like a call at 36 a minute it was refused from the 65th
   second on (`ttsprobe -call 36 -every 5s -hedge 2`), and the hedged bench lost
-  2 turns in 30. A refused request is an answer nobody hears. **Hedging is off
-  in the telephony profile.** A 70-turn call without it ran at 16–19 requests a
+  2 turns in 30. A refused request is an answer nobody hears. Asking both
+  every time is therefore off in the telephony profile. A 70-turn call without it ran at 16–19 requests a
   minute — under the limit, not by much; a faster conversation would hit it.
+- **A second synthesis connection does not cure a stall; it is the vendor
+  that stalls, not the connection.** `tts_hedge_after_ms` asks the second
+  connection only when the first has produced nothing for that long, so an
+  account with no room for two requests a turn can afford it. Probed on the
+  box, paced like a call, with the wait at 220 ms: nine of twenty turns asked
+  the second connection and it won none (the first spoke within 10 ms each
+  time), and the one stall, 1847 ms, was a stall on both — the second had been
+  asked 1.6 s before the first spoke and had nothing. It is at 260 now and is
+  insurance against one connection going bad or failing, nothing more. Nor are
+  the stalls a matter of load: over two calls the slow syntheses came at 13–17
+  requests in the minute before, and 38 syntheses at 20–31 a minute were as
+  quick as any. (That also says the account's limit is not a flat 20 a minute;
+  a bucket of ~20 refilled at ~20 a minute fits both this and the refusals.)
+  Untried: the vendor's HTTP streaming endpoint as the second route; a probe
+  that asks two connections at once and prints both times.
+- **What helps with the synthesizer is not asking it.** One answer in eight on
+  those calls opened with words already said on them ("好的，", "是的，",
+  "您说，我听着呢。", "再见。"). `duplex.phrase_cache_learn_chars: 12` keeps
+  any segment that short and plays it from memory next time: no synthesis in
+  the caller's silence, and one request fewer against the rate limit. The
+  cache is the process's and is lost on restart.
+- **`speculative_min_chars` is for hypotheses, not for a final asked for in a
+  pause.** Applied to both it left every "嗯。" to be answered from nothing.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
@@ -229,13 +272,19 @@ made on one build.
 
 ## What to work on, in order
 
-1. **More calls on f374c41**, dialled by the owner from the page, pooled with
-   the 21:51 call (52 turns, 2 over), until the count is past ~150 turns or the
-   rate over 1200 is plainly above or below 5%.
-   `scripts/call-latency.sh` prints p95 and how many turns were over 1200.
+1. **Calls on the build after c9a0738**, dialled by the owner from the page.
+   Pool them with each other, not with f374c41. In the log, look for `speak:
+   segment played from the phrase cache` on ordinary turns, `tts hedge: a copy
+   produced audio first copy=2` (the second connection winning — it never has
+   yet), and `think: answered without speculating` (should be gone for short
+   turns). `scripts/call-latency.sh` prints p95 and how many turns were over
+   1200.
 1b. **What is left of the tail is the two vendors' own**: the chat model's slow
-   spells and the synthesizer's slow first audio. The owner has said the
-   synthesizer account has no more budget (so `tts_hedge` stays off) and that
+   spells and the synthesizer's stalls, and both hit every connection to the
+   vendor at once. The cure for either is a second, independent route: another
+   chat-model vendor in the race; for synthesis, the same account's HTTP
+   endpoint is the one untried thing that keeps the voice. The owner has said the
+   synthesizer account has no more budget and that
    chat-model keys are free to add: `phone-brain.sh addkey`, then
    `llm -pool` to see what each addition is worth. Two keys are in the pool.
 2. **Recognition on phone audio is poor** (wrong words in several turns of the
