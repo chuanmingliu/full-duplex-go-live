@@ -426,6 +426,16 @@ entries in `journal/issues.json` (status, commit, the call that verified a
 fix) and `journal/decisions.json`, and ship them with the bundle. The owner
 reads the journal; an issue fixed but not recorded there is not visibly fixed.
 
+## What is public
+
+The tunnel on the box (`/etc/cloudflared/config.yml`, root's; DNS in the
+dashboard) publishes: `liuchuanming.ai` → Aria (3000); `golive.` → the browser
+demo, a second golive of the current build (`phone-brain.sh demo on`, port
+9080, apart from the phone line's); `fullduplex.` → 3100; `robotgo.` → the
+call journal (the owner's choice, 10-12). Neither golive's demo nor the
+journal has a login of its own; Cloudflare Access on the hostname is the only
+gate. Never change the tunnel or DNS: give the owner the commands.
+
 ## The archive
 
 `~/golive-archive` on the box keeps every finished call for good: `audio.wav`

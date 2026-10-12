@@ -112,6 +112,7 @@ bundle:
 	@cp scripts/*.sh $(BUNDLE)/scripts/
 	@cp start.sh TELEPHONY.md .env.example $(BUNDLE)/
 	@cp -r journal $(BUNDLE)/journal
+	@mkdir -p $(BUNDLE)/web && cp web/index.html $(BUNDLE)/web/
 	@echo "$(COMMIT) $$(date -u +%FT%TZ) $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" > $(BUNDLE)/VERSION
 	@tar -C dist -czf dist/golive-telephony.tar.gz golive-telephony
 	@echo "dist/golive-telephony.tar.gz  $$(cat $(BUNDLE)/VERSION)"

@@ -37,6 +37,12 @@
 #                                     home network (JOURNAL_ADDR), with no login.
 #                                     It also archives every finished call, and
 #                                     is started with golive.
+#   scripts/phone-brain.sh demo [on|off|status]
+#                                     the browser demo: a second golive of this
+#                                     build with the test page, on DEMO_PORT
+#                                     (9080), apart from the phone line's. For a
+#                                     public hostname to point at. Once on, it
+#                                     is started with golive.
 #   scripts/phone-brain.sh archive [status|verify|mirror <dest>]
 #                                     the permanent record of calls (ARCHIVE_DIR):
 #                                     what it holds, whether every file still
@@ -92,6 +98,12 @@ JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
 # and the log they came from. Nothing deletes from it. CALLS_DIR above is
 # golive's working copy, which expires; this does not.
 ARCHIVE_DIR="${ARCHIVE_DIR:-$HOME/golive-archive}"
+# The browser demo: a second golive, this build, with the test page, on a port
+# of its own. It is what a public hostname is pointed at; the phone line's
+# golive is never that.
+DEMO_PORT="${DEMO_PORT:-9080}"
+DEMO_PROFILE="${DEMO_PROFILE:-configs/tencent-deepseek-minimax.json}"
+DEMO_MAX_SESSIONS="${DEMO_MAX_SESSIONS:-2}"
 JOURNAL_REPO="${JOURNAL_REPO:-https://github.com/chuanmingliu/full-duplex-go-live}"
 CMD="${1:-status}"
 
@@ -218,6 +230,54 @@ jstart() {
   else say "the call journal did not start; see $JLOG"; tail -3 "$JLOG"; return 1; fi
 }
 
+# The browser demo is a separate process from the phone line's golive, with its
+# own port, profile and log, so that a stranger on the demo page cannot be
+# confused with a call, does not appear in the journal, and is not recorded.
+# It does share the provider accounts: DEMO_MAX_SESSIONS bounds how much of
+# them a public page can take.
+DPID="$STATE.demo.pid"; DLOG="golive-demo.log"
+drunning() { [ -f "$DPID" ] && kill -0 "$(cat "$DPID")" 2>/dev/null; }
+dstop() {
+  touch "$STATE.demo.stop"
+  if drunning; then
+    pkill -TERM -P "$(cat "$DPID")" 2>/dev/null; kill "$(cat "$DPID")" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8; do drunning || break; sleep 0.5; done
+  fi
+  rm -f "$DPID"
+}
+dstart() {
+  find_env || { say "no provider keys found; set ENVFILE"; return 1; }
+  [ -x "$BIN" ] || chmod +x bin/* 2>/dev/null
+  [ -d web ] || { say "no web/ directory beside the binaries: this bundle has no test page"; return 1; }
+  dstop; rm -f "$STATE.demo.stop"
+  printf '\n--- %s phone-brain: starting the browser demo %s on 127.0.0.1:%s ---\n' "$(date '+%F %T')" "$(cut -d' ' -f1 VERSION 2>/dev/null)" "$DEMO_PORT" >> "$DLOG"
+  env -u GOLIVE_STORE_DIR -u GOLIVE_REALTIME_STORE_CALLS -u GOLIVE_LAST_CALL_FILE -u GOLIVE_TELEMETRY_URL \
+    GOLIVE_LOG_LEVEL="${DEMO_LOG_LEVEL:-info}" GOLIVE_MAX_SESSIONS="$DEMO_MAX_SESSIONS" GOLIVE_WEB_ROOT=web \
+    setsid nohup bash -c '
+    stop="$1"; shift
+    quick=0
+    while :; do
+      began=$(date +%s)
+      "$@"; code=$?
+      [ -f "$stop" ] && exit 0
+      if [ $(( $(date +%s) - began )) -lt 5 ]; then quick=$((quick + 1)); else quick=0; fi
+      [ "$quick" -ge 5 ] && { printf "\n--- %s the demo keeps exiting at once (status %s); giving up ---\n" "$(date "+%F %T")" "$code"; exit 1; }
+      printf "\n--- %s the demo exited with status %s; starting it again ---\n" "$(date "+%F %T")" "$code"
+      sleep 1
+    done' keepalive "$STATE.demo.stop" "./$BIN" -profile "$DEMO_PROFILE" -env "$ENVFILE" -addr "127.0.0.1:$DEMO_PORT" \
+    >> "$DLOG" 2>&1 < /dev/null &
+  echo $! > "$DPID"
+  for _ in $(seq 1 30); do
+    curl -s -m 2 "http://127.0.0.1:$DEMO_PORT/healthz" 2>/dev/null | grep -q '"status":"ok"' && break
+    sleep 0.5
+  done
+  if curl -s -m 2 "http://127.0.0.1:$DEMO_PORT/healthz" 2>/dev/null | grep -q '"status":"ok"'; then
+    say "the browser demo is up on 127.0.0.1:$DEMO_PORT (at most $DEMO_MAX_SESSIONS sessions at once); log: $DLOG"
+  else
+    say "the browser demo did not come up; see $DLOG"; tail -5 "$DLOG" | cut -c1-200; return 1
+  fi
+}
+
 start_golive() {
   local bind="$1" mark ok=""
   [ -x "$BIN" ] || chmod +x bin/* 2>/dev/null
@@ -283,6 +343,8 @@ start_golive() {
   say "log      : $(pwd)/$LOG"
   # With this build's journal: it is what archives the calls golive records.
   jstart || say "golive is up, but without the journal nothing is being archived"
+  # And the browser demo, if it has been turned on: `demo on`.
+  if [ -f "$STATE.demo" ]; then dstart || say "golive is up, but the browser demo is not"; fi
 }
 
 case "$CMD" in
@@ -599,6 +661,19 @@ journal)
     *) say "journal start | stop | status"; exit 2 ;;
   esac
   if jrunning; then say "  http://$JOURNAL_ADDR/"; fi
+  ;;
+
+demo)
+  # The browser demo on DEMO_PORT, for a public hostname to point at.
+  case "${2:-status}" in
+    on|start|restart) touch "$STATE.demo"; dstart || exit 1 ;;
+    off|stop) rm -f "$STATE.demo"; dstop; say "the browser demo is stopped, and stays off when golive is restarted" ;;
+    status)
+      if drunning; then say "the browser demo is up on 127.0.0.1:$DEMO_PORT: $(curl -s -m 2 "http://127.0.0.1:$DEMO_PORT/healthz" | cut -c1-120)"
+      else say "the browser demo is not running$([ -f "$STATE.demo" ] && echo ' (it is turned on: scripts/phone-brain.sh demo on starts it)')"; fi
+      ;;
+    *) say "demo on | off | status"; exit 2 ;;
+  esac
   ;;
 
 archive)

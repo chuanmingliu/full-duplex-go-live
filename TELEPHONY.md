@@ -158,10 +158,12 @@ scripts/phone-brain.sh journal status | stop
 It is a page on the home network, served by its own small process
 (`bin/journal-linux-*`), so changing it never restarts golive. It reads
 golive's log and, when calls are recorded (`record on`), golive's store. It has
-no login, so where it listens is the whole of its protection: one address, the
-one this box has on the home network (the interface the default route leaves
-by) — not the VPN tunnel, not the container bridges, not a port any tunnel
-publishes. `JOURNAL_ADDR` overrides it. The one thing the page can write is the
+no login. It listens on one address, the one this box has on the home network
+(the interface the default route leaves by) — not the VPN tunnel, not the
+container bridges. `JOURNAL_ADDR` overrides it. Since 10-12 the owner also
+publishes it as `robotgo.liuchuanming.ai` through the Cloudflare tunnel; see
+"The browser demo, and what the public hostnames point at" for what then
+protects it. The one thing the page can write is the
 owner's own note on a call.
 
 What it shows:
@@ -194,6 +196,42 @@ headed paragraphs — what happened, the slow turns and their causes, what was
 changed, what is open. It contains no transcript and nothing personal; the
 repository is public. The journal's figures for a call are the ones
 `scripts/call-latency.sh` prints (a test holds them to that).
+
+## The browser demo, and what the public hostnames point at
+
+```bash
+scripts/phone-brain.sh demo on        # a second golive of this build, with the test page, on 127.0.0.1:9080
+scripts/phone-brain.sh demo status | off
+```
+
+`golive.liuchuanming.ai` is routed by the tunnel to port 9080. What used to be
+there was a September build started by hand in another directory; it crashed
+on 10-10, the box rebooted on 10-11, nothing brought it back, and the address
+answered 502 until 10-12. The demo is now this bundle's own binary, run apart
+from the phone line's golive: its own port, the browser profile
+(`configs/tencent-deepseek-minimax.json`), its own log (`golive-demo.log`), no
+recording, no telemetry, nothing in the journal or the archive. Once turned on
+it is started whenever golive is, and kept running by the same kind of loop.
+
+It shares the provider accounts with the phone line, and the page is public
+with no login: anyone with the address can talk to it on the owner's keys.
+`DEMO_MAX_SESSIONS` (2) bounds how many can at once; a Cloudflare Access
+policy on the hostname is what keeps strangers out altogether.
+
+The tunnel's rules are in `/etc/cloudflared/config.yml` on the box (locally
+managed; root's to edit) and DNS records are made in the Cloudflare dashboard,
+because the box has no `cert.pem`:
+
+| Hostname | Goes to | What it is |
+| --- | --- | --- |
+| `liuchuanming.ai`, `www` | `localhost:3000` | Aria, the call originator's page |
+| `golive.` | `localhost:9080` | the browser demo above |
+| `fullduplex.` | `localhost:3100` | the owner's other service |
+| `robotgo.` | `192.168.71.9:8790` | the call journal (added by the owner on 10-12) |
+
+The journal has no login of its own and shows every call's conversation and
+recording. Published like this, Cloudflare Access on `robotgo.` is the only
+thing between it and anyone who has the address.
 
 ## The archive: every call, kept for good
 
