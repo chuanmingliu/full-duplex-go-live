@@ -146,6 +146,50 @@ printed. Dial once from the page after changing the prompt, and that is what
 `call` places from then on. `instructions_sha` on the `realtime:
 session.update` log line says whether two calls were given the same prompt.
 
+## The call journal
+
+Every call golive answers, kept where the next round of work can look at it:
+
+```bash
+scripts/phone-brain.sh journal start     # prints the address, e.g. http://192.168.71.9:8790/
+scripts/phone-brain.sh journal status | stop
+```
+
+It is a page on the home network, served by its own small process
+(`bin/journal-linux-*`), so changing it never restarts golive. It reads
+golive's log and, when calls are recorded (`record on`), golive's store. It has
+no login and listens on a port no tunnel publishes; the one thing the page can
+write is the owner's own note on a call.
+
+What it shows:
+
+- **Overview**: the target, the current build's pooled figures with the 95%
+  interval for the share of turns over target, a mark per call over time, the
+  builds pooled, and the list of calls.
+- **A call**: the recording as two lanes (caller, assistant) with each turn's
+  wait drawn on it; the conversation turn by turn with the wait between a
+  question and its answer; a waterfall of every turn's stages, which add up to
+  its total; where the median turn's time goes; what else happened (guesses
+  dropped, interruptions, which copy won, the synthesizer's first audios);
+  warnings; the retrospective; the owner's rating and note.
+- **Issues**: everything found so far — symptom, cause, fix, commit, the call
+  that verified it — and **Decisions**: the options that need the owner.
+
+Where its content comes from:
+
+| | Source | Kept |
+| --- | --- | --- |
+| Figures, stages, conversation | `golive-telephony.log`, re-read when it grows | each finished call also in `~/golive-journal/calls/`, so a call outlives the log |
+| Audio | `~/golive-calls/<session>/` (golive's store) | `CALLS_TTL_HOURS`, a week |
+| Retrospectives, issues, decisions | `journal/` in this repository, shipped in the bundle | with the code |
+| The owner's notes | written from the page | `~/golive-journal/feedback/` |
+
+After a call, a retrospective is a file: `journal/retros/<call id>.md`, a few
+headed paragraphs — what happened, the slow turns and their causes, what was
+changed, what is open. It contains no transcript and nothing personal; the
+repository is public. The journal's figures for a call are the ones
+`scripts/call-latency.sh` prints (a test holds them to that).
+
 ## Measuring the phone leg
 
 Nothing outside golive reports a timestamp, so the gateway, the PBX and the

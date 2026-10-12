@@ -30,6 +30,11 @@
 #   scripts/phone-brain.sh echo       time the phone leg from the last recorded call:
 #                                     how long the assistant's voice takes to come
 #                                     back on the line. Prints numbers only.
+#   scripts/phone-brain.sh journal [start|stop|status]
+#                                     the call journal: every call timed stage by
+#                                     stage, its recording, what was written about
+#                                     it, the issues found and fixed. A page on the
+#                                     home network (JOURNAL_ADDR), with no login.
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -44,6 +49,9 @@
 #   LAST_CALL=…     where golive keeps the last answered call's instructions
 #                   and opening line (~/golive-last-call.json), for `call`
 #   CALLS_DIR=…     where recorded calls are kept (~/golive-calls), mode 700
+#   CALLS_TTL_HOURS=…  how long a recorded call is kept (168: a week)
+#   JOURNAL_ADDR=…  where the call journal listens (0.0.0.0:8790); never a port
+#                   a tunnel publishes. JOURNAL_DATA=… its own files (~/golive-journal)
 #   ARIA_ENV=…      the originator's env file, read for the number it allows
 #                   (~/aria/.env); ARIA_URL=… its address (http://127.0.0.1:3000)
 set -uo pipefail
@@ -55,6 +63,10 @@ LOG="${LOGFILE:-golive-telephony.log}"
 PROFILE="${PROFILE:-configs/telephony.json}"
 LAST_CALL="${LAST_CALL:-$HOME/golive-last-call.json}"
 CALLS_DIR="${CALLS_DIR:-$HOME/golive-calls}"
+CALLS_TTL_HOURS="${CALLS_TTL_HOURS:-168}"
+JOURNAL_ADDR="${JOURNAL_ADDR:-0.0.0.0:8790}"
+JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
+JOURNAL_REPO="${JOURNAL_REPO:-https://github.com/chuanmingliu/full-duplex-go-live}"
 CMD="${1:-status}"
 
 case "$(uname -m)" in
@@ -170,6 +182,7 @@ start_golive() {
   if [ -f "$STATE.record" ]; then
     mkdir -p "$CALLS_DIR" && chmod 700 "$CALLS_DIR"
     export GOLIVE_STORE_DIR="$CALLS_DIR" GOLIVE_REALTIME_STORE_CALLS=1
+    export GOLIVE_STORE_TTL_HOURS="${GOLIVE_STORE_TTL_HOURS:-$CALLS_TTL_HOURS}"
   fi
   # A lane — a connection of its own — for each copy of a completion the
   # profile asks for; the chat-model adapter keeps four unless told otherwise.
@@ -509,6 +522,42 @@ echo)
   [ -d "$CALLS_DIR" ] || { say "no recorded calls: scripts/phone-brain.sh record on, restart, and place a call"; exit 1; }
   shift
   "./bin/echoprobe-linux-$ARCH" -store "$CALLS_DIR" "$@"
+  ;;
+
+journal)
+  # The call journal runs beside golive and reads what golive writes. It is
+  # its own process so that changing it never restarts a service that may be
+  # in the middle of a call.
+  jbin="./bin/journal-linux-$ARCH"; jpid="$STATE.journal.pid"; jlog="journal.log"
+  jrunning() { [ -f "$jpid" ] && kill -0 "$(cat "$jpid")" 2>/dev/null; }
+  jstop() {
+    if jrunning; then kill "$(cat "$jpid")" 2>/dev/null; for _ in 1 2 3 4 5 6; do jrunning || break; sleep 0.5; done; fi
+    rm -f "$jpid"
+  }
+  case "${2:-status}" in
+    start|restart)
+      chmod +x "$jbin" 2>/dev/null
+      [ -x "$jbin" ] || { say "no binary at $jbin"; exit 1; }
+      jstop
+      mkdir -p "$JOURNAL_DATA" && chmod 700 "$JOURNAL_DATA"
+      store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
+      setsid nohup "$jbin" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
+        -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" >> "$jlog" 2>&1 < /dev/null &
+      echo $! > "$jpid"
+      sleep 1
+      if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$jpid"))"
+      else say "the call journal did not start; see $jlog"; tail -3 "$jlog"; exit 1; fi
+      ;;
+    stop) jstop; say "the call journal is stopped" ;;
+    status)
+      if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$jpid"))"; else say "the call journal is not running"; fi
+      ;;
+    *) say "journal start | stop | status"; exit 2 ;;
+  esac
+  port="${JOURNAL_ADDR##*:}"
+  if jrunning; then
+    for ip in $(hostname -I 2>/dev/null); do case "$ip" in 192.168.*|10.*|172.1[6-9].*|172.2*|172.3[01].*) say "  http://$ip:$port/" ;; esac; done
+  fi
   ;;
 
 sync)

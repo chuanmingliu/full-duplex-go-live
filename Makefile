@@ -102,7 +102,7 @@ dist:
 BUNDLE := dist/golive-telephony
 bundle:
 	@rm -rf $(BUNDLE) && mkdir -p $(BUNDLE)/bin $(BUNDLE)/configs $(BUNDLE)/scripts
-	@for c in golive golivebench golivectl llmprobe ttsprobe echoprobe; do \
+	@for c in golive golivebench golivectl llmprobe ttsprobe echoprobe journal; do \
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" \
 			-o $(BUNDLE)/bin/$$c-linux-amd64 ./cmd/$$c || exit 1; \
 	done
@@ -111,6 +111,7 @@ bundle:
 	@cp configs/*.json configs/sim.env $(BUNDLE)/configs/
 	@cp scripts/*.sh $(BUNDLE)/scripts/
 	@cp start.sh TELEPHONY.md .env.example $(BUNDLE)/
+	@cp -r journal $(BUNDLE)/journal
 	@echo "$(COMMIT) $$(date -u +%FT%TZ) $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" > $(BUNDLE)/VERSION
 	@tar -C dist -czf dist/golive-telephony.tar.gz golive-telephony
 	@echo "dist/golive-telephony.tar.gz  $$(cat $(BUNDLE)/VERSION)"

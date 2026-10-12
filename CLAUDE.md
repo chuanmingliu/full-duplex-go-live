@@ -397,6 +397,18 @@ made on one build.
 4. The phone leg has never been measured. The console has the events to do it
    once golive's are accepted.
 
+## The call journal
+
+`scripts/phone-brain.sh journal start` on the box serves a page on the home
+network (port 8790) with every call: figures, the per-turn waterfall, the
+conversation, the recording when one was kept, and what was written about it.
+See "The call journal" in `TELEPHONY.md`. **After every call**: write
+`journal/retros/<call id>.md` (what happened, slow turns and causes, what
+changed, what is open — no transcript, nothing personal), add or update
+entries in `journal/issues.json` (status, commit, the call that verified a
+fix) and `journal/decisions.json`, and ship them with the bundle. The owner
+reads the journal; an issue fixed but not recorded there is not visibly fixed.
+
 ## Build and test
 
 ```bash
