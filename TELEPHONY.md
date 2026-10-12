@@ -430,6 +430,37 @@ this barge-in looks like the assistant's own voice returning
 
 raise the margin towards what the line suggests (`echo_floor_db` on that line).
 
+## What the caller can say without stopping the assistant
+
+`duplex.user_backchannel_phrases` in `configs/telephony.json` is the owner's
+list (10-12, 33 entries): murmurs ("嗯", "哦", "啊", "哈哈"), agreement ("对",
+"是的", "没错", "确实", "好", "行", "没问题") and go-ons ("然后呢", "你接着说",
+"这样啊", "原来如此", "真的吗"). To change it, edit the list in the repository
+and deploy; the copy on the box is replaced by every bundle.
+
+What it does, and only this: when the caller makes a sound over the assistant,
+the assistant keeps talking for up to `user_backchannel_hold_ms` (600) while
+the transcript says what the sound was. Nothing but listed phrases, repeated or
+combined ("嗯嗯嗯", "嗯，对") — it carries on, and the utterance is neither
+answered nor put in the history. Anything else stops it, at the first character
+no listed phrase goes on with: "嗯，等一下" at 等, "对了" at 了, "好的" at 的
+(好 is listed, 好的 is not). No words at all — a cough, the line — and it
+carries on.
+
+What each entry costs: the caller cannot stop the assistant with that phrase
+alone, and a reply said over the end of the assistant's question ("对" before
+the question has finished playing) is taken for a murmur and not answered. On
+a phone the leg's delay makes that rare, since the caller hears the question
+late; it is the thing to listen for on calls with this list.
+
+What it no longer costs: a listed word said into a silence is the caller
+answering, and its answer is begun on the early final like any other short
+turn's (`acknowledging` in `internal/duplex/listen.go`). Before 10-12 a word on
+the list lost that head start wherever it was said.
+
+The assistant's own murmurs while the caller talks (`duplex.backchannel`,
+`backchannel_phrases`) are off: on a phone line they land on top of the caller.
+
 ## Place a call
 
 Aria's brain must be `local` (`GET /api/realtime/brain` says which). Then dial

@@ -512,13 +512,29 @@ func (e *Engine) onEarlyFinal(run *asrRun, text string) {
 // speculateOnFinal begins the answer on words the recognizer has finished
 // with, in a pause that has not yet ended the turn.
 //
+// acknowledging reports whether text is the caller acknowledging the assistant
+// rather than taking a turn: a listed murmur, said while the assistant has the
+// floor.
+//
+// The list (user_backchannel_phrases) is about the floor: "嗯" over an answer
+// does not stop it. It was also keeping an answer from being begun early on
+// any listed word, wherever it was said — and "嗯", "对", "好" said into a
+// silence are not murmurs, they are the caller answering a question. Such a
+// turn is answered either way; the only thing the list did to it was take away
+// its head start, which made the shortest turns of a call its slowest (four of
+// the five turns over target on one call were answers to "嗯。"). The longer the
+// list, the more turns that was.
+func (e *Engine) acknowledging(text string) bool {
+	return e.bcSet.Matches(text) && e.assistantHasFloor()
+}
+
 // The gates are maybeSpeculate's, less the ones that exist because a partial
 // may not be the whole of what was said: this is.
 func (e *Engine) speculateOnFinal(text string) {
 	if !e.opts.Speculative || e.muted || e.hold != nil || text == "" || e.liveSpeculation() != nil {
 		return
 	}
-	if e.bcSet.Matches(text) {
+	if e.acknowledging(text) {
 		e.specWhy = "the words so far are an acknowledgement, not a question"
 		return
 	}
@@ -909,7 +925,7 @@ func (e *Engine) maybeSpeculate() {
 	// rarely bit; the case it did cover is this one, stated directly. It also
 	// catches an acknowledgement long enough to clear speculative_min_chars
 	// ("好的好的"), which the old form missed whenever no hold existed.
-	if e.bcSet.Matches(run.lastText) {
+	if e.acknowledging(run.lastText) {
 		e.specWhy = "the partial so far is an acknowledgement, not a question"
 		return
 	}
@@ -982,7 +998,7 @@ func (e *Engine) speculateAtClose() {
 	if run == nil || !run.sendDone || run.ended || e.liveSpeculation() != nil {
 		return
 	}
-	if run.lastText == "" || e.bcSet.Matches(run.lastText) {
+	if run.lastText == "" || e.acknowledging(run.lastText) {
 		return
 	}
 	if e.opts.Cfg.Duplex.IgnoreHesitations && endpoint.Hesitation(run.lastText) {

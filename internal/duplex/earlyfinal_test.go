@@ -843,6 +843,42 @@ func TestAShortTurnIsBegunOnItsEarlyFinalToo(t *testing.T) {
 	waitFor(t, "the answer", 3*time.Second, func() bool { return c.audioMS() > 0 })
 }
 
+// The list of murmurs that do not interrupt is about the floor. "嗯" said into
+// a silence is the caller answering, and must be begun on its early final like
+// any other short turn — with the word on the list or not. Before, every word
+// added to the list was a word whose turns lost their head start.
+func TestAListedWordSaidIntoSilenceKeepsItsHeadStart(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.UserBackchannelPhrases = []string{"嗯", "对", "好"}
+	cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 600
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("嗯")
+	asr.msPerRune = 300
+	asr.fullStop = true
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: mock.NewLLM(), Emit: c.emit})
+	speak(e, rate, 400)
+	pause(e, rate, 300) // a hundred short of ending the turn
+
+	begun := false
+	for _, h := range c.speculativeHints() {
+		if normalizeForCompare(h) == "嗯" {
+			begun = true
+		}
+	}
+	if !begun {
+		t.Fatalf("300 ms into the pause no answer had been begun on a \"嗯\" said into silence; guesses so far: %q", c.speculativeHints())
+	}
+	pause(e, rate, 500)
+	waitFor(t, "the turn to be confirmed", 2*time.Second, func() bool {
+		return c.count(live.ServerDelegationCreated) == 1
+	})
+	if ds := c.delegations(); ds[0].Delegation.Reason != "speculative" {
+		t.Errorf("the turn was answered from %q; the answer begun in the pause should have stood", ds[0].Delegation.Reason)
+	}
+	waitFor(t, "the answer", 3*time.Second, func() bool { return c.audioMS() > 0 })
+}
+
 // textsTTS records what the synthesizer is asked to say.
 type textsTTS struct {
 	inner provider.TTS

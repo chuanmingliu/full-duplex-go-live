@@ -40,7 +40,7 @@
       "好的",
       "我在听"
     ],
-    "user_backchannel_phrases": [],
+    "user_backchannel_phrases": ["哦", "不错", "没问题", "确实", "你接着说", "接着说", "嗯呵", "嗯", "对", "是", "是的", "好", "行", "噢", "啊", "呀", "哎", "诶", "真的吗", "然后呢", "这样啊", "原来如此", "没错", "就是", "对对对", "好好好", "嗯嗯", "哈哈", "呵呵", "对对", "是是", "嗯嗯嗯", "好嘞"],
     "user_backchannel_hold_ms": 600,
     "holding_filler": false,
     "holding_filler_after_ms": 1500,

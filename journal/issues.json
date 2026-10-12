@@ -458,6 +458,22 @@
       "verified": "",
       "verified_call": "",
       "effect": ""
+    },
+    {
+      "id": "ISS-027",
+      "title": "Any word the caller murmured stopped the assistant, and a listed murmur lost its head start",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-12",
+      "found_on": "the owner's review of the backchannel settings",
+      "found_call": "",
+      "symptom": "The phone profile's list of murmurs was empty, so \"嗯\" or \"对\" said over an answer cut it off. And any word put on the list would have had its turns answered without a head start when said into a silence.",
+      "cause": "The list was shipped empty on purpose (each entry is a phrase the caller can no longer interrupt with). The list was also consulted when deciding whether to begin an answer early, wherever the word was said.",
+      "fix": "The owner's 33 phrases are in the phone profile. The list now only decides who has the floor: a listed word said while the assistant is silent is begun on its early final like any short turn.",
+      "commits": [],
+      "verified": "",
+      "verified_call": "",
+      "effect": "Not yet heard on a call. To listen for: a reply said over the end of a question being taken for a murmur."
     }
   ]
 }
