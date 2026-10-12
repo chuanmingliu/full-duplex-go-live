@@ -197,6 +197,33 @@ assistant's voice some of the time and not others. Do not quote its `p50_ms`
 as the phone leg. A recording of the call made beside the handset, lined up
 against golive's log, is the way to measure what a caller actually waits.
 
+### From a recording of the call
+
+golive can keep a call's audio and measure the line from it, which survives
+noise that the first-sound estimate above does not:
+
+```bash
+scripts/phone-brain.sh record on    # then: scripts/phone-brain.sh restart
+# place a call
+scripts/phone-brain.sh echo         # numbers only
+scripts/phone-brain.sh record off   # and restart, when done
+```
+
+`record on` makes the Realtime endpoint keep every call as a stored session
+(`realtime.store_calls`): the caller as received and the assistant as sent,
+two PCM tracks on one timeline, in `~/golive-calls` (mode 700), swept after
+`store_ttl_hours` (a day). It is the owner's voice and whoever is near them;
+it stays on the box, and `echo` prints only numbers.
+
+`echo` runs `echoprobe` on the last call: it correlates the pattern of onsets
+in the assistant's track against the caller's track at every delay up to 1.5 s
+and reports the delays at which the line returns the assistant's voice, each
+with how sure it is, or says that it found none. On synthetic calls it found
+an echo 25 dB down under noise 5 dB louder than the echo in 90 s of call, and
+reported no echo where there was none in 2,700 trials; under noise 10 dB over
+the echo it needs about five minutes. It has not yet been run on a real call:
+a real echo has been through a codec twice and perhaps an echo canceller.
+
 A second line at the end of a call is for choosing `duplex.early_final_ms`:
 
 ```

@@ -699,6 +699,13 @@ func (s *Session) startRealtime(ctx context.Context, p *peer, ev *realtimeSessio
 		}
 	}
 	s.rt.voice = voice
+	if s.cfg.Realtime.StoreCalls {
+		// What store:true is to a gpt-live-1 session. Whether anything is
+		// kept still depends on store_dir, and says so if it is missing.
+		start.Session.Store = true
+		s.log.Info("realtime: this call is being kept as a stored session",
+			"call", s.rt.opts.CallID, "ttl_hours", s.cfg.StoreTTLHours)
+	}
 	start.Session.Audio = &live.AudioConfig{
 		Format: &format,
 		Output: &live.OutputAudio{Voice: voice},

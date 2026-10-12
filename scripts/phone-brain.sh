@@ -23,6 +23,13 @@
 #                                     instructions and opening line, to the one
 #                                     number the originator allows. `call show`
 #                                     says what is kept without dialling.
+#   scripts/phone-brain.sh record on|off   keep each call's audio — caller and assistant,
+#                                     two tracks — under CALLS_DIR for a day, or stop.
+#                                     Takes effect at the next `restart`. Off unless
+#                                     turned on; `record` alone says which.
+#   scripts/phone-brain.sh echo       time the phone leg from the last recorded call:
+#                                     how long the assistant's voice takes to come
+#                                     back on the line. Prints numbers only.
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -36,6 +43,7 @@
 #   PROFILE=…       golive profile; configs/telephony.json otherwise
 #   LAST_CALL=…     where golive keeps the last answered call's instructions
 #                   and opening line (~/golive-last-call.json), for `call`
+#   CALLS_DIR=…     where recorded calls are kept (~/golive-calls), mode 700
 #   ARIA_ENV=…      the originator's env file, read for the number it allows
 #                   (~/aria/.env); ARIA_URL=… its address (http://127.0.0.1:3000)
 set -uo pipefail
@@ -46,6 +54,7 @@ STATE=".phone-brain"
 LOG="${LOGFILE:-golive-telephony.log}"
 PROFILE="${PROFILE:-configs/telephony.json}"
 LAST_CALL="${LAST_CALL:-$HOME/golive-last-call.json}"
+CALLS_DIR="${CALLS_DIR:-$HOME/golive-calls}"
 CMD="${1:-status}"
 
 case "$(uname -m)" in
@@ -157,6 +166,11 @@ start_golive() {
   printf '\n--- %s phone-brain: starting golive %s on %s:%s ---\n' "$(date '+%F %T')" "$(cat VERSION 2>/dev/null | cut -d' ' -f1)" "$bind" "$PORT" >> "$LOG"
   mark=$(wc -l < "$LOG")
   rm -f "$STATE.stop"
+  # Calls are recorded only when somebody has said so: `record on`.
+  if [ -f "$STATE.record" ]; then
+    mkdir -p "$CALLS_DIR" && chmod 700 "$CALLS_DIR"
+    export GOLIVE_STORE_DIR="$CALLS_DIR" GOLIVE_REALTIME_STORE_CALLS=1
+  fi
   # A lane — a connection of its own — for each copy of a completion the
   # profile asks for; the chat-model adapter keeps four unless told otherwise.
   local copies
@@ -475,6 +489,26 @@ except OSError as err:
 print("originator answered %d: %s" % (status, hide(text)[:400]))
 sys.exit(0 if status == 200 else 1)
 PY
+  ;;
+
+record)
+  case "${2:-}" in
+    on)  : > "$STATE.record"; say "calls will be recorded to $CALLS_DIR from the next restart, and kept a day" ;;
+    off) rm -f "$STATE.record"; say "calls will not be recorded from the next restart; what is in $CALLS_DIR stays until it expires or is removed" ;;
+    "")  ;;
+    *)   say "record on | record off"; exit 2 ;;
+  esac
+  if [ -f "$STATE.record" ]; then say "recording: on (setting)"; else say "recording: off (setting)"; fi
+  n=$(find "$CALLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+  say "recorded calls kept: $n in $CALLS_DIR ($(du -sh "$CALLS_DIR" 2>/dev/null | cut -f1))"
+  ;;
+
+echo)
+  # The phone leg, from the audio of the last recorded call. Numbers only.
+  chmod +x "bin/echoprobe-linux-$ARCH" 2>/dev/null
+  [ -d "$CALLS_DIR" ] || { say "no recorded calls: scripts/phone-brain.sh record on, restart, and place a call"; exit 1; }
+  shift
+  "./bin/echoprobe-linux-$ARCH" -store "$CALLS_DIR" "$@"
   ;;
 
 sync)

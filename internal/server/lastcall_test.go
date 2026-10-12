@@ -79,3 +79,50 @@ func TestNoCallIsKeptWithoutSomewhereToKeepIt(t *testing.T) {
 		t.Errorf("files were written with last_call_file unset: %v", entries)
 	}
 }
+
+// A phone gateway cannot ask for a call to be stored, so the endpoint can be
+// told to keep them all: both sides, as tracks on one timeline, for measuring
+// the line from the audio afterwards.
+func TestRealtimeCallsAreStoredWhenTheEndpointIsToldTo(t *testing.T) {
+	dir := t.TempDir()
+	ts, _, _ := gatewayServer(t, func(c *config.Config) {
+		c.StoreDir = dir
+		c.Realtime.StoreCalls = true
+	})
+	c := dialRealtime(t, ts, "/v1/realtime?call=out-aaaa-0001")
+	sendRaw(t, c.conn, activeCallSessionUpdate)
+	c.first("session.updated", 2*time.Second)
+	c.turn(16000, 1400)
+	await(t, "the assistant to answer", 5*time.Second, func() bool { return c.audioMS(16000) > 0 })
+
+	sessions, _ := os.ReadDir(dir)
+	if len(sessions) != 1 {
+		t.Fatalf("%d stored sessions; want the call", len(sessions))
+	}
+	for _, name := range []string{"input.pcm", "output.pcm"} {
+		var size int64
+		await(t, name+" to hold audio", 3*time.Second, func() bool {
+			info, err := os.Stat(filepath.Join(dir, sessions[0].Name(), name))
+			if err != nil {
+				return false
+			}
+			size = info.Size()
+			return size > 0
+		})
+		_ = size
+	}
+}
+
+// And not otherwise: a call is somebody's voice.
+func TestRealtimeCallsAreNotStoredByDefault(t *testing.T) {
+	dir := t.TempDir()
+	ts, _, _ := gatewayServer(t, func(c *config.Config) { c.StoreDir = dir })
+	c := dialRealtime(t, ts, "/v1/realtime?call=out-aaaa-0001")
+	sendRaw(t, c.conn, activeCallSessionUpdate)
+	c.first("session.updated", 2*time.Second)
+	c.turn(16000, 1400)
+	await(t, "the assistant to answer", 5*time.Second, func() bool { return c.audioMS(16000) > 0 })
+	if sessions, _ := os.ReadDir(dir); len(sessions) != 0 {
+		t.Errorf("a call was stored without being asked for: %d session(s)", len(sessions))
+	}
+}

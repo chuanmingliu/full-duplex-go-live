@@ -545,6 +545,13 @@ type RealtimeConfig struct {
 	// unvoiced consonants inside a word are silence; a model-based detector
 	// can be asked for 150 ms, this one cannot yet be trusted with it.
 	MinSilenceFloorMS int `json:"min_silence_floor_ms"`
+	// StoreCalls keeps every call on this endpoint as a stored session — the
+	// caller and the assistant as two tracks on one timeline, under store_dir
+	// for store_ttl_hours — as store:true does for a gpt-live-1 session. A
+	// Realtime client has no way to ask, and a phone gateway would not know
+	// to. It is how a call is measured from the audio afterwards (echoprobe).
+	// Off by default: it is somebody's voice on disk.
+	StoreCalls bool `json:"store_calls"`
 }
 
 func Default() Config {
@@ -741,6 +748,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Realtime.Dialect, "GOLIVE_REALTIME_DIALECT")
 	setBool(&c.Realtime.HoldForOpening, "GOLIVE_REALTIME_HOLD")
 	setBool(&c.Realtime.HonorTurnDetection, "GOLIVE_REALTIME_HONOR_TURN_DETECTION")
+	setBool(&c.Realtime.StoreCalls, "GOLIVE_REALTIME_STORE_CALLS")
 	setInt(&c.Realtime.MinSilenceFloorMS, "GOLIVE_REALTIME_MIN_SILENCE_FLOOR_MS")
 	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
 	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
