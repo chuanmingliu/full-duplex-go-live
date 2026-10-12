@@ -21,7 +21,7 @@ import (
 
 func main() {
 	var (
-		addr  = flag.String("addr", "0.0.0.0:8790", "address to listen on; a home-network address, never one a tunnel publishes")
+		addr  = flag.String("addr", "127.0.0.1:8790", "address to listen on; the home-network address, never one a tunnel publishes")
 		logp  = flag.String("log", "golive-telephony.log", "golive's log")
 		store = flag.String("store", "", "golive's store_dir, where recorded calls are kept; empty when calls are not recorded")
 		data  = flag.String("data", "journal-data", "where the journal keeps calls as last read and the owner's notes")

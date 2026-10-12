@@ -50,7 +50,8 @@
 #                   and opening line (~/golive-last-call.json), for `call`
 #   CALLS_DIR=…     where recorded calls are kept (~/golive-calls), mode 700
 #   CALLS_TTL_HOURS=…  how long a recorded call is kept (168: a week)
-#   JOURNAL_ADDR=…  where the call journal listens (0.0.0.0:8790); never a port
+#   JOURNAL_ADDR=…  where the call journal listens (this box's home-network
+#                   address, port 8790); never an address or port
 #                   a tunnel publishes. JOURNAL_DATA=… its own files (~/golive-journal)
 #   ARIA_ENV=…      the originator's env file, read for the number it allows
 #                   (~/aria/.env); ARIA_URL=… its address (http://127.0.0.1:3000)
@@ -64,7 +65,17 @@ PROFILE="${PROFILE:-configs/telephony.json}"
 LAST_CALL="${LAST_CALL:-$HOME/golive-last-call.json}"
 CALLS_DIR="${CALLS_DIR:-$HOME/golive-calls}"
 CALLS_TTL_HOURS="${CALLS_TTL_HOURS:-168}"
-JOURNAL_ADDR="${JOURNAL_ADDR:-0.0.0.0:8790}"
+# The journal shows what was said on calls, so it listens on one address: the
+# one this box has on the home network (the interface the default route
+# leaves by) - not on every interface, which here would include a VPN tunnel
+# and container bridges.
+lan_ip() {
+  local dev
+  dev="$(ip -4 route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
+  [ -n "$dev" ] && ip -o -4 addr show dev "$dev" 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}'
+}
+JOURNAL_PORT="${JOURNAL_PORT:-8790}"
+if [ -z "${JOURNAL_ADDR:-}" ]; then _ip="$(lan_ip)"; JOURNAL_ADDR="${_ip:-127.0.0.1}:$JOURNAL_PORT"; fi
 JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
 JOURNAL_REPO="${JOURNAL_REPO:-https://github.com/chuanmingliu/full-duplex-go-live}"
 CMD="${1:-status}"
@@ -554,10 +565,7 @@ journal)
       ;;
     *) say "journal start | stop | status"; exit 2 ;;
   esac
-  port="${JOURNAL_ADDR##*:}"
-  if jrunning; then
-    for ip in $(hostname -I 2>/dev/null); do case "$ip" in 192.168.*|10.*|172.1[6-9].*|172.2*|172.3[01].*) say "  http://$ip:$port/" ;; esac; done
-  fi
+  if jrunning; then say "  http://$JOURNAL_ADDR/"; fi
   ;;
 
 sync)

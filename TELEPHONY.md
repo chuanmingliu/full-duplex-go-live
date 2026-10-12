@@ -158,8 +158,11 @@ scripts/phone-brain.sh journal status | stop
 It is a page on the home network, served by its own small process
 (`bin/journal-linux-*`), so changing it never restarts golive. It reads
 golive's log and, when calls are recorded (`record on`), golive's store. It has
-no login and listens on a port no tunnel publishes; the one thing the page can
-write is the owner's own note on a call.
+no login, so where it listens is the whole of its protection: one address, the
+one this box has on the home network (the interface the default route leaves
+by) — not the VPN tunnel, not the container bridges, not a port any tunnel
+publishes. `JOURNAL_ADDR` overrides it. The one thing the page can write is the
+owner's own note on a call.
 
 What it shows:
 
