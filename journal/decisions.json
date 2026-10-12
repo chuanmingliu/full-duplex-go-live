@@ -15,12 +15,12 @@
       "rank": 2,
       "title": "A second synthesis account, used as a pool of two",
       "gain": "The faster of two first audios on every turn instead of one (unmeasured; the tail is the point: 646 and 938 ms on the 09:34 call), and a second allowance of requests. Cures the multi-second stalls only if they turn out to be per account.",
-      "basis": "estimated: the synthesizer is ~230 of ~870 ms; on one account, racing every first segment took the bench's p95 from ~1070 to ~1010 and then hit the rate limit",
-      "cost": "The owner's second account, and the voice made again on it: the voice in use is a clone that belongs to the first account. Two clones are two voices; which account speaks changes from turn to turn.",
+      "basis": "measured 10-12, 30 rounds, both accounts asked at once: first audio p50 265 / p90 336 / worst 689 ms on the first account alone, 248 / 328 / 337 for the faster of the two; a first audio of 400 ms or more on 4 rounds, never on both at once. No multi-second stall occurred, so nothing is known about those.",
+      "cost": "The two accounts' copies of the voice differ: the second speaks about 9% faster and about 3 dB louder. The owner heard both and keeps them as they are: both are his voice, and the variation from turn to turn is wanted.",
       "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
       "undo": "yes: remove the key; one key behaves exactly as before",
-      "needs": "The owner fills in `MINIMAX_TTS_API_KEY_2` and `MINIMAX_TTS_VOICE_ID_2` in the env file on the box (the empty fields are there), then `scripts/phone-brain.sh tts -pool 30 -every 8s -save ~/golive-voices`",
-      "status": "built; waiting for the second account's key and voice"
+      "needs": "A call on the pool, to verify. Then the second account's real allowance (paced alone until refused), to set `tts_account_rpm` above the published 10 if it allows.",
+      "status": "taken 10-12: on, racing every first segment; not yet heard on a call"
     },
     {
       "rank": 3,

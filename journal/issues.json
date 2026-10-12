@@ -297,7 +297,7 @@
       "found_call": "out-mv3wvlrt-sglf",
       "symptom": "First audio of 1.3–4 s, and a segment missing for 3.3 s in the middle of an answer. The worst turn so far: 4603 ms.",
       "cause": "Not known. Not load: slow syntheses came at 13–17 requests a minute. Not one connection: a second connection asked 260 ms in had nothing either. A probe with TLS handshakes every second caught no stall.",
-      "fix": "None yet. A second connection (insurance against one bad connection) is in place. Options: the vendor's HTTP endpoint as a second route; a holding phrase on slow turns; openers from the phrase cache. A pool of two accounts is built (10-12) and waits for the second key; its probe asks both accounts at once, which will show whether a stall is one account's or everyone's.",
+      "fix": "None yet. A second connection (insurance against one bad connection) is in place. Options: the vendor's HTTP endpoint as a second route; a holding phrase on slow turns; openers from the phrase cache. A pool of two accounts is on since 10-12 22:35: an answer's first segment is asked of both and the faster is played. In 30 probe rounds the accounts were never slow together (worst 689 ms alone, 337 for the faster), but no multi-second stall occurred in them, so whether a stall is one account's or everyone's is still not known.",
       "commits": [],
       "verified": "",
       "verified_call": "",

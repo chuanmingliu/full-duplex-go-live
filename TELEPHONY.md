@@ -415,9 +415,14 @@ going bad, and the stalls are not a matter of load either — over two calls
 the slow syntheses came at 13–17 requests in the minute before them, and
 thirty-eight made at 20–31 a minute were as quick as any.
 
-**A second synthesis account is a pool of two.** Built on 10-12, when the owner
-opened a second account; unused until its settings are on the box. They go in
-the env file, beside the first account's, as a numbered pair:
+**A second synthesis account is a pool of two.** On since 10-12 22:35. Measured
+first (`tts -pool 30 -every 8s`, both accounts asked at the same moment): first
+audio p50 265, p90 336, worst 689 ms on the first account alone; 248, 328, 337
+for the faster of the two. A first audio of 400 ms or more on 4 of 30 rounds,
+never on both at once. The second account's copy of the voice speaks about 9%
+faster and 3 dB louder; the owner heard both and keeps them as they are (both
+are his voice, and the variation is wanted). Its settings are in the env file,
+beside the first account's, as a numbered pair:
 
 ```bash
 MINIMAX_TTS_API_KEY=…         # the first account, as it has always been

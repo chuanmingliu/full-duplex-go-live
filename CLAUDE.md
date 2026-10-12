@@ -321,8 +321,10 @@ made on one build.
   1200 (first audio 938 and 646 ms) were two of them. It now bounds what
   hedging adds: four second requests a minute. The vendor's real allowance is
   still not known; 26 in a minute passed and 36 a minute sustained did not.
-- **A second synthesis account, as a pool** (built 10-12, key not yet on the
-  box). `internal/provider/minimax/pool.go` keeps accounts apart (lane n is
+- **A second synthesis account, as a pool** (on since 10-12 22:35; measured:
+  first audio worst 689 ms on one account, 337 for the faster of two, never
+  slow together in 30 rounds; the two voices differ a little and the owner
+  wants that). `internal/provider/minimax/pool.go` keeps accounts apart (lane n is
   account n; a refused key is rested and the next takes the session);
   `provider.HedgeTTSPool` puts a session's second connection on the other
   account, counts every request per account (`tts_account_rpm: 10`), asks both
