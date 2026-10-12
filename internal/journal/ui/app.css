@@ -604,6 +604,31 @@ h3 { font-size: 13.5px; font-weight: 650; }
   .wf-line { grid-template-columns: 2.6em minmax(0, 1fr) 4.6em minmax(0, 11em); }
 }
 
+/* The calls list stacks when its own column is too narrow for nine columns,
+   whatever the window is: beside the section heading that happens well above
+   phone width. */
+.calls { container-type: inline-size; }
+@container (max-width: 980px) {
+  .calls-head { display: none; }
+  .call-row { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 16px; padding: 10px 2px; }
+  .call-row::before { content: ""; order: 2; flex: 1 0 100%; height: 0; margin-top: -3px; }
+  .c-when { order: 1; }
+  .c-verdict { order: 1; margin-left: auto; justify-content: flex-end; gap: 8px; }
+  .c-build { order: 3; }
+  .c-dur { order: 4; } .c-turns { order: 5; } .c-p50 { order: 6; } .c-tail { order: 7; } .c-over { order: 8; }
+  .c-marks { order: 9; margin-left: auto; }
+  .c-worst { order: 10; flex: 1 0 100%; }
+  .call-row [data-l]::before { content: attr(data-l) " "; font-family: var(--sans); font-size: 11.5px; font-weight: 400; color: var(--ink-3); }
+  .c-tail::before { display: none; }
+}
+
+@media (max-width: 900px) {
+  .top { gap: 10px; padding: 0 14px; }
+  .top-status { gap: 10px; font-size: 12px; }
+  .nav a { padding: 0 7px; }
+  .top .btn { padding: 4px 8px; }
+}
+
 @media (max-width: 760px) {
   body { font-size: 14px; }
   .top { position: static; flex-wrap: wrap; height: auto; padding: 8px 16px 0; gap: 4px 12px; }
