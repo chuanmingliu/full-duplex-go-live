@@ -559,6 +559,74 @@
     return h('div', { class: 'tbl-wrap' }, table);
   }
 
+  // ---------- playing a call straight from the list ----------
+  //
+  // One recording at a time, in an <audio> that belongs to no row: the list is
+  // redrawn every half minute, and what is playing must not stop for that. The
+  // buttons are found again by the call they name each time there is
+  // something to show.
+  var rowPlay = { id: null, audio: null, failed: null };
+  function stopRowPlay() {
+    var a = rowPlay.audio;
+    rowPlay = { id: null, audio: null, failed: null };
+    if (a) { a.pause(); a.removeAttribute('src'); try { a.load(); } catch (e) { /* nothing to unload */ } }
+    paintRowPlay();
+  }
+  function toggleRowPlay(c) {
+    var a = rowPlay.audio;
+    if (a && rowPlay.id === c.id) {
+      if (a.paused) a.play().catch(function () { rowPlay.failed = c.id; paintRowPlay(); }); else a.pause();
+      return;
+    }
+    stopRowPlay();
+    a = new Audio('/api/calls/' + encodeURIComponent(c.id) + '/audio.wav');
+    a.preload = 'auto';
+    rowPlay = { id: c.id, audio: a, failed: null };
+    ['play', 'playing', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (ev) {
+      a.addEventListener(ev, function () {
+        if (rowPlay.audio !== a) return;
+        if (ev === 'ended') { a.currentTime = 0; }
+        if (ev === 'error') { rowPlay.failed = c.id; }
+        paintRowPlay();
+      });
+    });
+    a.play().catch(function () { if (rowPlay.audio === a) { rowPlay.failed = c.id; paintRowPlay(); } });
+    paintRowPlay();
+  }
+  function paintRowPlay() {
+    var a = rowPlay.audio;
+    Array.prototype.forEach.call(document.querySelectorAll('.row-play'), function (b) {
+      var mine = !!a && b.getAttribute('data-call') === rowPlay.id;
+      var playing = mine && !a.paused && !a.ended;
+      var begun = mine && (playing || a.currentTime > 0);
+      var failed = rowPlay.failed === b.getAttribute('data-call');
+      b.classList.toggle('is-playing', playing);
+      b.classList.toggle('is-begun', begun);
+      b.classList.toggle('is-failed', failed);
+      b.setAttribute('aria-pressed', playing ? 'true' : 'false');
+      var label = b.getAttribute('data-label');
+      b.setAttribute('aria-label', (playing ? 'Pause' : 'Play') + ' ' + label);
+      // The button stays one size, so nothing in the row moves when it is
+      // pressed; where the recording has got to is the line under the row,
+      // and in words here.
+      var at = begun ? mss(a.currentTime) + ' of ' + mss(isFinite(a.duration) ? a.duration : +b.getAttribute('data-len')) : '';
+      b.title = failed ? 'This recording could not be played' : (playing ? 'Pause (' + at + ')' : (begun ? 'Play on from ' + at : 'Play this call’s recording'));
+      b.querySelector('.row-play-t').textContent = failed ? 'could not be played' : at;
+      var row = b.closest('.call-row');
+      if (row) {
+        row.classList.toggle('now-playing', begun);
+        row.style.setProperty('--played', begun && a.duration ? Math.min(1, a.currentTime / a.duration) : 0);
+      }
+    });
+  }
+  function rowPlayButton(c) {
+    var b = h('button', { type: 'button', class: 'row-play', 'data-call': c.id, 'data-len': c.duration_s,
+      'data-label': 'the recording of the call of ' + when(c.started_at) },
+      h('i', { class: 'pp', 'aria-hidden': 'true' }), h('span', { class: 'row-play-t vh', 'aria-live': 'off' }));
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggleRowPlay(c); });
+    return b;
+  }
+
   function callsList(ov) {
     var target = ov.target_ms;
     var list = h('div', { class: 'calls', role: 'list' });
@@ -568,11 +636,13 @@
     ov.calls.forEach(function (c) {
       var st = c.summary, t = tail(st);
       var marks = h('span', { class: 'c-marks' },
-        c.has_audio ? icon('rec', 'Recording kept') : null,
+        c.has_audio ? rowPlayButton(c) : null,
         c.has_retro ? icon('retro', 'Retrospective written') : null,
         c.rating ? ratingPips(c.rating) : null);
-      list.appendChild(h('a', { class: 'call-row' + (st.over ? ' has-over' : ''), href: '#/call/' + c.id, role: 'listitem' },
-        h('span', { class: 'c-when num' }, when(c.started_at)),
+      // The row is not itself a link: a button cannot sit inside one. The date
+      // is the link, and a click anywhere else on the row follows it.
+      var row = h('div', { class: 'call-row' + (st.over ? ' has-over' : ''), role: 'listitem' },
+        h('a', { class: 'c-when num', href: '#/call/' + c.id }, when(c.started_at)),
         h('span', { class: 'c-build num' }, c.build || '–'),
         h('span', { class: 'c-dur num r', 'data-l': 'length' }, dur(c.duration_s)),
         h('span', { class: 'c-turns num r', 'data-l': 'turns' }, st.turns),
@@ -581,14 +651,22 @@
         h('span', { class: 'c-over num r', 'data-l': 'over' }, st.over),
         h('span', { class: 'c-verdict' }, verdictChip(st), intervalGauge(st, { compact: true })),
         marks,
-        c.worst ? h('span', { class: 'c-worst' }, h('i', { class: 'sq-over', 'aria-hidden': 'true' }), c.worst) : null));
+        c.worst ? h('span', { class: 'c-worst' }, h('i', { class: 'sq-over', 'aria-hidden': 'true' }), c.worst) : null);
+      row.addEventListener('click', function (e) {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (e.target.closest && e.target.closest('a, button')) return;
+        if (String(window.getSelection && window.getSelection()) !== '') return; // selecting text is not a click
+        location.hash = '#/call/' + c.id;
+      });
+      list.appendChild(row);
     });
     if (!ov.calls.length) list.appendChild(h('p', { class: 'empty' }, 'No calls yet.'));
+    setTimeout(paintRowPlay, 0); // a list redrawn while a call plays picks its place up
     return h('div', null, list,
       h('p', { class: 'keyline' },
         h('span', null, h('i', { class: 'mk solid' }), ' p95, ' + MIN_TURNS + ' turns or more'),
         h('span', null, h('i', { class: 'mk hollow' }), ' worst turn, under ' + MIN_TURNS + ' turns'),
-        h('span', null, icon('rec', 'Recording kept'), ' recording kept'),
+        h('span', null, h('i', { class: 'key-play', 'aria-hidden': 'true' }, h('i', { class: 'pp' })), ' recording kept: play it here'),
         h('span', null, icon('retro', 'Retrospective written'), ' retrospective written'),
         h('span', null, ratingPips(3), ' your rating')));
   }
@@ -1703,6 +1781,7 @@
   function route() {
     hideTip();
     var r = parseRoute();
+    if (r.name !== 'overview') stopRowPlay(); // the list's player belongs to the list
     if (r.name === 'call') return routeCall(r.id);
     if (r.name === 'issues') return routeIssues(r.id);
     if (r.name === 'decisions') return routeDecisions();

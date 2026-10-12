@@ -168,7 +168,9 @@ What it shows:
 
 - **Overview**: the target, the current build's pooled figures with the 95%
   interval for the share of turns over target, a mark per call over time, the
-  builds pooled, and the list of calls.
+  builds pooled, and the list of calls. A call with a recording has a play
+  button in its row: it plays there, without opening the call, and a line
+  under the row shows how far it has got.
 - **A call**: the recording as two lanes (caller, assistant) with each turn's
   wait drawn on it; the conversation turn by turn with the wait between a
   question and its answer; a waterfall of every turn's stages, which add up to
