@@ -20,6 +20,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivectl ./cmd/golivectl
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivebench ./cmd/golivebench
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/ttsprobe ./cmd/ttsprobe
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/echoprobe ./cmd/echoprobe
 
 ## test: the Go suite, plus the demo page's transcript bookkeeping. The page is
 ## where a session is read, so a defect there is indistinguishable from one in
@@ -88,7 +89,7 @@ dist:
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "  building $$os/$$arch"; \
-		for c in golive golivectl golivebench ttsprobe; do \
+		for c in golive golivectl golivebench ttsprobe echoprobe; do \
 			GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" \
 				-o $(BIN)/$$c-$$os-$$arch ./cmd/$$c; \
 		done; \
@@ -101,7 +102,7 @@ dist:
 BUNDLE := dist/golive-telephony
 bundle:
 	@rm -rf $(BUNDLE) && mkdir -p $(BUNDLE)/bin $(BUNDLE)/configs $(BUNDLE)/scripts
-	@for c in golive golivebench golivectl llmprobe ttsprobe; do \
+	@for c in golive golivebench golivectl llmprobe ttsprobe echoprobe; do \
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" \
 			-o $(BUNDLE)/bin/$$c-linux-amd64 ./cmd/$$c || exit 1; \
 	done
