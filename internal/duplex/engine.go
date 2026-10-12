@@ -250,6 +250,7 @@ type Engine struct {
 	// silentBeforeMS is the open utterance's trailing silence as of the frame
 	// before this one. Loop goroutine only. See measureLine.
 	echoReturns    []float64
+	echoMisses     int
 	pausesInside   []int
 	silentBeforeMS float64
 
@@ -1878,6 +1879,14 @@ func (e *Engine) measureLine() {
 		e.log.Debug("listen: the assistant's voice came back",
 			"ms", int(ms), "level_db", round1(level))
 	}
+	if miss, ok := e.vad.TakeEchoMiss(); ok {
+		e.echoMisses++
+		e.log.Debug("listen: the assistant's voice coming back was not timed",
+			"reason", miss.Reason,
+			"quiet_before_ms", int(miss.QuietMS),
+			"level_db", round1(miss.LevelDB),
+			"noise_floor_db", round1(miss.NoiseFloorDB))
+	}
 	// VoicedRunMS is above zero only for an open utterance whose latest frame
 	// was voiced.
 	if e.silentBeforeMS >= insidePauseMinMS && e.vad.VoicedRunMS() > 0 {
@@ -1898,7 +1907,11 @@ func (e *Engine) lineSummary() {
 			"n", n,
 			"p50_ms", int(v[(n-1)/2]),
 			"min_ms", int(v[0]),
-			"max_ms", int(v[n-1]))
+			"max_ms", int(v[n-1]),
+			"not_timed", e.echoMisses)
+	} else if e.echoMisses > 0 {
+		// Tried and never managed: say so, or it reads as a line with no echo.
+		e.log.Info("listen: echo return time", "n", 0, "not_timed", e.echoMisses)
 	}
 	if n := len(e.pausesInside); n > 0 {
 		var under80, under100, under120, longer int

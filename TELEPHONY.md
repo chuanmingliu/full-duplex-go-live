@@ -180,7 +180,13 @@ speaking in the same second is timed as an echo, so read `p50_ms`, not
 `max_ms`. No line is logged when nothing was measured, which is what a line
 with echo cancellation gives.
 
-This has run against synthetic audio in tests and not yet on a call.
+An attempt that comes to nothing says why, at debug: `listen: the assistant's
+voice coming back was not timed`, with `reason` (the line had not been quiet,
+the caller was mid-utterance, nothing came back, a sound in the very first
+frame), `quiet_before_ms`, `level_db` and `noise_floor_db`. The summary line
+counts them as `not_timed`, and is printed with `n=0` when every attempt
+failed. The first call with the estimator measured nothing on a line that
+echoes; the reasons were added to find out why.
 
 A second line at the end of a call is for choosing `duplex.early_final_ms`:
 

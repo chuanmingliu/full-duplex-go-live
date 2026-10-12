@@ -74,6 +74,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 23:08 | 4b029b3, same prompt, 7 minutes | 37 | 841 | 4603 (**p95 1058**, p90 982) | 1 |
 | 10-11 23:34 | e517e3a (same engine), redialled from the box with `phone-brain.sh call`, 2 minutes | 15 | 943 | 1143 | 0 |
 | | **both calls since 4b029b3** | **52** | | 4603 (**p95 1091**) | **1** |
+| 10-12 09:24 | 9f2ae31 (eight copies), `call`, under a minute | 4 | 783 | 1029 | 0 |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
 1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
@@ -293,7 +294,14 @@ made on one build.
   Nothing times the phone leg. golive now does, by its own echo: `listen: echo
   return time` at the end of a call, and `listen: pauses inside utterances`
   for choosing `early_final_ms` from data ("Measuring the phone leg" in
-  `TELEPHONY.md`). Neither has yet been seen on a call.
+  `TELEPHONY.md`). First call with them (09:24 on 10-12, five utterances):
+  fifteen pauses the caller carried on from — 60 60 60 80 80 100 100 100 160
+  160 180 200 240 240 320 ms — so 120 ms splits at seven of them, 100 would at
+  ten and 80 at twelve: 20 ms a turn for half as many splits again, on a small
+  sample. Left at 120. The echo estimator took no measurement at all on that
+  call, though the line echoes at −28 dB, and could not say why; each attempt
+  now logs its reason (`listen: the assistant's voice coming back was not
+  timed`) and the summary counts them (`not_timed`).
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

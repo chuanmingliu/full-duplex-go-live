@@ -257,6 +257,41 @@ type VAD struct {
 	echoReturnMS    float64
 	echoReturnDB    float64
 	echoReturnReady bool
+	// echoMiss is an attempt that produced no measurement, and why, for
+	// whoever wants to know; nobody has taken it yet when echoMissReady.
+	echoMiss      EchoMiss
+	echoMissReady bool
+}
+
+// EchoMiss is one start of the assistant's speech whose echo was not timed.
+//
+// The first call with the estimator in it reported nothing at all, on a line
+// that plainly echoes, and nothing in the log could say why. An instrument
+// that is silent when it fails cannot be told from a line without echo.
+type EchoMiss struct {
+	// Reason is why, in words for a log line.
+	Reason string
+	// QuietMS is how long the input had been under the bar when the assistant
+	// began, LevelDB the level of the frame that settled it, and NoiseFloorDB
+	// the floor the bar stands on.
+	QuietMS      float64
+	LevelDB      float64
+	NoiseFloorDB float64
+}
+
+// TakeEchoMiss hands out, once, the last attempt to time the echo that came to
+// nothing. Like TakeEchoReturn it belongs to the goroutine that calls Push.
+func (v *VAD) TakeEchoMiss() (EchoMiss, bool) {
+	if !v.echoMissReady {
+		return EchoMiss{}, false
+	}
+	v.echoMissReady = false
+	return v.echoMiss, true
+}
+
+func (v *VAD) missEcho(reason string, level float64) {
+	v.echoMiss = EchoMiss{Reason: reason, QuietMS: v.quietMS, LevelDB: level, NoiseFloorDB: v.noiseFloorDB}
+	v.echoMissReady = true
 }
 
 // echoNotArmed is echoArmAt with nothing in it. The clock starts at zero, so
@@ -414,6 +449,12 @@ func (v *VAD) trackEchoReturn(frameStartMS, level float64) {
 		// was doing before the assistant began.
 		v.echoArmed = v.quietMS >= echoQuietBeforeMS && !v.open
 		v.echoArmedAtMS = float64(at)
+		switch {
+		case v.open:
+			v.missEcho("the caller was mid-utterance when the assistant began", level)
+		case !v.echoArmed:
+			v.missEcho("the line had not been quiet when the assistant began", level)
+		}
 	}
 
 	if v.echoArmed {
@@ -422,6 +463,7 @@ func (v *VAD) trackEchoReturn(frameStartMS, level float64) {
 		case waited > echoReturnMaxMS:
 			// Nothing came back. A sound from here on is somebody speaking.
 			v.echoArmed = false
+			v.missEcho("nothing came back within the window", level)
 		case loud:
 			// The first sound is the only candidate there is: a second one
 			// would be timed from the wrong place.
@@ -429,6 +471,8 @@ func (v *VAD) trackEchoReturn(frameStartMS, level float64) {
 				v.echoReturnMS = waited
 				v.echoReturnDB = level
 				v.echoReturnReady = true
+			} else {
+				v.missEcho("a sound arrived in the frame the assistant began in", level)
 			}
 			v.echoArmed = false
 		}

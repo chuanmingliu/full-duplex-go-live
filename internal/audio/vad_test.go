@@ -2,6 +2,7 @@ package audio
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -571,4 +572,66 @@ func TestEchoReturnIsTimedFromTheStartOfTheAnswerNotAReminderOfIt(t *testing.T) 
 	if math.Abs(got[0]-300) > v.FrameMS() {
 		t.Errorf("echo return timed at %.0f ms; the answer began 300 ms before its voice came back", got[0])
 	}
+}
+
+// echoMisses feeds samples and returns the reason of every attempt to time the
+// echo that came to nothing.
+func echoMisses(v *VAD, samples []float32) []string {
+	var out []string
+	frame := v.FrameSamples()
+	for off := 0; off+frame <= len(samples); off += frame {
+		v.Push(samples[off : off+frame])
+		if miss, ok := v.TakeEchoMiss(); ok {
+			out = append(out, miss.Reason)
+		}
+	}
+	return out
+}
+
+// The first real call with the estimator reported nothing, on a line that
+// echoes at -28 dB, and nothing said why. Each attempt that comes to nothing
+// now says which of the conditions failed, once.
+func TestAnEchoThatIsNotTimedSaysWhy(t *testing.T) {
+	const rate = RatePipeline
+	one := func(t *testing.T, got []string, want string) {
+		t.Helper()
+		if len(got) != 1 || !strings.Contains(got[0], want) {
+			t.Fatalf("reasons given: %q; want one, about %q", got, want)
+		}
+	}
+
+	t.Run("the line was not quiet", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 100, 0.45)...))
+		feed(v, quiet(rate, 60))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, quiet(rate, 400)), "not been quiet")
+	})
+	t.Run("the caller was mid-utterance", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 600, 0.45)...))
+		feed(v, quiet(rate, 240))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, quiet(rate, 100)), "mid-utterance")
+	})
+	t.Run("nothing came back", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, quiet(rate, 2000)), "nothing came back")
+	})
+	t.Run("a sound in the frame it began in", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, returningVoice(rate, 200)), "in the frame the assistant began in")
+	})
+	t.Run("and a measurement is not a miss", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(true)
+		if got := echoMisses(v, append(quiet(rate, 300), returningVoice(rate, 300)...)); len(got) != 0 {
+			t.Fatalf("an echo that was timed was also reported as not timed: %q", got)
+		}
+	})
 }
