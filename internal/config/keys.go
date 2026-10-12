@@ -4,14 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // EnvKeys gathers the keys for a provider whose single key lives in keyEnv.
 //
-// Keys come from three places, in this order, with duplicates dropped:
+// Keys come from four places, in this order, with duplicates dropped:
 //
 //	<keyEnv>=…                  the one there has always been
+//	<keyEnv>_2=… to _9          more, one each, in order
 //	<keyEnv>S=…,…,…             more, separated by commas or spaces
 //	<keyEnv>S_FILE=/path/file   more, one a line; # starts a comment
 //
@@ -29,6 +31,11 @@ func EnvKeys(keyEnv string) ([]string, error) {
 		}
 	}
 	add(os.Getenv(keyEnv))
+	// The numbered form, for an account that has settings of its own to sit
+	// beside (a synthesis account's voice): <keyEnv>_2 … <keyEnv>_9.
+	for n := 2; n <= 9; n++ {
+		add(os.Getenv(keyEnv + "_" + strconv.Itoa(n)))
+	}
 	for _, k := range strings.FieldsFunc(os.Getenv(keyEnv+"S"), func(r rune) bool {
 		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n'
 	}) {

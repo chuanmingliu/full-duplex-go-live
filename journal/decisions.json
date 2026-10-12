@@ -16,11 +16,11 @@
       "title": "A second synthesis account, used as a pool of two",
       "gain": "The faster of two first audios on every turn instead of one (unmeasured; the tail is the point: 646 and 938 ms on the 09:34 call), and a second allowance of requests. Cures the multi-second stalls only if they turn out to be per account.",
       "basis": "estimated: the synthesizer is ~230 of ~870 ms; on one account, racing every first segment took the bench's p95 from ~1070 to ~1010 and then hit the rate limit",
-      "cost": "The owner's second account. Its voice must be the same one: the voice in use was made on the first account, and another account may be refused it.",
+      "cost": "The owner's second account, and the voice made again on it: the voice in use is a clone that belongs to the first account. Two clones are two voices; which account speaks changes from turn to turn.",
       "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
       "undo": "yes: remove the key; one key behaves exactly as before",
-      "needs": "The key on the box (`scripts/phone-brain.sh addkey minimax`, pasted unseen), then `scripts/phone-brain.sh tts -pool 30 -every 8s`",
-      "status": "built; waiting for the key"
+      "needs": "The owner fills in `MINIMAX_TTS_API_KEY_2` and `MINIMAX_TTS_VOICE_ID_2` in the env file on the box (the empty fields are there), then `scripts/phone-brain.sh tts -pool 30 -every 8s -save ~/golive-voices`",
+      "status": "built; waiting for the second account's key and voice"
     },
     {
       "rank": 3,

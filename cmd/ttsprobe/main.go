@@ -85,6 +85,7 @@ func run() error {
 		callHedge  = flag.Int("hedge", 2, "with -call, connections asked for each first segment (tts_hedge)")
 		callAfter  = flag.Duration("after", 0, "with -call, ask the second connection only when the first has produced no audio for this long (tts_hedge_after_ms); 0 asks both at once")
 		poolRounds = flag.Int("pool", 0, "ask every account of the pool (MINIMAX_TTS_API_KEYS_FILE) for the same clause at once, this many rounds, and print each one's first audio; paced by -every")
+		saveDir    = flag.String("save", "", "with -pool, also write the same sentence from each account to this directory as account-N.wav, to be listened to side by side")
 		account    = flag.Int("account", 0, "run on this account of the pool alone (1 is the first key); 0 is the pool as configured")
 		accountRPM = flag.Int("account-rpm", 0, "with -call on a pool, requests a minute one account is trusted with (tts_account_rpm); 0 is no limit")
 	)
@@ -100,7 +101,7 @@ func run() error {
 	}
 
 	if *poolRounds > 0 {
-		return runPool(base, *voice, *rate, *poolRounds, *callEvery)
+		return runPool(base, *voice, *rate, *poolRounds, *callEvery, *saveDir)
 	}
 	if *account > 0 {
 		if *account > base.Accounts() {

@@ -20,8 +20,15 @@ import (
 type accountsT2A struct {
 	noVoice map[string]bool
 
-	mu    sync.Mutex
-	dials []string
+	mu     sync.Mutex
+	dials  []string
+	voices []string // "key=voice_id", one per task_start
+}
+
+func (f *accountsT2A) asked() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.voices...)
 }
 
 func (f *accountsT2A) dialled() []string {
@@ -56,11 +63,17 @@ func newAccountsT2A(t *testing.T, noVoice ...string) (*accountsT2A, string) {
 			}
 			var in struct {
 				Event string `json:"event"`
+				Voice struct {
+					ID string `json:"voice_id"`
+				} `json:"voice_setting"`
 			}
 			_ = json.Unmarshal(data, &in)
 			if in.Event != "task_start" {
 				continue
 			}
+			f.mu.Lock()
+			f.voices = append(f.voices, key+"="+in.Voice.ID)
+			f.mu.Unlock()
 			if f.noVoice[key] {
 				write(map[string]any{"event": "task_failed", "base_resp": map[string]any{
 					"status_code": 2042, "status_msg": "you don't have access to this voice_id"}})
@@ -140,5 +153,83 @@ func TestARefusalWithNoOtherAccountFailsTheSession(t *testing.T) {
 		t.Fatal("a session opened on an account the vendor refused")
 	} else if !strings.Contains(err.Error(), "2042") {
 		t.Errorf("the error does not carry the vendor's reason: %v", err)
+	}
+}
+
+// A cloned voice has a different id on each account that holds a copy of it.
+// The configured voice is asked of each account by that account's own name
+// for it; a voice the session asked for by some other name is passed on as it
+// is.
+func TestEachAccountIsAskedForTheVoiceByItsOwnName(t *testing.T) {
+	f, endpoint := newAccountsT2A(t)
+	c := poolClient(endpoint, "key-a", "key-b")
+	c.VoiceID, c.VoiceIDs = "voice-on-a", []string{"", "voice-on-b"}
+
+	second := provider.WithLane(context.Background(), 1)
+	for _, open := range []struct {
+		ctx   context.Context
+		voice string
+	}{
+		{context.Background(), ""},
+		{second, ""},
+		{second, "voice-on-a"}, // the gateway naming the configured voice
+		{second, "someone-else"},
+	} {
+		s, err := c.Open(open.ctx, provider.TTSOptions{SampleRate: 16000, Voice: open.voice})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+	}
+	want := "key-a=voice-on-a key-b=voice-on-b key-b=voice-on-b key-b=someone-else"
+	if got := strings.Join(f.asked(), " "); got != want {
+		t.Errorf("the vendor was asked for\n  %s\nwant\n  %s", got, want)
+	}
+	if got := c.OnAccount(1).VoiceID; got != "voice-on-b" {
+		t.Errorf("the second account by itself is configured with voice %q; want its own", got)
+	}
+}
+
+// The second account's settings are written beside the first's, numbered.
+func TestNumberedSettingsPairAKeyWithItsVoice(t *testing.T) {
+	t.Setenv("MINIMAX_TTS_API_KEY", "key-a")
+	t.Setenv("MINIMAX_TTS_VOICE_ID", "voice-on-a")
+	t.Setenv("MINIMAX_TTS_API_KEY_2", "key-b")
+	t.Setenv("MINIMAX_TTS_VOICE_ID_2", "voice-on-b")
+	t.Setenv("MINIMAX_TTS_API_KEY_3", "key-c") // an account with no voice of its own
+	t.Setenv("MINIMAX_TTS_VOICE_ID_4", "nobody's")
+	t.Setenv("MINIMAX_TTS_API_KEYS", "")
+	t.Setenv("MINIMAX_TTS_API_KEYS_FILE", "")
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Accounts() != 3 {
+		t.Fatalf("%d accounts; want 3", c.Accounts())
+	}
+	for n, want := range []string{"voice-on-a", "voice-on-b", "voice-on-a"} {
+		if got := c.voiceFor(n, ""); got != want {
+			t.Errorf("account %d is asked for %q; want %q", n+1, got, want)
+		}
+	}
+	if !c.OwnVoice(1) || c.OwnVoice(2) {
+		t.Errorf("OwnVoice: second %v, third %v; want true, false", c.OwnVoice(1), c.OwnVoice(2))
+	}
+}
+
+// And a field left empty for the owner to fill in is no account at all.
+func TestAnEmptyNumberedKeyIsNotAnAccount(t *testing.T) {
+	t.Setenv("MINIMAX_TTS_API_KEY", "key-a")
+	t.Setenv("MINIMAX_TTS_VOICE_ID", "voice-on-a")
+	t.Setenv("MINIMAX_TTS_API_KEY_2", "")
+	t.Setenv("MINIMAX_TTS_VOICE_ID_2", "")
+	t.Setenv("MINIMAX_TTS_API_KEYS", "")
+	t.Setenv("MINIMAX_TTS_API_KEYS_FILE", "")
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Accounts() != 1 || c.voiceFor(0, "") != "voice-on-a" {
+		t.Errorf("%d accounts, voice %q; want the one account and its voice", c.Accounts(), c.voiceFor(0, ""))
 	}
 }

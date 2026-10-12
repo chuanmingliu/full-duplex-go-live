@@ -328,21 +328,37 @@ the slow syntheses came at 13–17 requests in the minute before them, and
 thirty-eight made at 20–31 a minute were as quick as any.
 
 **A second synthesis account is a pool of two.** Built on 10-12, when the owner
-opened a second account; unused until its key is on the box.
+opened a second account; unused until its settings are on the box. They go in
+the env file, beside the first account's, as a numbered pair:
 
 ```bash
-scripts/phone-brain.sh addkey minimax        # once per account; pasted unseen, kept in ~/golive-minimax.keys (0600)
-scripts/phone-brain.sh keys                  # counts only
-scripts/phone-brain.sh tts -pool 30 -every 8s   # measure before a call depends on it
+MINIMAX_TTS_API_KEY=…         # the first account, as it has always been
+MINIMAX_TTS_VOICE_ID=…
+MINIMAX_TTS_API_KEY_2=…       # the second account
+MINIMAX_TTS_VOICE_ID_2=…      # what the second account calls the same voice
+```
+
+```bash
+scripts/phone-brain.sh keys                                  # counts only
+scripts/phone-brain.sh tts -pool 30 -every 8s -save ~/golive-voices   # measure, and save a sample from each
 scripts/phone-brain.sh restart
 ```
 
-Keys are gathered from `MINIMAX_TTS_API_KEY`, `MINIMAX_TTS_API_KEYS` and
-`MINIMAX_TTS_API_KEYS_FILE`; the first is the account a session opens on. With
-two, the session's second connection is opened on the other account, and the
-rules for two connections that are apart are different from the frugal ones
-above, because the second request no longer draws on the allowance the first
-needs:
+The voice is why it is a pair. A cloned or designed voice belongs to the
+account that made it, and its id means nothing to another account; the owner
+makes the voice again on the second account, and that copy has an id of its
+own. golive asks each account for the configured voice by that account's name
+for it. (A key with no numbered voice is asked for the first account's id —
+right for one of the vendor's own voices. `addkey minimax` adds such a key to
+a file, unseen. `_3` to `_9` work the same way.) **Two clones are two voices,
+however alike**: the pool keeps an answer on one account where it can, but
+which account speaks changes from turn to turn. Clone from the same recording,
+and listen to the two files `-save` writes before a caller hears both.
+
+With two accounts, the session's second connection is opened on the other one,
+and the rules for two connections that are apart are different from the frugal
+ones above, because the second request no longer draws on the allowance the
+first needs:
 
 - **Every request to an account is counted** over the last minute, and
   `tts_account_rpm: 10` is what one account is trusted with (the vendor's
@@ -356,13 +372,12 @@ needs:
 
 Three things `tts -pool` is there to find out, in this order:
 
-1. **Whether the second account can speak in the voice at all.** The voice on
-   the box is one made on the first account. A cloned or designed voice
-   belongs to its account, and another account asking for it is refused at
+1. **Whether the second account can speak in the voice, and whether it sounds
+   the same.** An account asked for a voice it does not hold is refused at
    `task_start` ("you don't have access to this voice_id"). golive then rests
    that key for ten minutes, says so once (`tts: an account was refused;
-   resting it`), and carries on with one account exactly as before — but the
-   pool is worth nothing until the voice exists on both.
+   resting it`), and carries on with one account exactly as before. The probe
+   says which id each account was asked for (never the id itself).
 2. **How fast the faster of the two is**, against the first alone in the same
    rounds: that difference is what a turn gains.
 3. **Whether they are slow together.** "rounds … on every account at once" is

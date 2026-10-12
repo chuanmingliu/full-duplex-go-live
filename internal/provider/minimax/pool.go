@@ -4,6 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,10 +30,68 @@ import (
 // Who asks for which lane, and how much each account is trusted with, is
 // provider.HedgeTTS's business; this file only keeps accounts apart.
 //
-// Every account must be able to speak in the configured voice. A cloned or
-// designed voice belongs to the account that made it, and another account
-// asking for it is refused at task_start — which rests that key (below) and
-// leaves the pool as it was before the key was added.
+// Every account must be able to speak in the same voice, and a cloned or
+// designed voice belongs to the account that made it: another account asking
+// for it by the first account's id is refused at task_start. So an account
+// that has its own copy of the voice says what it calls it, in the numbered
+// form, written beside the settings there have always been:
+//
+//	MINIMAX_TTS_API_KEY=…        MINIMAX_TTS_VOICE_ID=…        the first account
+//	MINIMAX_TTS_API_KEY_2=…      MINIMAX_TTS_VOICE_ID_2=…      the second
+//	MINIMAX_TTS_API_KEY_3=…      MINIMAX_TTS_VOICE_ID_3=…      and so on to 9
+//
+// A numbered key with no voice beside it is asked for the first account's
+// voice, which is right for a voice every account has (the vendor's own) and
+// is refused otherwise — which rests that key (below) and leaves the pool as it
+// was before the key was added. A numbered voice with no key is nothing.
+//
+// Two clones are two voices, however alike. The pool keeps a whole answer on
+// one account where it can, but which account speaks changes from turn to
+// turn; clone from the same recording, and listen to both (ttsprobe -pool
+// -save) before a caller does.
+
+// accountVoices is each key's own voice id, from the numbered settings.
+func accountVoices(keys []string) []string {
+	byKey := map[string]string{}
+	for n := 2; n <= 9; n++ {
+		suffix := "_" + strconv.Itoa(n)
+		key := strings.Trim(strings.TrimSpace(os.Getenv("MINIMAX_TTS_API_KEY"+suffix)), `"'`)
+		voice := strings.Trim(strings.TrimSpace(os.Getenv("MINIMAX_TTS_VOICE_ID"+suffix)), `"'`)
+		if key != "" && voice != "" {
+			byKey[key] = voice
+		}
+	}
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		if i > 0 {
+			out[i] = byKey[k]
+		}
+	}
+	return out
+}
+
+// voiceFor is the voice id to ask account n for.
+//
+// A session that asks for nothing, or for the configured voice by the first
+// account's name for it, gets the configured voice — which on account n is
+// whatever that account calls it. A session that asks for some other voice
+// gets exactly what it asked for, on whichever account: there is no knowing
+// what another account would call a voice this configuration has never heard
+// of.
+func (t *TTS) voiceFor(n int, asked string) string {
+	if asked != "" && asked != t.VoiceID {
+		return asked
+	}
+	if n < len(t.VoiceIDs) && t.VoiceIDs[n] != "" {
+		return t.VoiceIDs[n]
+	}
+	return t.VoiceID
+}
+
+// OwnVoice reports whether account n has its own id for the voice.
+func (t *TTS) OwnVoice(n int) bool {
+	return n == 0 || (n < len(t.VoiceIDs) && t.VoiceIDs[n] != "")
+}
 
 func (t *TTS) keys() []string {
 	if len(t.APIKeys) > 0 {
@@ -46,8 +107,12 @@ func (t *TTS) Accounts() int { return len(t.keys()) }
 // (from 0): for measuring one account by itself.
 func (t *TTS) OnAccount(n int) *TTS {
 	keys := t.keys()
+	n %= len(keys)
 	c := *t
-	c.APIKey, c.APIKeys, c.rests = keys[n%len(keys)], nil, &keyRests{}
+	c.APIKey, c.APIKeys, c.VoiceIDs, c.rests = keys[n], nil, nil, &keyRests{}
+	// Its own name for the voice becomes the configured one: this client has
+	// one account, and that account is its first.
+	c.VoiceID = t.voiceFor(n, "")
 	return &c
 }
 

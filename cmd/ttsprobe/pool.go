@@ -6,7 +6,10 @@ package main
 // It answers what a second account is worth before a call depends on it:
 //
 //   - can the account speak in the configured voice at all (a cloned or
-//     designed voice belongs to the account that made it);
+//     designed voice belongs to the account that made it, so each account is
+//     asked for it by its own id: MINIMAX_TTS_VOICE_ID_2 for the second);
+//   - do the accounts sound the same: -save writes the same sentence from
+//     each, to be listened to before a caller hears both;
 //   - how fast is each account by itself, and how fast is the faster of the
 //     two — the figure a turn would wait for if both were asked;
 //   - when one account is slow, is the other slow in the same round. If they
@@ -21,10 +24,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/provider/minimax"
 )
@@ -33,11 +39,10 @@ import (
 // about twice the usual.
 const slowFirstAudio = 400
 
-func runPool(base *minimax.TTS, voice string, rate, rounds int, every time.Duration) error {
+func runPool(base *minimax.TTS, voice string, rate, rounds int, every time.Duration, saveDir string) error {
 	n := base.Accounts()
-	if voice == "" {
-		voice = base.VoiceID
-	}
+	// With no -voice each account is asked for the configured voice by its own
+	// name for it (MINIMAX_TTS_VOICE_ID_2 …), as a session is.
 	fmt.Printf("ttsprobe -pool: %d account(s), %d rounds, one every %s (%.1f requests a minute to each)\n\n",
 		n, rounds, every, float64(time.Minute)/float64(every))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -49,11 +54,20 @@ func runPool(base *minimax.TTS, voice string, rate, rounds int, every time.Durat
 		s, err := base.OnAccount(i).Open(ctx, provider.TTSOptions{SampleRate: rate, Voice: voice})
 		if err != nil {
 			fmt.Printf("account %d: cannot open a session: %v\n", i+1, err)
+			if !base.OwnVoice(i) && voice == "" {
+				fmt.Printf("account %d: it was asked for the first account's voice id; if the voice was made on that account, make it on this one too and set MINIMAX_TTS_VOICE_ID_%d\n", i+1, i+1)
+			}
 			continue
 		}
 		defer s.Close()
 		streams[i] = s
-		fmt.Printf("account %d: session open in %d ms\n", i+1, time.Since(start).Milliseconds())
+		whose := "its own id for the voice"
+		if voice != "" {
+			whose = "the voice given with -voice"
+		} else if !base.OwnVoice(i) {
+			whose = "the first account's voice id (no MINIMAX_TTS_VOICE_ID_" + fmt.Sprint(i+1) + ")"
+		}
+		fmt.Printf("account %d: session open in %d ms, with %s\n", i+1, time.Since(start).Milliseconds(), whose)
 	}
 	fmt.Println()
 	usable := 0
@@ -152,7 +166,53 @@ func runPool(base *minimax.TTS, voice string, rate, rounds int, every time.Durat
 		fmt.Printf("rounds with a first audio of %d ms or more on some account: %d of %d;  on every account at once: %d\n",
 			slowFirstAudio, anySlow, rounds, bothSlow)
 	}
+	if saveDir != "" {
+		// The same sentence from each account, to be listened to side by side:
+		// two clones are two voices, and which account speaks changes from
+		// turn to turn on a call.
+		if err := os.MkdirAll(saveDir, 0o700); err != nil {
+			return err
+		}
+		fmt.Println()
+		for i, s := range streams {
+			if s == nil {
+				continue
+			}
+			pcm, err := synthAll(ctx, s, saveSentence)
+			if err != nil || len(pcm) == 0 {
+				fmt.Printf("account %d: nothing to save: %v\n", i+1, err)
+				continue
+			}
+			path := filepath.Join(saveDir, fmt.Sprintf("account-%d.wav", i+1))
+			if err := audio.WriteWAV(path, pcm, s.SampleRate()); err != nil {
+				return err
+			}
+			fmt.Printf("account %d: %.1f s of the same sentence saved to %s\n", i+1, float64(len(pcm))/2/float64(s.SampleRate()), path)
+		}
+	}
 	return nil
+}
+
+// saveSentence is what each account says for -save: long enough to hear a
+// voice in, and the kind of thing the assistant says.
+const saveSentence = "好的，您点开链接，按提示输入车牌号，就能实时看到报价了。如果还有不清楚的地方，随时跟我说。"
+
+func synthAll(ctx context.Context, stream provider.TTSStream, text string) ([]byte, error) {
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	ch, err := stream.Synthesize(sctx, text)
+	if err != nil {
+		return nil, err
+	}
+	var pcm []byte
+	for chunk := range ch {
+		if chunk.Err != nil {
+			err = chunk.Err
+			continue
+		}
+		pcm = append(pcm, chunk.PCM...)
+	}
+	return pcm, err
 }
 
 func spread(v []int) string {

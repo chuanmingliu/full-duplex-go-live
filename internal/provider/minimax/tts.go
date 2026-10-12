@@ -36,7 +36,10 @@ type TTS struct {
 	APIKey   string
 	// APIKeys is the pool of accounts, APIKey first; see pool.go. Empty is a
 	// pool of the one key.
-	APIKeys        []string
+	APIKeys []string
+	// VoiceIDs is each account's own name for the voice, by its place in
+	// APIKeys; an empty entry is VoiceID. See voiceFor.
+	VoiceIDs       []string
 	Model          string
 	VoiceID        string
 	Speed          float64
@@ -123,6 +126,7 @@ func New() (*TTS, error) {
 		Endpoint:      config.Env("MINIMAX_TTS_WEBSOCKET_ENDPOINT", "wss://api.minimaxi.com/ws/v1/t2a_v2"),
 		APIKey:        key,
 		APIKeys:       keys,
+		VoiceIDs:      accountVoices(keys),
 		rests:         &keyRests{},
 		Model:         config.Env("MINIMAX_TTS_MODEL", "speech-2.8-turbo"),
 		VoiceID:       config.Env("MINIMAX_TTS_VOICE_ID", ""),
@@ -266,11 +270,7 @@ func supportedRate(want int) int {
 // Open implements provider.TTS.
 func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
 	rate := supportedRate(opts.SampleRate)
-	voice := opts.Voice
-	if voice == "" {
-		voice = t.VoiceID
-	}
-	if voice == "" {
+	if opts.Voice == "" && t.VoiceID == "" {
 		return nil, fmt.Errorf("minimax tts: no voice configured; set MINIMAX_TTS_VOICE_ID or session.audio.output.voice")
 	}
 	speed := opts.Speed
@@ -280,7 +280,6 @@ func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSS
 	s := &stream{
 		tts:   t,
 		rate:  rate,
-		voice: voice,
 		speed: speed,
 	}
 	// One account after another until one takes the session: a key that is
@@ -290,7 +289,7 @@ func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSS
 	keys := t.keys()
 	var err error
 	for _, n := range t.order(ctx) {
-		s.key, s.account = keys[n], n
+		s.key, s.account, s.voice = keys[n], n, t.voiceFor(n, opts.Voice)
 		if err = s.connect(ctx); err == nil {
 			break
 		}

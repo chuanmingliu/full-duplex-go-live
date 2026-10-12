@@ -443,15 +443,20 @@ keys)
     file=$(grep -m1 "^${var}S_FILE=" "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
     infile=0
     [ -n "$file" ] && [ -f "$file" ] && infile=$(sed 's/#.*//' "$file" | grep -c '[^[:space:]]' || true)
-    say "$var: $one    ${var}S: $list    ${var}S_FILE: ${file:-(not set)}${file:+ — $infile key(s)}"
+    numbered=$(grep -cE "^${var}_[2-9]=.+" "$ENVFILE" || true)
+    say "$var: $one    ${var}_2…9: $numbered    ${var}S: $list    ${var}S_FILE: ${file:-(not set)}${file:+ — $infile key(s)}"
   done
+  say "MINIMAX_TTS_VOICE_ID: $(grep -cE '^MINIMAX_TTS_VOICE_ID=.+' "$ENVFILE" || true)    MINIMAX_TTS_VOICE_ID_2…9: $(grep -cE '^MINIMAX_TTS_VOICE_ID_[2-9]=.+' "$ENVFILE" || true)   (a numbered synthesis account speaks in the voice id of the same number)"
   say "(a key listed twice counts once in a pool; the first key is the account used when nothing else is asked for)"
   ;;
 
 addkey)
   # Add one key to a pool without it reaching the screen or the shell history:
   #   addkey            a chat-model key (DeepSeek)
-  #   addkey minimax    a synthesis account (MiniMax)
+  #   addkey minimax    a synthesis account (MiniMax) that can use the first
+  #                     account's voice id. One with its own copy of the voice
+  #                     is written into the env file instead, as a pair:
+  #                     MINIMAX_TTS_API_KEY_2=…  MINIMAX_TTS_VOICE_ID_2=…
   # Run it once per key, then: scripts/phone-brain.sh restart
   find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
   case "${2:-deepseek}" in

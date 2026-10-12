@@ -38,7 +38,8 @@ var callTurns = [][2]string{
 func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every, after time.Duration, accountRPM int) error {
 	c := *base
 	if voice != "" {
-		c.VoiceID = voice
+		// A voice given by hand is asked of every account as it is.
+		c.VoiceID, c.VoiceIDs = voice, nil
 	}
 	// The hedge says, at debug level, each time it asks the second connection
 	// and which one spoke first.

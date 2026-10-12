@@ -328,10 +328,14 @@ made on one build.
   account, counts every request per account (`tts_account_rpm: 10`), asks both
   accounts at once for an answer's first segment while the other has room
   (`tts_pool_after_ms: 0`), and moves a session off an account that has had its
-  minute. One key behaves exactly as before. Three unknowns, all answered by
-  `phone-brain.sh tts -pool 30 -every 8s` once the key is added: the voice on
-  the box was made on the first account and the second may be refused it
-  (status 2042); whether slow first audios and the multi-second stalls happen
+  minute. One key behaves exactly as before. The second account's settings go
+  in the env file as a pair, `MINIMAX_TTS_API_KEY_2` and
+  `MINIMAX_TTS_VOICE_ID_2`: the voice on the box is a clone made on the first
+  account, the owner is making it again on the second, and each account is
+  asked for it by its own id. Unknowns, all answered by `phone-brain.sh tts
+  -pool 30 -every 8s -save ~/golive-voices` once they are filled in: whether
+  the two clones sound alike (which account speaks changes from turn to turn;
+  `-save` writes a sample from each); whether slow first audios and the multi-second stalls happen
   on both accounts at once; and what an account's allowance really is — the
   vendor's page says 10 a minute, calls have run at 22–31 a minute unrefused.
 - **The settled close must not fire while an early final is pending**: it
