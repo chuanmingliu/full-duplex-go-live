@@ -426,6 +426,17 @@ entries in `journal/issues.json` (status, commit, the call that verified a
 fix) and `journal/decisions.json`, and ship them with the bundle. The owner
 reads the journal; an issue fixed but not recorded there is not visibly fixed.
 
+## The archive
+
+`~/golive-archive` on the box keeps every finished call for good: `audio.wav`
+(stereo, caller left), `transcript.txt`, `call.json`, golive's `session.json`,
+the call's own lines of the log, and a manifest with checksums; one directory
+per call under `calls/YYYY/MM/`. The journal feeds it (`internal/journal/
+archive.go`), between calls, and plays from it. `phone-brain.sh archive
+[status|verify|mirror DEST]`. See "The archive" in `TELEPHONY.md`. To analyse
+an old call, read its `call.json` or re-read its `golive.log` with the current
+parser; print numbers, never what was said.
+
 ## Build and test
 
 ```bash

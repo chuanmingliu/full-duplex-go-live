@@ -228,6 +228,10 @@ type callBuild struct {
 		winner         int
 	}
 	copyWins map[int]int
+
+	// logFrom and logTo are where this call's lines begin and end in the log,
+	// in bytes: what the archive copies as the call's own slice of it.
+	logFrom, logTo int64
 }
 
 func (cb *callBuild) turn(id string) *turnBuild {
@@ -276,6 +280,20 @@ type Indexer struct {
 	// saying whose they are: one call is on the line at a time.
 	opens    []int
 	opensFor *turnBuild
+
+	// lineFrom and lineTo are the byte range of the line being fed.
+	lineFrom, lineTo int64
+}
+
+// LogRange is the byte range of a call's lines in the log that was read: from
+// the first line that names its session to the last, with whatever other
+// lines fell between them.
+func (ix *Indexer) LogRange(callID string) (from, to int64, ok bool) {
+	cb := ix.byCall[callID]
+	if cb == nil || cb.logTo <= cb.logFrom {
+		return 0, 0, false
+	}
+	return cb.logFrom, cb.logTo, true
 }
 
 // NewIndexer returns an empty indexer.
@@ -285,14 +303,24 @@ func NewIndexer() *Indexer {
 
 // ReadLog feeds every line of a log.
 func (ix *Indexer) ReadLog(r io.Reader) error {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 1<<20), 8<<20)
-	for sc.Scan() {
-		if l, ok := ParseLine(sc.Text()); ok {
-			ix.Feed(l)
+	br := bufio.NewReaderSize(r, 1<<20)
+	var off int64
+	for {
+		raw, err := br.ReadString('\n')
+		if len(raw) > 0 {
+			ix.lineFrom, ix.lineTo = off, off+int64(len(raw))
+			off = ix.lineTo
+			if l, ok := ParseLine(strings.TrimRight(raw, "\r\n")); ok {
+				ix.Feed(l)
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
 		}
 	}
-	return sc.Err()
 }
 
 func (ix *Indexer) session(id string) *callBuild {
@@ -301,6 +329,7 @@ func (ix *Indexer) session(id string) *callBuild {
 		cb = &callBuild{turns: map[string]*turnBuild{}, warn: map[string]*Warning{}, copyWins: map[int]int{}}
 		cb.call.Session = id
 		cb.call.Build = ix.build
+		cb.logFrom = ix.lineFrom
 		cb.call.Keys, cb.call.Lanes = ix.keys, ix.lanes
 		ix.sessions[id] = cb
 		ix.order = append(ix.order, id)
@@ -345,6 +374,7 @@ func (ix *Indexer) Feed(l Line) {
 			}
 			if cb := ix.byCall[id]; cb != nil {
 				cb.call.EndedAt = l.Time
+				cb.logTo = ix.lineTo
 				if ix.active == cb {
 					ix.active = nil
 				}
@@ -362,6 +392,9 @@ func (ix *Indexer) Feed(l Line) {
 	}
 	if cb == nil {
 		return
+	}
+	if ix.lineTo > cb.logTo {
+		cb.logTo = ix.lineTo
 	}
 
 	if l.Level == "WARN" || l.Level == "ERROR" {

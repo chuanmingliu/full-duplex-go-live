@@ -35,6 +35,12 @@
 #                                     stage, its recording, what was written about
 #                                     it, the issues found and fixed. A page on the
 #                                     home network (JOURNAL_ADDR), with no login.
+#                                     It also archives every finished call, and
+#                                     is started with golive.
+#   scripts/phone-brain.sh archive [status|verify|mirror <dest>]
+#                                     the permanent record of calls (ARCHIVE_DIR):
+#                                     what it holds, whether every file still
+#                                     matches its checksum, a second copy elsewhere
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -49,7 +55,12 @@
 #   LAST_CALL=…     where golive keeps the last answered call's instructions
 #                   and opening line (~/golive-last-call.json), for `call`
 #   CALLS_DIR=…     where recorded calls are kept (~/golive-calls), mode 700
-#   CALLS_TTL_HOURS=…  how long a recorded call is kept (168: a week)
+#   CALLS_TTL_HOURS=…  how long golive's working copy of a recorded call is
+#                   kept (168: a week); the archive has the call for good
+#   ARCHIVE_DIR=…   the archive: every finished call, recording and text, kept
+#                   for good (~/golive-archive, mode 700). Fed by the journal.
+#   ARCHIVE_MIRROR=…  a second copy, for `archive mirror`: a directory on
+#                   another disk, or host:/path for rsync over ssh
 #   JOURNAL_ADDR=…  where the call journal listens (this box's home-network
 #                   address, port 8790); never an address or port
 #                   a tunnel publishes. JOURNAL_DATA=… its own files (~/golive-journal)
@@ -77,6 +88,10 @@ lan_ip() {
 JOURNAL_PORT="${JOURNAL_PORT:-8790}"
 if [ -z "${JOURNAL_ADDR:-}" ]; then _ip="$(lan_ip)"; JOURNAL_ADDR="${_ip:-127.0.0.1}:$JOURNAL_PORT"; fi
 JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
+# Where finished calls are kept for good: recording, conversation, measurements
+# and the log they came from. Nothing deletes from it. CALLS_DIR above is
+# golive's working copy, which expires; this does not.
+ARCHIVE_DIR="${ARCHIVE_DIR:-$HOME/golive-archive}"
 JOURNAL_REPO="${JOURNAL_REPO:-https://github.com/chuanmingliu/full-duplex-go-live}"
 CMD="${1:-status}"
 
@@ -178,6 +193,31 @@ stop_golive() {
 
 # start_golive <bind>: run golive under its keep-alive loop and wait for it to
 # answer. Everything in here runs as the invoking user; none of it needs root.
+# The call journal runs beside golive and reads what golive writes. It is its
+# own process so that changing it never restarts a service that may be in the
+# middle of a call. It is also what feeds the archive, so golive is never
+# started without it.
+JBIN="./bin/journal-linux-$ARCH"; JPID="$STATE.journal.pid"; JLOG="journal.log"
+jrunning() { [ -f "$JPID" ] && kill -0 "$(cat "$JPID")" 2>/dev/null; }
+jstop() {
+  if jrunning; then kill "$(cat "$JPID")" 2>/dev/null; for _ in 1 2 3 4 5 6; do jrunning || break; sleep 0.5; done; fi
+  rm -f "$JPID"
+}
+jstart() {
+  chmod +x "$JBIN" 2>/dev/null
+  [ -x "$JBIN" ] || { say "no binary at $JBIN"; return 1; }
+  jstop
+  mkdir -p "$JOURNAL_DATA" "$ARCHIVE_DIR" && chmod 700 "$JOURNAL_DATA" "$ARCHIVE_DIR"
+  local store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
+  setsid nohup "$JBIN" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
+    -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" \
+    -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" >> "$JLOG" 2>&1 < /dev/null &
+  echo $! > "$JPID"
+  sleep 1
+  if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$JPID")); archive: $ARCHIVE_DIR"
+  else say "the call journal did not start; see $JLOG"; tail -3 "$JLOG"; return 1; fi
+}
+
 start_golive() {
   local bind="$1" mark ok=""
   [ -x "$BIN" ] || chmod +x bin/* 2>/dev/null
@@ -241,6 +281,8 @@ start_golive() {
   tail -n +"$((mark + 1))" "$LOG" | grep -E 'level=(INFO|WARN|ERROR)' | grep -vE 'msg=http ' | cut -c1-240 | head -25 | sed 's/^/  /'
   say
   say "log      : $(pwd)/$LOG"
+  # With this build's journal: it is what archives the calls golive records.
+  jstart || say "golive is up, but without the journal nothing is being archived"
 }
 
 case "$CMD" in
@@ -548,36 +590,39 @@ echo)
   ;;
 
 journal)
-  # The call journal runs beside golive and reads what golive writes. It is
-  # its own process so that changing it never restarts a service that may be
-  # in the middle of a call.
-  jbin="./bin/journal-linux-$ARCH"; jpid="$STATE.journal.pid"; jlog="journal.log"
-  jrunning() { [ -f "$jpid" ] && kill -0 "$(cat "$jpid")" 2>/dev/null; }
-  jstop() {
-    if jrunning; then kill "$(cat "$jpid")" 2>/dev/null; for _ in 1 2 3 4 5 6; do jrunning || break; sleep 0.5; done; fi
-    rm -f "$jpid"
-  }
   case "${2:-status}" in
-    start|restart)
-      chmod +x "$jbin" 2>/dev/null
-      [ -x "$jbin" ] || { say "no binary at $jbin"; exit 1; }
-      jstop
-      mkdir -p "$JOURNAL_DATA" && chmod 700 "$JOURNAL_DATA"
-      store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
-      setsid nohup "$jbin" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
-        -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" >> "$jlog" 2>&1 < /dev/null &
-      echo $! > "$jpid"
-      sleep 1
-      if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$jpid"))"
-      else say "the call journal did not start; see $jlog"; tail -3 "$jlog"; exit 1; fi
-      ;;
-    stop) jstop; say "the call journal is stopped" ;;
+    start|restart) jstart || exit 1 ;;
+    stop) jstop; say "the call journal is stopped; calls are not being archived until it is started" ;;
     status)
-      if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$jpid"))"; else say "the call journal is not running"; fi
+      if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$JPID"))"; else say "the call journal is not running"; fi
       ;;
     *) say "journal start | stop | status"; exit 2 ;;
   esac
   if jrunning; then say "  http://$JOURNAL_ADDR/"; fi
+  ;;
+
+archive)
+  # The permanent record of every finished call. Numbers only: nothing that
+  # was said is printed.
+  chmod +x "$JBIN" 2>/dev/null
+  case "${2:-status}" in
+    status)
+      "$JBIN" -archive "$ARCHIVE_DIR" -archive-status
+      jrunning || say "the journal is not running, so new calls are not being archived: scripts/phone-brain.sh journal start"
+      df -h "$ARCHIVE_DIR" 2>/dev/null | awk 'NR==2 {print "disk: " $4 " free of " $2}'
+      ;;
+    verify) "$JBIN" -archive "$ARCHIVE_DIR" -verify ;;
+    mirror)
+      # A second copy somewhere else. Nothing is ever deleted from the mirror
+      # either: a call removed here by mistake is still there.
+      dest="${3:-${ARCHIVE_MIRROR:-}}"
+      [ -n "$dest" ] || { say "archive mirror <directory | host:/path>   (or set ARCHIVE_MIRROR)"; exit 2; }
+      command -v rsync >/dev/null || { say "rsync is not installed"; exit 1; }
+      rsync -a --chmod=D700,F600 --stats "$ARCHIVE_DIR"/ "$dest"/ | grep -E 'Number of (regular )?files transferred|Total transferred file size|Total file size' | sed 's/^/  /'
+      say "mirrored $ARCHIVE_DIR to $dest"
+      ;;
+    *) say "archive status | verify | mirror <directory | host:/path>"; exit 2 ;;
+  esac
   ;;
 
 sync)

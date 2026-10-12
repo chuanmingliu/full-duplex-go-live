@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -29,16 +30,55 @@ func main() {
 		repo  = flag.String("repo", "", "repository URL, for turning a commit hash into a link")
 		keep  = flag.Int("retention-hours", 0, "how long golive keeps a recorded call, for the page to say")
 		ui    = flag.String("ui", "", "serve the page from this directory instead of the one built in (for working on it)")
+		arch  = flag.String("archive", "", "where finished calls are kept for good: recording, conversation, measurements, log; empty archives nothing")
+		last  = flag.String("last-call", "", "golive's last_call_file; the archive keeps a copy of each distinct set of instructions")
+		check = flag.Bool("verify", false, "read every archived file again, compare it with its manifest, print what is wrong, and exit")
+		list  = flag.Bool("archive-status", false, "print what the archive holds, in numbers, and exit")
 	)
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if *check || *list {
+		os.Exit(archiveReport(*arch, *check))
+	}
 	srv := journal.NewServer(journal.Config{
-		LogPath: *logp, StoreDir: *store, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep, Log: log,
+		LogPath: *logp, StoreDir: *store, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
+		ArchiveDir: *arch, LastCallFile: *last, Log: log,
 	})
+	// The archive is fed on a clock, not by whoever opens the page.
+	go srv.Watch(context.Background(), 20*time.Second)
 	hs := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	log.Info("journal listening", "addr", *addr, "log", *logp, "store", *store, "data", *data, "notes", *notes)
+	log.Info("journal listening", "addr", *addr, "log", *logp, "store", *store, "data", *data, "notes", *notes, "archive", *arch)
 	if err := hs.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "journal:", err)
 		os.Exit(1)
 	}
+}
+
+// archiveReport prints the archive in numbers — never a word of what was said
+// — and, with verify, checks every file against its manifest.
+func archiveReport(dir string, verify bool) int {
+	a, err := journal.OpenArchive(dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "journal:", err)
+		return 1
+	}
+	t := a.Totals()
+	fmt.Printf("archive: %s\n", t.Dir)
+	fmt.Printf("calls: %d, of which %d with audio (%.1f minutes); %.1f MB\n", t.Calls, t.WithAudio, t.AudioS/60, float64(t.Bytes)/1e6)
+	if entries := a.Entries(); len(entries) > 0 {
+		fmt.Printf("from %s to %s\n", entries[len(entries)-1].StartedAt.Format("2006-01-02 15:04"), entries[0].StartedAt.Format("2006-01-02 15:04"))
+	}
+	if !verify {
+		return 0
+	}
+	files, bytes, problems := a.Verify()
+	fmt.Printf("verified: %d files, %.1f MB read\n", files, float64(bytes)/1e6)
+	for _, p := range problems {
+		fmt.Printf("PROBLEM  %s  %s: %s\n", p.ID, p.File, p.What)
+	}
+	if len(problems) > 0 {
+		return 2
+	}
+	fmt.Println("every file matches its manifest")
+	return 0
 }

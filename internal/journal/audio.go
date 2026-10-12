@@ -20,9 +20,35 @@ const (
 // Recording is a stored call's audio, opened for reading.
 type Recording struct {
 	in, out *os.File
-	Rate    int
+	// wav is the recording as the archive keeps it: one stereo file, caller
+	// left, assistant right. A recording is either the two tracks or this.
+	wav  *os.File
+	Rate int
 	// Frames is the length of the longer track, in samples.
 	Frames int64
+}
+
+// OpenArchivedWAV opens a recording the archive wrote: the stereo WAV that
+// Recording.WAV produces, and nothing else.
+func OpenArchivedWAV(path string) (*Recording, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, os.ErrNotExist
+	}
+	head := make([]byte, wavHeaderBytes)
+	info, serr := f.Stat()
+	if _, err := io.ReadFull(f, head); err != nil || serr != nil ||
+		string(head[0:4]) != "RIFF" || string(head[8:12]) != "WAVE" ||
+		binary.LittleEndian.Uint16(head[22:]) != 2 || binary.LittleEndian.Uint16(head[34:]) != 16 {
+		f.Close()
+		return nil, errors.New("journal: not a recording the archive wrote")
+	}
+	rate := int(binary.LittleEndian.Uint32(head[24:]))
+	if rate <= 0 {
+		f.Close()
+		return nil, errors.New("journal: a recording with no sample rate")
+	}
+	return &Recording{wav: f, Rate: rate, Frames: (info.Size() - wavHeaderBytes) / 4}, nil
 }
 
 // OpenRecording opens the recording of one session in a store directory. It
@@ -62,6 +88,10 @@ func OpenRecording(storeDir, session string) (*Recording, error) {
 
 // Close releases the files.
 func (r *Recording) Close() {
+	if r.wav != nil {
+		r.wav.Close()
+		return
+	}
 	r.in.Close()
 	r.out.Close()
 }
@@ -75,6 +105,9 @@ const wavHeaderBytes = 44
 // that can be read from any offset, which is what lets a browser seek in it
 // without the file ever being written out a second time.
 func (r *Recording) WAV() io.ReadSeeker {
+	if r.wav != nil {
+		return io.NewSectionReader(r.wav, 0, wavHeaderBytes+r.Frames*4)
+	}
 	data := r.Frames * 4
 	h := make([]byte, wavHeaderBytes)
 	copy(h[0:], "RIFF")
@@ -182,18 +215,21 @@ func (r *Recording) Peaks(n int) Peaks {
 	if r.Frames == 0 {
 		return p
 	}
-	track := func(f *os.File, out []int) {
+	// track reads one side: samples of two bytes, the first at off and one
+	// every stride bytes after it. The store's tracks are mono files; the
+	// archive's is one file with the sides interleaved.
+	track := func(f *os.File, off, stride int64, out []int) {
 		buf := make([]byte, 1<<16)
 		var frame int64
-		for {
-			got, err := f.ReadAt(buf, frame*2)
-			got -= got % 2
-			for i := 0; i < got; i += 2 {
+		for frame < r.Frames {
+			got, err := f.ReadAt(buf, off+frame*stride)
+			got -= got % int(stride)
+			for i := 0; i < got; i += int(stride) {
 				v := int(int16(binary.LittleEndian.Uint16(buf[i:])))
 				if v < 0 {
 					v = -v
 				}
-				slot := int((frame + int64(i/2)) * int64(n) / r.Frames)
+				slot := int((frame + int64(i)/stride) * int64(n) / r.Frames)
 				if slot >= n {
 					slot = n - 1
 				}
@@ -201,7 +237,7 @@ func (r *Recording) Peaks(n int) Peaks {
 					out[slot] = v
 				}
 			}
-			frame += int64(got / 2)
+			frame += int64(got) / stride
 			if err != nil || got == 0 {
 				break
 			}
@@ -210,7 +246,12 @@ func (r *Recording) Peaks(n int) Peaks {
 			out[i] = v * 1000 / 32768
 		}
 	}
-	track(r.in, p.Caller)
-	track(r.out, p.Assistant)
+	if r.wav != nil {
+		track(r.wav, wavHeaderBytes, 4, p.Caller)
+		track(r.wav, wavHeaderBytes+2, 4, p.Assistant)
+		return p
+	}
+	track(r.in, 0, 2, p.Caller)
+	track(r.out, 0, 2, p.Assistant)
 	return p
 }

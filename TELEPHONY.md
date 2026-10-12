@@ -182,8 +182,8 @@ Where its content comes from:
 
 | | Source | Kept |
 | --- | --- | --- |
-| Figures, stages, conversation | `golive-telephony.log`, re-read when it grows | each finished call also in `~/golive-journal/calls/`, so a call outlives the log |
-| Audio | `~/golive-calls/<session>/` (golive's store) | `CALLS_TTL_HOURS`, a week |
+| Figures, stages, conversation | `golive-telephony.log`, re-read when it grows | for good, in the archive (below) |
+| Audio | `~/golive-calls/<session>/` (golive's store) until the call is archived | for good, in the archive; golive's working copy goes after `CALLS_TTL_HOURS`, a week |
 | Retrospectives, issues, decisions | `journal/` in this repository, shipped in the bundle | with the code |
 | The owner's notes | written from the page | `~/golive-journal/feedback/` |
 
@@ -192,6 +192,54 @@ headed paragraphs — what happened, the slow turns and their causes, what was
 changed, what is open. It contains no transcript and nothing personal; the
 repository is public. The journal's figures for a call are the ones
 `scripts/call-latency.sh` prints (a test holds them to that).
+
+## The archive: every call, kept for good
+
+Everything else that holds a call has a clock on it: golive's store deletes a
+recording after a week, the log is one file, the journal's copy of a call is
+its parser's reading of that log on the day. `~/golive-archive` on the box has
+no clock. Nothing deletes from it. (Owner, 10-12: "a persistent storage system
+to save all recording data, including text and audio".)
+
+```
+~/golive-archive/                       mode 700
+  calls/2026/10/2026-10-12_124921_<call id>/
+      audio.wav        the recording: stereo, caller left, assistant right
+      transcript.txt   the conversation, to read: who, when, the wait before each answer
+      call.json        everything measured: turns, stages, events, the conversation
+      session.json     golive's own record of the session (the history the model saw)
+      golive.log       this call's lines of golive's log: what the rest was derived from
+      manifest.json    what is here, how big, each file's SHA-256
+  prompts/<hash>.txt   the instructions a call ran on, once per distinct text
+  index.jsonl          one line per call, for finding things
+```
+
+```bash
+scripts/phone-brain.sh archive              # what it holds, in numbers; free disk
+scripts/phone-brain.sh archive verify       # read every file again and compare with its manifest
+scripts/phone-brain.sh archive mirror DEST  # a second copy: a directory on another disk, or host:/path (rsync)
+```
+
+- **The journal feeds it**, on a clock of its own (every 20 s, and only when
+  golive's log has been still for 8 s, so never during a call). A call is
+  archived when it has ended; its recording when golive has closed it. So the
+  journal must be running: `phone-brain.sh golive` and `restart` now start it
+  with golive, and `archive` says so if it is not.
+- **Recording must be on** (`phone-brain.sh record on`, as it is) for there to
+  be audio. A call made with it off is archived as text.
+- **Audio, session.json and golive.log are written once** and never
+  rewritten. The text files are replaced when a newer journal reads the call
+  differently; golive.log is what lets it.
+- **Size**: a call is about 3.8 MB a minute (two 16 kHz tracks, uncompressed,
+  so that any player and any tool can read it). An hour of calls a day is 85 GB
+  a year; the box has 3.2 TB free.
+- **It is one disk in one laptop.** `archive mirror` is the second copy;
+  where to is the owner's to say, and nothing runs it on a schedule yet.
+- The journal plays a call from the archive, so old calls stay playable, and
+  each call's page has "Download recording" and "Download transcript".
+
+The archive holds what was said on calls and the prompt they ran on. It stays
+on the box, mode 700, and nothing in this repository or any report quotes it.
 
 ## Measuring the phone leg
 

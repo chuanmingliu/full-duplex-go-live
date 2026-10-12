@@ -73,6 +73,21 @@
   }
   function pct(x) { return (Math.round(x * 10) / 10).toString(); }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+  function size(bytes) { // file sizes: KB below a megabyte, then MB, then GB
+    if (!(bytes > 0)) return '0 KB';
+    if (bytes < 1e6) return Math.max(1, Math.round(bytes / 1e3)) + ' KB';
+    if (bytes < 1e9) return (bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0) + ' MB';
+    return (bytes / 1e9).toFixed(1) + ' GB';
+  }
+  function archiveLine(a) { // the overview's sentence about the archive
+    if (!a) return null;
+    var mins = a.audio_s / 60;
+    var audio = a.with_audio ? plural(a.with_audio, 'recording') + ' (' + (mins < 100 ? mins.toFixed(1) + ' minutes' : (mins / 60).toFixed(1) + ' hours') + ')' : 'no recordings yet';
+    return h('p', { class: 'archive-line' },
+      h('span', { class: 'archive-tag' }, 'Archive'),
+      ' ' + plural(a.calls, 'call') + ' kept for good: conversation and measurements for every one, ' + audio + '. ',
+      h('span', { class: 'num' }, size(a.bytes)), ' in ', h('code', null, a.dir), '.');
+  }
 
   // ---------- state ----------
 
@@ -359,7 +374,9 @@
       addKids(b, ['build ', ov.build ? commitLink(ov.build, ov.repo_url) : '–']);
       r.className = 'top-item rec ' + (ov.recording ? 'on' : 'off');
       addKids(r, [h('i', { 'aria-hidden': 'true' }), ov.recording ? 'recording on' : 'recording off']);
-      r.title = ov.recording ? 'New calls are recorded' + (retention() ? ' and kept for ' + retention() : '') + '.' : 'Calls are not being recorded.';
+      r.title = ov.recording
+        ? (ov.archive ? 'New calls are recorded and archived for good.' : 'New calls are recorded' + (retention() ? ' and kept for ' + retention() : '') + '.')
+        : 'Calls are not being recorded' + (ov.archive ? '; their conversation and measurements are still archived.' : '.');
     }
     if (S.ovAt) addKids(u, ['updated ', h('span', { class: 'num' }, clock(S.ovAt))]);
   }
@@ -602,7 +619,10 @@
       trendHost));
 
     view.appendChild(section('Builds', 'Calls on one build, pooled.', buildsTable(ov)));
-    view.appendChild(section('Calls', plural(ov.calls.length, 'call') + ', newest first. A row opens the call.', callsList(ov)));
+    var callsSec = section('Calls', plural(ov.calls.length, 'call') + ', newest first. A row opens the call.', callsList(ov));
+    var arch = archiveLine(ov.archive);
+    if (arch) callsSec.querySelector('.sec-body').appendChild(arch);
+    view.appendChild(callsSec);
 
     S.cleanup = trendChart(trendHost, ov);
     window.scrollTo(0, keepY);
@@ -1424,9 +1444,21 @@
       state.player = new Player(call, d.audio, target);
       recBody = state.player.el;
     } else {
-      recBody = h('div', { class: 'norec' }, h('p', { class: 'norec-h' }, 'No recording kept for this call'),
-        h('p', null, (retention() ? 'Recordings are kept for ' + retention() + ' and most' : 'Most') + ' calls in the journal have none. Everything below comes from the log and is complete without it.'));
+      recBody = h('div', { class: 'norec' }, h('p', { class: 'norec-h' }, 'No recording of this call'),
+        h('p', null, 'Recording was off when it was made. Everything below comes from the log and is complete without it.'));
     }
+    // where the call is kept, and its files to take away
+    var ar = d.archive, base = '/api/calls/' + encodeURIComponent(call.id) + '/';
+    var kept = h('p', { class: 'archive-line' }, h('span', { class: 'archive-tag' }, 'Archive'), ' ');
+    if (ar && ar.archived) {
+      addKids(kept, [(ar.audio ? 'Recording and conversation' : 'Conversation and measurements') + ' kept for good, ',
+        h('span', { class: 'num' }, size(ar.bytes)), ' in ', h('code', null, ar.dir), '. ']);
+    } else {
+      addKids(kept, ['Not archived yet: a call is archived when it has ended. ']);
+    }
+    if (d.audio && d.audio.available) addKids(kept, [h('a', { href: base + 'audio.wav?download=1' }, 'Download recording'), ' · ']);
+    addKids(kept, [h('a', { href: base + 'transcript.txt?download=1' }, 'Download transcript')]);
+    recBody = h('div', null, recBody, kept);
     view.appendChild(section('Recording', d.audio && d.audio.available ? 'Caller above, assistant below. Each shaded band is one wait: last sound to first audio. Click or drag to move.' : null, recBody));
 
     function add(id, sec) { sec.id = id; view.appendChild(sec); }

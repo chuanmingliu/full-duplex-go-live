@@ -360,6 +360,9 @@ h3 { font-size: 13.5px; font-weight: 650; }
 .mshape.diao { border: 1.5px solid var(--st-tts); transform: rotate(45deg) scale(0.82); }
 .norec { border: 1px dashed var(--line-2); border-radius: 6px; padding: 14px 16px; color: var(--ink-2); max-width: 74ch; }
 .norec-h { font-weight: 650; color: var(--ink); margin-bottom: 2px; }
+.archive-line { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); max-width: 86ch; overflow-wrap: anywhere; }
+.archive-line code { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.archive-tag { display: inline-block; margin-right: 4px; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 4px; font-size: 11.5px; font-weight: 600; color: var(--ink); }
 
 /* ---------- call: conversation ---------- */
 
