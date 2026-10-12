@@ -353,6 +353,16 @@ made on one build.
   spoke, nothing refused, p50 960 with the chat model in a slow hour (first
   token 324 ms after headers against 234 at midday), one turn over (1307, the
   chat model).
+- **Between about 23:00 and midnight the chat model alone misses the target.**
+  The 23:14 call on 10-12 (13 turns, `b1e3c88`): p50 1309, 12 of 13 over
+  1200, every turn with the first token 577–631 ms after the headers and every
+  other stage as usual. `llm -pool` two minutes later: fastest of eight copies
+  707 and 712 ms at the median, every copy over 550 ms in 23 of 24 rounds. The
+  night before: 602 ms at 23:53, 161–202 from 00:08. Copies and keys do not
+  help; a second vendor would. Say the hour with every call's figures, and do
+  not read a build's worth from a call made in that hour. On that same call
+  all 13 turns were asked of both synthesis accounts (7 and 6 first), nothing
+  refused.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

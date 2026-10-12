@@ -311,7 +311,7 @@
       "found": "2026-10-11",
       "found_on": "21:51 call, 1354 ms turn",
       "found_call": "out-mv3vt758-ln5f",
-      "symptom": "One turn's first token took 845 ms with four copies on two accounts.",
+      "symptom": "One turn's first token took 845 ms with four copies on two accounts. On 10-12 at 23:14 a whole call sat in one: 12 of 13 turns over 1200 (p50 1309), every one with the first token 577 to 631 ms after the headers; measured outside golive straight after, the fastest of eight copies was at 707 and 712 ms at the median, with every copy over 550 ms in 23 of 24 rounds. The night before, 602 ms at 23:53 and 161 to 202 from 00:08.",
       "cause": "The vendor as a whole is slow at that moment; and several times slower in its busy hours (602 ms at 23:53 against ~170 ms after midnight).",
       "fix": "Eight copies help the ordinary tail (p90 −30 to −100 ms). A second, independent vendor in the race is what would cover these moments.",
       "commits": [
@@ -503,9 +503,9 @@
       "cause": "One `tts_account_rpm` for every account, taken from the vendor's page; and the rule for a full account only moved a session to an account with room left, never to the roomier of two full ones.",
       "fix": "Each account's allowance is written beside its key (`MINIMAX_TTS_RPM=20`, `MINIMAX_TTS_RPM_2=8`: the vendor's page gives a topped-up account 20 a minute and a free one 10) and counted by itself; with both full the session goes to the roomier account; a request an account refuses is asked of the other at once, room or no room, and the refusing account is treated as full for the minute.",
       "commits": [],
-      "verified": "",
-      "verified_call": "",
-      "effect": ""
+      "verified": "2026-10-12",
+      "verified_call": "out-mv5e7gyt-r2kf",
+      "effect": "All 13 turns were asked of both accounts; the second spoke first 7 times, the first 6; nothing refused and neither account reached its limit."
     }
   ]
 }

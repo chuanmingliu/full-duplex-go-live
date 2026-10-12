@@ -3,8 +3,8 @@
     {
       "rank": 1,
       "title": "A faster or second chat-model vendor in the race",
-      "gain": "100–200 ms at the median in busy hours; covers the minutes when every DeepSeek copy is slow",
-      "basis": "estimated: the chat model is ~360 of ~870 ms and 3× slower at 23:50 than after midnight",
+      "gain": "About 300 to 400 ms on every turn in that hour, which is the difference between missing the target on most turns and meeting it; 100 to 200 ms at the median at other busy times",
+      "basis": "measured: the chat model's first token (fastest of eight copies) is about 700 ms at the median between roughly 23:00 and midnight, against 160 to 320 at other hours, on two nights running; a call at 23:14 on 10-12 had 12 of 13 turns over 1200 for that reason alone",
       "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
       "guard": "What the assistant says",
       "undo": "yes",
