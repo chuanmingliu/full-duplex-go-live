@@ -184,7 +184,18 @@ type Config struct {
 	// later ones with three times the wait. 0 asks both at once for each
 	// first segment.
 	TTSHedgeAfterMS int `json:"tts_hedge_after_ms"`
-	HistoryTurns    int `json:"history_turns"`
+	// TTSAccountRPM is how many synthesis requests a minute one account is
+	// trusted with, when the synthesizer holds a pool of accounts (several
+	// keys). Every request to an account is counted; a second, optional
+	// request goes to the other account only while that one has room, and a
+	// session whose account is at the figure moves to one that is not. It is
+	// unused with a single key. 0 is no limit.
+	TTSAccountRPM int `json:"tts_account_rpm"`
+	// TTSPoolAfterMS is tts_hedge_after_ms for the first segment of an answer
+	// when the second connection is on another account: 0 asks both accounts
+	// at once, which a second account's own allowance is what makes affordable.
+	TTSPoolAfterMS int `json:"tts_pool_after_ms"`
+	HistoryTurns   int `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//
@@ -737,6 +748,8 @@ func (c *Config) applyEnv() {
 	setInt(&c.TTSHedge, "GOLIVE_TTS_HEDGE")
 	setInt(&c.TTSHedgeRPM, "GOLIVE_TTS_HEDGE_RPM")
 	setInt(&c.TTSHedgeAfterMS, "GOLIVE_TTS_HEDGE_AFTER_MS")
+	setInt(&c.TTSAccountRPM, "GOLIVE_TTS_ACCOUNT_RPM")
+	setInt(&c.TTSPoolAfterMS, "GOLIVE_TTS_POOL_AFTER_MS")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")

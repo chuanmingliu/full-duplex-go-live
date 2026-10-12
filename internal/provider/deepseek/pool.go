@@ -1,9 +1,7 @@
 package deepseek
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
 )
 
@@ -55,44 +52,6 @@ type lane struct {
 	// restUntil is when this lane's key may be used again, in Unix
 	// nanoseconds; zero when it is in use. See rest.
 	restUntil atomic.Int64
-}
-
-// poolKeys gathers the keys for a provider whose single key lives in keyEnv.
-func poolKeys(keyEnv string) ([]string, error) {
-	var keys []string
-	seen := map[string]bool{}
-	add := func(k string) {
-		k = strings.Trim(strings.TrimSpace(k), `"'`)
-		if k != "" && !seen[k] {
-			seen[k] = true
-			keys = append(keys, k)
-		}
-	}
-	add(os.Getenv(keyEnv))
-	for _, k := range strings.FieldsFunc(os.Getenv(keyEnv+"S"), func(r rune) bool {
-		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n'
-	}) {
-		add(k)
-	}
-	if path := config.Env(keyEnv+"S_FILE", ""); path != "" {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("config: %sS_FILE: %w", keyEnv, err)
-		}
-		defer f.Close()
-		sc := bufio.NewScanner(f)
-		for sc.Scan() {
-			line := sc.Text()
-			if i := strings.IndexByte(line, '#'); i >= 0 {
-				line = line[:i]
-			}
-			add(line)
-		}
-	}
-	if len(keys) == 0 {
-		return nil, fmt.Errorf("config: %s is required but not set (or %sS, or %sS_FILE)", keyEnv, keyEnv, keyEnv)
-	}
-	return keys, nil
 }
 
 // SingleKey returns a client like this one whose pool holds only the first

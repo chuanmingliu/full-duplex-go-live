@@ -107,7 +107,7 @@ one turn in ten had every copy slow. So the copies go down **lanes** — each a
 key and a connection of its own — and the keys are a pool:
 
 ```bash
-scripts/phone-brain.sh addkey      # once per key; pasted unseen, kept in a 0600 file
+scripts/phone-brain.sh addkey      # once per key; pasted unseen, kept in a 0600 file (addkey minimax: a synthesis account)
 scripts/phone-brain.sh keys        # how many the pool has (counts, never the keys)
 scripts/phone-brain.sh restart     # golive reads them at start
 scripts/phone-brain.sh llm -pool   # what they are worth: a key per lane against all lanes on one key
@@ -326,6 +326,57 @@ So the wait is 260, the second connection is insurance against one connection
 going bad, and the stalls are not a matter of load either — over two calls
 the slow syntheses came at 13–17 requests in the minute before them, and
 thirty-eight made at 20–31 a minute were as quick as any.
+
+**A second synthesis account is a pool of two.** Built on 10-12, when the owner
+opened a second account; unused until its key is on the box.
+
+```bash
+scripts/phone-brain.sh addkey minimax        # once per account; pasted unseen, kept in ~/golive-minimax.keys (0600)
+scripts/phone-brain.sh keys                  # counts only
+scripts/phone-brain.sh tts -pool 30 -every 8s   # measure before a call depends on it
+scripts/phone-brain.sh restart
+```
+
+Keys are gathered from `MINIMAX_TTS_API_KEY`, `MINIMAX_TTS_API_KEYS` and
+`MINIMAX_TTS_API_KEYS_FILE`; the first is the account a session opens on. With
+two, the session's second connection is opened on the other account, and the
+rules for two connections that are apart are different from the frugal ones
+above, because the second request no longer draws on the allowance the first
+needs:
+
+- **Every request to an account is counted** over the last minute, and
+  `tts_account_rpm: 10` is what one account is trusted with (the vendor's
+  published figure for an individual account, as the owner read it).
+- **The first segment of an answer is asked of both accounts at once**
+  (`tts_pool_after_ms: 0`) whenever the other account has room: the faster of
+  two draws on every turn, not insurance on one in twenty.
+- **A session whose account has had its minute moves to the other** while that
+  one has room. A request the session has to make is made regardless; only the
+  optional second one waits for room.
+
+Three things `tts -pool` is there to find out, in this order:
+
+1. **Whether the second account can speak in the voice at all.** The voice on
+   the box is one made on the first account. A cloned or designed voice
+   belongs to its account, and another account asking for it is refused at
+   `task_start` ("you don't have access to this voice_id"). golive then rests
+   that key for ten minutes, says so once (`tts: an account was refused;
+   resting it`), and carries on with one account exactly as before — but the
+   pool is worth nothing until the voice exists on both.
+2. **How fast the faster of the two is**, against the first alone in the same
+   rounds: that difference is what a turn gains.
+3. **Whether they are slow together.** "rounds … on every account at once" is
+   the count that matters for the stalls: if both accounts stall in the same
+   round the stall is the vendor's or the path's, and a second account does
+   not cure it.
+
+The published 10 a minute and what has been measured do not agree: calls have
+made 22 to 31 synthesis requests in a minute on the first account, unrefused,
+and 36 a minute sustained was refused. Either the first account is on a higher
+tier or the vendor does not count what golive counts (it may count
+connections or tasks, not segments). `tts -account 2 -call 30 -every 3s -hedge
+1` paces the second account alone until it refuses; set `tts_account_rpm` from
+that, not from the page.
 
 **What does help is not asking.** `duplex.phrase_cache_learn_chars: 12` keeps
 the audio of any segment of an answer up to twelve characters long and plays

@@ -84,6 +84,9 @@ func run() error {
 		callEvery  = flag.Duration("every", 6*time.Second, "with -call, how often a turn comes")
 		callHedge  = flag.Int("hedge", 2, "with -call, connections asked for each first segment (tts_hedge)")
 		callAfter  = flag.Duration("after", 0, "with -call, ask the second connection only when the first has produced no audio for this long (tts_hedge_after_ms); 0 asks both at once")
+		poolRounds = flag.Int("pool", 0, "ask every account of the pool (MINIMAX_TTS_API_KEYS_FILE) for the same clause at once, this many rounds, and print each one's first audio; paced by -every")
+		account    = flag.Int("account", 0, "run on this account of the pool alone (1 is the first key); 0 is the pool as configured")
+		accountRPM = flag.Int("account-rpm", 0, "with -call on a pool, requests a minute one account is trusted with (tts_account_rpm); 0 is no limit")
 	)
 	flag.Parse()
 
@@ -96,11 +99,20 @@ func run() error {
 		return err
 	}
 
+	if *poolRounds > 0 {
+		return runPool(base, *voice, *rate, *poolRounds, *callEvery)
+	}
+	if *account > 0 {
+		if *account > base.Accounts() {
+			return fmt.Errorf("-account %d: the pool holds %d", *account, base.Accounts())
+		}
+		base = base.OnAccount(*account - 1)
+	}
 	if *adapter {
 		return runAdapter(base, *voice, *rate)
 	}
 	if *callTurnsN > 0 {
-		return runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery, *callAfter)
+		return runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery, *callAfter, *accountRPM)
 	}
 
 	if *trace {

@@ -18,6 +18,9 @@ type fakeTTS struct {
 	openErr  []error // per connection
 	name     string
 	synthErr []error // per connection, on its first synthesis
+	// accounts, above one, makes this a pool: a connection is opened on the
+	// account its context's lane names, the first when it names none.
+	accounts int
 
 	mu      sync.Mutex
 	streams []*fakeTTSStream
@@ -39,8 +42,18 @@ func (f *fakeTTS) Open(ctx context.Context, _ TTSOptions) (TTSStream, error) {
 		return nil, f.openErr[n]
 	}
 	s := &fakeTTSStream{tts: f, n: n}
+	if lane, ok := Lane(ctx); ok && f.accounts > 1 {
+		s.account = lane % f.accounts
+	}
 	f.streams = append(f.streams, s)
 	return s, nil
+}
+
+func (f *fakeTTS) Accounts() int {
+	if f.accounts < 1 {
+		return 1
+	}
+	return f.accounts
 }
 
 func (f *fakeTTS) stream(n int) *fakeTTSStream {
@@ -59,8 +72,9 @@ func (f *fakeTTS) opened() int {
 }
 
 type fakeTTSStream struct {
-	tts *fakeTTS
-	n   int
+	tts     *fakeTTS
+	n       int
+	account int
 
 	lock      sync.Mutex // one synthesis at a time, as a real connection
 	active    atomic.Int32
@@ -71,6 +85,7 @@ type fakeTTSStream struct {
 }
 
 func (s *fakeTTSStream) SampleRate() int { return 16000 }
+func (s *fakeTTSStream) Account() int    { return s.account }
 func (s *fakeTTSStream) Close() error    { s.closed.Store(true); return nil }
 
 func (s *fakeTTSStream) Synthesize(ctx context.Context, text string) (<-chan TTSChunk, error) {
@@ -528,5 +543,138 @@ func TestTheSessionsOwnRequestsDoNotUseUpTheHedgingBudget(t *testing.T) {
 	}
 	if first > 300*time.Millisecond {
 		t.Errorf("first audio after %s; the second connection should have had it in about 80 ms", first)
+	}
+}
+
+// --- two accounts ---
+
+func openPool(t *testing.T, f *fakeTTS, after time.Duration, pool TTSPool) TTSStream {
+	t.Helper()
+	s, err := HedgeTTSPool(f, 2, 1, after, pool, nil).Open(context.Background(), TTSOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	deadline := time.Now().Add(time.Second)
+	for f.opened() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond)
+	return s
+}
+
+// A second account is a second place for a request to go: the session's own
+// connection is on the first account, as it has always been, and the one
+// beside it on the next.
+func TestPoolPutsTheSecondConnectionOnAnotherAccount(t *testing.T) {
+	f := &fakeTTS{name: "pool-accounts", accounts: 2}
+	openPool(t, f, 0, TTSPool{})
+	if f.opened() != 2 {
+		t.Fatalf("%d connections opened; want 2", f.opened())
+	}
+	if a, b := f.stream(0).account, f.stream(1).account; a != 0 || b != 1 {
+		t.Errorf("connections on accounts %d and %d; want the first and the second", a+1, b+1)
+	}
+}
+
+// On one account the second request is held back until the first has been
+// slow for a while, because the account cannot afford two a turn (the one a
+// minute this test allows it would be spent opening the connection). The
+// second account has an allowance of its own, so there the first segment is
+// asked of both at once and the caller hears the faster.
+func TestPoolAsksBothAccountsAtOnceForTheFirstSegment(t *testing.T) {
+	f := &fakeTTS{name: "pool-race", accounts: 2,
+		delays: [][]time.Duration{{300 * time.Millisecond}, {20 * time.Millisecond}}}
+	s := openPool(t, f, 200*time.Millisecond, TTSPool{AccountRPM: 10})
+
+	ch, err := s.Synthesize(WithUrgent(context.Background()), "好的，")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want three chunks from the second account", from, serr)
+	}
+	if first > 150*time.Millisecond {
+		t.Errorf("first audio after %s; want the second account's 20 ms, not the 200 ms wait before it was asked", first)
+	}
+}
+
+// What bounds the second request is the other account's own limit: every
+// request to an account is counted, and when its minute is full it is not
+// asked for anything it does not have to do.
+func TestPoolDoesNotAskAnAccountThatHasHadItsMinute(t *testing.T) {
+	f := &fakeTTS{name: "pool-room", accounts: 2,
+		delays: [][]time.Duration{nil, {time.Second, time.Second, time.Second, time.Second, time.Second}}}
+	s := openPool(t, f, 0, TTSPool{AccountRPM: 3})
+
+	for i := 0; i < 5; i++ {
+		ch, err := s.Synthesize(WithUrgent(context.Background()), "好的，")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if from, _, serr := heard(t, ch); serr != nil || len(from) != 3 || from[0] != 0 {
+			t.Fatalf("segment %d: audio %v, err %v; want the first account's", i, from, serr)
+		}
+		time.Sleep(120 * time.Millisecond) // the copy that lost puts itself in order
+	}
+	// Three a minute: the connection it was opened on, and two segments.
+	if n := f.stream(1).calls.Load(); n != 2 {
+		t.Errorf("the second account was asked for %d of five first segments; want 2, which with its connection is its three a minute", n)
+	}
+	if n := f.stream(0).calls.Load(); n != 5 {
+		t.Errorf("the first account made %d of the five requests the session had to make; want all 5", n)
+	}
+}
+
+// And the pool carries what one account cannot: a session whose account has
+// had its minute moves to the one that has not.
+func TestPoolMovesASessionOffAnAccountAtItsLimit(t *testing.T) {
+	f := &fakeTTS{name: "pool-move", accounts: 2}
+	s := openPool(t, f, 0, TTSPool{AccountRPM: 4})
+
+	var got []byte
+	for i := 0; i < 7; i++ {
+		ch, err := s.Synthesize(context.Background(), "按提示输入车牌号。")
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, _, serr := heard(t, ch)
+		if serr != nil || len(from) != 3 {
+			t.Fatalf("segment %d: audio %v, err %v", i, from, serr)
+		}
+		got = append(got, from[0])
+	}
+	// Four a minute each: a connection and three segments, then the other
+	// account's three; the seventh has nowhere better to go and is made anyway.
+	want := []byte{0, 0, 0, 1, 1, 1, 1}
+	if string(got) != string(want) {
+		t.Errorf("segments came from accounts %v; want %v", got, want)
+	}
+}
+
+// One account with two connections is what it was: the pool's rules are for
+// connections that are apart.
+func TestPoolRulesDoNotApplyToOneAccount(t *testing.T) {
+	f := &fakeTTS{name: "pool-one", delays: [][]time.Duration{{150 * time.Millisecond}, {10 * time.Millisecond}}}
+	s, err := HedgeTTSPool(f, 2, 0, 100*time.Millisecond, TTSPool{AccountRPM: 1}, nil).Open(context.Background(), TTSOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for f.opened() < 2 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond)
+	ch, err := s.Synthesize(WithUrgent(context.Background()), "好的，")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; want the second connection's", from, serr)
+	}
+	if first < 100*time.Millisecond {
+		t.Errorf("first audio after %s; on one account the second connection is asked only after the 100 ms wait", first)
 	}
 }

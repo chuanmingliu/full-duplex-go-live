@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,6 +74,41 @@ func IsUrgent(ctx context.Context) bool {
 //
 // copies < 2 returns inner unchanged.
 func HedgeTTS(inner TTS, copies, rpm int, after time.Duration, log *slog.Logger) TTS {
+	return HedgeTTSPool(inner, copies, rpm, after, TTSPool{}, log)
+}
+
+// Pooled is a provider that holds more than one account, and can be asked for
+// a session on a particular one with WithLane: lane n is account n.
+type Pooled interface {
+	Accounts() int
+}
+
+// TTSPool is how two connections are used when they are on different
+// accounts, which is a different thing from two on one.
+//
+// On one account a second request is drawn from the allowance the first needs,
+// so it is rationed (rpm) and held back (after). On two accounts it is drawn
+// from an allowance of its own, and what bounds it is that account's own
+// limit. So:
+//
+//   - each account's requests are counted, every one of them, over the last
+//     minute, and AccountRPM is what one account is trusted with;
+//   - the first segment of an answer is asked of both accounts at once (or
+//     after After, if that is set) whenever the second has room — the fastest
+//     of two draws on every turn rather than insurance on one in ten;
+//   - a segment whose own account is at its limit goes to the other when that
+//     one has room: the pool carries what one account cannot.
+//
+// A request the session has to make is made whatever the count says; only the
+// second, optional one waits for room. AccountRPM 0 is no limit.
+type TTSPool struct {
+	AccountRPM int
+	After      time.Duration
+}
+
+// HedgeTTSPool is HedgeTTS for a provider that may hold several accounts. With
+// one account, or a provider that is not Pooled, pool is unused.
+func HedgeTTSPool(inner TTS, copies, rpm int, after time.Duration, pool TTSPool, log *slog.Logger) TTS {
 	if copies < 2 || inner == nil {
 		return inner
 	}
@@ -82,7 +118,14 @@ func HedgeTTS(inner TTS, copies, rpm int, after time.Duration, log *slog.Logger)
 	if after < 0 {
 		after = 0
 	}
-	return &hedgedTTS{inner: inner, log: log, after: after, budget: ttsBudgetFor(inner.Name(), rpm)}
+	h := &hedgedTTS{inner: inner, log: log, after: after, budget: ttsBudgetFor(inner.Name(), rpm)}
+	if p, ok := inner.(Pooled); ok && p.Accounts() > 1 {
+		h.accounts, h.pool = p.Accounts(), pool
+		if h.pool.After < 0 {
+			h.pool.After = 0
+		}
+	}
+	return h
 }
 
 type hedgedTTS struct {
@@ -90,6 +133,50 @@ type hedgedTTS struct {
 	log    *slog.Logger
 	after  time.Duration
 	budget *rpmBudget
+	// accounts is how many accounts inner holds when that is more than one,
+	// and pool how they are used.
+	accounts int
+	pool     TTSPool
+}
+
+// accountOf is which account a connection is on.
+func accountOf(slot *ttsSlot) int {
+	if slot == nil {
+		return 0
+	}
+	if a, ok := slot.stream.(interface{ Account() int }); ok {
+		return a.Account()
+	}
+	return 0
+}
+
+// apart reports whether two connections are on different accounts.
+func (h *hedgedTTS) apart(a, b *ttsSlot) bool {
+	return h.accounts > 1 && a != nil && b != nil && accountOf(a) != accountOf(b)
+}
+
+// account is the count of one account's requests over the last minute; nil
+// when there is one account or no limit, and a nil count has room for anything.
+func (h *hedgedTTS) account(n int) *rpmBudget {
+	if h.accounts < 2 || h.pool.AccountRPM <= 0 {
+		return nil
+	}
+	return ttsBudgetFor(h.inner.Name()+"#"+strconv.Itoa(n), h.pool.AccountRPM)
+}
+
+// made records a request the session had to make on a connection.
+func (h *hedgedTTS) made(slot *ttsSlot) {
+	h.account(accountOf(slot)).spend(1, true)
+}
+
+// room asks for a second, optional request on spare, and records it if there
+// is room: under the other account's own limit when the two are apart, under
+// what hedging may add to the one account when they are not.
+func (h *hedgedTTS) room(primary, spare *ttsSlot) bool {
+	if h.apart(primary, spare) {
+		return h.account(accountOf(spare)).spend(1, false)
+	}
+	return h.budget.spend(1, false)
 }
 
 // laterSegmentPatience is how many times longer than an urgent segment a
@@ -99,8 +186,10 @@ const laterSegmentPatience = 3
 // hedgeDelay says whether a segment is hedged and how long the first
 // connection has to itself: none, for an urgent segment when both are asked
 // at once.
-func (h *hedgedTTS) hedgeDelay(urgent bool) (wait time.Duration, hedged bool) {
+func (h *hedgedTTS) hedgeDelay(urgent, apart bool) (wait time.Duration, hedged bool) {
 	switch {
+	case apart && urgent:
+		return h.pool.After, true
 	case h.after <= 0:
 		return 0, urgent
 	case urgent:
@@ -154,6 +243,23 @@ func (b *rpmBudget) spend(n int, must bool) bool {
 	return true
 }
 
+// full reports whether the last minute already holds as many as the limit.
+func (b *rpmBudget) full() bool {
+	if b == nil {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	n := 0
+	for _, t := range b.stamps {
+		if now.Sub(t) < time.Minute {
+			n++
+		}
+	}
+	return n >= b.limit
+}
+
 func (h *hedgedTTS) Name() string { return h.inner.Name() }
 
 func (h *hedgedTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error) {
@@ -162,6 +268,7 @@ func (h *hedgedTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error
 		return nil, err
 	}
 	s := &hedgedTTSStream{tts: h, ctx: ctx, opts: opts, primary: &ttsSlot{stream: first}}
+	h.made(s.primary)
 	s.openSpare()
 	return s, nil
 }
@@ -191,7 +298,17 @@ func (s *hedgedTTSStream) openSpare() {
 		s.mu.Unlock()
 		return
 	}
-	if !s.tts.budget.spend(1, false) {
+	// With several accounts the second connection is asked for on the one
+	// after the first's; the provider gives another if that one is resting.
+	octx, want := s.ctx, accountOf(s.primary)
+	if s.tts.accounts > 1 {
+		want = (want + 1) % s.tts.accounts
+		octx = WithLane(s.ctx, want)
+		if !s.tts.account(want).spend(1, false) {
+			s.mu.Unlock()
+			return
+		}
+	} else if !s.tts.budget.spend(1, false) {
 		// No room this minute for a connection nobody is waiting on. It is
 		// asked for again when the next first segment comes due.
 		s.mu.Unlock()
@@ -200,7 +317,7 @@ func (s *hedgedTTSStream) openSpare() {
 	s.opening = true
 	s.mu.Unlock()
 	go func() {
-		stream, err := s.tts.inner.Open(s.ctx, s.opts)
+		stream, err := s.tts.inner.Open(octx, s.opts)
 		s.mu.Lock()
 		s.opening = false
 		if err != nil || s.closed {
@@ -266,26 +383,40 @@ func drainTTS(ch <-chan TTSChunk) {
 func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan TTSChunk, error) {
 	s.mu.Lock()
 	primary, spare := s.primary, s.spare
+	apart := s.tts.apart(primary, spare)
+	if apart && !spare.busy.Load() &&
+		s.tts.account(accountOf(primary)).full() && !s.tts.account(accountOf(spare)).full() {
+		// This account has had its minute's worth and the other has not: the
+		// segment goes there, and so does what follows until it is the other
+		// way round.
+		s.primary, s.spare = spare, primary
+		primary, spare = spare, primary
+		s.tts.log.Debug("tts pool: this account is at its limit; the session moves to the other",
+			"to_account", accountOf(primary)+1)
+	}
 	s.mu.Unlock()
-	wait, hedged := s.tts.hedgeDelay(IsUrgent(ctx))
+	wait, hedged := s.tts.hedgeDelay(IsUrgent(ctx), apart)
 	if hedged && spare == nil {
 		s.openSpare()
 	}
 	if !hedged || spare == nil {
+		s.tts.made(primary)
 		return primary.stream.Synthesize(ctx, text)
 	}
 	if wait == 0 {
 		race := spare.busy.CompareAndSwap(false, true)
-		if race && !s.tts.budget.spend(1, false) {
+		if race && !s.tts.room(primary, spare) {
 			// No room this minute for a second request. One is made, as it
 			// would have been anyway.
 			spare.busy.Store(false)
 			race = false
 		}
 		if !race {
+			s.tts.made(primary)
 			return primary.stream.Synthesize(ctx, text)
 		}
 	}
+	s.tts.made(primary)
 	// With a wait, one request now: the second is asked for, and accounted
 	// for, only if this one is slow.
 
@@ -341,7 +472,7 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 			if !slots[1].busy.CompareAndSwap(false, true) {
 				return
 			}
-			if !s.tts.budget.spend(1, false) {
+			if !s.tts.room(slots[0], slots[1]) {
 				slots[1].busy.Store(false)
 				s.tts.log.Debug("tts hedge: no room this minute for a second request",
 					"waited_ms", time.Since(began).Milliseconds())
@@ -456,7 +587,7 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 		}
 		if asked {
 			s.tts.log.Debug("tts hedge: a copy produced audio first",
-				"copy", winner+1, "ms", time.Since(began).Milliseconds())
+				"copy", winner+1, "account", accountOf(slots[winner])+1, "ms", time.Since(began).Milliseconds())
 		}
 
 		ch := audio[winner]

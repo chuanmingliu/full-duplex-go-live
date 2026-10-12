@@ -102,7 +102,7 @@ func New(keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 // — and the shared pair remains as the fallback, which keeps every existing
 // .env working unchanged.
 func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
-	keys, err := poolKeys(keyEnv)
+	keys, err := config.EnvKeys(keyEnv)
 	if err != nil {
 		return nil, err
 	}

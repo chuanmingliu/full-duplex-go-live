@@ -321,6 +321,19 @@ made on one build.
   1200 (first audio 938 and 646 ms) were two of them. It now bounds what
   hedging adds: four second requests a minute. The vendor's real allowance is
   still not known; 26 in a minute passed and 36 a minute sustained did not.
+- **A second synthesis account, as a pool** (built 10-12, key not yet on the
+  box). `internal/provider/minimax/pool.go` keeps accounts apart (lane n is
+  account n; a refused key is rested and the next takes the session);
+  `provider.HedgeTTSPool` puts a session's second connection on the other
+  account, counts every request per account (`tts_account_rpm: 10`), asks both
+  accounts at once for an answer's first segment while the other has room
+  (`tts_pool_after_ms: 0`), and moves a session off an account that has had its
+  minute. One key behaves exactly as before. Three unknowns, all answered by
+  `phone-brain.sh tts -pool 30 -every 8s` once the key is added: the voice on
+  the box was made on the first account and the second may be refused it
+  (status 2042); whether slow first audios and the multi-second stalls happen
+  on both accounts at once; and what an account's allowance really is — the
+  vendor's page says 10 a minute, calls have run at 22–31 a minute unrefused.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

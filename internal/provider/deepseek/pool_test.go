@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
 )
 
@@ -22,7 +23,7 @@ func TestPoolKeysComeFromThreePlacesInOrderWithoutDuplicates(t *testing.T) {
 	t.Setenv("POOLTEST_API_KEY", "sk-a")
 	t.Setenv("POOLTEST_API_KEYS", `sk-b, sk-a,"sk-c" sk-d`)
 	t.Setenv("POOLTEST_API_KEYS_FILE", file)
-	got, err := poolKeys("POOLTEST_API_KEY")
+	got, err := config.EnvKeys("POOLTEST_API_KEY")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func TestPoolKeysComeFromThreePlacesInOrderWithoutDuplicates(t *testing.T) {
 	t.Run("the list alone is enough", func(t *testing.T) {
 		t.Setenv("POOLTEST_API_KEY", "")
 		t.Setenv("POOLTEST_API_KEYS_FILE", "")
-		if got, err := poolKeys("POOLTEST_API_KEY"); err != nil || len(got) != 4 {
+		if got, err := config.EnvKeys("POOLTEST_API_KEY"); err != nil || len(got) != 4 {
 			t.Errorf("got %v, %v", got, err)
 		}
 	})
@@ -42,7 +43,7 @@ func TestPoolKeysComeFromThreePlacesInOrderWithoutDuplicates(t *testing.T) {
 		t.Setenv("POOLTEST_API_KEY", "")
 		t.Setenv("POOLTEST_API_KEYS", "")
 		t.Setenv("POOLTEST_API_KEYS_FILE", "")
-		_, err := poolKeys("POOLTEST_API_KEY")
+		_, err := config.EnvKeys("POOLTEST_API_KEY")
 		if err == nil || !strings.Contains(err.Error(), "POOLTEST_API_KEYS") {
 			t.Errorf("err = %v", err)
 		}

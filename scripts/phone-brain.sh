@@ -434,43 +434,50 @@ tts)
   ;;
 
 keys)
-  # How many chat-model keys the pool has. Counts only: a key is never printed.
+  # How many keys each pool has. Counts only: a key is never printed.
   find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
-  one=$(grep -cE '^DEEPSEEK_API_KEY=.+' "$ENVFILE" || true)
-  list=$(grep -m1 '^DEEPSEEK_API_KEYS=' "$ENVFILE" | cut -d= -f2- | tr ',; ' '\n\n\n' | grep -c . || true)
-  file=$(grep -m1 '^DEEPSEEK_API_KEYS_FILE=' "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
-  infile=0
-  [ -n "$file" ] && [ -f "$file" ] && infile=$(sed 's/#.*//' "$file" | grep -c '[^[:space:]]' || true)
-  say "env file              : $ENVFILE"
-  say "DEEPSEEK_API_KEY      : $one"
-  say "DEEPSEEK_API_KEYS     : $list"
-  say "DEEPSEEK_API_KEYS_FILE: ${file:-(not set)}${file:+ — $infile key(s)}"
-  say "(a key listed twice counts once in the pool; golive logs the pool it built at debug level as key=N)"
+  say "env file: $ENVFILE"
+  for var in DEEPSEEK_API_KEY MINIMAX_TTS_API_KEY; do
+    one=$(grep -cE "^${var}=.+" "$ENVFILE" || true)
+    list=$(grep -m1 "^${var}S=" "$ENVFILE" | cut -d= -f2- | tr ',; ' '\n\n\n' | grep -c . || true)
+    file=$(grep -m1 "^${var}S_FILE=" "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
+    infile=0
+    [ -n "$file" ] && [ -f "$file" ] && infile=$(sed 's/#.*//' "$file" | grep -c '[^[:space:]]' || true)
+    say "$var: $one    ${var}S: $list    ${var}S_FILE: ${file:-(not set)}${file:+ — $infile key(s)}"
+  done
+  say "(a key listed twice counts once in a pool; the first key is the account used when nothing else is asked for)"
   ;;
 
 addkey)
-  # Add one chat-model key to the pool without it reaching the screen or the
-  # shell history. Run it once per key, then: scripts/phone-brain.sh restart
+  # Add one key to a pool without it reaching the screen or the shell history:
+  #   addkey            a chat-model key (DeepSeek)
+  #   addkey minimax    a synthesis account (MiniMax)
+  # Run it once per key, then: scripts/phone-brain.sh restart
   find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
-  file=$(grep -m1 '^DEEPSEEK_API_KEYS_FILE=' "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
+  case "${2:-deepseek}" in
+    deepseek|llm) var=DEEPSEEK_API_KEY; file_default="$HOME/golive-deepseek.keys"; measure="scripts/phone-brain.sh llm -pool" ;;
+    minimax|tts)  var=MINIMAX_TTS_API_KEY; file_default="$HOME/golive-minimax.keys"; measure="scripts/phone-brain.sh tts -pool 30 -every 8s" ;;
+    *) say "addkey [deepseek|minimax]"; exit 2 ;;
+  esac
+  file=$(grep -m1 "^${var}S_FILE=" "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
   if [ -z "$file" ]; then
-    file="$HOME/golive-deepseek.keys"
-    printf '\nDEEPSEEK_API_KEYS_FILE=%s\n' "$file" >> "$ENVFILE"
-    say "added DEEPSEEK_API_KEYS_FILE=$file to $ENVFILE"
+    file="$file_default"
+    printf '\n%sS_FILE=%s\n' "$var" "$file" >> "$ENVFILE"
+    say "added ${var}S_FILE=$file to $ENVFILE"
   fi
   touch "$file" && chmod 600 "$file"
   printf 'paste one key and press Enter (it is not shown): '
   IFS= read -rs key; echo
   key=$(printf '%s' "$key" | tr -d '[:space:]"'"'"'')
   [ -n "$key" ] || { say "nothing entered; nothing changed"; exit 1; }
-  if grep -qxF "$key" "$file" || grep -qF "DEEPSEEK_API_KEY=$key" "$ENVFILE"; then
+  if grep -qxF "$key" "$file" || grep -qF "${var}=$key" "$ENVFILE"; then
     say "that key is already in the pool; nothing changed"
   else
     printf '%s\n' "$key" >> "$file"
     say "added. $file now holds $(sed 's/#.*//' "$file" | grep -c '[^[:space:]]') key(s)"
   fi
   unset key
-  say "to use them: scripts/phone-brain.sh restart    to measure them: scripts/phone-brain.sh llm -pool"
+  say "to measure them first: $measure    to use them: scripts/phone-brain.sh restart"
   ;;
 
 call)

@@ -35,7 +35,7 @@ var callTurns = [][2]string{
 	{"这个真没法估，", "每辆车情况不同，报出来不准反而误导您。"},
 }
 
-func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every, after time.Duration) error {
+func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every, after time.Duration, accountRPM int) error {
 	c := *base
 	if voice != "" {
 		c.VoiceID = voice
@@ -51,7 +51,12 @@ func runCall(base *minimax.TTS, voice string, rate, turns, hedge int, every, aft
 			return a
 		},
 	}))
-	tts := provider.HedgeTTS(&c, hedge, 0, after, log)
+	// On a pool the first segment is asked of both accounts at once, as a
+	// session is; -after then applies to one account's two connections only.
+	tts := provider.HedgeTTSPool(&c, hedge, 0, after, provider.TTSPool{AccountRPM: accountRPM}, log)
+	if c.Accounts() > 1 {
+		fmt.Printf("pool of %d accounts; each trusted with %d requests a minute (0 is no limit)\n", c.Accounts(), accountRPM)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stream, err := tts.Open(ctx, provider.TTSOptions{SampleRate: rate, Voice: c.VoiceID})

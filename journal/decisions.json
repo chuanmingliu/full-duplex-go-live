@@ -1,70 +1,81 @@
 {
- "decisions": [
-  {
-   "rank": 1,
-   "title": "A faster or second chat-model vendor in the race",
-   "gain": "100–200 ms at the median in busy hours; covers the minutes when every DeepSeek copy is slow",
-   "basis": "estimated: the chat model is ~360 of ~870 ms and 3× slower at 23:50 than after midnight",
-   "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
-   "guard": "What the assistant says",
-   "undo": "yes",
-   "needs": "An account and a key on the box; `llmprobe -try` measures a candidate in a minute",
-   "status": "waiting"
-  },
-  {
-   "rank": 2,
-   "title": "Ask the model to open answers with one of a few short clauses",
-   "gain": "~195 ms on most turns; first audio immune to synthesizer stalls",
-   "basis": "measured on cache-hit turns: 515–756 ms against ~870",
-   "cost": "Changes how the assistant talks; openers repeat",
-   "guard": "How natural it sounds",
-   "undo": "yes",
-   "needs": "A yes, and a listen",
-   "status": "waiting"
-  },
-  {
-   "rank": 3,
-   "title": "A holding phrase on slow turns",
-   "gain": "No change at the median; ends dead air at about 1.2 s in a stall",
-   "basis": "built and off (holding_filler); fires at 1.5× the call's median",
-   "cost": "First audio is then a phrase, not the answer; reported separately",
-   "guard": "Moves the number without moving the answer",
-   "undo": "yes",
-   "needs": "A yes, and the phrases to use",
-   "status": "waiting"
-  },
-  {
-   "rank": 4,
-   "title": "Wired network, and providers routed outside the VPN tunnel",
-   "gain": "Tens of ms per vendor round trip; possibly the synthesizer's stalls",
-   "basis": "unknown; could not be measured without root",
-   "cost": "Needs root on the box",
-   "guard": "none",
-   "undo": "yes",
-   "needs": "Root, or the owner making the change",
-   "status": "waiting"
-  },
-  {
-   "rank": 5,
-   "title": "Ask for the recognizer's final 100 or 80 ms into a pause, not 120",
-   "gain": "20–40 ms on every turn",
-   "basis": "measured: 66 pauses on two calls; 100 ms splits 18–43% more recognitions, 80 ms 43–71% more",
-   "cost": "More split recognitions on a line where recognition is already the weak point",
-   "guard": "Recognition accuracy",
-   "undo": "yes",
-   "needs": "More pause data from quiet calls; leave at 120 for now",
-   "status": "deferred"
-  },
-  {
-   "rank": 6,
-   "title": "The synthesizer's HTTP endpoint as a second route in a stall",
-   "gain": "unknown",
-   "basis": "untried",
-   "cost": "Engineering time; same account and voice",
-   "guard": "none",
-   "undo": "yes",
-   "needs": "A probe that asks both routes at once",
-   "status": "untried"
-  }
- ]
+  "decisions": [
+    {
+      "rank": 1,
+      "title": "A faster or second chat-model vendor in the race",
+      "gain": "100–200 ms at the median in busy hours; covers the minutes when every DeepSeek copy is slow",
+      "basis": "estimated: the chat model is ~360 of ~870 ms and 3× slower at 23:50 than after midnight",
+      "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
+      "guard": "What the assistant says",
+      "undo": "yes",
+      "needs": "An account and a key on the box; `llmprobe -try` measures a candidate in a minute",
+      "status": "waiting"
+    },
+    {
+      "rank": 2,
+      "title": "A second synthesis account, used as a pool of two",
+      "gain": "The faster of two first audios on every turn instead of one (unmeasured; the tail is the point: 646 and 938 ms on the 09:34 call), and a second allowance of requests. Cures the multi-second stalls only if they turn out to be per account.",
+      "basis": "estimated: the synthesizer is ~230 of ~870 ms; on one account, racing every first segment took the bench's p95 from ~1070 to ~1010 and then hit the rate limit",
+      "cost": "The owner's second account. Its voice must be the same one: the voice in use was made on the first account, and another account may be refused it.",
+      "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
+      "undo": "yes: remove the key; one key behaves exactly as before",
+      "needs": "The key on the box (`scripts/phone-brain.sh addkey minimax`, pasted unseen), then `scripts/phone-brain.sh tts -pool 30 -every 8s`",
+      "status": "built; waiting for the key"
+    },
+    {
+      "rank": 3,
+      "title": "Ask the model to open answers with one of a few short clauses",
+      "gain": "~195 ms on most turns; first audio immune to synthesizer stalls",
+      "basis": "measured on cache-hit turns: 515–756 ms against ~870",
+      "cost": "Changes how the assistant talks; openers repeat",
+      "guard": "How natural it sounds",
+      "undo": "yes",
+      "needs": "A yes, and a listen",
+      "status": "waiting"
+    },
+    {
+      "rank": 4,
+      "title": "A holding phrase on slow turns",
+      "gain": "No change at the median; ends dead air at about 1.2 s in a stall",
+      "basis": "built and off (holding_filler); fires at 1.5× the call's median",
+      "cost": "First audio is then a phrase, not the answer; reported separately",
+      "guard": "Moves the number without moving the answer",
+      "undo": "yes",
+      "needs": "A yes, and the phrases to use",
+      "status": "waiting"
+    },
+    {
+      "rank": 5,
+      "title": "Wired network, and providers routed outside the VPN tunnel",
+      "gain": "Tens of ms per vendor round trip; possibly the synthesizer's stalls",
+      "basis": "unknown; could not be measured without root",
+      "cost": "Needs root on the box",
+      "guard": "none",
+      "undo": "yes",
+      "needs": "Root, or the owner making the change",
+      "status": "waiting"
+    },
+    {
+      "rank": 6,
+      "title": "Ask for the recognizer's final 100 or 80 ms into a pause, not 120",
+      "gain": "20–40 ms on every turn",
+      "basis": "measured: 66 pauses on two calls; 100 ms splits 18–43% more recognitions, 80 ms 43–71% more",
+      "cost": "More split recognitions on a line where recognition is already the weak point",
+      "guard": "Recognition accuracy",
+      "undo": "yes",
+      "needs": "More pause data from quiet calls; leave at 120 for now",
+      "status": "deferred"
+    },
+    {
+      "rank": 7,
+      "title": "The synthesizer's HTTP endpoint as a second route in a stall",
+      "gain": "unknown",
+      "basis": "untried",
+      "cost": "Engineering time; same account and voice",
+      "guard": "none",
+      "undo": "yes",
+      "needs": "A probe that asks both routes at once",
+      "status": "untried"
+    }
+  ]
 }

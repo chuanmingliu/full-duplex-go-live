@@ -28,6 +28,8 @@
   "tts_hedge": 2,
   "tts_hedge_after_ms": 260,
   "tts_hedge_rpm": 4,
+  "tts_account_rpm": 10,
+  "tts_pool_after_ms": 0,
   "history_turns": 16,
   "duplex": {
     "backchannel": false,
