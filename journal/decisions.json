@@ -19,8 +19,8 @@
       "cost": "The two accounts' copies of the voice differ: the second speaks about 9% faster and about 3 dB louder. The owner heard both and keeps them as they are: both are his voice, and the variation from turn to turn is wanted.",
       "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
       "undo": "yes: remove the key; one key behaves exactly as before",
-      "needs": "A call on the pool, to verify. Then the second account's real allowance (paced alone until refused), to set `tts_account_rpm` above the published 10 if it allows.",
-      "status": "taken 10-12: on, racing every first segment; not yet heard on a call"
+      "needs": "More calls, to see how often a turn is asked of both now that the accounts are counted by their own allowances.",
+      "status": "taken 10-12: on. First call: both accounts spoke, nothing refused; the first carries the call, the second takes what fits under its 8 a minute"
     },
     {
       "rank": 3,

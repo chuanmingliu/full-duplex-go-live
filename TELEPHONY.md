@@ -453,15 +453,27 @@ and the rules for two connections that are apart are different from the frugal
 ones above, because the second request no longer draws on the allowance the
 first needs:
 
-- **Every request to an account is counted** over the last minute, and
-  `tts_account_rpm: 10` is what one account is trusted with (the vendor's
-  published figure for an individual account, as the owner read it).
+- **Every request to an account is counted** over the last minute, against
+  that account's own allowance, written beside its key: `MINIMAX_TTS_RPM=20`
+  and `MINIMAX_TTS_RPM_2=8` on the box. The vendor's rate-limit page (T2A v2,
+  as the owner quoted it on 10-12) gives 10 requests a minute to a free
+  account and 20 to one that has been topped up, and the two accounts behave
+  like one of each. The first has carried 22 to 31 requests in a minute
+  unrefused (36 a minute sustained was refused): 20 with some slack. The
+  second, paced alone at 30 a minute, refused 42 of 76 requests from the 28th
+  second on: 10, whatever its balance says. An account with nothing written
+  gets the profile's `tts_account_rpm: 10`. If the second account moves up a
+  tier, pace it again and raise its figure.
 - **The first segment of an answer is asked of both accounts at once**
   (`tts_pool_after_ms: 0`) whenever the other account has room: the faster of
   two draws on every turn, not insurance on one in twenty.
 - **A session whose account has had its minute moves to the other** while that
-  one has room. A request the session has to make is made regardless; only the
-  optional second one waits for room.
+  one has room — and, when both have had theirs, to the roomier of the two,
+  so a busy call ends up on the account that will actually take it. A request
+  the session has to make is made regardless; only the optional second one
+  waits for room.
+- **A request an account refuses is asked of the other at once**, room or no
+  room, and the refusing account is treated as full for the minute.
 
 Three things `tts -pool` is there to find out, in this order:
 
@@ -478,13 +490,10 @@ Three things `tts -pool` is there to find out, in this order:
    round the stall is the vendor's or the path's, and a second account does
    not cure it.
 
-The published 10 a minute and what has been measured do not agree: calls have
-made 22 to 31 synthesis requests in a minute on the first account, unrefused,
-and 36 a minute sustained was refused. Either the first account is on a higher
-tier or the vendor does not count what golive counts (it may count
-connections or tasks, not segments). `tts -account 2 -call 30 -every 3s -hedge
-1` paces the second account alone until it refuses; set `tts_account_rpm` from
-that, not from the page.
+To find a new account's allowance, pace it alone until it refuses
+(`tts -account N -call 38 -every 4s -hedge 1` is 30 requests a minute) and
+write a figure under what it took beside its key. Do not take it from the
+vendor's page, and do not assume it from another account.
 
 **What does help is not asking.** `duplex.phrase_cache_learn_chars: 12` keeps
 the audio of any segment of an answer up to twelve characters long and plays

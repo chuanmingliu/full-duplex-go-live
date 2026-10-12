@@ -551,6 +551,7 @@ keys)
     say "$var: $one    ${var}_2…9: $numbered    ${var}S: $list    ${var}S_FILE: ${file:-(not set)}${file:+ — $infile key(s)}"
   done
   say "MINIMAX_TTS_VOICE_ID: $(grep -cE '^MINIMAX_TTS_VOICE_ID=.+' "$ENVFILE" || true)    MINIMAX_TTS_VOICE_ID_2…9: $(grep -cE '^MINIMAX_TTS_VOICE_ID_[2-9]=.+' "$ENVFILE" || true)   (a numbered synthesis account speaks in the voice id of the same number)"
+  say "requests a minute each synthesis account is trusted with: first $(grep -m1 -E '^MINIMAX_TTS_RPM=' "$ENVFILE" | cut -d= -f2 | tr -d '[:space:]' | grep . || echo 'not set')$(grep -E '^MINIMAX_TTS_RPM_[2-9]=.+' "$ENVFILE" | sed -E 's/^MINIMAX_TTS_RPM_([2-9])=(.*)$/, account \1: \2/' | tr -d '\n')   (not set: the profile's tts_account_rpm)"
   say "(a key listed twice counts once in a pool; the first key is the account used when nothing else is asked for)"
   ;;
 

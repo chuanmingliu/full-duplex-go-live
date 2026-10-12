@@ -118,16 +118,21 @@ type Stats struct {
 
 // Events counts what happened on a call besides its answered turns.
 type Events struct {
-	Utterances     int     `json:"utterances"`
-	EarlyFinals    int     `json:"early_finals"`
-	ClosedOnFinal  int     `json:"closed_on_final"`
-	GuessesHeld    int     `json:"guesses_held"`
-	GuessesDropped int     `json:"guesses_dropped"`
-	Interruptions  int     `json:"interruptions"`
-	CachePlays     int     `json:"cache_plays"`
-	HedgeAsked     int     `json:"hedge_asked"`
-	HedgeWon       int     `json:"hedge_won"`
-	HedgeRefused   int     `json:"hedge_refused"`
+	Utterances     int `json:"utterances"`
+	EarlyFinals    int `json:"early_finals"`
+	ClosedOnFinal  int `json:"closed_on_final"`
+	GuessesHeld    int `json:"guesses_held"`
+	GuessesDropped int `json:"guesses_dropped"`
+	Interruptions  int `json:"interruptions"`
+	CachePlays     int `json:"cache_plays"`
+	HedgeAsked     int `json:"hedge_asked"`
+	HedgeWon       int `json:"hedge_won"`
+	HedgeRefused   int `json:"hedge_refused"`
+	// AccountWins is, for segments asked of more than one synthesis account,
+	// how often each spoke first; PoolMoves how often a session left an
+	// account that had had its minute.
+	AccountWins    []int   `json:"account_wins,omitempty"`
+	PoolMoves      int     `json:"pool_moves,omitempty"`
 	Segments       int     `json:"segments"`
 	AbandonedTasks int     `json:"abandoned_tasks"`
 	CopyWins       []int   `json:"copy_wins"`
@@ -483,7 +488,7 @@ func (ix *Indexer) Feed(l Line) {
 	case "think: abandoning the speculative turn":
 		ev.GuessesDropped++
 		cb.mark(l.Time, "dropped", "A prepared answer was dropped: the caller carried on")
-	case "tts hedge: asking the second connection too":
+	case "tts hedge: asking the second connection too", "tts hedge: asking both connections at once":
 		ev.HedgeAsked++
 		cb.pendingHedge.asked = true
 	case "tts hedge: a copy produced audio first":
@@ -491,6 +496,15 @@ func (ix *Indexer) Feed(l Line) {
 		if l.N("copy") == 2 {
 			ev.HedgeWon++
 		}
+		// With a pool of synthesis accounts, which one spoke first.
+		if a := l.N("account"); a >= 1 && a <= 9 {
+			for len(ev.AccountWins) < a {
+				ev.AccountWins = append(ev.AccountWins, 0)
+			}
+			ev.AccountWins[a-1]++
+		}
+	case "tts pool: this account is at its limit; the session moves to the other":
+		ev.PoolMoves++
 	case "tts hedge: no room this minute for a second request":
 		ev.HedgeRefused++
 		cb.pendingHedge.refused = true

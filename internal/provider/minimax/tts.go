@@ -39,7 +39,10 @@ type TTS struct {
 	APIKeys []string
 	// VoiceIDs is each account's own name for the voice, by its place in
 	// APIKeys; an empty entry is VoiceID. See voiceFor.
-	VoiceIDs       []string
+	VoiceIDs []string
+	// RPMs is how many requests a minute each account allows, by its place in
+	// APIKeys; 0 is not known. See AccountRPM.
+	RPMs           []int
 	Model          string
 	VoiceID        string
 	Speed          float64
@@ -127,6 +130,7 @@ func New() (*TTS, error) {
 		APIKey:        key,
 		APIKeys:       keys,
 		VoiceIDs:      accountVoices(keys),
+		RPMs:          accountRPMs(keys),
 		rests:         &keyRests{},
 		Model:         config.Env("MINIMAX_TTS_MODEL", "speech-2.8-turbo"),
 		VoiceID:       config.Env("MINIMAX_TTS_VOICE_ID", ""),

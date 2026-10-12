@@ -340,6 +340,19 @@ made on one build.
   `-save` writes a sample from each); whether slow first audios and the multi-second stalls happen
   on both accounts at once; and what an account's allowance really is — the
   vendor's page says 10 a minute, calls have run at 22–31 a minute unrefused.
+- **Synthesis accounts are on different tiers; measure each.** The second
+  account, paced alone at 30 requests a minute, refused 42 of 76 from the 28th
+  second on; the first has carried 22–31 a minute. The pool had one limit for
+  both and, with both counted full, left a session wherever it was — on the
+  small account, past its real limit. Each account's allowance is now written
+  beside its key (`MINIMAX_TTS_RPM=20`, `MINIMAX_TTS_RPM_2=8` on the box; the
+  vendor's page gives a free account 10 and a topped-up one 20, and the
+  second account behaves like a free one);
+  both full → the roomier one; a refused request goes to the other account at
+  once. First call on the pool (22:41 on 10-12, 14 turns): both accounts
+  spoke, nothing refused, p50 960 with the chat model in a slow hour (first
+  token 324 ms after headers against 234 at midday), one turn over (1307, the
+  chat model).
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

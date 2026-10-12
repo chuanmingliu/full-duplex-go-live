@@ -36,9 +36,11 @@ import (
 // that has its own copy of the voice says what it calls it, in the numbered
 // form, written beside the settings there have always been:
 //
-//	MINIMAX_TTS_API_KEY=…        MINIMAX_TTS_VOICE_ID=…        the first account
-//	MINIMAX_TTS_API_KEY_2=…      MINIMAX_TTS_VOICE_ID_2=…      the second
-//	MINIMAX_TTS_API_KEY_3=…      MINIMAX_TTS_VOICE_ID_3=…      and so on to 9
+//	MINIMAX_TTS_API_KEY=…        MINIMAX_TTS_VOICE_ID=…        MINIMAX_TTS_RPM=…      the first account
+//	MINIMAX_TTS_API_KEY_2=…      MINIMAX_TTS_VOICE_ID_2=…      MINIMAX_TTS_RPM_2=…    the second
+//	MINIMAX_TTS_API_KEY_3=…      MINIMAX_TTS_VOICE_ID_3=…      MINIMAX_TTS_RPM_3=…    and so on to 9
+//
+// (the last being what that account allows in a minute, when it is known).
 //
 // A numbered key with no voice beside it is asked for the first account's
 // voice, which is right for a voice every account has (the vendor's own) and
@@ -68,6 +70,41 @@ func accountVoices(keys []string) []string {
 		}
 	}
 	return out
+}
+
+// accountRPMs is what each account is known to allow, from MINIMAX_TTS_RPM
+// (the first account) and MINIMAX_TTS_RPM_2 … _9, written beside the key they
+// describe. Accounts are on different tiers: of the two this was written for,
+// one has carried 31 requests in a minute and the other refuses past about a
+// dozen. 0, or nothing, is "not known".
+func accountRPMs(keys []string) []int {
+	byKey := map[string]int{}
+	for n := 2; n <= 9; n++ {
+		suffix := "_" + strconv.Itoa(n)
+		key := strings.Trim(strings.TrimSpace(os.Getenv("MINIMAX_TTS_API_KEY"+suffix)), `"'`)
+		if rpm, err := strconv.Atoi(strings.TrimSpace(os.Getenv("MINIMAX_TTS_RPM" + suffix))); err == nil && rpm > 0 && key != "" {
+			byKey[key] = rpm
+		}
+	}
+	out := make([]int, len(keys))
+	for i, k := range keys {
+		if i == 0 {
+			if rpm, err := strconv.Atoi(strings.TrimSpace(os.Getenv("MINIMAX_TTS_RPM"))); err == nil && rpm > 0 {
+				out[0] = rpm
+			}
+			continue
+		}
+		out[i] = byKey[k]
+	}
+	return out
+}
+
+// AccountRPM implements provider.AccountLimiter.
+func (t *TTS) AccountRPM(n int) int {
+	if n >= 0 && n < len(t.RPMs) {
+		return t.RPMs[n]
+	}
+	return 0
 }
 
 // voiceFor is the voice id to ask account n for.
@@ -110,6 +147,7 @@ func (t *TTS) OnAccount(n int) *TTS {
 	n %= len(keys)
 	c := *t
 	c.APIKey, c.APIKeys, c.VoiceIDs, c.rests = keys[n], nil, nil, &keyRests{}
+	c.RPMs = []int{t.AccountRPM(n)}
 	// Its own name for the voice becomes the configured one: this client has
 	// one account, and that account is its first.
 	c.VoiceID = t.voiceFor(n, "")

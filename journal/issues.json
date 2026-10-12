@@ -471,9 +471,9 @@
       "cause": "The list was shipped empty on purpose (each entry is a phrase the caller can no longer interrupt with). The list was also consulted when deciding whether to begin an answer early, wherever the word was said.",
       "fix": "The owner's 33 phrases are in the phone profile. The list now only decides who has the floor: a listed word said while the assistant is silent is begun on its early final like any short turn.",
       "commits": [],
-      "verified": "",
-      "verified_call": "",
-      "effect": "Not yet heard on a call. To listen for: a reply said over the end of a question being taken for a murmur."
+      "verified": "2026-10-12",
+      "verified_call": "out-mv5d1ax7-96wc",
+      "effect": "A listed word said into a silence came up three times and was answered each time with its head start. No murmur was said over the assistant on that call, so keeping the floor through one is still not heard on a line; seven real interruptions were each recognised 0.1 to 0.4 s in."
     },
     {
       "id": "ISS-028",
@@ -486,6 +486,22 @@
       "symptom": "Recordings expired after 7 days. The conversation and the measurements existed only as the journal's reading of a single log file.",
       "cause": "golive's store is working storage with a retention; nothing was built to keep a call.",
       "fix": "An archive on the box that nothing deletes from: per call, the recording as one stereo file, the conversation to read, everything measured, golive's own session record and the call's lines of the log, with checksums. The journal feeds it between calls and plays from it. A second copy on another disk is one command, not yet scheduled.",
+      "commits": [],
+      "verified": "2026-10-12",
+      "verified_call": "out-mv5d1ax7-96wc",
+      "effect": "The call was archived, recording and text, within a minute of ending, with nobody opening the page."
+    },
+    {
+      "id": "ISS-029",
+      "title": "The pool treated a ten-a-minute account like a thirty-a-minute one",
+      "area": "synthesizer",
+      "status": "fixed",
+      "found": "2026-10-12",
+      "found_on": "pacing the second account alone after its first call",
+      "found_call": "out-mv5d1ax7-96wc",
+      "symptom": "Nothing was lost on the call. Paced alone at 30 requests a minute, the second account refused 42 of 76 requests from the 28th second on; the first has carried 22 to 31 a minute unrefused. With one limit for both, a busy call that found both counted full stayed on whichever account it was on, including the small one past its real limit, and a refused request had nowhere to go when the other account was counted full.",
+      "cause": "One `tts_account_rpm` for every account, taken from the vendor's page; and the rule for a full account only moved a session to an account with room left, never to the roomier of two full ones.",
+      "fix": "Each account's allowance is written beside its key (`MINIMAX_TTS_RPM=20`, `MINIMAX_TTS_RPM_2=8`: the vendor's page gives a topped-up account 20 a minute and a free one 10) and counted by itself; with both full the session goes to the roomier account; a request an account refuses is asked of the other at once, room or no room, and the refusing account is treated as full for the minute.",
       "commits": [],
       "verified": "",
       "verified_call": "",

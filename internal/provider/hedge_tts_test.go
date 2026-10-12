@@ -21,6 +21,8 @@ type fakeTTS struct {
 	// accounts, above one, makes this a pool: a connection is opened on the
 	// account its context's lane names, the first when it names none.
 	accounts int
+	// rpms is what each account allows, when the provider knows.
+	rpms []int
 
 	mu      sync.Mutex
 	streams []*fakeTTSStream
@@ -47,6 +49,13 @@ func (f *fakeTTS) Open(ctx context.Context, _ TTSOptions) (TTSStream, error) {
 	}
 	f.streams = append(f.streams, s)
 	return s, nil
+}
+
+func (f *fakeTTS) AccountRPM(n int) int {
+	if n < len(f.rpms) {
+		return f.rpms[n]
+	}
+	return 0
 }
 
 func (f *fakeTTS) Accounts() int {
@@ -548,6 +557,15 @@ func TestTheSessionsOwnRequestsDoNotUseUpTheHedgingBudget(t *testing.T) {
 
 // --- two accounts ---
 
+var uniqN atomic.Int64
+
+// uniq makes a provider name no other test, and no earlier run of this one,
+// has used: an account's count of requests is kept per provider for the life
+// of the process.
+func uniq(name string) string {
+	return name + "-" + strconv.FormatInt(uniqN.Add(1), 10) + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+}
+
 func openPool(t *testing.T, f *fakeTTS, after time.Duration, pool TTSPool) TTSStream {
 	t.Helper()
 	s, err := HedgeTTSPool(f, 2, 1, after, pool, nil).Open(context.Background(), TTSOptions{})
@@ -567,7 +585,7 @@ func openPool(t *testing.T, f *fakeTTS, after time.Duration, pool TTSPool) TTSSt
 // connection is on the first account, as it has always been, and the one
 // beside it on the next.
 func TestPoolPutsTheSecondConnectionOnAnotherAccount(t *testing.T) {
-	f := &fakeTTS{name: "pool-accounts", accounts: 2}
+	f := &fakeTTS{name: uniq("pool-accounts"), accounts: 2}
 	openPool(t, f, 0, TTSPool{})
 	if f.opened() != 2 {
 		t.Fatalf("%d connections opened; want 2", f.opened())
@@ -583,7 +601,7 @@ func TestPoolPutsTheSecondConnectionOnAnotherAccount(t *testing.T) {
 // second account has an allowance of its own, so there the first segment is
 // asked of both at once and the caller hears the faster.
 func TestPoolAsksBothAccountsAtOnceForTheFirstSegment(t *testing.T) {
-	f := &fakeTTS{name: "pool-race", accounts: 2,
+	f := &fakeTTS{name: uniq("pool-race"), accounts: 2,
 		delays: [][]time.Duration{{300 * time.Millisecond}, {20 * time.Millisecond}}}
 	s := openPool(t, f, 200*time.Millisecond, TTSPool{AccountRPM: 10})
 
@@ -604,7 +622,7 @@ func TestPoolAsksBothAccountsAtOnceForTheFirstSegment(t *testing.T) {
 // request to an account is counted, and when its minute is full it is not
 // asked for anything it does not have to do.
 func TestPoolDoesNotAskAnAccountThatHasHadItsMinute(t *testing.T) {
-	f := &fakeTTS{name: "pool-room", accounts: 2,
+	f := &fakeTTS{name: uniq("pool-room"), accounts: 2,
 		delays: [][]time.Duration{nil, {time.Second, time.Second, time.Second, time.Second, time.Second}}}
 	s := openPool(t, f, 0, TTSPool{AccountRPM: 3})
 
@@ -630,7 +648,7 @@ func TestPoolDoesNotAskAnAccountThatHasHadItsMinute(t *testing.T) {
 // And the pool carries what one account cannot: a session whose account has
 // had its minute moves to the one that has not.
 func TestPoolMovesASessionOffAnAccountAtItsLimit(t *testing.T) {
-	f := &fakeTTS{name: "pool-move", accounts: 2}
+	f := &fakeTTS{name: uniq("pool-move"), accounts: 2}
 	s := openPool(t, f, 0, TTSPool{AccountRPM: 4})
 
 	var got []byte
@@ -656,7 +674,7 @@ func TestPoolMovesASessionOffAnAccountAtItsLimit(t *testing.T) {
 // One account with two connections is what it was: the pool's rules are for
 // connections that are apart.
 func TestPoolRulesDoNotApplyToOneAccount(t *testing.T) {
-	f := &fakeTTS{name: "pool-one", delays: [][]time.Duration{{150 * time.Millisecond}, {10 * time.Millisecond}}}
+	f := &fakeTTS{name: uniq("pool-one"), delays: [][]time.Duration{{150 * time.Millisecond}, {10 * time.Millisecond}}}
 	s, err := HedgeTTSPool(f, 2, 0, 100*time.Millisecond, TTSPool{AccountRPM: 1}, nil).Open(context.Background(), TTSOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -676,5 +694,78 @@ func TestPoolRulesDoNotApplyToOneAccount(t *testing.T) {
 	}
 	if first < 100*time.Millisecond {
 		t.Errorf("first audio after %s; on one account the second connection is asked only after the 100 ms wait", first)
+	}
+}
+
+// Accounts are on different tiers, and a provider that knows says so. The
+// roomy one carries the call; the small one is asked only for what fits under
+// its own limit, whatever the pool's default says.
+func TestPoolCountsEachAccountAgainstItsOwnLimit(t *testing.T) {
+	f := &fakeTTS{name: uniq("pool-own-limit"), accounts: 2, rpms: []int{30, 3},
+		delays: [][]time.Duration{nil, {time.Second, time.Second, time.Second, time.Second, time.Second, time.Second}}}
+	s := openPool(t, f, 0, TTSPool{AccountRPM: 10})
+
+	for i := 0; i < 6; i++ {
+		ch, err := s.Synthesize(WithUrgent(context.Background()), "好的，")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if from, _, serr := heard(t, ch); serr != nil || len(from) != 3 || from[0] != 0 {
+			t.Fatalf("segment %d: audio %v, err %v; want the first account's", i, from, serr)
+		}
+		time.Sleep(120 * time.Millisecond)
+	}
+	// Three a minute on the second account: its connection and two segments —
+	// not the ten the pool would otherwise have trusted it with.
+	if n := f.stream(1).calls.Load(); n != 2 {
+		t.Errorf("the second account, which allows 3 a minute, was asked for %d of six first segments; want 2", n)
+	}
+}
+
+// When both accounts have had their minute, the session belongs on the one
+// that can take more. It was staying wherever it happened to be — and a busy
+// call parked on the account that refuses past ten a minute loses sentences.
+func TestPoolSettlesOnTheRoomierAccountWhenBothAreFull(t *testing.T) {
+	f := &fakeTTS{name: uniq("pool-roomier"), accounts: 2, rpms: []int{4, 3}}
+	s := openPool(t, f, 0, TTSPool{})
+
+	var got []byte
+	for i := 0; i < 9; i++ {
+		ch, err := s.Synthesize(context.Background(), "按提示输入车牌号。")
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, _, serr := heard(t, ch)
+		if serr != nil || len(from) != 3 {
+			t.Fatalf("segment %d: audio %v, err %v", i, from, serr)
+		}
+		got = append(got, from[0])
+	}
+	// The roomy account: its connection and three segments, its four. Then
+	// the small one, which has room: two segments on top of its connection,
+	// its three. Now both are full — and every segment after that belongs on
+	// the roomy account, not on the one it happens to be on.
+	want := []byte{0, 0, 0, 1, 1, 0, 0, 0, 0}
+	if string(got) != string(want) {
+		t.Errorf("segments came from accounts %v; want %v", got, want)
+	}
+}
+
+// A request an account refuses is asked of the other at once, room or no
+// room: by then it is not an optional request, it is the sentence.
+func TestPoolAsksTheOtherAccountWhenOneRefusesEvenWithNoRoom(t *testing.T) {
+	refusal := errors.New("status 1002: rate limit exceeded(RPM)")
+	f := &fakeTTS{name: uniq("pool-refused"), accounts: 2, rpms: []int{30, 1},
+		synthErr: []error{refusal, nil}}
+	// One a minute on the second account, spent on its connection: no room.
+	s := openPool(t, f, 0, TTSPool{})
+
+	ch, err := s.Synthesize(WithUrgent(context.Background()), "好的，")
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, _, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("audio %v, err %v; the first account refused the segment, so the second should have said it", from, serr)
 	}
 }

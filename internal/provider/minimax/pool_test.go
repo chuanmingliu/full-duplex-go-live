@@ -233,3 +233,30 @@ func TestAnEmptyNumberedKeyIsNotAnAccount(t *testing.T) {
 		t.Errorf("%d accounts, voice %q; want the one account and its voice", c.Accounts(), c.voiceFor(0, ""))
 	}
 }
+
+// What an account allows in a minute is written beside its key, and a
+// provider that knows it says so.
+func TestAnAccountsAllowanceIsReadFromBesideItsKey(t *testing.T) {
+	t.Setenv("MINIMAX_TTS_API_KEY", "key-a")
+	t.Setenv("MINIMAX_TTS_VOICE_ID", "voice-on-a")
+	t.Setenv("MINIMAX_TTS_RPM", "20")
+	t.Setenv("MINIMAX_TTS_API_KEY_2", "key-b")
+	t.Setenv("MINIMAX_TTS_VOICE_ID_2", "voice-on-b")
+	t.Setenv("MINIMAX_TTS_RPM_2", "8")
+	t.Setenv("MINIMAX_TTS_API_KEY_3", "key-c")
+	t.Setenv("MINIMAX_TTS_API_KEYS", "")
+	t.Setenv("MINIMAX_TTS_API_KEYS_FILE", "")
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n, want := range []int{20, 8, 0, 0} {
+		if got := c.AccountRPM(n); got != want {
+			t.Errorf("account %d allows %d a minute; want %d", n+1, got, want)
+		}
+	}
+	if got := c.OnAccount(1).AccountRPM(0); got != 8 {
+		t.Errorf("the second account by itself allows %d; want its own 8", got)
+	}
+	var _ provider.AccountLimiter = c
+}
