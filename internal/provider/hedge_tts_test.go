@@ -309,8 +309,8 @@ func TestHedgeTTSOfOneIsTheSynthesizerItself(t *testing.T) {
 func TestHedgeStaysInsideItsRequestBudget(t *testing.T) {
 	// The budget is the account's, so it is shared by name across the process.
 	f := &fakeTTS{name: "budgeted-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
-	// Room for: the session's connection, its spare, and one raced segment.
-	s, err := HedgeTTS(f, 2, 4, 0, nil).Open(context.Background(), TTSOptions{})
+	// Room for what hedging adds: the spare connection, and one second request.
+	s, err := HedgeTTS(f, 2, 2, 0, nil).Open(context.Background(), TTSOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,8 +446,11 @@ func TestDelayedHedgeStaysInsideItsRequestBudget(t *testing.T) {
 		name:   "delayed-budget-" + strconv.FormatInt(time.Now().UnixNano(), 36),
 		delays: [][]time.Duration{{10 * time.Millisecond, 10 * time.Millisecond, 200 * time.Millisecond, 200 * time.Millisecond}},
 	}
-	// Room for the two connections, three segments and one second request.
-	s := openHedgedAfter(t, f, 6, 50*time.Millisecond)
+	// Room for what hedging adds: the spare connection, and one second request.
+	// The session's own connection and its own segments are not counted: a
+	// real call made 22 requests a minute by itself, and a budget that counted
+	// them never had room for the second request that two slow turns needed.
+	s := openHedgedAfter(t, f, 2, 50*time.Millisecond)
 	for i := 0; i < 2; i++ {
 		ch, _ := s.Synthesize(WithUrgent(context.Background()), "好的，")
 		heard(t, ch)
@@ -490,5 +493,40 @@ func TestDelayedHedgeGoesToTheSecondConnectionWhenTheFirstFails(t *testing.T) {
 	}
 	if first > 200*time.Millisecond {
 		t.Errorf("first audio after %s; the second connection should have been asked at once, not after the 300 ms wait", first)
+	}
+}
+
+// The bound is on what hedging adds. A call's own syntheses — 22 a minute on
+// the call this is taken from — must not use it up, or the second request is
+// never there for the slow one: four of four went unasked, and two of those
+// turns were the call's only ones over target.
+func TestTheSessionsOwnRequestsDoNotUseUpTheHedgingBudget(t *testing.T) {
+	delays := make([]time.Duration, 0, 26)
+	for i := 0; i < 25; i++ {
+		delays = append(delays, 5*time.Millisecond)
+	}
+	delays = append(delays, 600*time.Millisecond)
+	f := &fakeTTS{
+		name:   "own-requests-" + strconv.FormatInt(time.Now().UnixNano(), 36),
+		delays: [][]time.Duration{delays, {20 * time.Millisecond}},
+	}
+	// Room for the spare connection and two second requests in a minute.
+	s := openHedgedAfter(t, f, 3, 60*time.Millisecond)
+	for i := 0; i < 25; i++ {
+		ch, err := s.Synthesize(WithUrgent(context.Background()), "好的，")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if from, _, serr := heard(t, ch); serr != nil || len(from) != 3 || from[0] != 0 {
+			t.Fatalf("segment %d: audio %v, err %v", i, from, serr)
+		}
+	}
+	ch, _ := s.Synthesize(WithUrgent(context.Background()), "您稍等，")
+	from, first, serr := heard(t, ch)
+	if serr != nil || len(from) != 3 || from[0] != 1 {
+		t.Fatalf("after 25 prompt syntheses the slow one was left to the first connection: audio %v, err %v", from, serr)
+	}
+	if first > 300*time.Millisecond {
+		t.Errorf("first audio after %s; the second connection should have had it in about 80 ms", first)
 	}
 }

@@ -39,13 +39,20 @@ func IsUrgent(ctx context.Context) bool {
 // then is simply not raced. A session whose second connection cannot be opened
 // is a session without hedging, not a failed one.
 //
-// rpm is how many requests a minute the hedging may bring the provider's
-// account to, across every session of this process; 0 is no limit. A vendor's
-// rate limit is the one thing a second request can make worse — past it the
-// vendor refuses the first request too, and the caller hears nothing at all
-// where they would have heard an answer a tenth of a second late. So a segment
-// is raced only while there is room for it, and the second connection is only
-// dialled while there is room for that.
+// rpm is how many requests a minute the hedging may add to what the sessions
+// of this process would have made anyway — second requests, and the second
+// connections they are made on; 0 is no limit. A vendor's rate limit is the one
+// thing a second request can make worse: past it the vendor refuses the first
+// request too, and the caller hears nothing at all where they would have heard
+// an answer a tenth of a second late. So what hedging adds is bounded, and a
+// segment is asked for twice only while there is room under the bound.
+//
+// It bounds the additions and not the total because the total is not hedging's
+// to bound. It was first written as "bring the account to no more than this
+// many requests a minute", set to 18 for an account thought to allow about 20
+// — and a real call ran at 22 a minute on its own, unrefused, so there was
+// never room and all four of its slow syntheses went unhedged, two of them
+// the only turns of the call over target.
 //
 // after, when it is more than zero, is the frugal form, for an account whose
 // rate limit has no room for a second request on every turn. The first
@@ -124,9 +131,8 @@ func ttsBudgetFor(name string, rpm int) *rpmBudget {
 	return budget
 }
 
-// spend records n requests. With must set they are recorded regardless — they
-// are being made either way — and otherwise only if the minute has room for
-// them, which is what it reports.
+// spend records n requests that hedging is adding, if the minute has room for
+// them, which is what it reports. With must set they are recorded regardless.
 func (b *rpmBudget) spend(n int, must bool) bool {
 	if b == nil {
 		return true
@@ -151,7 +157,6 @@ func (b *rpmBudget) spend(n int, must bool) bool {
 func (h *hedgedTTS) Name() string { return h.inner.Name() }
 
 func (h *hedgedTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error) {
-	h.budget.spend(1, true)
 	first, err := h.inner.Open(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -267,26 +272,22 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 		s.openSpare()
 	}
 	if !hedged || spare == nil {
-		s.tts.budget.spend(1, true)
 		return primary.stream.Synthesize(ctx, text)
 	}
-	if wait > 0 {
-		// One request now. The second is asked for, and accounted for, only
-		// if this one is slow.
-		s.tts.budget.spend(1, true)
-	} else {
+	if wait == 0 {
 		race := spare.busy.CompareAndSwap(false, true)
-		if race && !s.tts.budget.spend(2, false) {
+		if race && !s.tts.budget.spend(1, false) {
 			// No room this minute for a second request. One is made, as it
 			// would have been anyway.
 			spare.busy.Store(false)
 			race = false
 		}
 		if !race {
-			s.tts.budget.spend(1, true)
 			return primary.stream.Synthesize(ctx, text)
 		}
 	}
+	// With a wait, one request now: the second is asked for, and accounted
+	// for, only if this one is slow.
 
 	primary.busy.Store(true)
 	slots := [2]*ttsSlot{primary, spare}

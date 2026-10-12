@@ -27,7 +27,7 @@
   "llm_hedge_after_ms": 0,
   "tts_hedge": 2,
   "tts_hedge_after_ms": 260,
-  "tts_hedge_rpm": 18,
+  "tts_hedge_rpm": 4,
   "history_turns": 16,
   "duplex": {
     "backchannel": false,

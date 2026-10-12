@@ -185,8 +185,17 @@ voice coming back was not timed`, with `reason` (the line had not been quiet,
 the caller was mid-utterance, nothing came back, a sound in the very first
 frame), `quiet_before_ms`, `level_db` and `noise_floor_db`. The summary line
 counts them as `not_timed`, and is printed with `n=0` when every attempt
-failed. The first call with the estimator measured nothing on a line that
-echoes; the reasons were added to find out why.
+failed.
+
+**On the test line it does not give a usable figure.** One three-minute call:
+four measurements — 60, 100, 300 and 600 ms, at levels from −49 to −22 dB,
+which are a noise, two candidates and the caller's own voice — and 49 attempts
+not timed: 34 because the line had not been quiet (its idle noise sits a few dB
+over the bar), 11 with the caller mid-utterance, 2 in which nothing came back
+in 1.5 s on a line that was digitally silent. The line returns the
+assistant's voice some of the time and not others. Do not quote its `p50_ms`
+as the phone leg. A recording of the call made beside the handset, lined up
+against golive's log, is the way to measure what a caller actually waits.
 
 A second line at the end of a call is for choosing `duplex.early_final_ms`:
 
@@ -223,8 +232,10 @@ but one in twenty — is one request, as before. One that has not is put to the
 second connection as well, and the caller hears whichever speaks. Later
 segments are covered too, with three times the wait, since they play behind
 audio already going out; a first connection that fails outright is followed by
-the second at once. `tts_hedge_rpm: 18` still applies: the second request is
-not made in a minute that has no room for it. The log says when it happens
+the second at once. `tts_hedge_rpm: 4` bounds what this adds: at most four
+second requests (and second connections) a minute. It was first a bound on the
+account's total, at 18, and a call that made 22 requests a minute by itself
+never had room: all four of its slow syntheses went unhedged. The log says when it happens
 (`tts hedge: asking the second connection too`, then `a copy produced audio
 first`).
 

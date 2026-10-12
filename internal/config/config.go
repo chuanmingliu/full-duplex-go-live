@@ -167,12 +167,13 @@ type Config struct {
 	// provider's rate limit. 0 or 1 is one connection.
 	TTSHedge int `json:"tts_hedge"`
 	// TTSHedgeRPM is how many synthesis requests a minute, across every
-	// session of this process, the hedging may bring the provider's account
-	// to. Past a vendor's rate limit it refuses the request that was going to
-	// be made anyway, and the caller hears nothing: on the test box that cost
-	// two turns in thirty. A first segment is raced only while the last minute
-	// has room for the extra request under this figure, so set it well under
-	// the account's limit. 0 is no limit.
+	// session of this process, the hedging may add to what would have been
+	// made anyway: second requests, and the second connections they go to.
+	// Past a vendor's rate limit it refuses the request that was going to be
+	// made anyway, and the caller hears nothing, so what hedging adds is kept
+	// small. It bounds the additions and not the total: a call makes 15–22
+	// requests a minute by itself, and a bound on the total set near that
+	// leaves no room for the second request when it is needed. 0 is no limit.
 	TTSHedgeRPM int `json:"tts_hedge_rpm"`
 	// TTSHedgeAfterMS, above zero, makes the hedging frugal: the second
 	// connection is asked only for a segment the first has produced no audio

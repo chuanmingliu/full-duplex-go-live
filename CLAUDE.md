@@ -75,6 +75,8 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-11 23:34 | e517e3a (same engine), redialled from the box with `phone-brain.sh call`, 2 minutes | 15 | 943 | 1143 | 0 |
 | | **both calls since 4b029b3** | **52** | | 4603 (**p95 1091**) | **1** |
 | 10-12 09:24 | 9f2ae31 (eight copies), `call`, under a minute | 4 | 783 | 1029 | 0 |
+| 10-12 09:34 | c8a8477 (same engine), `call`, 3 minutes | 21 | 806 | 1396 (p90 979) | 2 |
+| | **both calls on eight copies** | **25** | | 1396 | **2** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
 1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
@@ -301,7 +303,24 @@ made on one build.
   sample. Left at 120. The echo estimator took no measurement at all on that
   call, though the line echoes at −28 dB, and could not say why; each attempt
   now logs its reason (`listen: the assistant's voice coming back was not
-  timed`) and the summary counts them (`not_timed`).
+  timed`) and the summary counts them (`not_timed`). The 09:34 call gave the
+  answer: 4 measurements (60, 100, 300, 600 ms — a noise, two candidates, the
+  caller) against 49 not timed, 34 of them because the idle line is never
+  under the bar and 2 because nothing came back at all. **The echo does not
+  measure the phone leg on this line; do not quote its p50.** A recording made
+  beside the handset, lined up against the log, would. The same call's pauses
+  (51 in 25 utterances: 11 of 60–79 ms, 7 of 80–99, 5 of 100–119, 28 of 120
+  and over) say the same as the first: 100 ms would split 18% more
+  recognitions than 120 for 20 ms a turn, 80 ms 43% more for 40.
+- **A budget on the account's total requests starves the hedge it is there to
+  ration.** `tts_hedge_rpm` was "bring the account to no more than 18 a
+  minute". The 09:34 call made 22.5 synthesis requests a minute by itself (44
+  segments, 19 tasks abandoned at interruptions and dropped guesses, the
+  connections) with up to 26 in a rolling minute, unrefused — so there was
+  never room, all four slow syntheses went unhedged, and the two turns over
+  1200 (first audio 938 and 646 ms) were two of them. It now bounds what
+  hedging adds: four second requests a minute. The vendor's real allowance is
+  still not known; 26 in a minute passed and 36 a minute sustained did not.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
