@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/duplex"
+	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/simulator"
 	"github.com/gorilla/websocket"
 )
@@ -217,5 +219,155 @@ func TestSimulatorMediaCloseBeforeGatewayHangupReconciles(t *testing.T) {
 	ended, _ := controller.Get(context.Background(), snap.RunID)
 	if ended.Phase != simulator.Completed {
 		t.Fatalf("clean hangup became %s", ended.Phase)
+	}
+}
+
+// This clock pauses a producer after sampling its time, before Observe can
+// ingest it. Other reads remain available so an unserialized producer can
+// demonstrably overtake that observation at a later timestamp.
+type simulatorObservationClock struct {
+	mu      sync.Mutex
+	now     time.Time
+	pause   bool
+	paused  bool
+	sampled chan struct{}
+	later   chan struct{}
+	resume  chan struct{}
+}
+
+func (c *simulatorObservationClock) Now() time.Time {
+	c.mu.Lock()
+	now := c.now
+	pause := c.pause
+	if pause {
+		c.pause = false
+		c.paused = true
+		close(c.sampled)
+	} else if c.paused {
+		select {
+		case c.later <- struct{}{}:
+		default:
+		}
+	}
+	c.mu.Unlock()
+	if pause {
+		<-c.resume
+	}
+	return now
+}
+
+type simulatorObservationTimer struct{}
+
+func (simulatorObservationTimer) Stop() bool { return true }
+func (*simulatorObservationClock) AfterFunc(time.Duration, func()) simulator.Timer {
+	return simulatorObservationTimer{}
+}
+
+type simulatorObservationVoice struct{}
+
+func (simulatorObservationVoice) Open(context.Context, simulator.Binding, string) error { return nil }
+func (simulatorObservationVoice) Speak(context.Context, simulator.Binding, string, string, time.Duration) error {
+	return nil
+}
+func (simulatorObservationVoice) Close(context.Context, simulator.Binding) error { return nil }
+
+func TestSimulatorSerializesObservationTimestampAndIngestion(t *testing.T) {
+	for _, tc := range []struct {
+		name, first, second string
+		assistant, customer int
+	}{
+		{"inbound_then_outbound", "inbound", "outbound", 1, 1},
+		{"outbound_then_inbound", "outbound", "inbound", 1, 2},
+		{"inbound_then_transcript", "inbound", "transcript", 0, 1},
+		{"transcript_then_outbound", "transcript", "outbound", 1, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			clock := &simulatorObservationClock{now: time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC), sampled: make(chan struct{}), later: make(chan struct{}, 1), resume: make(chan struct{})}
+			phone := &simulatorPhone{accepted: make(chan string, 1)}
+			controller, err := simulator.NewController(simulator.Options{Clock: clock, Telephony: phone, Voice: simulatorObservationVoice{}, Token: "test", Destination: "receiver", GatewayIdentity: "gateway"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = controller.Close() })
+			scenario := simulator.Scenario{SchemaVersion: 1, ID: "ordered-observations", Language: "en", Persona: "A brief customer.", Greeting: "Hello?", MaxDurationMS: 30000, MaxRemoteTurns: 10, RetainTranscript: true}
+			snap, err := controller.Prepare(ctx, scenario)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = controller.Incoming(ctx, simulator.IncomingCall{RunID: snap.RunID, CallID: "test-call", Destination: "receiver", GatewayIdentity: "gateway"}); err != nil {
+				t.Fatal(err)
+			}
+			binding := simulator.Binding{RunID: snap.RunID, CallID: "test-call", SessionID: "test-session"}
+			if err = controller.Handle(ctx, simulator.Event{Kind: "answer_due", Binding: simulator.Binding{RunID: snap.RunID, CallID: "test-call"}, AtMS: 0}); err != nil {
+				t.Fatal(err)
+			}
+			if err = controller.Associate(ctx, binding); err != nil {
+				t.Fatal(err)
+			}
+			for _, kind := range []string{"voice_ready", "answered"} {
+				if err = controller.Handle(ctx, simulator.Event{Kind: kind, Binding: binding, AtMS: 0}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			session := &simulatorSession{receiver: &SimulatorReceiver{controller: controller}, binding: binding, scenario: scenario, ctx: ctx}
+			observe := func(kind string) {
+				if kind == "transcript" {
+					session.observeEvent(live.TranscriptDelta{Envelope: live.Envelope{Type: live.ServerInputTranscriptDelta}, Delta: "Hello"})
+				} else {
+					session.audio(kind == "outbound", []byte{0, 4})
+				}
+			}
+			clock.mu.Lock()
+			clock.now = clock.now.Add(100 * time.Millisecond)
+			clock.pause = true
+			clock.mu.Unlock()
+			firstDone := make(chan struct{})
+			go func() { observe(tc.first); close(firstDone) }()
+			select {
+			case <-clock.sampled:
+			case <-time.After(time.Second):
+				t.Fatal("first producer did not sample its clock")
+			}
+			clock.mu.Lock()
+			clock.now = clock.now.Add(time.Millisecond)
+			clock.mu.Unlock()
+			secondDone := make(chan struct{})
+			go func() { observe(tc.second); close(secondDone) }()
+			select {
+			case <-clock.later:
+				t.Error("later producer sampled a timestamp before the paused observation was ingested")
+				// Ensure the old implementation ingests 101 ms before releasing
+				// the sampled 100 ms observation, making the regression repeatable.
+				<-secondDone
+			case <-time.After(100 * time.Millisecond):
+			}
+			clock.mu.Lock()
+			clock.paused = false
+			clock.mu.Unlock()
+			close(clock.resume)
+			for _, done := range []chan struct{}{firstDone, secondDone} {
+				select {
+				case <-done:
+				case <-time.After(time.Second):
+					t.Fatal("observation did not finish")
+				}
+			}
+			if err = controller.Handle(ctx, simulator.Event{Kind: "ended", Binding: binding, AtMS: 101}); err != nil {
+				t.Fatal(err)
+			}
+			report, err := controller.Report(ctx, snap.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.InvalidObservations != 0 || len(report.Failures) != 0 || report.AssistantSamples != tc.assistant || report.SimulatorSamples != tc.customer {
+				t.Fatalf("concurrent observations lost evidence or poisoned report: %+v", report)
+			}
+			for _, check := range report.Checks {
+				if check.Name == "clean_termination" && check.Result != "pass" {
+					t.Fatalf("healthy media became unclean: %+v", check)
+				}
+			}
+		})
 	}
 }

@@ -199,6 +199,7 @@ type simulatorSession struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	fatalOnce sync.Once
+	observeMu sync.Mutex
 	outputMu  sync.Mutex
 	closed    bool
 }
@@ -212,6 +213,17 @@ func (s *simulatorSession) stop() {
 }
 func (s *simulatorSession) fail(reason string) {
 	_ = s.receiver.controller.Handle(context.Background(), simulator.Event{Kind: "failed", Binding: s.binding, AtMS: s.receiver.controller.RelativeMS(), Reason: reason})
+}
+
+// observe serializes the receiver clock sample with ingestion across all live
+// producers. Sampling before this lock would let a later boundary overtake an
+// earlier timestamp and be mistaken for malformed evidence by the controller.
+// Socket I/O and audio classification happen outside this critical section.
+func (s *simulatorSession) observe(v simulator.Observation) {
+	s.observeMu.Lock()
+	defer s.observeMu.Unlock()
+	v.AtMS = s.receiver.controller.RelativeMS()
+	_ = s.receiver.controller.Observe(s.ctx, s.binding, v)
 }
 
 // audio records the receive or successful socket-write boundary using one
@@ -234,7 +246,7 @@ func (s *simulatorSession) audio(out bool, pcm []byte) {
 	if out {
 		kind = "customer_audio"
 	}
-	_ = s.receiver.controller.Observe(s.ctx, s.binding, simulator.Observation{Kind: kind, AtMS: s.receiver.controller.RelativeMS(), NonSilent: true})
+	s.observe(simulator.Observation{Kind: kind, NonSilent: true})
 }
 func (s *Session) simulatorWrite(p *peer, data []byte) error {
 	sim := s.sim
@@ -323,7 +335,7 @@ func (s *simulatorSession) observeEvent(event any) {
 			if ev.Type == live.ServerInputTranscriptDelta {
 				role = "assistant"
 			}
-			_ = s.receiver.controller.Observe(s.ctx, s.binding, simulator.Observation{Kind: "transcript", AtMS: s.receiver.controller.RelativeMS(), Role: role, Text: ev.Delta})
+			s.observe(simulator.Observation{Kind: "transcript", Role: role, Text: ev.Delta})
 		}
 	}
 }
