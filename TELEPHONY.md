@@ -276,7 +276,12 @@ scripts/phone-brain.sh archive mirror DEST  # a second copy: a directory on anot
 - **It is one disk in one laptop.** `archive mirror` is the second copy;
   where to is the owner's to say, and nothing runs it on a schedule yet.
 - The journal plays a call from the archive, so old calls stay playable, and
-  each call's page has "Download recording" and "Download transcript".
+  each call's page has a "Download audio" button on the player — both sides as
+  one stereo WAV (caller left, assistant right), or the caller or the assistant
+  alone as mono, the samples as golive stored them — and "Download transcript".
+  A recorded call's row in the list has the same download beside its play
+  button. (`/api/calls/<id>/audio.wav?download=1`, with `&side=caller` or
+  `&side=assistant` for one side.)
 
 The archive holds what was said on calls and the prompt they ran on. It stays
 on the box, mode 700, and nothing in this repository or any report quotes it.

@@ -238,3 +238,86 @@ func TestACallIsKeptAfterItsLogIsGone(t *testing.T) {
 		t.Errorf("after the log was replaced: %+v", o.Calls)
 	}
 }
+
+// One side of a call can be taken away alone: mono, the samples golive stored
+// for it, on the call's timeline. It is the same file whether the recording is
+// still golive's two tracks or only the archive's one — which is where every
+// call ends up once golive's own copy has expired.
+func TestOneSideOfARecordingIsServedAloneFromTracksAndFromTheArchive(t *testing.T) {
+	store, _ := recordedFixture(t, true)
+	s := archivingJournal(t, Config{StoreDir: store})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	get := func(q string) (int, []byte, http.Header) {
+		resp, err := http.Get(ts.URL + "/api/calls/" + fixtureCall + "/audio.wav" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b, resp.Header
+	}
+	sample := func(b []byte, i int) int16 { return int16(binary.LittleEndian.Uint16(b[44+i*2:])) }
+	check := func(from string) (caller, assistant []byte) {
+		t.Helper()
+		code, caller, h := get("?side=caller&download=1")
+		if code != 200 || len(caller) != 44+2000*2 {
+			t.Fatalf("%s: caller side: status %d, %d bytes; want a 44-byte header and 2000 mono samples", from, code, len(caller))
+		}
+		if ch, rate, data := binary.LittleEndian.Uint16(caller[22:]), binary.LittleEndian.Uint32(caller[24:]), binary.LittleEndian.Uint32(caller[40:]); ch != 1 || rate != 8000 || data != 4000 {
+			t.Errorf("%s: header says %d channels, %d Hz, %d bytes of data", from, ch, rate, data)
+		}
+		if cd := h.Get("Content-Disposition"); !strings.Contains(cd, "attachment") || !strings.Contains(cd, "_caller.wav") {
+			t.Errorf("%s: a download of the caller's side is named %q", from, cd)
+		}
+		if sample(caller, 700) != 700 || sample(caller, 1800) != 1800 {
+			t.Errorf("%s: the caller's side is not the caller's samples: %d, %d", from, sample(caller, 700), sample(caller, 1800))
+		}
+		code, assistant, _ = get("?side=assistant")
+		if code != 200 || len(assistant) != len(caller) {
+			t.Fatalf("%s: assistant side: status %d, %d bytes; both sides are one length", from, code, len(assistant))
+		}
+		if sample(assistant, 700) != -700 || sample(assistant, 1800) != 0 {
+			t.Errorf("%s: the assistant's side is not the assistant's samples, padded with silence: %d, %d", from, sample(assistant, 700), sample(assistant, 1800))
+		}
+		// A range that begins and ends in the middle of samples.
+		req, _ := http.NewRequest("GET", ts.URL+"/api/calls/"+fixtureCall+"/audio.wav?side=assistant", nil)
+		req.Header.Set("Range", "bytes=1047-2900")
+		part, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _ := io.ReadAll(part.Body)
+		part.Body.Close()
+		if part.StatusCode != http.StatusPartialContent || string(got) != string(assistant[1047:2901]) {
+			t.Errorf("%s: a range of one side gave status %d and %d bytes that are not the same bytes of the whole", from, part.StatusCode, len(got))
+		}
+		return caller, assistant
+	}
+
+	// The archive is preferred once it has the call; take it away to read the
+	// two tracks, then take the tracks away to read the archive.
+	wav := s.archive.Path(fixtureCall, "audio.wav")
+	if err := os.Rename(wav, wav+".aside"); err != nil {
+		t.Fatal(err)
+	}
+	c1, a1 := check("golive's two tracks")
+	if err := os.Rename(wav+".aside", wav); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(store); err != nil {
+		t.Fatal(err)
+	}
+	c2, a2 := check("the archive's stereo file")
+	if string(c1) != string(c2) || string(a1) != string(a2) {
+		t.Error("a side read from the archive is not the side read from golive's tracks")
+	}
+
+	if code, _, _ := get("?side=both"); code != http.StatusBadRequest {
+		t.Errorf("an unknown side gave status %d", code)
+	}
+	if code, whole, h := get("?download=1"); code != 200 || len(whole) != 44+2000*4 || strings.Contains(h.Get("Content-Disposition"), "_caller") {
+		t.Errorf("the whole recording: status %d, %d bytes, named %q", code, len(whole), h.Get("Content-Disposition"))
+	}
+}

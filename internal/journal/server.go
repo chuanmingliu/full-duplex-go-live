@@ -582,12 +582,24 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer rec.Close()
+		// ?side=caller or ?side=assistant is that side alone, mono: the
+		// samples golive stored for it, for a recognizer or an editor that
+		// wants one voice. Without it, both sides in one stereo file.
+		wav, suffix := rec.WAV(), ""
+		switch side := r.URL.Query().Get("side"); side {
+		case "":
+		case "caller", "assistant":
+			wav, suffix = rec.Side(side == "assistant"), "_"+side
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "side is caller or assistant"})
+			return
+		}
 		w.Header().Set("Content-Type", "audio/wav")
 		w.Header().Set("Cache-Control", "private, max-age=3600")
 		if r.URL.Query().Get("download") != "" {
-			w.Header().Set("Content-Disposition", `attachment; filename="`+fileStem(c)+`.wav"`)
+			w.Header().Set("Content-Disposition", `attachment; filename="`+fileStem(c)+suffix+`.wav"`)
 		}
-		http.ServeContent(w, r, "", c.StartedAt, rec.WAV())
+		http.ServeContent(w, r, "", c.StartedAt, wav)
 	case "transcript.txt":
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")

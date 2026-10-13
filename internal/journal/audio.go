@@ -108,21 +108,105 @@ func (r *Recording) WAV() io.ReadSeeker {
 	if r.wav != nil {
 		return io.NewSectionReader(r.wav, 0, wavHeaderBytes+r.Frames*4)
 	}
-	data := r.Frames * 4
+	return &stereoReader{rec: r, header: wavHeader(r.Rate, 2, r.Frames), size: wavHeaderBytes + r.Frames*4}
+}
+
+// wavHeader is the 44 bytes in front of 16-bit PCM.
+func wavHeader(rate, channels int, frames int64) []byte {
+	data := frames * int64(channels) * 2
 	h := make([]byte, wavHeaderBytes)
 	copy(h[0:], "RIFF")
 	binary.LittleEndian.PutUint32(h[4:], uint32(36+data))
 	copy(h[8:], "WAVEfmt ")
 	binary.LittleEndian.PutUint32(h[16:], 16)
 	binary.LittleEndian.PutUint16(h[20:], 1) // PCM
-	binary.LittleEndian.PutUint16(h[22:], 2) // channels
-	binary.LittleEndian.PutUint32(h[24:], uint32(r.Rate))
-	binary.LittleEndian.PutUint32(h[28:], uint32(r.Rate*4))
-	binary.LittleEndian.PutUint16(h[32:], 4)
+	binary.LittleEndian.PutUint16(h[22:], uint16(channels))
+	binary.LittleEndian.PutUint32(h[24:], uint32(rate))
+	binary.LittleEndian.PutUint32(h[28:], uint32(rate*channels*2))
+	binary.LittleEndian.PutUint16(h[32:], uint16(channels*2))
 	binary.LittleEndian.PutUint16(h[34:], 16)
 	copy(h[36:], "data")
 	binary.LittleEndian.PutUint32(h[40:], uint32(data))
-	return &stereoReader{rec: r, header: h, size: wavHeaderBytes + data}
+	return h
+}
+
+// Side returns one side of the call alone, as a mono WAV: the caller as golive
+// received them, or the assistant as golive sent it. The samples are the ones
+// stored, untouched, on the call's own timeline — so both sides are the same
+// length, the shorter one padded with silence — and it reads the same whether
+// the recording is still golive's two tracks or the archive's one file.
+func (r *Recording) Side(assistant bool) io.ReadSeeker {
+	return &sideReader{rec: r, assistant: assistant, header: wavHeader(r.Rate, 1, r.Frames), size: wavHeaderBytes + r.Frames*2}
+}
+
+type sideReader struct {
+	rec       *Recording
+	assistant bool
+	header    []byte
+	size, pos int64
+}
+
+func (s *sideReader) Seek(offset int64, whence int) (int64, error) {
+	return seekIn(&s.pos, s.size, offset, whence)
+}
+
+func (s *sideReader) Read(p []byte) (int, error) {
+	if s.pos >= s.size {
+		return 0, io.EOF
+	}
+	n := 0
+	if s.pos < wavHeaderBytes {
+		n = copy(p, s.header[s.pos:])
+		s.pos += int64(n)
+		if n == len(p) {
+			return n, nil
+		}
+	}
+	// Frames of two bytes from here on; a read may begin or end inside one.
+	want := int64(len(p) - n)
+	if rest := s.size - s.pos; want > rest {
+		want = rest
+	}
+	off := s.pos - wavHeaderBytes
+	first, last := off/2, (off+want+1)/2
+	frames := last - first
+	mono := make([]byte, frames*2)
+	if s.rec.wav != nil {
+		both := make([]byte, frames*4)
+		readAt(s.rec.wav, both, wavHeaderBytes+first*4)
+		ch := int64(0)
+		if s.assistant {
+			ch = 2
+		}
+		for i := int64(0); i < frames; i++ {
+			mono[i*2], mono[i*2+1] = both[i*4+ch], both[i*4+ch+1]
+		}
+	} else if s.assistant {
+		readAt(s.rec.out, mono, first*2)
+	} else {
+		readAt(s.rec.in, mono, first*2)
+	}
+	c := copy(p[n:], mono[off-first*2:off-first*2+want])
+	s.pos += int64(c)
+	return n + c, nil
+}
+
+// seekIn is io.Seeker for a reader that keeps its own position.
+func seekIn(pos *int64, size, offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+	case io.SeekCurrent:
+		offset += *pos
+	case io.SeekEnd:
+		offset += size
+	default:
+		return 0, errors.New("journal: bad whence")
+	}
+	if offset < 0 {
+		return 0, errors.New("journal: seek before the start")
+	}
+	*pos = offset
+	return offset, nil
 }
 
 type stereoReader struct {
@@ -133,20 +217,7 @@ type stereoReader struct {
 }
 
 func (s *stereoReader) Seek(offset int64, whence int) (int64, error) {
-	switch whence {
-	case io.SeekStart:
-	case io.SeekCurrent:
-		offset += s.pos
-	case io.SeekEnd:
-		offset += s.size
-	default:
-		return 0, errors.New("journal: bad whence")
-	}
-	if offset < 0 {
-		return 0, errors.New("journal: seek before the start")
-	}
-	s.pos = offset
-	return offset, nil
+	return seekIn(&s.pos, s.size, offset, whence)
 }
 
 func (s *stereoReader) Read(p []byte) (int, error) {

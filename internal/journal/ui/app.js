@@ -278,7 +278,8 @@
   function icon(kind, title) {
     var g = s('svg', { class: 'ico', viewBox: '0 0 14 14', width: 14, height: 14, role: 'img', 'aria-label': title });
     g.appendChild(s('title', null, title));
-    if (kind === 'rec') g.appendChild(s('path', { d: 'M1.5 7v0M4 4.5v5M6.5 2v10M9 5v4M11.5 3.5v7', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.6, 'stroke-linecap': 'round' }));
+    if (kind === 'dl') g.appendChild(s('path', { d: 'M7 1.8v7.2M4 6.3l3 3 3-3M2.3 12.2h9.4', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+    else if (kind === 'rec') g.appendChild(s('path', { d: 'M1.5 7v0M4 4.5v5M6.5 2v10M9 5v4M11.5 3.5v7', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.6, 'stroke-linecap': 'round' }));
     else g.appendChild(s('path', { d: 'M2.5 3h9M2.5 6h9M2.5 9h9M2.5 12h5', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.4, 'stroke-linecap': 'round' }));
     return g;
   }
@@ -627,6 +628,20 @@
     return b;
   }
 
+  // Taking a recording away: the file as it is kept, both sides in one stereo
+  // WAV, or one side alone. A link, so the browser's own download does the work
+  // and a long call is never held in the page.
+  function audioHref(id, side) {
+    return '/api/calls/' + encodeURIComponent(id) + '/audio.wav?download=1' + (side ? '&side=' + side : '');
+  }
+  function rowDownloadButton(c) {
+    var label = 'Download the recording of the call of ' + when(c.started_at) + ' (WAV, both sides)';
+    var a = h('a', { class: 'row-dl', href: audioHref(c.id), download: '', title: 'Download this call’s recording (WAV, caller left, assistant right)', 'aria-label': label },
+      icon('dl', label));
+    a.addEventListener('click', function (e) { e.stopPropagation(); });
+    return a;
+  }
+
   function callsList(ov) {
     var target = ov.target_ms;
     var list = h('div', { class: 'calls', role: 'list' });
@@ -637,6 +652,7 @@
       var st = c.summary, t = tail(st);
       var marks = h('span', { class: 'c-marks' },
         c.has_audio ? rowPlayButton(c) : null,
+        c.has_audio ? rowDownloadButton(c) : null,
         c.has_retro ? icon('retro', 'Retrospective written') : null,
         c.rating ? ratingPips(c.rating) : null);
       // The row is not itself a link: a button cannot sit inside one. The date
@@ -667,6 +683,7 @@
         h('span', null, h('i', { class: 'mk solid' }), ' p95, ' + MIN_TURNS + ' turns or more'),
         h('span', null, h('i', { class: 'mk hollow' }), ' worst turn, under ' + MIN_TURNS + ' turns'),
         h('span', null, h('i', { class: 'key-play', 'aria-hidden': 'true' }, h('i', { class: 'pp' })), ' recording kept: play it here'),
+        h('span', null, h('i', { class: 'key-play key-dl', 'aria-hidden': 'true' }, icon('dl', 'Download')), ' download its audio'),
         h('span', null, icon('retro', 'Retrospective written'), ' retrospective written'),
         h('span', null, ratingPips(3), ' your rating')));
   }
@@ -787,8 +804,28 @@
     if (D > 15) zoomOpts.push({ t: '10 s', v: 10 });
     var zoomSeg = seg('Window shown', zoomOpts, 0, function (v) { setZoom(v, audio.currentTime); });
 
+    // The recording to take away. The sizes are worked out, not asked for:
+    // 16-bit samples, two a frame for both sides and one for a side alone.
+    var frames = Math.round((audioInfo.duration_s || 0) * (audioInfo.rate || 0));
+    var khz = audioInfo.rate ? (audioInfo.rate / 1000) + ' kHz' : '';
+    function dlItem(side, name, what, bytes) {
+      return h('a', { class: 'dl-item', role: 'menuitem', href: audioHref(call.id, side), download: '' },
+        h('span', { class: 'dl-name' }, name),
+        h('span', { class: 'dl-what' }, what + (khz ? ', ' + khz : '') + ', 16-bit WAV' + (frames ? ' · ' : ''), frames ? h('span', { class: 'num' }, size(44 + bytes)) : null));
+    }
+    var dl = h('details', { class: 'dl' },
+      h('summary', { class: 'btn', title: 'Download this call’s audio as it was recorded' }, icon('dl', 'Download'), h('span', null, 'Download audio'), h('i', { class: 'dl-caret', 'aria-hidden': 'true' })),
+      h('div', { class: 'dl-menu', role: 'menu' },
+        dlItem('', 'Both sides', 'stereo: caller left, assistant right', frames * 4),
+        dlItem('caller', 'Caller only', 'mono, as golive received it', frames * 2),
+        dlItem('assistant', 'Assistant only', 'mono, as golive sent it', frames * 2)));
+    dl.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.dl-item')) dl.open = false; });
+    dl.addEventListener('keydown', function (e) { if (e.key === 'Escape' && dl.open) { dl.open = false; dl.querySelector('summary').focus(); e.stopPropagation(); } });
+    function shutDl(e) { if (dl.open && !dl.contains(e.target)) dl.open = false; }
+    document.addEventListener('pointerdown', shutDl, true);
+
     this.el = h('div', { class: 'player' },
-      h('div', { class: 'pbar' }, playBtn, timeEl,
+      h('div', { class: 'pbar' }, playBtn, timeEl, dl,
         h('span', { class: 'pbar-r' }, h('span', { class: 'pbar-l' }, 'Speed'), rateSeg, h('span', { class: 'pbar-l' }, 'Show'), zoomSeg)),
       mini, stage, msg,
       h('div', { class: 'legend plegend' },
@@ -995,7 +1032,7 @@
     this.playFrom = function (t) { seek(t); var p = audio.play(); if (p && p.catch) p.catch(function () {}); };
     this.currentTurnWindow = function (tn) { var t = audio.currentTime || 0; return t >= tn.last_sound_s - 1.6 && t <= tn.audio_out_s + 12; };
     this.redraw = draw;
-    this.destroy = function () { audio.pause(); audio.removeAttribute('src'); try { audio.load(); } catch (e) { /* nothing to unload */ } if (raf) cancelAnimationFrame(raf); ro.disconnect(); mq.removeEventListener('change', draw); };
+    this.destroy = function () { document.removeEventListener('pointerdown', shutDl, true); audio.pause(); audio.removeAttribute('src'); try { audio.load(); } catch (e) { /* nothing to unload */ } if (raf) cancelAnimationFrame(raf); ro.disconnect(); mq.removeEventListener('change', draw); };
 
     var ro = new ResizeObserver(function () { draw(); });
     ro.observe(stage);
@@ -1534,7 +1571,6 @@
     } else {
       addKids(kept, ['Not archived yet: a call is archived when it has ended. ']);
     }
-    if (d.audio && d.audio.available) addKids(kept, [h('a', { href: base + 'audio.wav?download=1' }, 'Download recording'), ' · ']);
     addKids(kept, [h('a', { href: base + 'transcript.txt?download=1' }, 'Download transcript')]);
     recBody = h('div', null, recBody, kept);
     view.appendChild(section('Recording', d.audio && d.audio.available ? 'Caller above, assistant below. Each shaded band is one wait: last sound to first audio. Click or drag to move.' : null, recBody));
