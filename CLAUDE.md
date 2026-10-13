@@ -479,6 +479,30 @@ made on one build.
 4. The phone leg has never been measured. The console has the events to do it
    once golive's are accepted.
 
+## The lead service
+
+`cmd/crm`, `internal/crm`, `internal/jinja`; on the box `phone-brain.sh crm
+…`, port 8791, data in `~/golive-crm`. See "A call on a rendered prompt" in
+`TELEPHONY.md`. What exists: templates in versions, rendering, a call placed
+on the result, an append-only checksummed event log. What is planned and not
+built (the owner agreed the plan on 10-13): leads and a variable catalogue,
+contacts with summaries that become variables, import/export, a scheduler, a
+page. `internal/crm/model.go` already has those records' shapes.
+
+- The owner's prompts are Jinja2 written for a Python renderer. `internal/
+  jinja` must render them to the character: `testdata/gen.py` renders every
+  case with Jinja2 itself and `cases.json` is its output. Add a case there for
+  anything new and rerun it; never adjust the Go to a guess. Things Jinja2 does
+  that are easy to get wrong: `undefined | int` fails (it is not 0);
+  `undefined | length` is 0; `x.split(None, 1)` keeps the rest's trailing
+  space; `-2.5 % 2.5` is `0.0` and `2.5 % -2.5` is `-0.0`; a whole number
+  rounds to a whole number; one trailing newline of a template is dropped.
+- The owner's template is not in this repository and must not be: it is their
+  business's prompt. `JINJA_PRIVATE_CASES=<file>` runs the same comparison on
+  cases made from a private template.
+- No module can be fetched in the cloud workspace (the Go proxy is refused),
+  which is why storage is an event log and not SQLite.
+
 ## The call journal
 
 `scripts/phone-brain.sh journal start` on the box serves a page on the home

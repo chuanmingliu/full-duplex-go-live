@@ -102,6 +102,13 @@ ARCHIVE_DIR="${ARCHIVE_DIR:-$HOME/golive-archive}"
 # of its own. It is what a public hostname is pointed at; the phone line's
 # golive is never that.
 DEMO_PORT="${DEMO_PORT:-9080}"
+# The lead service: templates, rendering, and placing a call on a rendered
+# prompt. It listens on this machine and on the home network, and every
+# request needs the token in CRM_DIR/api.token.
+CRM_PORT="${CRM_PORT:-8791}"
+CRM_DIR="${CRM_DIR:-$HOME/golive-crm}"
+if [ -z "${CRM_ADDR:-}" ]; then _ip="$(lan_ip)"; CRM_ADDR="127.0.0.1:$CRM_PORT${_ip:+,$_ip:$CRM_PORT}"; fi
+CRM_URL="http://127.0.0.1:$CRM_PORT"
 DEMO_PROFILE="${DEMO_PROFILE:-configs/tencent-deepseek-minimax.json}"
 DEMO_MAX_SESSIONS="${DEMO_MAX_SESSIONS:-2}"
 JOURNAL_REPO="${JOURNAL_REPO:-https://github.com/chuanmingliu/full-duplex-go-live}"
@@ -230,6 +237,34 @@ jstart() {
   else say "the call journal did not start; see $JLOG"; tail -3 "$JLOG"; return 1; fi
 }
 
+# The lead service is its own process too, and is left running across a
+# restart of golive: it holds no call, only what calls are placed with.
+CBIN="./bin/crm-linux-$ARCH"; CPID="$STATE.crm.pid"; CLOG="crm.out"
+crunning() { [ -f "$CPID" ] && kill -0 "$(cat "$CPID")" 2>/dev/null; }
+cstop() {
+  if crunning; then kill "$(cat "$CPID")" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8; do crunning || break; sleep 0.5; done; fi
+  rm -f "$CPID"
+}
+cstart() {
+  chmod +x "$CBIN" 2>/dev/null
+  [ -x "$CBIN" ] || { say "no binary at $CBIN"; return 1; }
+  cstop
+  mkdir -p "$CRM_DIR" && chmod 700 "$CRM_DIR"
+  setsid nohup "$CBIN" -addr "$CRM_ADDR" -dir "$CRM_DIR" -originator "${ARIA_URL:-http://127.0.0.1:3000}" \
+    -originator-env "${ARIA_ENV:-$HOME/aria/.env}" -golive "http://127.0.0.1:$PORT" >> "$CLOG" 2>&1 < /dev/null &
+  echo $! > "$CPID"
+  sleep 1
+  if crunning; then say "the lead service is up on $CRM_ADDR (pid $(cat "$CPID")); data: $CRM_DIR"
+  else say "the lead service did not start; see $CLOG"; tail -3 "$CLOG"; return 1; fi
+}
+# capi METHOD PATH [curl args]: a request to the lead service with its token.
+# The token goes to curl in a header file descriptor, not on the command line.
+capi() {
+  local method="$1" path="$2"; shift 2
+  [ -r "$CRM_DIR/api.token" ] || { say "no token at $CRM_DIR/api.token: scripts/phone-brain.sh crm start"; return 1; }
+  curl -sS -m 60 -X "$method" -H @<(printf 'Authorization: Bearer %s\nX-Operator: %s\n' "$(cat "$CRM_DIR/api.token")" "${USER:-box}") "$@" "$CRM_URL$path"
+}
+
 # The browser demo is a separate process from the phone line's golive, with its
 # own port, profile and log, so that a stranger on the demo page cannot be
 # confused with a call, does not appear in the journal, and is not recorded.
@@ -345,6 +380,8 @@ start_golive() {
   jstart || say "golive is up, but without the journal nothing is being archived"
   # And the browser demo, if it has been turned on: `demo on`.
   if [ -f "$STATE.demo" ]; then dstart || say "golive is up, but the browser demo is not"; fi
+  # The lead service, if it has been turned on and is not already running.
+  if [ -f "$STATE.crm" ] && ! crunning; then cstart || say "golive is up, but the lead service is not"; fi
 }
 
 case "$CMD" in
@@ -670,6 +707,67 @@ journal)
     *) say "journal start | stop | status"; exit 2 ;;
   esac
   if jrunning; then say "  http://$JOURNAL_ADDR/"; fi
+  ;;
+
+crm)
+  # The lead service: templates, rendering, and calls on rendered prompts.
+  #   crm start | stop | status | verify
+  #   crm token                         print the API token (to your terminal only)
+  #   crm put NAME FILE [NOTE]          save FILE as the next version of template NAME
+  #   crm templates                     what is saved
+  #   crm render NAME 'JSON' [VERSION]  render with variables; prints the prompt
+  #   crm call NAME 'JSON' [dry]        render and place the call (dry: stop before dialling)
+  #   crm calls                         the calls placed
+  case "${2:-status}" in
+    start|restart) touch "$STATE.crm"; cstart || exit 1 ;;
+    stop) rm -f "$STATE.crm"; cstop; say "the lead service is stopped, and stays off when golive is restarted" ;;
+    status)
+      if crunning; then say "the lead service is up on $CRM_ADDR (pid $(cat "$CPID")): $(curl -s -m 3 "$CRM_URL/healthz" | cut -c1-120)"
+      else say "the lead service is not running$([ -f "$STATE.crm" ] && echo ' (it is turned on: scripts/phone-brain.sh crm start starts it)')"; fi
+      ;;
+    verify) chmod +x "$CBIN" 2>/dev/null; "$CBIN" -dir "$CRM_DIR" -verify ;;
+    token)
+      [ -t 1 ] || { say "the token is printed to a terminal only"; exit 1; }
+      cat "$CRM_DIR/api.token" ;;
+    put)
+      [ -n "${3:-}" ] && [ -r "${4:-}" ] || { say "crm put NAME FILE [NOTE]"; exit 2; }
+      note="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "${5:-}")"
+      capi PUT "/api/templates/$3?note=$note" -H 'Content-Type: text/plain; charset=utf-8' --data-binary "@$4" \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); t=d.get("template"); print(d.get("error") if not t else "saved %s v%d (sha %s): %d characters, %d before its first variable; reads %s" % (t["name"], t["version"], t["sha"], t["chars"], t["static_chars"], ", ".join(t["names"]))); sys.exit(0 if t else 1)'
+      ;;
+    templates)
+      capi GET /api/templates | python3 -c 'import json,sys
+for t in json.load(sys.stdin).get("templates", []): print("%-24s v%-3d sha %s  %6d characters, %d before its first variable; reads %s" % (t["name"], t["version"], t["sha"], t["chars"], t["static_chars"], ", ".join(t["names"])))'
+      ;;
+    render|call)
+      [ -n "${3:-}" ] || { say "crm $2 NAME 'JSON variables' [${2/render/VERSION}${2/call/dry}]"; exit 2; }
+      body="$(python3 -c 'import json,sys
+kind, name, raw, extra = sys.argv[1:5]
+try: v = json.loads(raw or "{}")
+except ValueError as e: sys.exit("the variables are not JSON: %s" % e)
+req = {"template": name, "vars": v}
+if kind == "render" and extra: req["version"] = int(extra)
+if kind == "call" and extra == "dry": req["dry_run"] = True
+print(json.dumps(req))' "$2" "$3" "${4:-}" "${5:-}")" || exit 2
+      capi POST "/api/$2" -H 'Content-Type: application/json' --data-binary "$body" | python3 -c 'import json,sys
+kind = sys.argv[1]; d = json.load(sys.stdin)
+if "error" in d: sys.exit(d["error"])
+r = d if kind == "render" else d["render"]
+print("%s v%d (sha %s) -> %d characters (sha %s)" % (r["template"], r["version"], r["template_sha"], r["chars"], r["sha"]))
+print("supplied: %s" % (", ".join(r["supplied"]) or "nothing"))
+if r["undefined"]: print("not supplied, rendered as missing: %s" % ", ".join(r["undefined"]))
+if r["unused"]: print("supplied and never read by the template (a misspelt name?): %s" % ", ".join(r["unused"]))
+if kind == "render":
+    print("---"); print(r["instructions"])
+elif d.get("dry_run"): print("dry run: nothing dialled. Opening line: %d characters" % len(d["greeting"]))
+else: print("call placed: %s on %s" % (d["call_id"], d["line"]))' "$2"
+      ;;
+    calls)
+      capi GET "/api/calls?n=${3:-20}" | python3 -c 'import json,sys
+for c in json.load(sys.stdin).get("calls", []): print("%s  %-22s %s v%d  prompt %s (%d characters)  %s" % (c["at"][:19], c.get("call_id") or "-", c["template"], c["version"], c["render"], c["chars"], "ok" if c["ok"] else "FAILED: " + c.get("error", "")))'
+      ;;
+    *) say "crm start | stop | status | verify | token | put NAME FILE | templates | render NAME JSON | call NAME JSON [dry] | calls"; exit 2 ;;
+  esac
   ;;
 
 demo)

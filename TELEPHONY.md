@@ -146,6 +146,73 @@ printed. Dial once from the page after changing the prompt, and that is what
 `call` places from then on. `instructions_sha` on the `realtime:
 session.update` log line says whether two calls were given the same prompt.
 
+## A call on a rendered prompt: the lead service
+
+`scripts/phone-brain.sh crm start` runs a small service (`bin/crm`, port 8791
+on this machine and on the home network) that keeps prompt templates, renders
+one for a set of variables, and places the call with the result. It is the
+first part of the lead store; templates and calls are what it has so far.
+
+A template is the prompt as it is written for a Python renderer — Jinja2, with
+`{% if x is defined and x is not none and x != "" %}`, `{% set years =
+(months | int // 12) %}`, `{{ when.split(' ')[0] if ' ' in when else when }}`
+and the `-` of whitespace control. It is rendered here by `internal/jinja`,
+which is checked against Jinja2 itself on 1,300 cases and must agree to the
+character; a construct it does not have (macros, includes, block sets) is
+refused when the template is saved, with where it is, never guessed at.
+
+```bash
+scripts/phone-brain.sh crm put car-renewal ~/prompt.j2 "first version"   # a new version each time the text changes
+scripts/phone-brain.sh crm templates
+scripts/phone-brain.sh crm render car-renewal '{"carNum":"…","vehicleAge":"38","is_sh":true,"start":"您好…"}'
+scripts/phone-brain.sh crm call   car-renewal '{…}' dry      # everything but the dial
+scripts/phone-brain.sh crm call   car-renewal '{…}'          # rings the originator's locked line
+scripts/phone-brain.sh crm calls
+```
+
+Or over HTTP, from anything on the box or the home network, with the token in
+`~/golive-crm/api.token` (`crm token` prints it, to a terminal only):
+
+```bash
+T="Authorization: Bearer $(cat ~/golive-crm/api.token)"
+curl -H "$T" -X PUT --data-binary @prompt.j2 http://127.0.0.1:8791/api/templates/car-renewal
+curl -H "$T" -d '{"template":"car-renewal","vars":{"carNum":"…","start":"…"}}' http://127.0.0.1:8791/api/render
+curl -H "$T" -d '{"template":"car-renewal","vars":{…},"lead":"L000123"}'      http://127.0.0.1:8791/api/call
+```
+
+| Request | What it does |
+| --- | --- |
+| `PUT /api/templates/{name}` | the body is the template; saved as the next version (the same text again is the same version) |
+| `GET /api/templates`, `GET /api/templates/{name}?version=n` | what is saved; one version with its text |
+| `POST /api/render` `{template, version?, vars}` | the rendered prompt, with what was supplied, what the template reads that was not (`undefined`), and what was supplied that it never reads (`unused`: a misspelt name) |
+| `POST /api/call` `{template, version?, vars, greeting?, lead?, dry_run?}` | renders, checks no call is in progress, and dials; answers with the call id, which is the journal's |
+| `GET /api/calls`, `GET /api/renders/{sha}` | the calls placed; the exact prompt one ran on |
+
+Things to know:
+
+- **The opening line** is `greeting`, or the variable `start` when that is
+  left out. `nowDateTime` is filled in with the time of the render when the
+  template reads it and the request does not give it.
+- **A missing variable renders as Jinja2 renders it**: as nothing, or as the
+  branch the template takes for it. `undefined` in the answer lists them. A
+  template that does arithmetic on a missing value fails, as it does in Python.
+- **Every call rings the originator's one locked number**, whichever lead it
+  is for. The number is read from the originator's env file as the call is
+  placed and is in no answer and no log.
+- **What is kept** (`~/golive-crm`, the owner's alone): every version of every
+  template in a file nothing rewrites; the exact prompt of every call
+  (`renders/<sha>.txt`); and `events.jsonl`, one line for every save and every
+  call, each carrying a checksum of itself and all before it. A line edited,
+  removed or added by hand breaks the chain and the service will not start on
+  it (`crm verify`). `crm.log` is the operational log: requests and outcomes,
+  never a lead's details.
+- **The prompt cache.** `static_chars` is how much of a template comes before
+  its first variable. The chat model keeps a prompt's beginning between calls;
+  what follows the first thing that differs is read afresh for each lead.
+  golive warms the cache with the call's own prompt while the phone rings, so
+  this costs the first answer little — but a template whose variables come
+  late keeps more of it warm.
+
 ## The call journal
 
 Every call golive answers, kept where the next round of work can look at it:
