@@ -77,11 +77,13 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-12 09:24 | 9f2ae31 (eight copies), `call`, under a minute | 4 | 783 | 1029 | 0 |
 | 10-12 09:34 | c8a8477 (same engine), `call`, 3 minutes | 21 | 806 | 1396 (p90 979) | 2 |
 | | **both calls on eight copies** | **25** | | 1396 | **2** |
+| 10-13 21:15 | b1e3c88 (two synthesis accounts), `call`, 5.5 minutes | 47 | 884 | 1072 (**p95 1045**, p90 1020) | 0 |
+| | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
 1181; 18:34 p50 546, p95 805; 20:18 p50 543, p95 861; 21:51 p50 494, p90 690,
 p95 717; 22:21 p50 553, p95 964; both on f374c41 p50 518, p90 760, p95 956;
-23:08 p50 461, p90 602, p95 678.
+23:08 p50 461, p90 602, p95 678; 10-13 21:15 p50 504, p90 640, p95 665.
 
 The 20:18 call was the first with enough turns for a p95 that means something:
 1266 ms, 66 over. Of its five turns over 1200, three had the synthesizer's
