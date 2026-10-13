@@ -523,9 +523,9 @@
    "commits": [
     "a755be2"
    ],
-   "verified": "",
-   "verified_call": "",
-   "note": "Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
+   "verified": "2026-10-13",
+   "verified_call": "out-mv6peicf-0trz",
+   "note": "Checked on the 21:15 call as the journal now plays it: 6.2 s of repeated quiet frames left out, and the caller's words end within 0.15 to 0.25 s of their stamps in the first, middle and last third alike (as recorded they slid by seconds). The recorder's own correction is in build b5ad7c6 and has not yet recorded a call. Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
   }
  ]
 }
