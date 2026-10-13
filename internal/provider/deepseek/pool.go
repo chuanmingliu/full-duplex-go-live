@@ -60,7 +60,7 @@ type lane struct {
 func (l *LLM) SingleKey() *LLM {
 	l.build()
 	return &LLM{name: l.name, BaseURL: l.BaseURL, APIKey: l.keys[0], DefaultModel: l.DefaultModel,
-		HTTP: newHTTPClient(), keys: l.keys[:1]}
+		HTTP: newHTTPClient(), keys: l.keys[:1], Extra: l.Extra}
 }
 
 // Keys reports how many keys the pool holds, and Lanes how many connections it

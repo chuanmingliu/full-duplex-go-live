@@ -25,6 +25,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -79,6 +80,7 @@ func run() error {
 		runs     = flag.Int("runs", 8, "measured requests per candidate")
 		warmup   = flag.Int("warmup", 1, "unmeasured requests per candidate first, to pay for the connection")
 		thinking = flag.Bool("thinking", false, "leave reasoning on, where a model has it")
+		lastCall = flag.String("last-call", "", "ask with the instructions of the last answered call (golive's last_call_file) instead of the profile's: a call's real prompt is thousands of tokens, and a vendor that does not cache it answers later than its short-prompt figure says. Its length is printed, never its text")
 		pool     = flag.Bool("pool", false, "measure the baseline's key pool: one request down every lane at once, with a key per lane and then with every lane on one key")
 	)
 	flag.Var(&extra, "try", "another candidate, as label|base URL|model|KEY_ENV[|name=value,...]; repeatable")
@@ -98,6 +100,24 @@ func run() error {
 			instructions = cfg.Instructions
 		}
 		model = cfg.BackendModel
+	}
+
+	if *lastCall != "" {
+		data, err := os.ReadFile(*lastCall)
+		if err != nil {
+			return fmt.Errorf("-last-call: %w", err)
+		}
+		var kept struct {
+			Instructions string `json:"instructions"`
+			SHA          string `json:"instructions_sha"`
+		}
+		if err := json.Unmarshal(data, &kept); err != nil || kept.Instructions == "" {
+			return fmt.Errorf("-last-call %s: no instructions kept there", *lastCall)
+		}
+		instructions = kept.Instructions
+		fmt.Printf("asking with the last answered call's instructions: %d characters (sha %s)\n", len([]rune(instructions)), kept.SHA)
+	} else {
+		fmt.Printf("asking with the profile's instructions: %d characters\n", len([]rune(instructions)))
 	}
 
 	var cands []candidate
@@ -170,10 +190,16 @@ func run() error {
 			fmt.Printf("%-12s %-28s %2d/%-2d  no successful request\n", cand.label, m, 0, len(results[c]))
 			continue
 		}
-		fmt.Printf("%-12s %-28s %2d/%-2d %6s   %5d / %5d / %5d / %5d %19d %19d\n",
+		slow := 0
+		for _, d := range first {
+			if d > 550*time.Millisecond {
+				slow++
+			}
+		}
+		fmt.Printf("%-12s %-28s %2d/%-2d %6s   %5d / %5d / %5d / %5d %19d %19d   %d of %d over 550 ms\n",
 			cand.label, m, len(first), len(results[c]), "",
 			pct(first, 0), pct(first, 0.5), pct(first, 0.9), pct(first, 1),
-			pct(clause, 0.5), pct(whole, 0.5))
+			pct(clause, 0.5), pct(whole, 0.5), slow, len(first))
 	}
 	fmt.Println("\nfirst clause: six characters of answer, which is what golive waits for before it starts the synthesizer.")
 	return nil
