@@ -14,7 +14,13 @@
 //
 // Each -try is label|base URL|model|name of the environment variable holding
 // its key, for any chat-completions endpoint. Candidates are asked in rotation,
-// so a slow minute on the network lands on all of them.
+// so a slow minute on the network lands on all of them. A fifth part adds
+// fields that vendor wants in the request, as name=value pairs:
+//
+//	-try 'qwen|https://api.siliconflow.cn/v1|Qwen/Qwen3.8-27B|SILICONFLOW_API_KEY|enable_thinking=false'
+//
+// A model that reasons before answering unless told not to is measured both
+// ways by naming it twice, with and without the field.
 package main
 
 import (
@@ -75,7 +81,7 @@ func run() error {
 		thinking = flag.Bool("thinking", false, "leave reasoning on, where a model has it")
 		pool     = flag.Bool("pool", false, "measure the baseline's key pool: one request down every lane at once, with a key per lane and then with every lane on one key")
 	)
-	flag.Var(&extra, "try", "another candidate, as label|base URL|model|KEY_ENV; repeatable")
+	flag.Var(&extra, "try", "another candidate, as label|base URL|model|KEY_ENV[|name=value,...]; repeatable")
 	flag.Parse()
 
 	if err := config.LoadDotEnv(*envPath); err != nil {
@@ -105,8 +111,8 @@ func run() error {
 	}
 	for _, spec := range extra {
 		parts := strings.Split(spec, "|")
-		if len(parts) != 4 {
-			return fmt.Errorf("-try %q: want label|base URL|model|KEY_ENV", spec)
+		if len(parts) != 4 && len(parts) != 5 {
+			return fmt.Errorf("-try %q: want label|base URL|model|KEY_ENV[|name=value,...]", spec)
 		}
 		llm, err := deepseek.NewNamed("", parts[3], parts[1], parts[2])
 		if err != nil {
@@ -116,6 +122,11 @@ func run() error {
 		// named on the command line is exactly what was typed.
 		llm.BaseURL = strings.TrimRight(parts[1], "/")
 		llm.DefaultModel = parts[2]
+		if len(parts) == 5 {
+			if llm.Extra, err = deepseek.ParseExtra(parts[4]); err != nil {
+				return fmt.Errorf("-try %s: %w", parts[0], err)
+			}
+		}
 		cands = append(cands, candidate{label: parts[0], model: parts[2], llm: llm})
 	}
 	if len(cands) == 0 {

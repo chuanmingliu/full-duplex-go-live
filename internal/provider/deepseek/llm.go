@@ -79,6 +79,12 @@ type LLM struct {
 	DefaultModel string
 	HTTP         *http.Client
 
+	// Extra is sent as further top-level fields of every request: what one
+	// vendor needs and another refuses, such as "enable_thinking": false for a
+	// model that reasons before it answers unless told not to. It never
+	// replaces a field the request already has.
+	Extra map[string]any
+
 	// lanes is the pool: see lane. Built on first use, so that a client put
 	// together by hand — a test, a probe — has one without asking.
 	lanesOnce sync.Once
@@ -299,6 +305,53 @@ type chatChunk struct {
 	} `json:"usage"`
 }
 
+// withExtra adds a vendor's own fields to a request already written. A field
+// the request has is left as it is: Extra is for what the request lacks, not a
+// second way to set the model or the messages.
+func withExtra(body []byte, extra map[string]any) ([]byte, error) {
+	if len(extra) == 0 {
+		return body, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, err
+	}
+	for k, v := range extra {
+		if _, has := fields[k]; has {
+			continue
+		}
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("llm: extra field %q: %w", k, err)
+		}
+		fields[k] = raw
+	}
+	return json.Marshal(fields)
+}
+
+// ParseExtra reads "name=value,name=value" into fields for Extra. A value that
+// is JSON (false, 20, 0.5, "text") is sent as that; anything else as a string.
+func ParseExtra(spec string) (map[string]any, error) {
+	out := map[string]any{}
+	for _, pair := range strings.Split(spec, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("extra field %q: want name=value", pair)
+		}
+		var parsed any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(v)), &parsed); err != nil {
+			parsed = strings.TrimSpace(v)
+		}
+		out[k] = parsed
+	}
+	return out, nil
+}
+
 // Stream implements provider.LLM.
 func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
 	model := req.Model
@@ -325,6 +378,9 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	}
 	body, err := json.Marshal(creq)
 	if err != nil {
+		return nil, err
+	}
+	if body, err = withExtra(body, l.Extra); err != nil {
 		return nil, err
 	}
 

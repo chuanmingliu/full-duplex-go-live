@@ -107,7 +107,7 @@ one turn in ten had every copy slow. So the copies go down **lanes** — each a
 key and a connection of its own — and the keys are a pool:
 
 ```bash
-scripts/phone-brain.sh addkey      # once per key; pasted unseen, kept in a 0600 file (addkey minimax: a synthesis account)
+scripts/phone-brain.sh addkey      # once per key; pasted unseen, kept in a 0600 file (addkey minimax: a synthesis account; addkey siliconflow: a candidate chat-model vendor)
 scripts/phone-brain.sh keys        # how many the pool has (counts, never the keys)
 scripts/phone-brain.sh restart     # golive reads them at start
 scripts/phone-brain.sh llm -pool   # what they are worth: a key per lane against all lanes on one key
