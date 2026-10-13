@@ -390,6 +390,19 @@ made on one build.
   `service_tier=priority` bought nothing clear; thinking left on is over a
   second and returns empty answers inside 120 tokens. Compare candidates on
   the first clause, not the first token: this one's first token flatters it.
+- **The phone side can deliver the caller's audio faster than time passes.**
+  `client audio` in the log counts chunks: 640 bytes every 19.4–19.6 ms on
+  nine evening calls (2–3% fast), every 19.97–20.02 on four daytime ones.
+  The extra is not repeated speech (26 lone repeats in 16,470 frames); 43% of
+  a call's frames are one near-silent frame the line repeats when nobody
+  speaks. Where it comes from — gateway, PBX, Active Call — is not known; it
+  costs the engine nothing measurable (its pauses are counted in audio, so
+  380 ms is 372). It did wreck recordings: the caller's track was appended as
+  it came and ran six seconds late by the end of five minutes, so a question
+  was heard after its answer. The recorder now drops repeats of the previous
+  chunk while the track is ahead (`internal/store`), and the journal does the
+  same at play time for older recordings (`Recording.Realign`). Timestamps and
+  latency figures were never affected: they come from the log's clock.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

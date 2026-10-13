@@ -1077,9 +1077,17 @@
       }
       var note = l.kind === 'greeting' ? 'opening line' : (caller && !answered ? 'not answered' : (!caller && l.interrupted ? 'cut short by the caller' : ''));
       var playBtn = null;
+      // Every line is stamped where it begins: an answer at its first audio, the
+      // caller where they began to speak when the log says, which is a moment
+      // before their last sound, where the wait for the answer is counted from.
+      var began = caller && l.start_s > 0 && l.start_s < l.t_s;
+      var at = began ? l.start_s : l.t_s;
+      var atTitle = caller
+        ? (began ? 'Began at ' + pos(l.start_s) + '; last sound at ' + pos(l.t_s) + ', where the wait is counted from' : 'The caller’s last sound; the log does not say where they began')
+        : 'First audio of this line';
       if (player && l.t_s >= 0) {
-        playBtn = h('button', { type: 'button', class: 'cv-play', 'aria-label': 'Play from ' + mss(l.t_s) + ', ' + (caller ? 'caller' : 'assistant'), title: 'Play from here' }, h('i', { class: 'pp', 'aria-hidden': 'true' }));
-        playBtn.addEventListener('click', function () { lastUser = 0; player.playFrom(Math.max(0, l.t_s - (caller ? 4 : 0.2))); });
+        playBtn = h('button', { type: 'button', class: 'cv-play', 'aria-label': 'Play from ' + mss(at) + ', ' + (caller ? 'caller' : 'assistant'), title: 'Play from here' }, h('i', { class: 'pp', 'aria-hidden': 'true' }));
+        playBtn.addEventListener('click', function () { lastUser = 0; player.playFrom(Math.max(0, caller ? (began ? l.start_s - 0.3 : l.t_s - 4) : l.t_s - 0.2)); });
       }
       var turnBtn = null;
       if (answered && caller) {
@@ -1087,14 +1095,14 @@
         turnBtn.addEventListener('click', function () { if (state && state.openTurn) state.openTurn(l.turn); });
       }
       var el = h('div', { class: 'cv-line ' + (caller ? 'caller' : 'assistant') + (caller && !answered ? ' unanswered' : '') + (l.over ? ' over' : '') },
-        h('span', { class: 'cv-time' }, playBtn, h('span', { class: 'num' }, mss(l.t_s))),
+        h('span', { class: 'cv-time', title: atTitle }, playBtn, h('span', { class: 'num' }, mss(at))),
         h('span', { class: 'cv-who' }, caller ? 'Caller' : 'Assistant'),
         h('div', { class: 'cv-text' }, h('p', { lang: 'zh' }, l.text), note ? h('span', { class: 'cv-note' }, note) : null),
         h('span', { class: 'cv-side' }, turnBtn));
       box.appendChild(el);
       // When a line counts as "being said": an answer from its first audio; a caller
       // line a little before its last sound, which is the only time the log has for it.
-      var key = caller ? l.t_s - Math.min(4, 0.6 + 0.25 * l.text.length) : l.t_s;
+      var key = caller ? (began ? l.start_s : l.t_s - Math.min(4, 0.6 + 0.25 * l.text.length)) : l.t_s;
       if (!(key > prevKey)) key = prevKey + 0.05; // keys only ever go forward
       prevKey = key;
       var row = { el: el, line: l, answered: answered, key: key };
@@ -1110,7 +1118,8 @@
     }
     function plain() {
       return rows.filter(function (r) { return !r.gap && shown(r); }).map(function (r) {
-        return '[' + mss(r.line.t_s) + '] ' + (r.line.who === 'caller' ? 'Caller' : 'Assistant') + ': ' + r.line.text;
+        var l = r.line, at = l.who === 'caller' && l.start_s > 0 && l.start_s < l.t_s ? l.start_s : l.t_s;
+        return '[' + mss(at) + '] ' + (l.who === 'caller' ? 'Caller' : 'Assistant') + ': ' + l.text;
       }).join('\n');
     }
     function scrollTo(el) { // inside the box only; the page stays where it is
@@ -1572,7 +1581,16 @@
       addKids(kept, ['Not archived yet: a call is archived when it has ended. ']);
     }
     addKids(kept, [h('a', { href: base + 'transcript.txt?download=1' }, 'Download transcript')]);
-    recBody = h('div', null, recBody, kept);
+    // a recording whose caller's side had to be put back on the clock says so
+    var timing = null;
+    if (d.audio && d.audio.available && d.audio.caller_trimmed_s > 0) {
+      timing = h('p', { class: 'archive-line' }, h('span', { class: 'archive-tag' }, 'Timing'), ' ',
+        'The phone side delivered ', h('span', { class: 'num' }, d.audio.caller_trimmed_s.toFixed(1) + ' s'),
+        ' more of the caller’s audio than the call lasted, and this recording was made before the recorder corrected for that. ',
+        'It is played here with the repeated frames of the quiet line left out, which puts both sides on one clock; no speech is removed. ',
+        h('a', { href: audioHref(call.id) + '&raw=1' }, 'Download it exactly as recorded'), '.');
+    }
+    recBody = h('div', null, recBody, kept, timing);
     view.appendChild(section('Recording', d.audio && d.audio.available ? 'Caller above, assistant below. Each shaded band is one wait: last sound to first audio. Click or drag to move.' : null, recBody));
 
     function add(id, sec) { sec.id = id; view.appendChild(sec); }

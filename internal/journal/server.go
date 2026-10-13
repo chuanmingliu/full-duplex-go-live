@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -74,6 +75,12 @@ type Server struct {
 	// settled is each call as it stood when the archive last had all of it,
 	// so that a pass costs nothing for the calls that have not changed.
 	settled map[string]callSig
+
+	// aligned is, for each recording whose caller's side had to be put back
+	// on the clock, how: worked out once, on the first request for it. A nil
+	// entry is a recording that needed nothing.
+	alignMu sync.Mutex
+	aligned map[string]*Alignment
 }
 
 // callSig is enough of a call to tell that it has not changed since it was
@@ -369,24 +376,71 @@ func (s *Server) feedback(id string) *Feedback {
 	return &f
 }
 
-func (s *Server) audioOf(c *Call) (available bool, seconds float64, rate int) {
+func (s *Server) audioOf(c *Call) map[string]any {
 	rec, err := s.recording(c)
 	if err != nil {
-		return false, 0, 0
+		return map[string]any{"available": false, "duration_s": 0.0, "rate": 0}
 	}
 	defer rec.Close()
-	return rec.Frames > 0, rec.DurationS(), rec.Rate
+	return map[string]any{"available": rec.Frames > 0, "duration_s": rec.DurationS(), "rate": rec.Rate,
+		// How much of the caller's side is left out when it is played, to keep
+		// it on the call's clock; zero for a recording that was made on it.
+		"caller_trimmed_s": math.Round(rec.DroppedS()*10) / 10}
 }
 
-// recording opens a call's audio: the archive's copy, which stays, or
-// golive's, which is all there is until the call has ended and been archived.
+// recording opens a call's audio as it should be heard: the archive's copy,
+// which stays, or golive's, which is all there is until the call has ended and
+// been archived; and, for a recording made before the recorder kept the
+// caller's side on the clock, with that side put back on it.
 func (s *Server) recording(c *Call) (*Recording, error) {
+	rec, record, err := s.rawRecording(c)
+	if err != nil {
+		return nil, err
+	}
+	if len(c.AudioIn) < 3 || onClock(record) {
+		return rec, nil
+	}
+	s.alignMu.Lock()
+	defer s.alignMu.Unlock()
+	key := c.ID + "|" + strconv.FormatInt(rec.Frames, 10)
+	if a, done := s.aligned[key]; done {
+		rec.Use(a)
+		return rec, nil
+	}
+	if s.aligned == nil {
+		s.aligned = map[string]*Alignment{}
+	}
+	rec.Realign(c.AudioIn)
+	// Kept only for a call that has ended: until then the recording grows.
+	if !c.EndedAt.IsZero() {
+		s.aligned[key] = rec.Aligned()
+	}
+	return rec, nil
+}
+
+// rawRecording opens a call's audio exactly as it was recorded, and says
+// where its session record is.
+func (s *Server) rawRecording(c *Call) (rec *Recording, record string, err error) {
 	if e := s.archive.Entry(c.ID); e != nil && e.Audio {
 		if rec, err := OpenArchivedWAV(s.archive.Path(c.ID, archAudio)); err == nil {
-			return rec, nil
+			return rec, s.archive.Path(c.ID, archSession), nil
 		}
 	}
-	return OpenRecording(s.cfg.StoreDir, c.Session)
+	rec, err = OpenRecording(s.cfg.StoreDir, c.Session)
+	return rec, filepath.Join(s.cfg.StoreDir, c.Session, recordFile), err
+}
+
+// onClock reports whether a session's record says its caller's track was kept
+// on the session clock as it was written.
+func onClock(recordPath string) bool {
+	data, err := os.ReadFile(recordPath)
+	if err != nil {
+		return false
+	}
+	var rec struct {
+		OnClock bool `json:"input_on_clock"`
+	}
+	return json.Unmarshal(data, &rec) == nil && rec.OnClock
 }
 
 // archiveOf is what the page is told about a call's place in the archive.
@@ -480,7 +534,11 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	for _, c := range calls {
 		row := CallRow{ID: c.ID, StartedAt: c.StartedAt, DurationS: c.DurationS, Build: c.Build,
 			Summary: c.Summary, LLMCopies: c.LLMCopies}
-		row.HasAudio, _, _ = s.audioOf(c)
+		// Whether there is a recording, without working out how to play it.
+		if rec, _, err := s.rawRecording(c); err == nil {
+			row.HasAudio = rec.Frames > 0
+			rec.Close()
+		}
 		row.Archived = s.archive.Entry(c.ID) != nil
 		row.HasRetro = s.retro(c.ID) != nil
 		if f := s.feedback(c.ID); f != nil {
@@ -564,12 +622,11 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 
 	switch what {
 	case "":
-		available, seconds, rate := s.audioOf(c)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"call":          c,
 			"target_ms":     TargetMS,
 			"repo_url":      s.cfg.RepoURL,
-			"audio":         map[string]any{"available": available, "duration_s": seconds, "rate": rate},
+			"audio":         s.audioOf(c),
 			"min_turns":     MinTurnsForP95,
 			"archive":       s.archiveOf(c),
 			"retrospective": s.retro(c.ID),
@@ -577,6 +634,13 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 		})
 	case "audio.wav":
 		rec, err := s.recording(c)
+		if r.URL.Query().Get("raw") != "" {
+			// Exactly as recorded, with nothing left out.
+			if rec != nil {
+				rec.Close()
+			}
+			rec, _, err = s.rawRecording(c)
+		}
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "this call has no recording"})
 			return
@@ -593,6 +657,9 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "side is caller or assistant"})
 			return
+		}
+		if r.URL.Query().Get("raw") != "" {
+			suffix += "_as-recorded"
 		}
 		w.Header().Set("Content-Type", "audio/wav")
 		w.Header().Set("Cache-Control", "private, max-age=3600")

@@ -15,6 +15,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -58,6 +59,12 @@ type Meta struct {
 	// Rate is the sample rate of both audio tracks, which are linear PCM16
 	// whatever format the session used on the wire.
 	Rate int `json:"rate"`
+	// InputOnClock says the caller's track was kept on the session clock as it
+	// was written: a recording without it may have a caller's side that runs
+	// late against the assistant's (see WriteInput). InputDroppedMS is how
+	// much repeated audio was left out to do it.
+	InputOnClock   bool  `json:"input_on_clock,omitempty"`
+	InputDroppedMS int64 `json:"input_dropped_ms,omitempty"`
 	// Session is the configuration the session ran with.
 	Session live.SessionConfig `json:"session"`
 	// History is the conversation as the backend was shown it, which is what a
@@ -102,6 +109,20 @@ type Recording struct {
 	started  time.Time
 	closed   bool
 	writeErr error
+
+	// lastIn is the last caller chunk written, and inDropped the bytes of
+	// repeated chunks left out to keep the track on the clock.
+	lastIn    []byte
+	inDropped int64
+	// now is the clock; a test's own when it needs one.
+	now func() time.Time
+}
+
+func (r *Recording) since() time.Duration {
+	if r.now != nil {
+		return r.now().Sub(r.started)
+	}
+	return time.Since(r.started)
 }
 
 // Create starts recording a session at the given PCM16 sample rate.
@@ -139,6 +160,15 @@ func (r *Recording) bytesAt(d time.Duration) int64 {
 // that arrives a little early or late is simply appended: the microphone's
 // clock and this machine's are not the same clock, and placing every frame by
 // wall time would open a gap or an overlap at each one.
+//
+// A sender can also deliver more audio than time has passed. A phone bridge
+// did, by two frames in a hundred on evening calls: appended as it came, the
+// caller's side of a five-minute call ended six seconds behind the
+// assistant's, and a question was heard after its answer. So while the track
+// is ahead of the clock, a chunk that is the previous chunk over again — the
+// frame a quiet line repeats — is left out. Nothing that differs from what
+// came before it is ever dropped: speech is kept whole, and the track finds
+// the clock again in the next pause.
 func (r *Recording) WriteInput(pcm []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -146,11 +176,17 @@ func (r *Recording) WriteInput(pcm []byte) {
 		return
 	}
 	pos := r.inPos
-	now := r.bytesAt(time.Since(r.started)) - int64(len(pcm))
+	now := r.bytesAt(r.since()) - int64(len(pcm))
 	// More than a fifth of a second adrift is a gap, not jitter.
 	if now-pos > int64(r.rate*2/5) {
 		pos = now
 	}
+	// More than a twelfth of a second ahead is not jitter either.
+	if pos-now > int64(r.rate*2/12) && bytes.Equal(pcm, r.lastIn) {
+		r.inDropped += int64(len(pcm))
+		return
+	}
+	r.lastIn = append(r.lastIn[:0], pcm...)
 	r.inPos = r.writeAt(r.in, pcm, pos)
 }
 
@@ -191,6 +227,12 @@ func (r *Recording) writeAt(f *os.File, pcm []byte, pos int64) int64 {
 // live session can be forked.
 func (r *Recording) Snapshot(meta Meta) error {
 	meta.Rate = r.rate
+	r.mu.Lock()
+	meta.InputOnClock = true
+	if r.rate > 0 {
+		meta.InputDroppedMS = r.inDropped * 1000 / int64(r.rate*2)
+	}
+	r.mu.Unlock()
 	if meta.CreatedAt.IsZero() {
 		meta.CreatedAt = r.started
 	}

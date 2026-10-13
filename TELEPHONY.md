@@ -275,6 +275,18 @@ scripts/phone-brain.sh archive mirror DEST  # a second copy: a directory on anot
   a year; the box has 3.2 TB free.
 - **It is one disk in one laptop.** `archive mirror` is the second copy;
   where to is the owner's to say, and nothing runs it on a schedule yet.
+- **Both sides of a recording are on one clock.** The phone side has been seen
+  to deliver the caller's audio faster than time passes: a 20 ms frame every
+  19.4 to 19.6 ms on nine evening calls, every 19.97 to 20.02 on four daytime
+  ones. Appended as it came, the caller's side of a five-minute call ended six
+  seconds behind the assistant's. The recorder now leaves out a chunk that is
+  the previous chunk over again — the frame a quiet line repeats — while the
+  caller's track is ahead of the clock; nothing that differs from what came
+  before it is dropped (`input_on_clock` and `input_dropped_ms` in the
+  session's record). For a recording made before that, the journal does the
+  same as it plays it, from the log's `client audio` marks, says how much it
+  left out, and offers the file exactly as recorded (`audio.wav?raw=1`). The
+  cause upstream — gateway, PBX or phone bridge — is not known.
 - The journal plays a call from the archive, so old calls stay playable, and
   each call's page has a "Download audio" button on the player — both sides as
   one stereo WAV (caller left, assistant right), or the caller or the assistant

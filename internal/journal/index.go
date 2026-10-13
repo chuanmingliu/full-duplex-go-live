@@ -79,8 +79,13 @@ type Marker struct {
 // Said is one line of the conversation: something the caller or the assistant
 // said, in the order it was said.
 type Said struct {
-	TS  float64 `json:"t_s"`
-	Who string  `json:"who"` // "caller" or "assistant"
+	// TS is where the line sits in the call. For the assistant it is the
+	// first audio of the line. For the caller it is the end of their words —
+	// their last sound, which is where the wait for an answer is measured
+	// from — and StartS, when the log has it, is where they began.
+	TS     float64 `json:"t_s"`
+	StartS float64 `json:"start_s,omitempty"`
+	Who    string  `json:"who"` // "caller" or "assistant"
 	// Text is what was said. For an answer the caller cut short it is what
 	// had been heard when they did, not what was going to be said.
 	Text string `json:"text"`
@@ -173,13 +178,15 @@ type Call struct {
 	Lanes       int    `json:"lanes,omitempty"`
 	Greeting    string `json:"greeting,omitempty"`
 
-	Summary      Stats     `json:"summary"`
-	StageMedians []Stage   `json:"stage_medians"`
-	Turns        []Turn    `json:"turns"`
-	Transcript   []Said    `json:"transcript"`
-	Markers      []Marker  `json:"markers"`
-	Events       Events    `json:"events"`
-	Warnings     []Warning `json:"warnings"`
+	Summary      Stats   `json:"summary"`
+	StageMedians []Stage `json:"stage_medians"`
+	Turns        []Turn  `json:"turns"`
+	Transcript   []Said  `json:"transcript"`
+	// AudioIn is the caller's audio as it arrived, a mark every few seconds.
+	AudioIn  []AudioMark `json:"audio_in,omitempty"`
+	Markers  []Marker    `json:"markers"`
+	Events   Events      `json:"events"`
+	Warnings []Warning   `json:"warnings"`
 }
 
 // --- reading the log ---
@@ -206,9 +213,24 @@ type turnBuild struct {
 }
 
 type heardLine struct {
-	at   time.Time
-	text string
+	at    time.Time
+	began time.Time // when the detector opened on these words; zero when unknown
+	text  string
 }
+
+// AudioMark is how much of the caller's audio had arrived at a moment of the
+// call: Frames chunks of Bytes each by TS. The log has one every 250 chunks.
+// It is what says whether audio arrived faster than time passed, and what a
+// recording made before the recorder corrected for that is put right with.
+type AudioMark struct {
+	TS     float64 `json:"t_s"`
+	Frames int     `json:"frames"`
+	Bytes  int     `json:"bytes"`
+}
+
+// openLeadS is how long the detector listens before it says an utterance has
+// opened: the line is logged that long after the caller began.
+const openLeadS = 0.25
 
 type callBuild struct {
 	call  Call
@@ -218,9 +240,12 @@ type callBuild struct {
 	noise []float64
 	idle  []float64
 	// heard is what the caller said, each utterance as it stood when it ended.
-	heard   []heardLine
-	warn    map[string]*Warning
-	warnOrd []string
+	heard []heardLine
+	// openedAt is when the detector last opened on speech that no line has
+	// claimed yet.
+	openedAt time.Time
+	warn     map[string]*Warning
+	warnOrd  []string
 
 	lastAskPause int
 	lastFinal    struct {
@@ -265,7 +290,12 @@ func (cb *callBuild) hear(at time.Time, text string) {
 	if n := len(cb.heard); n > 0 && cb.heard[n-1].text == text && at.Sub(cb.heard[n-1].at) < time.Second {
 		return
 	}
-	cb.heard = append(cb.heard, heardLine{at: at, text: text})
+	line := heardLine{at: at, text: text}
+	if !cb.openedAt.IsZero() && cb.openedAt.Before(at) {
+		line.began = cb.openedAt.Add(-time.Duration(openLeadS * float64(time.Second)))
+	}
+	cb.openedAt = time.Time{}
+	cb.heard = append(cb.heard, line)
 }
 
 func (cb *callBuild) mark(t time.Time, kind, label string) {
@@ -433,8 +463,15 @@ func (ix *Indexer) Feed(l Line) {
 		}
 	case "speak: opening line":
 		cb.call.Greeting = l.Get("text")
+	case "client audio":
+		if n, b := l.N("frames"), l.N("bytes"); n > 0 && b > 0 {
+			cb.call.AudioIn = append(cb.call.AudioIn, AudioMark{TS: cb.at(l.Time), Frames: n, Bytes: b})
+		}
 	case "listen: utterance opened":
 		ev.Utterances++
+		if cb.openedAt.IsZero() {
+			cb.openedAt = l.Time
+		}
 		if f, ok := l.Float("noise_floor_db"); ok {
 			cb.noise = append(cb.noise, f)
 		}
@@ -660,7 +697,11 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 	// utterance to end before that turn's answer began and after the one
 	// before it.
 	for _, h := range cb.heard {
-		out = append(out, Said{TS: cb.at(h.at), Who: "caller", Text: h.text})
+		line := Said{TS: cb.at(h.at), Who: "caller", Text: h.text}
+		if began := cb.at(h.began); began > 0 {
+			line.StartS = began
+		}
+		out = append(out, line)
 	}
 	inOrder := func() {
 		sort.SliceStable(out, func(i, j int) bool {
@@ -683,6 +724,9 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 				out[j].Turn, out[j].TotalMS, out[j].Over = out[i].Turn, out[i].TotalMS, out[i].Over
 				if turn := turns[out[i].Turn-1]; turn.LastSoundS >= 0 && turn.LastSoundS < out[j].TS {
 					out[j].TS = turn.LastSoundS
+				}
+				if out[j].StartS >= out[j].TS {
+					out[j].StartS = 0
 				}
 				break
 			}

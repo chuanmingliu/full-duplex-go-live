@@ -239,3 +239,37 @@ func TestTheConversationIsInOrderAndTiedToItsTurns(t *testing.T) {
 		t.Errorf("%d interrupted answers in the conversation; the call had 13", cut)
 	}
 }
+
+// A caller's line is stamped where their words ended, which is where the wait
+// is counted from, and says where they began when the log does; and the log's
+// marks of how much audio had arrived are kept with the call.
+func TestCallerLinesSayWhereTheyBegan(t *testing.T) {
+	c := fixtureCalls(t)[0]
+	callers, began := 0, 0
+	for _, line := range c.Transcript {
+		if line.Who != "caller" {
+			if line.StartS != 0 {
+				t.Errorf("an assistant's line was given a start of its own: %+v", line)
+			}
+			continue
+		}
+		callers++
+		if line.StartS == 0 {
+			continue
+		}
+		began++
+		if line.StartS >= line.TS || line.TS-line.StartS > 30 {
+			t.Errorf("a caller's line begins at %.2f and ends at %.2f", line.StartS, line.TS)
+		}
+	}
+	if callers == 0 || began*10 < callers*8 {
+		t.Errorf("%d of %d caller's lines say where they began", began, callers)
+	}
+	if n := len(c.AudioIn); n < 10 || c.AudioIn[0].Frames != 1 || c.AudioIn[0].Bytes != 640 || c.AudioIn[n-1].TS <= c.AudioIn[0].TS {
+		t.Fatalf("audio marks: %+v", c.AudioIn)
+	}
+	first, last := c.AudioIn[0], c.AudioIn[len(c.AudioIn)-1]
+	if per := (last.TS - first.TS) / float64(last.Frames-first.Frames) * 1000; per < 19.9 || per > 20.1 {
+		t.Errorf("the fixture call's audio arrived every %.3f ms; it was a call on time", per)
+	}
+}

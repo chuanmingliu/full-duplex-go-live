@@ -458,7 +458,13 @@ func TranscriptText(c *Call) string {
 		case line.Who == "caller" && line.Turn == 0:
 			note = " (not answered)"
 		}
-		fmt.Fprintf(&b, "[%s] %s%s  %s\n", clock(line.TS), who, note, line.Text)
+		// Stamped where the line begins: the caller's where they began to
+		// speak, when the log says.
+		at := line.TS
+		if line.Who == "caller" && line.StartS > 0 && line.StartS < line.TS {
+			at = line.StartS
+		}
+		fmt.Fprintf(&b, "[%s] %s%s  %s\n", clock(at), who, note, line.Text)
 	}
 	return b.String()
 }
