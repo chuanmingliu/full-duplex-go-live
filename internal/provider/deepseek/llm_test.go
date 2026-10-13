@@ -82,6 +82,8 @@ func TestCompletionsURL(t *testing.T) {
 		"https://open.bigmodel.cn/api/paas/v4/":             "https://open.bigmodel.cn/api/paas/v4/chat/completions",
 		"http://127.0.0.1:8000/v1/chat/completions":         "http://127.0.0.1:8000/v1/chat/completions",
 		"http://vendor.example":                             "http://vendor.example/v1/chat/completions",
+		"https://api.minimax.cn/v1/text/chatcompletion_v2":  "https://api.minimax.cn/v1/text/chatcompletion_v2",
+		"https://api.minimax.cn/v1":                         "https://api.minimax.cn/v1/chat/completions",
 	} {
 		if got := completionsURL(base); got != want {
 			t.Errorf("completionsURL(%q) = %q, want %q", base, got, want)

@@ -264,13 +264,17 @@ func promptChars(msgs []chatMessage) int {
 // the version already on — and not always v1: Volcengine's is /api/v3, Zhipu's
 // /api/paas/v4 — and appending /v1 to those asks for a path that does not
 // exist. A base that already ends in a version segment, or in the full path,
-// is taken at its word.
+// is taken at its word — and so is a full path of a vendor's own naming, such
+// as MiniMax's /v1/text/chatcompletion_v2, which speaks the same protocol.
 func completionsURL(base string) string {
 	base = strings.TrimRight(base, "/")
 	if strings.HasSuffix(base, "/chat/completions") {
 		return base
 	}
 	last := base[strings.LastIndex(base, "/")+1:]
+	if strings.Contains(last, "completion") {
+		return base
+	}
 	if len(last) >= 2 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
 		return base + "/chat/completions"
 	}
