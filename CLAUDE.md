@@ -365,6 +365,18 @@ made on one build.
   the headers (`llm -pool`: 213 and 192). On that same call
   all 13 turns were asked of both synthesis accounts (7 and 6 first), nothing
   refused.
+- **Measure a chat-model candidate with the call's real prompt, not a short
+  one.** Qwen3.8-27B on 10-13 at 20:40, one request each in rotation, first
+  token at the median: with a 30-character prompt SiliconFlow (reasoning off)
+  409 ms against DeepSeek's 606; with the owner's 13,116 characters
+  (`llm -last-call ~/golive-last-call.json`) SiliconFlow 1548, OpenRouter
+  1048, DeepSeek 581. DeepSeek serves the long prompt from its cache; these
+  two showed no sign of one in 20 requests. Reasoning left on is 1.3–3 s
+  (`enable_thinking=false` on SiliconFlow, `reasoning={"enabled":false}` on
+  OpenRouter, as the fifth part of `-try`). Four copies at once on the
+  SiliconFlow account: 148 of 160 refused, HTTP 429. OpenRouter is reached
+  through the VPN tunnel (5.2 s to set up a connection). Neither is a fix
+  for the 23:00 hour.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

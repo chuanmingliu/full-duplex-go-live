@@ -1,81 +1,81 @@
 {
-  "decisions": [
-    {
-      "rank": 1,
-      "title": "A faster or second chat-model vendor in the race",
-      "gain": "About 300 to 400 ms on every turn in that hour, which is the difference between missing the target on most turns and meeting it; 100 to 200 ms at the median at other busy times",
-      "basis": "measured: the chat model's first token (fastest of eight copies) is about 700 ms at the median between roughly 23:00 and midnight, against 160 to 320 at other hours, on two nights running; a call at 23:14 on 10-12 had 12 of 13 turns over 1200 for that reason alone",
-      "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
-      "guard": "What the assistant says",
-      "undo": "yes",
-      "needs": "An account and a key on the box; `llmprobe -try` measures a candidate in a minute",
-      "status": "waiting"
-    },
-    {
-      "rank": 2,
-      "title": "A second synthesis account, used as a pool of two",
-      "gain": "The faster of two first audios on every turn instead of one (unmeasured; the tail is the point: 646 and 938 ms on the 09:34 call), and a second allowance of requests. Cures the multi-second stalls only if they turn out to be per account.",
-      "basis": "measured 10-12, 30 rounds, both accounts asked at once: first audio p50 265 / p90 336 / worst 689 ms on the first account alone, 248 / 328 / 337 for the faster of the two; a first audio of 400 ms or more on 4 rounds, never on both at once. No multi-second stall occurred, so nothing is known about those.",
-      "cost": "The two accounts' copies of the voice differ: the second speaks about 9% faster and about 3 dB louder. The owner heard both and keeps them as they are: both are his voice, and the variation from turn to turn is wanted.",
-      "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
-      "undo": "yes: remove the key; one key behaves exactly as before",
-      "needs": "More calls, to see how often a turn is asked of both now that the accounts are counted by their own allowances.",
-      "status": "taken 10-12: on. First call: both accounts spoke, nothing refused; the first carries the call, the second takes what fits under its 8 a minute"
-    },
-    {
-      "rank": 3,
-      "title": "Ask the model to open answers with one of a few short clauses",
-      "gain": "~195 ms on most turns; first audio immune to synthesizer stalls",
-      "basis": "measured on cache-hit turns: 515–756 ms against ~870",
-      "cost": "Changes how the assistant talks; openers repeat",
-      "guard": "How natural it sounds",
-      "undo": "yes",
-      "needs": "A yes, and a listen",
-      "status": "waiting"
-    },
-    {
-      "rank": 4,
-      "title": "A holding phrase on slow turns",
-      "gain": "No change at the median; ends dead air at about 1.2 s in a stall",
-      "basis": "built and off (holding_filler); fires at 1.5× the call's median",
-      "cost": "First audio is then a phrase, not the answer; reported separately",
-      "guard": "Moves the number without moving the answer",
-      "undo": "yes",
-      "needs": "A yes, and the phrases to use",
-      "status": "waiting"
-    },
-    {
-      "rank": 5,
-      "title": "Wired network, and providers routed outside the VPN tunnel",
-      "gain": "Tens of ms per vendor round trip; possibly the synthesizer's stalls",
-      "basis": "unknown; could not be measured without root",
-      "cost": "Needs root on the box",
-      "guard": "none",
-      "undo": "yes",
-      "needs": "Root, or the owner making the change",
-      "status": "waiting"
-    },
-    {
-      "rank": 6,
-      "title": "Ask for the recognizer's final 100 or 80 ms into a pause, not 120",
-      "gain": "20–40 ms on every turn",
-      "basis": "measured: 66 pauses on two calls; 100 ms splits 18–43% more recognitions, 80 ms 43–71% more",
-      "cost": "More split recognitions on a line where recognition is already the weak point",
-      "guard": "Recognition accuracy",
-      "undo": "yes",
-      "needs": "More pause data from quiet calls; leave at 120 for now",
-      "status": "deferred"
-    },
-    {
-      "rank": 7,
-      "title": "The synthesizer's HTTP endpoint as a second route in a stall",
-      "gain": "unknown",
-      "basis": "untried",
-      "cost": "Engineering time; same account and voice",
-      "guard": "none",
-      "undo": "yes",
-      "needs": "A probe that asks both routes at once",
-      "status": "untried"
-    }
-  ]
+ "decisions": [
+  {
+   "rank": 1,
+   "title": "A faster or second chat-model vendor in the race",
+   "gain": "About 300 to 400 ms on every turn in that hour, which is the difference between missing the target on most turns and meeting it; 100 to 200 ms at the median at other busy times",
+   "basis": "measured: the chat model's first token (fastest of eight copies) is about 700 ms at the median between roughly 23:00 and midnight, against 160 to 320 at other hours, on two nights running; a call at 23:14 on 10-12 had 12 of 13 turns over 1200 for that reason alone",
+   "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
+   "guard": "What the assistant says",
+   "undo": "yes",
+   "needs": "A vendor that answers the 13k-character prompt in under about 400 ms at 23:00 (a prompt cache, or a small fast model), with room for a few copies at once; `scripts/phone-brain.sh llm -last-call ~/golive-last-call.json -try ...` measures a candidate with the real prompt",
+   "status": "waiting: two routes to Qwen3.8-27B measured on 10-13 at 20:40 and neither is one to add. With the call's own 13,116-character prompt, one request each in rotation, first token at the median: DeepSeek 581 ms, the same model through SiliconFlow (reasoning off) 1548, through OpenRouter (reasoning off) 1048; all 20 of each candidate's were over 550. With a 30-character prompt SiliconFlow is 409 (p90 457), so the long prompt costs it over a second: no sign of a prompt cache in 20 requests with one prefix. Four copies at once on the SiliconFlow account were refused (HTTP 429) on 148 of 160 requests. With reasoning left on, first token is 3 s (SiliconFlow) and 1.3 s (OpenRouter). DeepSeek's eight copies in the same minutes: 365 at the median, 538 at p90. A candidate has to hold the long prompt in a cache, or be fast without one; still to do: the same measurement in the 23:00 hour"
+  },
+  {
+   "rank": 2,
+   "title": "A second synthesis account, used as a pool of two",
+   "gain": "The faster of two first audios on every turn instead of one (unmeasured; the tail is the point: 646 and 938 ms on the 09:34 call), and a second allowance of requests. Cures the multi-second stalls only if they turn out to be per account.",
+   "basis": "measured 10-12, 30 rounds, both accounts asked at once: first audio p50 265 / p90 336 / worst 689 ms on the first account alone, 248 / 328 / 337 for the faster of the two; a first audio of 400 ms or more on 4 rounds, never on both at once. No multi-second stall occurred, so nothing is known about those.",
+   "cost": "The two accounts' copies of the voice differ: the second speaks about 9% faster and about 3 dB louder. The owner heard both and keeps them as they are: both are his voice, and the variation from turn to turn is wanted.",
+   "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
+   "undo": "yes: remove the key; one key behaves exactly as before",
+   "needs": "More calls, to see how often a turn is asked of both now that the accounts are counted by their own allowances.",
+   "status": "taken 10-12: on. First call: both accounts spoke, nothing refused; the first carries the call, the second takes what fits under its 8 a minute"
+  },
+  {
+   "rank": 3,
+   "title": "Ask the model to open answers with one of a few short clauses",
+   "gain": "~195 ms on most turns; first audio immune to synthesizer stalls",
+   "basis": "measured on cache-hit turns: 515–756 ms against ~870",
+   "cost": "Changes how the assistant talks; openers repeat",
+   "guard": "How natural it sounds",
+   "undo": "yes",
+   "needs": "A yes, and a listen",
+   "status": "waiting"
+  },
+  {
+   "rank": 4,
+   "title": "A holding phrase on slow turns",
+   "gain": "No change at the median; ends dead air at about 1.2 s in a stall",
+   "basis": "built and off (holding_filler); fires at 1.5× the call's median",
+   "cost": "First audio is then a phrase, not the answer; reported separately",
+   "guard": "Moves the number without moving the answer",
+   "undo": "yes",
+   "needs": "A yes, and the phrases to use",
+   "status": "waiting"
+  },
+  {
+   "rank": 5,
+   "title": "Wired network, and providers routed outside the VPN tunnel",
+   "gain": "Tens of ms per vendor round trip; possibly the synthesizer's stalls",
+   "basis": "unknown; could not be measured without root",
+   "cost": "Needs root on the box",
+   "guard": "none",
+   "undo": "yes",
+   "needs": "Root, or the owner making the change",
+   "status": "waiting"
+  },
+  {
+   "rank": 6,
+   "title": "Ask for the recognizer's final 100 or 80 ms into a pause, not 120",
+   "gain": "20–40 ms on every turn",
+   "basis": "measured: 66 pauses on two calls; 100 ms splits 18–43% more recognitions, 80 ms 43–71% more",
+   "cost": "More split recognitions on a line where recognition is already the weak point",
+   "guard": "Recognition accuracy",
+   "undo": "yes",
+   "needs": "More pause data from quiet calls; leave at 120 for now",
+   "status": "deferred"
+  },
+  {
+   "rank": 7,
+   "title": "The synthesizer's HTTP endpoint as a second route in a stall",
+   "gain": "unknown",
+   "basis": "untried",
+   "cost": "Engineering time; same account and voice",
+   "guard": "none",
+   "undo": "yes",
+   "needs": "A probe that asks both routes at once",
+   "status": "untried"
+  }
+ ]
 }
