@@ -12,7 +12,7 @@ The chat model was in an ordinary evening: 260 ms after the headers here, agains
 
 ## The slowest turns
 
-Nothing over 1200. The five slowest (1072, 1065, 1045, 1029, 1020) are each the sum of a slightly slow chat model (first token 327 to 373 ms after the headers) and an ordinary everything else; none has a cause of its own.
+Nothing over 1200. The five slowest (1072, 1065, 1045, 1029, 1020) are each a chat model a little slower than the call's median (first token 289 to 373 ms after the headers, against 260) on top of an ordinary everything else; none has a cause of its own.
 
 ## The pool of two synthesis accounts
 
@@ -20,11 +20,11 @@ Nothing over 1200. The five slowest (1072, 1065, 1045, 1029, 1020) are each the 
 
 ## Words already said
 
-17 segments were played from memory; 14 turns opened that way and were the fastest of the call (536 to 831 ms).
+17 segments were played from memory; 13 turns opened that way and were among the fastest of the call (569 to 831 ms).
 
 ## Interruptions and murmurs
 
-The caller spoke over the assistant 21 times; all 21 were other words than the listed murmurs, and the assistant gave way each time, 105 to 680 ms after the sound began (one took 1.6 s: the words were slow to arrive). 17 of the 47 answers were cut that way.
+The caller spoke over the assistant 21 times; all 21 were other words than the listed murmurs, and the assistant gave way each time, 106 to 678 ms after it began to weigh the sound (once 1.6 s: the words were slow to arrive). 17 of the 47 answers were cut that way.
 
 A listed murmur was said twelve times, each time into a silence, and each was answered as a turn with its head start. **No listed murmur was said over the assistant**, so that path is still not exercised on a call.
 
