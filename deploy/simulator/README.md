@@ -8,7 +8,7 @@ This package runs on branch `codex/inbound-user-simulator`. It does not modify a
 
 The default profile uses synthetic ASR/LLM/TTS. It proves control and audio transport, not recognizable speech or conversational quality. Real provider accounts and carrier/handset tests are separate acceptance steps. Reports label timings `application_audio_boundary`; they are not handset playout or carrier latency. Both directions use a 200 ms speech-end debounce and one receiver-local clock. Failed, missing and overlapping responses remain marked invalid. Semantic checks return `indeterminate` until a separate evaluator exists.
 
-One reservation/call is allowed at a time. Run reservations expire after120s; setup is bounded at25s, calls at300s, script holds at5s, and retained history at128 runs. Restart aborts unfinished runs without replaying answer/speech. IDs and default reports omit telephone numbers, credentials and raw transcripts/audio. Transcript retention requires explicit scenario opt-in; audio retention is rejected in v1. Use only synthetic personas/facts.
+One reservation/call is allowed at a time. Run reservations expire after 120s; setup is bounded at 25s, calls at 300s, script holds at 5s, and retained history at 128 runs. Restart aborts unfinished runs without replaying answer/speech. IDs and default reports omit telephone numbers, credentials and raw transcripts/audio. Transcript retention requires explicit scenario opt-in; audio retention and scripted silence actions are rejected in v1. Use only synthetic personas/facts.
 
 ## Local binary
 
@@ -36,7 +36,7 @@ docker compose -p golive-user-simulator -f deploy/simulator/compose.yml build
 docker compose -p golive-user-simulator -f deploy/simulator/compose.yml up -d
 ```
 
-The init service writes only the new gateway-config volume. Both services run as UID65532. Controller HTTP is bound to host loopback18865; SIP25060 and RTP24000–24019 remain inside the dedicated network. No host Docker socket, existing volumes, host network or production bind mounts are used. HTTP control and media share this private listener but use different secrets and disjoint handlers. Native Active Call cannot send media auth headers, so its media URL uses a token query; keep it on the dedicated network and do not enable URL/access debug logging.
+The init service writes only the new gateway-config volume. Both services run as UID 65532. Controller HTTP is bound to host loopback 18865; SIP 25060 and RTP 24000–24019 remain inside the dedicated network. No host Docker socket, existing volumes, host network or production bind mounts are used. HTTP control and media share this private listener but use different secrets and disjoint handlers. Native Active Call cannot send media auth headers, so its media URL uses a token query; keep it on the dedicated network and do not enable URL/access debug logging.
 
 This package is intentionally **not a carrier deployment manifest**. Exposing SIP/RTP requires a dedicated host/address/NAT plan and separately reviewed ports. The validator rejects external SIP/RTP mappings and production mounts in this local package.
 
@@ -66,7 +66,7 @@ curl --fail -sS "http://127.0.0.1:18865/sim/v1/runs/$RUN_ID/report" -H "Authoriz
 curl --fail -sS -X POST "http://127.0.0.1:18865/sim/v1/runs/$RUN_ID/stop" -H "Authorization: Bearer $SIM_CONTROL_TOKEN"
 ```
 
-`report` is available after termination; private state/report files are written atomically with0600 permissions. Prepare is idempotent for the same key/body; reusing a key with different content conflicts. There is no outbound dialing endpoint or old `/v1/opening` broadcast route.
+`report` is available after termination; private state/report files are written atomically with 0600 permissions. Prepare is idempotent for the same key/body; reusing a key with different content conflicts. There is no outbound dialing endpoint or old `/v1/opening` broadcast route.
 
 ## Validation
 
@@ -76,6 +76,8 @@ go test -race ./internal/duplex -run Simulator
 go vet ./...
 python3 -m unittest discover -s deploy/simulator -p 'test_*.py'
 ```
+
+After starting the local Compose project, run `python3 deploy/simulator/run_sip_checks.py --allow-isolated-sip --output /tmp/simulator-sip-results` for cooperative, interruption and pre-answer cancellation checks. This places calls only inside the dedicated Docker network and never retries a call.
 
 The independent SIP fixture lives in `activecall/sip_fixture.py`. Run it in a peer container on `golive-user-simulator_simulator`; its emitted PCM/PCMU tones are synthetic evidence only. See `VALIDATION.md` for the actual tested revision/results, including baseline test failures and any unrun external checks.
 

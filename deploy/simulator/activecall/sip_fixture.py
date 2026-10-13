@@ -184,7 +184,20 @@ def main():
                 break
         if not report["ended"] and "failure" not in report:
             report["failure"] = "bounded SIP fixture deadline"
+    except OSError as error:
+        report["failure"] = f"fixture socket error: {type(error).__name__}"
     finally:
+        # Failure still tears down only this one synthetic dialog. Never leave
+        # an unexpectedly answered/invalid-SDP call occupying the reservation.
+        if not report["ended"]:
+            try:
+                if report["answered"] and not bye_sent:
+                    request("BYE", cseq=2, transaction_branch="z9hG4bK" + secrets.token_hex(10))
+                elif not report["answered"] and not report["cancel_sent"]:
+                    request("CANCEL")
+                    report["cancel_sent"] = True
+            except OSError:
+                pass
         sip.close()
         rtp.close()
     print(json.dumps(report, sort_keys=True))

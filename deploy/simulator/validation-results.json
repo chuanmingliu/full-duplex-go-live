@@ -1,0 +1,470 @@
+{
+  "date": "2026-10-13",
+  "receiver_source_commit": "16031e484250df7420b5a4e5b8f617fb8eb85f71",
+  "activecall_source_commit": "eaf7ebc8f39193a289348989f6a09b0ace287da7",
+  "receiver_image": "sha256:bb75fd6ac838e4537ef0c7c780ec31b0fff2fd9f556bda051dcc9b93b16ff4c9",
+  "evidence": "isolated_sip_synthetic_pcmu",
+  "carrier_verified": false,
+  "natural_speech_verified": false,
+  "cases": {
+    "cooperative": {
+      "case": "cooperative",
+      "run_id": "sim-b9517886d43fefbcd37c3153",
+      "fixture": {
+        "answer_after_ms": 1515,
+        "answered": true,
+        "cancel_sent": false,
+        "cancelled": false,
+        "carrier_verified": false,
+        "ended": true,
+        "evidence": "isolated_sip_synthetic_pcmu",
+        "natural_speech_verified": false,
+        "non_silent_rtp_received": 132,
+        "rtp_received": 132,
+        "rtp_sent": 309
+      },
+      "report": {
+        "overlap_duration_ms": 1505,
+        "assistant_end_debounce_ms": 200,
+        "customer_end_debounce_ms": 200,
+        "run_id": "sim-b9517886d43fefbcd37c3153",
+        "phase": "completed",
+        "source_commit": "16031e484250df7420b5a4e5b8f617fb8eb85f71",
+        "scenario_hash": "ee4a6345ea4a0cb493a442e10d2a5fdbf39d8145a0b531d06e346ae13a910ce1",
+        "prompt_hash": "98eb99c7400ee04f420d2d46a88acfa4d59aa9c4e95f0b49e1de7a837e03576a",
+        "provider_model": "mock",
+        "voice_id": "default",
+        "evidence": "application_audio_boundary",
+        "assistant_response_gaps": [
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 380,
+            "valid": true,
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 395,
+            "valid": true,
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 413,
+            "valid": true,
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          }
+        ],
+        "simulator_response_gaps": [
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          }
+        ],
+        "assistant_sample_count": 8,
+        "simulator_sample_count": 8,
+        "invalid_observations": 0,
+        "checks": [
+          {
+            "name": "answered_once",
+            "result": "pass",
+            "evidence": "gateway answered confirmation"
+          },
+          {
+            "name": "greeting_once",
+            "result": "pass",
+            "evidence": "successful voice opening request; audio delivery measured separately"
+          },
+          {
+            "name": "call_limits",
+            "result": "pass",
+            "evidence": "receiver controller deadlines and remote speech boundaries"
+          },
+          {
+            "name": "clean_termination",
+            "result": "pass",
+            "evidence": "gateway ended confirmation"
+          },
+          {
+            "name": "identity_explanation",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "clarification_response",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "appointment_facts",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "graceful_ending",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          }
+        ],
+        "action_outcomes": [],
+        "failures": [],
+        "events_truncated": false,
+        "transcript_retained": false,
+        "audio_retained": false
+      },
+      "status": "pass"
+    },
+    "confused": {
+      "case": "confused",
+      "run_id": "sim-164117f35ace4ac643564bab",
+      "fixture": {
+        "answer_after_ms": 1512,
+        "answered": true,
+        "cancel_sent": false,
+        "cancelled": false,
+        "carrier_verified": false,
+        "ended": true,
+        "evidence": "isolated_sip_synthetic_pcmu",
+        "natural_speech_verified": false,
+        "non_silent_rtp_received": 142,
+        "rtp_received": 142,
+        "rtp_sent": 311
+      },
+      "report": {
+        "overlap_duration_ms": 1074,
+        "assistant_end_debounce_ms": 200,
+        "customer_end_debounce_ms": 200,
+        "run_id": "sim-164117f35ace4ac643564bab",
+        "phase": "completed",
+        "source_commit": "16031e484250df7420b5a4e5b8f617fb8eb85f71",
+        "scenario_hash": "afd89469b67bcde99e51ae2aa322d07cc72baa8e104133051afb5ccc7a26f168",
+        "prompt_hash": "e5412b9b009b16278ffc2c089efc454aa9ef2baa0f78ab1aabccc7d32e6999e2",
+        "provider_model": "mock",
+        "voice_id": "default",
+        "evidence": "application_audio_boundary",
+        "assistant_response_gaps": [
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 178,
+            "valid": true,
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 383,
+            "valid": true,
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 393,
+            "valid": true,
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant response",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing customer speech end",
+            "evidence": "application_audio_boundary"
+          }
+        ],
+        "simulator_response_gaps": [
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "overlapping speech",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "value_ms": 0,
+            "valid": false,
+            "reason": "missing assistant speech end",
+            "evidence": "application_audio_boundary"
+          }
+        ],
+        "assistant_sample_count": 8,
+        "simulator_sample_count": 8,
+        "invalid_observations": 0,
+        "checks": [
+          {
+            "name": "answered_once",
+            "result": "pass",
+            "evidence": "gateway answered confirmation"
+          },
+          {
+            "name": "greeting_once",
+            "result": "pass",
+            "evidence": "successful voice opening request; audio delivery measured separately"
+          },
+          {
+            "name": "call_limits",
+            "result": "pass",
+            "evidence": "receiver controller deadlines and remote speech boundaries"
+          },
+          {
+            "name": "clean_termination",
+            "result": "pass",
+            "evidence": "gateway ended confirmation"
+          },
+          {
+            "name": "interruption_overlap",
+            "result": "pass",
+            "evidence": "application_audio_boundary"
+          },
+          {
+            "name": "identity_explanation",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "clarification_response",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "appointment_facts",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "graceful_ending",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          }
+        ],
+        "action_outcomes": [
+          {
+            "id": "clarify-once",
+            "result": "requested",
+            "at_ms": 12735
+          },
+          {
+            "id": "clarify-once",
+            "result": "started",
+            "at_ms": 12735
+          },
+          {
+            "id": "clarify-once",
+            "result": "completed",
+            "at_ms": 14166
+          }
+        ],
+        "failures": [],
+        "events_truncated": false,
+        "transcript_retained": false,
+        "audio_retained": false
+      },
+      "status": "pass"
+    },
+    "cancel": {
+      "case": "cancel",
+      "run_id": "sim-f347cc46bd7dd53b05cc4440",
+      "fixture": {
+        "answered": false,
+        "cancel_sent": true,
+        "cancelled": true,
+        "carrier_verified": false,
+        "ended": true,
+        "evidence": "isolated_sip_synthetic_pcmu",
+        "natural_speech_verified": false,
+        "non_silent_rtp_received": 0,
+        "rtp_received": 0,
+        "rtp_sent": 0
+      },
+      "report": {
+        "overlap_duration_ms": 0,
+        "assistant_end_debounce_ms": 200,
+        "customer_end_debounce_ms": 200,
+        "run_id": "sim-f347cc46bd7dd53b05cc4440",
+        "phase": "completed",
+        "source_commit": "16031e484250df7420b5a4e5b8f617fb8eb85f71",
+        "scenario_hash": "ee4a6345ea4a0cb493a442e10d2a5fdbf39d8145a0b531d06e346ae13a910ce1",
+        "prompt_hash": "98eb99c7400ee04f420d2d46a88acfa4d59aa9c4e95f0b49e1de7a837e03576a",
+        "provider_model": "mock",
+        "voice_id": "default",
+        "evidence": "application_audio_boundary",
+        "assistant_response_gaps": [],
+        "simulator_response_gaps": [],
+        "assistant_sample_count": 0,
+        "simulator_sample_count": 0,
+        "invalid_observations": 0,
+        "checks": [
+          {
+            "name": "answered_once",
+            "result": "fail",
+            "evidence": "gateway answered confirmation"
+          },
+          {
+            "name": "greeting_once",
+            "result": "fail",
+            "evidence": "successful voice opening request; audio delivery measured separately"
+          },
+          {
+            "name": "call_limits",
+            "result": "pass",
+            "evidence": "receiver controller deadlines and remote speech boundaries"
+          },
+          {
+            "name": "clean_termination",
+            "result": "pass",
+            "evidence": "gateway ended confirmation"
+          },
+          {
+            "name": "identity_explanation",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "clarification_response",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "appointment_facts",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          },
+          {
+            "name": "graceful_ending",
+            "result": "indeterminate",
+            "evidence": "semantic evaluator absent"
+          }
+        ],
+        "action_outcomes": [],
+        "failures": [],
+        "events_truncated": false,
+        "transcript_retained": false,
+        "audio_retained": false
+      },
+      "status": "pass"
+    }
+  }
+}
