@@ -91,6 +91,8 @@ type Session struct {
 	// session still speak gpt-live-1, which is what makes one a tap on a phone
 	// call.
 	rt *realtimeState
+	// sim is immutable and only set by the separate simulator receiver.
+	sim *simulatorSession
 	// tel reports turn boundaries to an external latency console. Nil unless
 	// the server has somewhere to send them.
 	tel *telSession
@@ -266,7 +268,12 @@ func (s *Session) Serve(ctx context.Context) {
 // for long: a client that cannot keep up is disconnected rather than allowed to
 // stall the engine, because backpressure on a realtime audio path only makes
 // the lag worse.
-func (s *Session) Emit(event any) { s.deliver(nil, event) }
+func (s *Session) Emit(event any) {
+	if s.sim != nil {
+		s.sim.observeEvent(event)
+	}
+	s.deliver(nil, event)
+}
 
 // reply queues an event for one connection only: the answer to a command it
 // sent, which is nobody else's business.
@@ -487,6 +494,9 @@ func (s *Session) writeLoop(p *peer) {
 	for {
 		select {
 		case <-s.stopWrite:
+			if s.sim != nil {
+				return
+			}
 			// Drain whatever is already queued so session.closed is delivered.
 			for {
 				select {
@@ -500,6 +510,13 @@ func (s *Session) writeLoop(p *peer) {
 		case <-p.stop:
 			return
 		case data := <-p.out:
+			if s.sim != nil {
+				if err := s.simulatorWrite(p, data); err != nil {
+					s.lost(p)
+					return
+				}
+				continue
+			}
 			_ = p.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := p.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 				s.log.Debug("write failed", "err", err, "sideband", p.side)
@@ -558,6 +575,11 @@ func (s *Session) readLoop(ctx context.Context, p *peer) {
 		_ = p.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 
 		if msgType == websocket.BinaryMessage {
+			if s.sim != nil {
+				s.realtimeError("audio_protocol", "use configured realtime audio frames", "")
+				s.finish()
+				return
+			}
 			// A convenience for raw-audio clients: binary frames are treated as
 			// session.input_audio.append with no base64 round trip. A
 			// conformant gpt-live-1 client never sends these.
@@ -593,7 +615,13 @@ func (s *Session) pushAudio(p *peer, wire []byte, eventID string) {
 			"audio/pcm chunks must hold whole 16-bit samples; this one has an odd number of bytes", eventID))
 		return
 	}
+	if s.sim != nil && !s.rt.opened.Load() {
+		return
+	}
 	pcm := codec.ToPCM16(wire)
+	if s.sim != nil {
+		s.sim.audio(false, pcm)
+	}
 	if rec != nil {
 		rec.WriteInput(pcm)
 	}
@@ -904,6 +932,7 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 
 	engine := s.newEngine(duplex.Options{
 		Cfg:              cfg,
+		SimulatorEnabled: s.sim != nil,
 		SessionID:        s.id,
 		ClientRate:       resolved.Audio.Format.Rate,
 		Instructions:     resolved.Instructions,

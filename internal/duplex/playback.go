@@ -41,6 +41,9 @@ type Segment struct {
 	Revision int
 	Text     string
 	PCM      []byte
+	// PreparedDurationMS is the full duration of a simulator prepared segment.
+	// Zero retains ordinary streaming-segment accounting.
+	PreparedDurationMS float64
 }
 
 // TruncationReport describes how a turn was cut short.
@@ -78,12 +81,14 @@ type PlayerConfig struct {
 // conversation that did not happen. Pacing costs nothing in perceived latency —
 // the first chunk still leaves as soon as it exists — and buys correct history.
 type Player struct {
-	cfg        PlayerConfig
-	emit       func(itemID string, pcm []byte, playAt time.Time)
-	onSpeaking func(bool)
-	onTruncate func(TruncationReport)
-	onTurnDone func(turnID string, totalMS int64, text string)
-	onSegment  func(turnID, text string, playAt time.Time)
+	cfg  PlayerConfig
+	emit func(itemID string, pcm []byte, playAt time.Time)
+	// emitChecked is simulator-only: rejected late audio must not count as heard.
+	emitChecked func(itemID string, pcm []byte, playAt time.Time) bool
+	onSpeaking  func(bool)
+	onTruncate  func(TruncationReport)
+	onTurnDone  func(turnID string, totalMS int64, text string)
+	onSegment   func(turnID, text string, playAt time.Time)
 
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -103,13 +108,14 @@ type Player struct {
 	// it has simply stopped being useful.
 	dropTurn string
 
-	activeTurn  string
-	turnStarted time.Time
-	playhead    time.Time
-	emittedMS   float64
-	spoken      []spokenSpan
-	pendingText string
-	pendingFrom float64
+	activeTurn        string
+	turnStarted       time.Time
+	playhead          time.Time
+	emittedMS         float64
+	spoken            []spokenSpan
+	pendingText       string
+	pendingFrom       float64
+	pendingDurationMS float64
 	// pendingAnnounced records that the segment in pendingText has been
 	// reported through onSegment, which happens on its first audio.
 	pendingAnnounced bool
@@ -440,6 +446,7 @@ func (p *Player) beginSegment(seg Segment) {
 	defer p.mu.Unlock()
 	p.ensureTurnLocked(seg.TurnID)
 	p.pendingText = seg.Text
+	p.pendingDurationMS = seg.PreparedDurationMS
 	p.pendingFrom = p.emittedMS
 	p.pendingAnnounced = false
 }
@@ -457,6 +464,7 @@ func (p *Player) abandonSegment(seg Segment) {
 		return
 	}
 	p.pendingText = ""
+	p.pendingDurationMS = 0
 	p.pendingFrom = p.emittedMS
 }
 
@@ -474,6 +482,7 @@ func (p *Player) markSegment(seg Segment) {
 		p.spoken = append(p.spoken, spokenSpan{text: text, endMS: p.emittedMS})
 	}
 	p.pendingText = ""
+	p.pendingDurationMS = 0
 	p.pendingFrom = p.emittedMS
 
 	if p.graceTurn != seg.TurnID {
@@ -560,9 +569,25 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 		}
 		p.mu.Unlock()
 
-		p.emit(seg.TurnID, chunk, playAt)
+		if p.emitChecked != nil {
+			if !p.emitChecked(seg.TurnID, chunk, playAt) {
+				// Prevent the queued mark/end from claiming a rejected chunk
+				// as a completed sentence. Cancellation will truncate the
+				// audible prefix of the still-active turn.
+				p.mu.Lock()
+				p.dropTurn = seg.TurnID
+				p.mu.Unlock()
+				return
+			}
+		} else {
+			p.emit(seg.TurnID, chunk, playAt)
+		}
 
 		p.mu.Lock()
+		if p.emitChecked != nil && p.activeTurn != seg.TurnID {
+			p.mu.Unlock()
+			return
+		}
 		chunkMS := format.DurationMS(chunk)
 		p.emittedMS += chunkMS
 		p.playhead = p.playhead.Add(time.Duration(chunkMS*1000) * time.Microsecond)
@@ -654,7 +679,16 @@ func (p *Player) spokenPrefixLocked(playedMS float64) string {
 		return out
 	}
 	if p.pendingText != "" && playedMS > p.pendingFrom {
-		out += partialText(p.pendingText, playedMS-p.pendingFrom, p.emittedMS-p.pendingFrom)
+		heard := playedMS - p.pendingFrom
+		emitted := p.emittedMS - p.pendingFrom
+		if heard > emitted {
+			heard = emitted
+		}
+		duration := emitted
+		if p.pendingDurationMS > 0 {
+			duration = p.pendingDurationMS
+		}
+		out += partialText(p.pendingText, heard, duration)
 	}
 	return out
 }
@@ -695,6 +729,7 @@ func (p *Player) resetTurnLocked() {
 	p.emittedMS = 0
 	p.spoken = nil
 	p.pendingText = ""
+	p.pendingDurationMS = 0
 	p.pendingFrom = 0
 	p.pendingAnnounced = false
 }

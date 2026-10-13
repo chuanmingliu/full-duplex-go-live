@@ -1,0 +1,12 @@
+{
+  "asr": "mock", "llm": "mock", "tts": "mock",
+  "model": "golive-1", "backend_model": "mock", "language": "en",
+  "greeting": "", "voice": "default", "client_rate": 16000,
+  "allow_provider_override": false, "web_root": "", "log_level": "warn",
+  "duplex": {
+    "backchannel": false, "speculative": false, "holding_filler": false,
+    "allow_barge_in": true, "on_new_query": "cut", "playback_paced": true,
+    "session_max_seconds": 330, "idle_timeout_seconds": 60,
+    "max_audio_kbps": 512, "max_events_per_second": 30
+  }
+}

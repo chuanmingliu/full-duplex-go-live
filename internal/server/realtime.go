@@ -520,6 +520,16 @@ func (s *Session) handleRealtimeEvent(ctx context.Context, p *peer, data []byte)
 		}
 	}
 
+	if s.sim != nil {
+		s.mu.Lock()
+		started := s.started
+		s.mu.Unlock()
+		if (eventType != "session.update" && eventType != "input_audio_buffer.append" && eventType != "response.cancel") || (!started && eventType != "session.update") {
+			s.realtimeError("simulator_protocol", "configure the reserved audio session before sending audio; text control is disabled", eventID)
+			s.finish()
+			return fmt.Errorf("simulator: invalid event")
+		}
+	}
 	switch eventType {
 	case "session.update":
 		var ev realtimeSessionUpdate
@@ -628,6 +638,9 @@ func (s *Session) handleRealtimeEvent(ctx context.Context, p *peer, data []byte)
 // about resolving a session, opening its providers and building its engine is
 // the same, and is done by the same code.
 func (s *Session) startRealtime(ctx context.Context, p *peer, ev *realtimeSessionUpdate, eventID string) error {
+	if s.sim != nil {
+		return s.startSimulator(ctx, p, eventID)
+	}
 	format := live.AudioFormat{Type: audio.MIMEPCM, Rate: s.rt.opts.Rate}
 	voice := ""
 	quiet := ""

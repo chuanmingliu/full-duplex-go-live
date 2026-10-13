@@ -62,12 +62,14 @@ type Deps struct {
 
 // Options configure one session's engine.
 type Options struct {
-	Cfg          config.Config
-	SessionID    string
-	ClientRate   int
-	Instructions string
-	Voice        string
-	Language     string
+	// SimulatorEnabled is a server-owned, immutable session capability.
+	SimulatorEnabled bool
+	Cfg              config.Config
+	SessionID        string
+	ClientRate       int
+	Instructions     string
+	Voice            string
+	Language         string
 	// Delegation is "client" or "responses".
 	Delegation string
 	// ClientDelegation is "always" or "auto"; it only matters in client mode.
@@ -263,6 +265,9 @@ type Engine struct {
 	ctxRatio atomic.Uint64
 	startAt  time.Time
 
+	// simulator is allocated only for explicitly enabled sessions.
+	simulator *simulatorState
+
 	closeOnce sync.Once
 }
 
@@ -380,6 +385,9 @@ func New(opts Options, deps Deps) *Engine {
 		recordedUser: map[string]bool{},
 		startAt:      time.Now(),
 	}
+	if opts.SimulatorEnabled {
+		e.simulator = newSimulatorState()
+	}
 	e.tracker = NewTracker(&e.gen)
 	e.player = NewPlayer(PlayerConfig{
 		Rate:    opts.ClientRate,
@@ -387,6 +395,9 @@ func New(opts Options, deps Deps) *Engine {
 		Paced:   opts.Cfg.Duplex.PlaybackPaced,
 		LeadMS:  opts.Cfg.Duplex.PlaybackLeadMS,
 	}, e.emitAudio)
+	if e.simulator != nil {
+		e.player.emitChecked = e.emitAudioChecked
+	}
 	e.player.OnSpeaking(e.onSpeakingChanged)
 	e.player.OnTruncate(e.onTruncated)
 	e.player.OnTurnDone(e.onTurnDone)
@@ -455,11 +466,26 @@ func (e *Engine) prewarm(reason string) {
 // Close stops the engine and releases provider connections.
 func (e *Engine) Close() {
 	e.closeOnce.Do(func() {
+		var simulatorHeard string
+		if e.simulator != nil {
+			e.simulator.outputMu.Lock()
+			e.simulator.closed = true
+			e.simulator.outputAction = nil
+			e.simulator.outputMu.Unlock()
+			_, simulatorHeard = e.player.Heard()
+		}
 		if e.cancel != nil {
 			e.cancel()
 		}
+		if e.simulator != nil {
+			e.gen.Bump()
+			e.player.Interrupt()
+		}
 		e.player.Close()
 		e.wg.Wait()
+		if simulatorHeard != "" {
+			e.history = append(e.history, provider.Message{Role: provider.RoleAssistant, Content: simulatorHeard})
+		}
 		// After wg.Wait: the loop goroutine is the only writer of e.latencies
 		// and of what lineSummary reads, and it has exited, so reading them
 		// here needs no lock.
@@ -529,6 +555,11 @@ func (e *Engine) Say(text string) {
 // that the caller has taken the floor.
 func (e *Engine) Interrupt() {
 	e.post(func() {
+		if e.simulatorOwnsOutput() {
+			e.finishSimulatorAction(e.simulator.active, "cancelled", "explicit interruption")
+			e.advanceSimulator(time.Now())
+			return
+		}
 		if e.assistantHasFloor() {
 			e.interrupt()
 		}
@@ -547,6 +578,10 @@ func (e *Engine) PushAudio(pcm []byte) {
 	select {
 	case e.audioCh <- buf:
 	default:
+		if e.simulator != nil {
+			e.failSimulator("input audio queue overflow")
+			return
+		}
 		select {
 		case <-e.audioCh:
 		default:
@@ -629,11 +664,24 @@ func (e *Engine) loop() {
 	defer tick.Stop()
 	defer e.closeASR(true)
 	defer e.closeStandby()
+	if e.simulator != nil {
+		defer e.closeSimulator()
+	}
+	var simulatorCommands <-chan simulatorCommand
+	var simulatorTimer <-chan time.Time
+	if e.simulator != nil {
+		simulatorCommands = e.simulator.commands
+		simulatorTimer = e.simulator.timer.C
+	}
 
 	for {
 		select {
 		case <-e.ctx.Done():
 			return
+		case cmd := <-simulatorCommands:
+			e.runSimulatorCommand(cmd)
+		case <-simulatorTimer:
+			e.advanceSimulator(time.Now())
 		case pcm := <-e.audioCh:
 			e.onAudio(pcm)
 		case ev := <-e.asrCh:
@@ -822,6 +870,8 @@ type speechPipe struct {
 	// cacheable marks text that is the same every time it is said, whose
 	// audio is worth keeping. See PhraseCache.
 	cacheable bool
+	// prepared gives the player the known total segment duration for truncation.
+	prepared bool
 }
 
 func (e *Engine) newSpeechPipe(turn *Turn, cacheable bool) *speechPipe {
@@ -1269,6 +1319,9 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	seg := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, Revision: p.turn.Revision}
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, text
+	if p.prepared {
+		begin.PreparedDurationMS = audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)
+	}
 	body.Kind, body.PCM = SegAudio, pcm
 	mark.Kind, mark.Text = SegMark, text
 	p.e.player.Enqueue(begin)
@@ -1492,6 +1545,9 @@ func (e *Engine) warnIfEcho(d audio.Decision) {
 // Nothing else changes: the utterance is recorded and transcribed exactly as
 // before. The only thing held back is the interruption.
 func (e *Engine) holdFloor(bargeIn bool) bool {
+	if e.simulatorOwnsOutput() {
+		return false
+	}
 	// A new utterance supersedes any hold left over from the last one, decided
 	// or not.
 	e.hold = nil
@@ -1618,6 +1674,9 @@ func (e *Engine) expireHold() {
 // going out, which is only used for reporting; the decision below rests on
 // whether the assistant still holds the floor at all.
 func (e *Engine) yieldFloor(bargeIn bool) {
+	if e.simulatorOwnsOutput() {
+		return
+	}
 	if !e.opts.Cfg.Duplex.AllowBargeIn || !e.assistantHasFloor() {
 		return
 	}
@@ -1664,6 +1723,21 @@ func (e *Engine) interrupt() {
 // emitAudio hands one chunk of output to the session, which encodes it for the
 // wire in whatever format the client negotiated.
 func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
+	e.emitAudioChecked(itemID, pcm, playAt)
+}
+
+func (e *Engine) emitAudioChecked(itemID string, pcm []byte, playAt time.Time) bool {
+	if e.simulator != nil {
+		e.simulator.outputMu.Lock()
+		defer e.simulator.outputMu.Unlock()
+		if !e.simulatorAudioAllowed(itemID) {
+			return false
+		}
+		if a := e.simulator.outputAction; a != nil && !e.simulator.started {
+			e.simulator.started = true
+			e.simulatorEvent(a, "started", "")
+		}
+	}
 	ms := audio.PCM16(e.opts.ClientRate).DurationMS(pcm)
 	e.outputMS.Add(int64(ms))
 	// The first byte on the wire is the moment the caller stops waiting, so it
@@ -1683,11 +1757,19 @@ func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
 		EndMS:    start + int64(ms),
 		PCM:      pcm,
 	})
+	return true
 }
 
 // onSegmentHeard reports a sentence on the assistant's transcript as its audio
 // begins. See Player.OnSegment for why then and not when it was written.
 func (e *Engine) onSegmentHeard(turnID, text string, playAt time.Time) {
+	if e.simulator != nil {
+		e.simulator.outputMu.Lock()
+		defer e.simulator.outputMu.Unlock()
+		if !e.simulatorAudioAllowed(turnID) {
+			return
+		}
+	}
 	at := playAt.Sub(e.startAt).Milliseconds()
 	if at < 0 {
 		at = 0
@@ -1731,6 +1813,10 @@ func (e *Engine) onTruncated(r TruncationReport) {
 			return
 		}
 		e.emitMetrics(turn, r.PlayedMS, true)
+		if e.simulatorOwnsOutput() && e.simulator.active.turn.ID == r.TurnID {
+			e.finishSimulatorAction(e.simulator.active, "cancelled", "playback interrupted")
+			e.advanceSimulator(time.Now())
+		}
 	})
 }
 
@@ -1753,6 +1839,10 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 			return
 		}
 		e.emitMetrics(turn, totalMS, false)
+		if e.simulatorOwnsOutput() && e.simulator.active.turn.ID == turnID {
+			e.finishSimulatorAction(e.simulator.active, "completed", "")
+			e.advanceSimulator(time.Now())
+		}
 	})
 	e.deps.Emit(e.UsageEvent())
 }
@@ -1942,6 +2032,9 @@ func (e *Engine) lineSummary() {
 // floor. It is the one place golive speaks and listens at literally the same
 // moment, and it is what a real full-duplex model does for free.
 func (e *Engine) maybeBackchannel() {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	d := e.opts.Cfg.Duplex
 	if !e.opts.Backchannel || !d.Backchannel || len(d.BackchannelPhrases) == 0 {
 		return
@@ -2002,6 +2095,9 @@ func (e *Engine) maybeBackchannel() {
 // turn is slower than this session's own median. Until there are observations
 // to compare against, the floor is all there is.
 func (e *Engine) maybeHoldingFiller() {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	d := e.opts.Cfg.Duplex
 	if !d.HoldingFiller || len(d.HoldingFillerPhrases) == 0 {
 		return

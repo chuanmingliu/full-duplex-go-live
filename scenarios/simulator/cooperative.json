@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "appointment-cooperative",
+  "language": "zh-CN",
+  "persona": "A cooperative synthetic customer confirming a fictional appointment. Respond briefly and ask who is calling first.",
+  "facts": {"available_day": "Thursday", "available_period": "afternoon"},
+  "greeting": "喂，你好，哪位？",
+  "answer_delay_ms": 1500,
+  "max_duration_ms": 120000,
+  "max_remote_turns": 12,
+  "idle_timeout_ms": 15000,
+  "actions": [],
+  "retain_transcript": false,
+  "retain_audio": false
+}

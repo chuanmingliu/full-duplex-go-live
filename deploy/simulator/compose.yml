@@ -1,0 +1,60 @@
+name: golive-user-simulator
+services:
+  config:
+    image: golive-user-simulator:local
+    build:
+      context: ../..
+      dockerfile: deploy/simulator/Dockerfile
+      args:
+        SOURCE_COMMIT: ${SIM_SOURCE_COMMIT:-dev}
+    command: ["-init-gateway-config", "/gateway/active-call.toml"]
+    environment:
+      SIM_WEBHOOK_TOKEN: ${SIM_WEBHOOK_TOKEN:?generate a new dedicated token}
+    volumes:
+      - gateway-config:/gateway
+    networks: [simulator]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  simulator:
+    image: golive-user-simulator:local
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    environment:
+      SIM_CONTROL_TOKEN: ${SIM_CONTROL_TOKEN:?generate a new dedicated token}
+      SIM_WEBHOOK_TOKEN: ${SIM_WEBHOOK_TOKEN:?generate a new dedicated token}
+      SIM_MEDIA_TOKEN: ${SIM_MEDIA_TOKEN:?generate a new dedicated token}
+      SIM_ACTIVECALL_URL: http://activecall:8080
+      SIM_REALTIME_URL: ws://simulator:18865/v1/realtime
+      SIM_SIP_DOMAIN: simulator.invalid
+    ports:
+      - "127.0.0.1:18865:18865"
+    volumes:
+      - run-data:/data
+    networks: [simulator]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+  activecall:
+    image: golive-user-simulator-activecall:eaf7ebc-handshake-v1
+    build:
+      context: activecall
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    volumes:
+      - gateway-config:/run/simulator:ro
+    networks: [simulator]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+# SIP25060 and RTP24000-24019 are deliberately reachable ONLY inside this
+# network. A dedicated-host carrier manifest must explicitly supply NAT/ports.
+networks:
+  simulator: {}
+volumes:
+  gateway-config: {}
+  run-data: {}

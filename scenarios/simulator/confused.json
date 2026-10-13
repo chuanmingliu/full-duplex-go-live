@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "appointment-confused",
+  "language": "zh-CN",
+  "persona": "A synthetic customer who is confused about which fictional appointment the caller means. Ask for clarification, then answer briefly.",
+  "facts": {"available_day": "Thursday", "available_period": "afternoon"},
+  "greeting": "喂，哪位？",
+  "answer_delay_ms": 1500,
+  "max_duration_ms": 120000,
+  "max_remote_turns": 12,
+  "idle_timeout_ms": 15000,
+  "actions": [{"id": "clarify-once", "trigger": "remote_speech_started", "occurrence": 1, "after_ms": 700, "require_remote_speaking": true, "kind": "speak", "text": "等一下，你说的是哪个预约？", "max_hold_ms": 3000}],
+  "retain_transcript": false,
+  "retain_audio": false
+}

@@ -291,6 +291,9 @@ func (e *Engine) onASREvent(ev asrEvent) {
 		return
 	}
 	if ev.res.Err != nil {
+		if e.simulator != nil {
+			e.stopSimulatorOnError("input recognizer failed")
+		}
 		if errors.Is(ev.res.Err, errASROpen) {
 			metrics.Default().ProviderError("asr")
 			e.log.Error("asr open failed", "err", ev.res.Err)
@@ -433,6 +436,11 @@ func (e *Engine) maybeEarlyFinal() {
 // onEarlyRunEvent takes what a recognition ended early still has to say, which
 // is its final or the news that there will not be one.
 func (e *Engine) onEarlyRunEvent(run *asrRun, ev asrEvent) {
+	if ev.res.Err != nil && e.simulator != nil {
+		e.stopSimulatorOnError("input recognizer failed")
+		e.deps.Emit(live.NewError("server_error", "asr_error", ev.res.Err.Error(), ""))
+		return
+	}
 	text := run.lastText
 	switch {
 	case ev.done:
@@ -531,6 +539,9 @@ func (e *Engine) acknowledging(text string) bool {
 // The gates are maybeSpeculate's, less the ones that exist because a partial
 // may not be the whole of what was said: this is.
 func (e *Engine) speculateOnFinal(text string) {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	if !e.opts.Speculative || e.muted || e.hold != nil || text == "" || e.liveSpeculation() != nil {
 		return
 	}
@@ -789,6 +800,9 @@ func (e *Engine) noteWords(run *asrRun, text string) {
 // the recognizer has fallen behind someone who is still talking, and what
 // tells that apart is that they are, audibly, still talking.
 func (e *Engine) maybeSettle() {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	d := e.opts.Cfg.Duplex
 	if d.SettledCloseMS <= 0 || !e.userOpen || e.muted || e.hold != nil {
 		return
@@ -874,6 +888,9 @@ func (e *Engine) liveSpeculation() *Turn {
 // end the turn got no head start. Now a resumption abandons the guess at once
 // and re-arms the watch.
 func (e *Engine) maybeSpeculate() {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	if !e.opts.Speculative || e.muted {
 		return
 	}
@@ -991,6 +1008,9 @@ func (e *Engine) maybeSpeculate() {
 // slow. When the final agrees the turn is simply confirmed; when it does not,
 // the turn is revised exactly as a mid-pause guess would have been.
 func (e *Engine) speculateAtClose() {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	if !e.opts.Speculative || e.muted || e.hold != nil {
 		return
 	}
@@ -1008,6 +1028,9 @@ func (e *Engine) speculateAtClose() {
 }
 
 func (e *Engine) startSpeculativeTurn(text string) {
+	if e.simulatorDefersTurns() {
+		return
+	}
 	turn := e.tracker.Begin(text, true)
 	e.specTurn = turn
 	e.resumeNoted = false
@@ -1046,6 +1069,9 @@ func (e *Engine) abandonSpeculation(reason string) {
 }
 
 func (e *Engine) onFinalTranscript(run *asrRun, text string) {
+	if e.deferSimulatorFinal(run, text) {
+		return
+	}
 	if text == "" {
 		// Nothing was said after all. Drop any speculation so its audio never
 		// reaches the user.

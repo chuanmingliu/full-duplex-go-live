@@ -1,0 +1,24 @@
+# TEMPLATE ONLY. render_config.py emits the runtime config with a private token.
+# Dedicated isolated network; publish SIP/RTP only after host/NAT review.
+http_addr = "0.0.0.0:8080"
+addr = "0.0.0.0"
+udp_port = 25060
+rtp_bind_ip = "0.0.0.0"
+rtp_start_port = 24000
+rtp_end_port = 24019
+codecs = ["pcmu"]
+accept_timeout = "15s"
+log_level = "warn"
+auto_refer = false
+enable_options_response = false
+graceful_shutdown = true
+graceful_shutdown_timeout = 5
+
+[recording]
+enabled = false
+
+[handler]
+type = "webhook"
+url = "http://simulator:18865/active-call/incoming"
+method = "POST"
+headers = [["Authorization", "Bearer RENDER_REQUIRED"]]

@@ -1,0 +1,48 @@
+--- a/src/media/realtime_processor.rs
++++ b/src/media/realtime_processor.rs
+@@ -9,7 +9,10 @@
+ use futures::{SinkExt, StreamExt};
+ use serde_json::{Value, json};
+ use tokio::sync::mpsc;
+-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
++use tokio_tungstenite::{
++    connect_async,
++    tungstenite::{client::IntoClientRequest, protocol::Message},
++};
+ use tokio_util::sync::CancellationToken;
+ use tracing::{debug, error, info};
+ 
+@@ -90,23 +93,25 @@
+         .secret_key
+         .ok_or_else(|| anyhow!("API key missing"))?;
+ 
+-    let mut request_builder = http::Request::builder().uri(&url);
++    // A URL-derived request includes all required WebSocket handshake headers.
++    let mut request = url.as_str().into_client_request()?;
+ 
+     match provider {
+         RealtimeType::OpenAI => {
+-            request_builder = request_builder
+-                .header("Authorization", format!("Bearer {}", api_key))
+-                .header("OpenAI-Beta", "realtime=v1");
++            request.headers_mut().insert(
++                "Authorization",
++                format!("Bearer {}", api_key).parse()?,
++            );
++            request.headers_mut().insert("OpenAI-Beta", "realtime=v1".parse()?);
+         }
+         RealtimeType::Azure => {
+-            request_builder = request_builder.header("api-key", api_key);
++            request.headers_mut().insert("api-key", api_key.parse()?);
+         }
+         _ => {}
+     }
+ 
+-    let request = request_builder.body(())?;
+-
+-    info!(url = %url, "Connecting to Realtime API");
++    // Custom provider query strings may contain per-call authentication.
++    info!("Connecting to Realtime API");
+     let (ws_stream, _) = connect_async(request).await?;
+     let (mut ws_tx, mut ws_rx) = ws_stream.split();
+ 
