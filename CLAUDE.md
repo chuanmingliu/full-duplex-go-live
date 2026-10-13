@@ -390,6 +390,11 @@ made on one build.
   `service_tier=priority` bought nothing clear; thinking left on is over a
   second and returns empty answers inside 120 tokens. Compare candidates on
   the first clause, not the first token: this one's first token flatters it.
+  In the slow hour (23:20 the same night): one request each 581 ms against
+  DeepSeek's 601; fastest of four 381 and 426 against DeepSeek's eight at 456
+  and 434 — its copies did help that time, and that night DeepSeek was mild
+  (707 the night before). On the first clause DeepSeek was still ahead, about
+  525 against about 650. The Qwen routes at that hour: 1676 and 1628.
 - **The phone side can deliver the caller's audio faster than time passes.**
   `client audio` in the log counts chunks: 640 bytes every 19.4–19.6 ms on
   nine evening calls (2–3% fast), every 19.97–20.02 on four daytime ones.
