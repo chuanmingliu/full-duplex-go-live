@@ -377,6 +377,17 @@ made on one build.
   SiliconFlow account: 148 of 160 refused, HTTP 429. OpenRouter is reached
   through the VPN tunnel (5.2 s to set up a connection). Neither is a fix
   for the 23:00 hour.
+- **MiniMax-M3 as the chat model** (10-13 21:04, the synthesis accounts' keys,
+  `https://api.minimax.cn/v1/text/chatcompletion_v2`, `thinking={"type":
+  "disabled"}`): the long prompt costs it nothing (first token 748 ms at the
+  median with it, 713 without), both accounts answer, four copies at once are
+  not refused. But its first six characters arrive 920–980 ms in (one DeepSeek
+  copy: 705–720), its copies are slow together (fastest of four 732–748, every
+  copy over 550 in 14 rounds of 15), and DeepSeek's eight copies gave 377 in
+  the same minutes. The `/v1/chat/completions` endpoint is slower (1063);
+  `service_tier=priority` bought nothing clear; thinking left on is over a
+  second and returns empty answers inside 120 tokens. Compare candidates on
+  the first clause, not the first token: this one's first token flatters it.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
