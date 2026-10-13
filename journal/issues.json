@@ -508,6 +508,24 @@
    "verified_call": "out-mv5e7gyt-r2kf",
    "effect": "All 13 turns were asked of both accounts; the second spoke first 7 times, the first 6; nothing refused and neither account reached its limit.",
    "note": "10-13 21:15 call, 47 turns: 33 first segments asked of both accounts (17 and 13 first), four moves between accounts, about 21 requests a minute, nothing refused."
+  },
+  {
+   "id": "ISS-030",
+   "title": "The caller's side of a recording ran late against the assistant's",
+   "area": "tooling",
+   "status": "fixed",
+   "found": "2026-10-13",
+   "found_on": "the owner reading the 21:15 call's conversation against its recording",
+   "found_call": "out-mv6peicf-0trz",
+   "symptom": "In the journal a caller's question was stamped at 1:40 and its answer at 1:41, but in the recording the question was heard about two seconds later, after the answer had begun; by the end of the call the caller's side was six seconds late. The stamps and every latency figure were right: they come from the log's clock, and the assistant's side of the recording matched them within 0.16 s all call long.",
+   "cause": "The phone side delivered the caller's audio faster than time passed: a 20 ms chunk every 19.6 ms on this call. Nine evening calls show it (19.4 to 19.6 ms a chunk), four daytime calls do not (19.97 to 20.02). The recorder appended the caller's audio as it arrived and only ever corrected a track that had fallen behind the clock, never one that had run ahead. Why the phone side does it is not known.",
+   "fix": "The recorder leaves out a chunk that is the previous chunk over again, the frame a quiet line repeats, while the caller's track is ahead of the clock; speech is never dropped. For recordings made before that, the journal does the same as it plays them, from the log's marks of how much audio had arrived by when, says how much it left out, and offers the file exactly as recorded. A caller's line is now stamped where it began, as the assistant's are.",
+   "commits": [
+    "a755be2"
+   ],
+   "verified": "",
+   "verified_call": "",
+   "note": "Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
   }
  ]
 }
