@@ -360,7 +360,9 @@ made on one build.
   707 and 712 ms at the median, every copy over 550 ms in 23 of 24 rounds. The
   night before: 602 ms at 23:53, 161–202 from 00:08. Copies and keys do not
   help; a second vendor would. Say the hour with every call's figures, and do
-  not read a build's worth from a call made in that hour. On that same call
+  not read a build's worth from a call made in that hour. The same build at
+  14:28 the next day: 6 turns, p50 831, none over, first token 123 ms after
+  the headers (`llm -pool`: 213 and 192). On that same call
   all 13 turns were asked of both synthesis accounts (7 and 6 first), nothing
   refused.
 - **The settled close must not fire while an early final is pending**: it
