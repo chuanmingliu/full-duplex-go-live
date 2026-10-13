@@ -541,7 +541,7 @@ keys)
   # How many keys each pool has. Counts only: a key is never printed.
   find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
   say "env file: $ENVFILE"
-  for var in DEEPSEEK_API_KEY MINIMAX_TTS_API_KEY SILICONFLOW_API_KEY; do
+  for var in DEEPSEEK_API_KEY MINIMAX_TTS_API_KEY SILICONFLOW_API_KEY OPENROUTER_API_KEY; do
     one=$(grep -cE "^${var}=.+" "$ENVFILE" || true)
     list=$(grep -m1 "^${var}S=" "$ENVFILE" | cut -d= -f2- | tr ',; ' '\n\n\n' | grep -c . || true)
     file=$(grep -m1 "^${var}S_FILE=" "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
@@ -563,14 +563,15 @@ addkey)
   #                     is written into the env file instead, as a pair:
   #                     MINIMAX_TTS_API_KEY_2=…  MINIMAX_TTS_VOICE_ID_2=…
   #   addkey siliconflow  a key for a candidate chat-model vendor
-  #                     (SiliconFlow), for `llm -try` to measure
+  #   addkey openrouter   (SiliconFlow, OpenRouter), for `llm -try` to measure
   # Run it once per key, then: scripts/phone-brain.sh restart
   find_env || { say "no provider keys found; set ENVFILE"; exit 1; }
   case "${2:-deepseek}" in
     deepseek|llm) var=DEEPSEEK_API_KEY; file_default="$HOME/golive-deepseek.keys"; measure="scripts/phone-brain.sh llm -pool" ;;
     minimax|tts)  var=MINIMAX_TTS_API_KEY; file_default="$HOME/golive-minimax.keys"; measure="scripts/phone-brain.sh tts -pool 30 -every 8s" ;;
     siliconflow|sf) var=SILICONFLOW_API_KEY; file_default="$HOME/golive-siliconflow.keys"; measure="scripts/phone-brain.sh llm -runs 20 -try 'siliconflow|https://api.siliconflow.cn/v1|<model>|SILICONFLOW_API_KEY|enable_thinking=false'" ;;
-    *) say "addkey [deepseek|minimax|siliconflow]"; exit 2 ;;
+    openrouter|or) var=OPENROUTER_API_KEY; file_default="$HOME/golive-openrouter.keys"; measure="scripts/phone-brain.sh llm -runs 20 -try 'openrouter|https://openrouter.ai/api/v1|<model>|OPENROUTER_API_KEY|reasoning={\"enabled\":false}'" ;;
+    *) say "addkey [deepseek|minimax|siliconflow|openrouter]"; exit 2 ;;
   esac
   file=$(grep -m1 "^${var}S_FILE=" "$ENVFILE" | cut -d= -f2- | tr -d '"'"'"'"')
   if [ -z "$file" ]; then
@@ -590,7 +591,7 @@ addkey)
     say "added. $file now holds $(sed 's/#.*//' "$file" | grep -c '[^[:space:]]') key(s)"
   fi
   unset key
-  if [ "$var" = SILICONFLOW_API_KEY ]; then
+  if [ "$var" = SILICONFLOW_API_KEY ] || [ "$var" = OPENROUTER_API_KEY ]; then
     say "to measure it: $measure    (a candidate only: no call uses it until the profile says so)"
   else
     say "to measure them first: $measure    to use them: scripts/phone-brain.sh restart"
