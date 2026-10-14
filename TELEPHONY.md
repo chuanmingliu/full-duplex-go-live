@@ -477,6 +477,24 @@ The question is first audio on the short opening clause (what a caller waits
 through), whether it refuses at a call's pace, and how the voice sounds; only
 then whether it belongs in the pool beside the MiniMax accounts.
 
+Measured on 10-14 at 22:32 from the box (the VPN route; a warm, empty round
+trip to `api.fish.audio` is 190 ms, which is the floor): first audio at the
+median / p95, MiniMax 216 / 309; Fish drama-3 with `latency: balanced` 423 /
+709, s2.1-pro 562 / 940; with the default `normal` 612 / 844 and 1040 / 1578.
+Paced like a call (drama-3, 20 turns at 20 a minute): p50 424, p90 637, max
+748, none of 40 refused. So Fish is ~200 ms behind at the median and more at
+p95, and is not raced on every turn; what it is good for is the thing a
+second MiniMax connection is not — the vendor stalling for seconds, once in
+each of three runs. **`tts_fallback: "fish"`, `tts_fallback_after_ms: 320`**
+(`provider.FallbackTTS`): the primary is asked alone; only when it has
+produced nothing for 320 ms (p95 is 309) is Fish asked for the same segment,
+and whichever speaks first is heard, the other cancelled. A later segment of
+an answer gets three times the wait. A stall then costs about 320 + 424 ms
+rather than 3–8 s. On the box the env has `FISH_TTS_MODEL=drama-3` and
+`FISH_TTS_LATENCY=balanced`; the log says `tts fallback: asking the second
+vendor too` and `the second vendor spoke first` when it happens, and at the
+end of a call how many times it was asked and how many times it spoke.
+
 ## The synthesizer's first audio
 
 About 180 ms at the median and over 300 one turn in ten, and on an answer's

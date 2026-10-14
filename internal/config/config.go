@@ -195,7 +195,15 @@ type Config struct {
 	// when the second connection is on another account: 0 asks both accounts
 	// at once, which a second account's own allowance is what makes affordable.
 	TTSPoolAfterMS int `json:"tts_pool_after_ms"`
-	HistoryTurns   int `json:"history_turns"`
+	// TTSFallback names a second synthesizer, another vendor, asked for a
+	// segment the primary has produced no audio for after TTSFallbackAfterMS
+	// (three times that for a segment after the first); whichever answers
+	// first is heard. It is for the primary vendor stalling, which a second
+	// connection to it does not cure. Its voice is that provider's own
+	// (FISH_TTS_VOICE_ID for "fish"). Empty is no fallback.
+	TTSFallback        string `json:"tts_fallback"`
+	TTSFallbackAfterMS int    `json:"tts_fallback_after_ms"`
+	HistoryTurns       int    `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//
@@ -750,6 +758,8 @@ func (c *Config) applyEnv() {
 	setInt(&c.TTSHedgeAfterMS, "GOLIVE_TTS_HEDGE_AFTER_MS")
 	setInt(&c.TTSAccountRPM, "GOLIVE_TTS_ACCOUNT_RPM")
 	setInt(&c.TTSPoolAfterMS, "GOLIVE_TTS_POOL_AFTER_MS")
+	setString(&c.TTSFallback, "GOLIVE_TTS_FALLBACK")
+	setInt(&c.TTSFallbackAfterMS, "GOLIVE_TTS_FALLBACK_AFTER_MS")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")

@@ -395,6 +395,16 @@ made on one build.
   and 434 — its copies did help that time, and that night DeepSeek was mild
   (707 the night before). On the first clause DeepSeek was still ahead, about
   525 against about 650. The Qwen routes at that hour: 1676 and 1628.
+- **Fish Audio is slower than MiniMax by its network round trip and is the
+  stall fallback, not a racing lane.** 10-14 22:32 from the box, first audio
+  p50/p95: MiniMax 216/309; Fish drama-3 (`latency: balanced`) 423/709,
+  s2.1-pro 562/940; `normal` is 200–500 worse. A warm empty round trip to
+  `api.fish.audio` is 190 ms (abroad, through the tunnel). Paced at 20 a
+  minute: p50 424, max 748, 0 of 40 refused. `provider.FallbackTTS`
+  (`tts_fallback: fish`, `tts_fallback_after_ms: 320`) asks Fish only when
+  MiniMax has produced nothing for 320 ms and plays whichever speaks first;
+  later segments wait three times that. Expected worth: a 3–8 s stall becomes
+  ~750 ms; nothing on an ordinary turn. Not yet seen firing on a call.
 - **The phone side can deliver the caller's audio faster than time passes.**
   `client audio` in the log counts chunks: 640 bytes every 19.4–19.6 ms on
   nine evening calls (2–3% fast), every 19.97–20.02 on four daytime ones.

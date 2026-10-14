@@ -804,6 +804,13 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		time.Duration(s.cfg.TTSHedgeAfterMS)*time.Millisecond,
 		provider.TTSPool{AccountRPM: s.cfg.TTSAccountRPM, After: time.Duration(s.cfg.TTSPoolAfterMS) * time.Millisecond},
 		s.log)
+	if s.cfg.TTSFallback != "" && s.cfg.TTSFallback != ttsName {
+		if second, err := provider.OpenTTS(s.cfg.TTSFallback); err != nil {
+			s.log.Warn("tts fallback: not available; this session has none", "provider", s.cfg.TTSFallback, "err", err)
+		} else {
+			tts = provider.FallbackTTS(tts, second, time.Duration(s.cfg.TTSFallbackAfterMS)*time.Millisecond, s.log)
+		}
+	}
 
 	history := seeded
 	if history == nil {

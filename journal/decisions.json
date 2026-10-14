@@ -76,6 +76,17 @@
    "undo": "yes",
    "needs": "A probe that asks both routes at once",
    "status": "untried"
+  },
+  {
+   "rank": 8,
+   "title": "Fish Audio as the synthesizer's cross-vendor stall fallback",
+   "gain": "A MiniMax stall (3–8 s, once in each of three runs) becomes ~750 ms: the wait (320) plus Fish's own first audio (424 at the median, 748 worst in 20 paced turns)",
+   "basis": "Measured 10-14 22:32–22:39 from the box: MiniMax first audio p50 216 / p95 309; Fish drama-3 (balanced) 423 / 709, s2.1-pro 562 / 940; 190 ms of that is the round trip to api.fish.audio. 0 of 40 refused at 20 a minute.",
+   "cost": "One Fish request per segment that MiniMax has not answered in 320 ms (about one in twenty); a second vendor's bill and voice (drama-3 on the owner's cloned voice) on those turns only",
+   "guard": "Not raced on ordinary turns — it would lose by ~200 ms and cost a request each time; tts_fallback_after_ms sits just past MiniMax's p95",
+   "undo": "yes: tts_fallback empty",
+   "needs": "A call with a stall in it, to see it fire; the owner's ear on the two voices (~/golive-voices/fish-*.wav)",
+   "status": "on since 10-14 (owner: go)"
   }
  ]
 }
