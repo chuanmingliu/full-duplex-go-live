@@ -1557,6 +1557,7 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 		e.log.Debug("listen: no words in that; keeping the floor",
 			"held_ms", time.Since(e.hold.started).Milliseconds())
 		e.hold = nil
+		e.abandonSpeculation("the sound over the answer had no words in it")
 		return true
 	}
 	if e.bcSet.CouldBecome(text) {
@@ -1575,6 +1576,9 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 				Text:     strings.TrimSpace(text),
 			})
 			e.hold = nil
+			// Swallowed whole: a guess begun on it before the verdict must go
+			// too, or it is said back to the caller once the answer ends.
+			e.abandonSpeculation("the words were an acknowledgement, not a turn")
 			return true
 		}
 		// Consistent with a prefix but never completed — an utterance that

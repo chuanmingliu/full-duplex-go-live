@@ -524,8 +524,15 @@ func (e *Engine) onEarlyFinal(run *asrRun, text string) {
 // its head start, which made the shortest turns of a call its slowest (four of
 // the five turns over target on one call were answers to "嗯。"). The longer the
 // list, the more turns that was.
+//
+// A hold counts as the assistant having the floor: it exists because the
+// caller began over the answer, and the answer may have ended in the moment
+// between then and the words arriving. On a real call "对对" said over the
+// last word of an answer was begun on as a turn, held, and said back to the
+// caller 2.7 s later — "嗯，您再试一下" to someone agreeing — and counted as
+// the slowest turn of the call.
 func (e *Engine) acknowledging(text string) bool {
-	return e.bcSet.Matches(text) && e.assistantHasFloor()
+	return e.bcSet.Matches(text) && (e.hold != nil || e.assistantHasFloor())
 }
 
 // The gates are maybeSpeculate's, less the ones that exist because a partial

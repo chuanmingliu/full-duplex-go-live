@@ -526,6 +526,22 @@
    "verified": "2026-10-13",
    "verified_call": "out-mv6peicf-0trz",
    "note": "Checked on the 21:15 call as the journal now plays it: 6.2 s of repeated quiet frames left out, and the caller's words end within 0.15 to 0.25 s of their stamps in the first, middle and last third alike (as recorded they slid by seconds). The recorder's own correction is in build b5ad7c6 and recorded its first call at 15:37 on 10-14: the session record says the caller's track was kept on the clock, and the journal applied no correction. Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
+  },
+  {
+   "id": "ISS-031",
+   "title": "A murmur said as the answer ended was answered as a turn",
+   "area": "turn-taking",
+   "status": "fixed",
+   "found": "2026-10-14",
+   "found_on": "the 15:44 call, 3657 ms turn",
+   "found_call": "out-mv7t0tay-sj97",
+   "symptom": "The caller said a listed murmur over the last word of an answer. The floor was kept and the answer not interrupted, but an answer to the murmur was begun, held, and spoken 2.7 s later, and the turn counted at 3657 ms.",
+   "cause": "Whether words are an acknowledgement was judged by whether the assistant was speaking at that instant. The murmur's words arrived a moment after the audio ended, while the floor hold opened during the audio was still pending, so the words read as a turn; and a hold's verdict swallowed the utterance without abandoning the guess already begun on it.",
+   "fix": "A pending floor hold counts as the assistant having the floor; a swallowed utterance abandons any speculation begun on it.",
+   "commits": [],
+   "verified": "",
+   "verified_call": "",
+   "note": "To be seen on the next call with a murmur over the assistant."
   }
  ]
 }
