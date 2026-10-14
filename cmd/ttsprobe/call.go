@@ -149,3 +149,68 @@ func synthOnce(ctx context.Context, stream provider.TTSStream, text string) (fir
 	}
 	return firstMS, bytes, err
 }
+
+// runCallOn paces any vendor's synthesizer like a call: one session, a turn
+// every `every`, no hedging. What it says is the vendor's own first audio
+// and whether it refuses at this pace.
+func runCallOn(tts provider.TTS, voice string, rate, turns int, every time.Duration) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if p, ok := tts.(provider.Prewarmer); ok {
+		if err := p.Prewarm(ctx); err != nil {
+			fmt.Printf("prewarm failed: %v\n", err)
+		}
+	}
+	stream, err := tts.Open(ctx, provider.TTSOptions{SampleRate: rate, Voice: voice})
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+	fmt.Printf("one session, %d turns, one every %s, one request per segment: about %.0f requests a minute\n\n",
+		turns, every, 2*float64(time.Minute)/float64(every))
+	var firsts, seconds []int
+	failed := 0
+	began := time.Now()
+	for i := 0; i < turns; i++ {
+		tick := time.Now()
+		turn := callTurns[i%len(callTurns)]
+		ms, bytes, err := synthOnce(provider.WithUrgent(ctx), stream, turn[0])
+		line := fmt.Sprintf("%3d  %5.0fs  first segment: first audio %4d ms, %6d bytes", i+1, time.Since(began).Seconds(), ms, bytes)
+		if err != nil {
+			failed++
+			line = fmt.Sprintf("%3d  %5.0fs  first segment FAILED: %v", i+1, time.Since(began).Seconds(), err)
+		} else {
+			firsts = append(firsts, ms)
+		}
+		ms2, bytes2, err := synthOnce(ctx, stream, turn[1])
+		if err != nil {
+			failed++
+			line += fmt.Sprintf("   second segment FAILED: %v", err)
+		} else {
+			seconds = append(seconds, ms2)
+			line += fmt.Sprintf("   second: %4d ms, %6d bytes", ms2, bytes2)
+		}
+		fmt.Println(line)
+		if wait := every - time.Since(tick); wait > 0 && i < turns-1 {
+			time.Sleep(wait)
+		}
+	}
+	for _, set := range []struct {
+		name string
+		v    []int
+	}{{"first segment", firsts}, {"second segment", seconds}} {
+		sort.Ints(set.v)
+		if n := len(set.v); n > 0 {
+			over := 0
+			for _, v := range set.v {
+				if v > 300 {
+					over++
+				}
+			}
+			fmt.Printf("first audio of the %s: min %d  p50 %d  p90 %d  max %d ms;  %d of %d over 300\n",
+				set.name, set.v[0], set.v[n/2], set.v[min(n-1, n*9/10)], set.v[n-1], over, n)
+		}
+	}
+	fmt.Printf("failed syntheses: %d of %d\n", failed, turns*2)
+	return nil
+}

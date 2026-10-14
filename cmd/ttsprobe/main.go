@@ -30,6 +30,7 @@ import (
 
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/provider/fish"
 	"github.com/chuanmingliu/golive/internal/provider/minimax"
 )
 
@@ -54,6 +55,10 @@ type variant struct {
 	Name     string `json:"name"`
 	Endpoint string `json:"endpoint"`
 	Flush    bool   `json:"flush"`
+	// TTS, when set, is another vendor's client to measure as this variant,
+	// in the same rounds as the MiniMax ones.
+	TTS   provider.TTS `json:"-"`
+	Voice string       `json:"-"`
 }
 
 type sample struct {
@@ -88,6 +93,8 @@ func run() error {
 		saveDir    = flag.String("save", "", "with -pool, also write the same sentence from each account to this directory as account-N.wav, to be listened to side by side")
 		account    = flag.Int("account", 0, "run on this account of the pool alone (1 is the first key); 0 is the pool as configured")
 		accountRPM = flag.Int("account-rpm", 0, "with -call on a pool, requests a minute one account is trusted with (tts_account_rpm); 0 is no limit")
+		fishModels = flag.String("fish", "", "also measure Fish Audio (FISH_TTS_API_KEY, FISH_TTS_VOICE_ID) with these models, comma-separated: s2.1-pro,drama-3; with -call, paces each like a call too")
+		fishOnly   = flag.Bool("fish-only", false, "with -fish: leave MiniMax out")
 	)
 	flag.Parse()
 
@@ -96,8 +103,20 @@ func run() error {
 	}
 
 	base, err := minimax.New()
-	if err != nil {
+	if err != nil && (*fishModels == "" || !*fishOnly) {
 		return err
+	}
+	var fishVariants []variant
+	if *fishModels != "" {
+		f, err := fish.New()
+		if err != nil {
+			return err
+		}
+		for _, m := range splitTrim(*fishModels) {
+			c := *f
+			c.Model = m
+			fishVariants = append(fishVariants, variant{Name: "fish " + m, TTS: &c, Voice: f.VoiceID})
+		}
 	}
 
 	if *poolRounds > 0 {
@@ -113,7 +132,18 @@ func run() error {
 		return runAdapter(base, *voice, *rate)
 	}
 	if *callTurnsN > 0 {
-		return runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery, *callAfter, *accountRPM)
+		if !*fishOnly {
+			if err := runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery, *callAfter, *accountRPM); err != nil {
+				return err
+			}
+		}
+		for _, v := range fishVariants {
+			fmt.Printf("\n== %s, paced like a call\n", v.Name)
+			if err := runCallOn(v.TTS, v.Voice, *rate, *callTurnsN, *callEvery); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
 	if *trace {
@@ -129,10 +159,13 @@ func run() error {
 		texts = splitTrim(*textsFlag)
 	}
 
-	variants, err := plan(base, *compare, *flushMode)
-	if err != nil {
-		return err
+	var variants []variant
+	if !*fishOnly {
+		if variants, err = plan(base, *compare, *flushMode); err != nil {
+			return err
+		}
 	}
+	variants = append(variants, fishVariants...)
 
 	fmt.Printf("ttsprobe: %d variant(s), %d text(s), %d run(s) + %d warmup\n\n",
 		len(variants), len(texts), *runs, *warmup)
@@ -153,12 +186,15 @@ func run() error {
 		for _, v := range variants {
 			st, ok := streams[v.Name]
 			if !ok {
-				tts := clientFor(base, v, *voice)
-				st, err = tts.Open(ctx, provider.TTSOptions{
-					SampleRate: *rate,
-					Voice:      orEnv(*voice, base.VoiceID),
-					Speed:      base.Speed,
-				})
+				var tts provider.TTS
+				opts := provider.TTSOptions{SampleRate: *rate}
+				if v.TTS != nil {
+					tts, opts.Voice = v.TTS, v.Voice
+				} else {
+					tts = clientFor(base, v, *voice)
+					opts.Voice, opts.Speed = orEnv(*voice, base.VoiceID), base.Speed
+				}
+				st, err = tts.Open(ctx, opts)
 				if err != nil {
 					return fmt.Errorf("opening %s: %w", v.Name, err)
 				}

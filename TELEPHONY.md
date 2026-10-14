@@ -459,6 +459,24 @@ under `ms_120_plus`. At 80, it is those and the two columns before it. Each
 pause is logged at debug as `listen: the caller paused inside the utterance`,
 with `pause_ms`.
 
+## A second synthesizer: Fish Audio
+
+`internal/provider/fish` speaks to Fish Audio's HTTP endpoint (`FISH_TTS_API_KEY`,
+`FISH_TTS_VOICE_ID`, `FISH_TTS_MODEL`: `s2.1-pro` or `drama-3`; `tts: "fish"`
+in a profile uses it alone). One request a segment, raw PCM streamed back, on a
+connection the client keeps open; nothing to resynchronize after an
+interruption. Measure it against MiniMax before deciding anything:
+
+```bash
+scripts/phone-brain.sh addkey fish                                   # the key, pasted unseen
+scripts/phone-brain.sh tts -fish s2.1-pro,drama-3 -runs 12           # both models beside MiniMax, same rounds, same texts
+scripts/phone-brain.sh tts -fish s2.1-pro,drama-3 -fish-only -call 20 -every 6s   # each paced like a call: first audio, refusals
+```
+
+The question is first audio on the short opening clause (what a caller waits
+through), whether it refuses at a call's pace, and how the voice sounds; only
+then whether it belongs in the pool beside the MiniMax accounts.
+
 ## The synthesizer's first audio
 
 About 180 ms at the median and over 300 one turn in ten, and on an answer's
