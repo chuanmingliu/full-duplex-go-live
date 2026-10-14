@@ -508,6 +508,32 @@ page. `internal/crm/model.go` already has those records' shapes.
 - No module can be fetched in the cloud workspace (the Go proxy is refused),
   which is why storage is an event log and not SQLite.
 
+## The edge test group
+
+`cmd/edge`, `internal/edge`; on the box `phone-brain.sh edge …`, port 8030
+(loopback and LAN), token in `~/golive-edge/api.token`, runtimes under
+`~/edge`. `EDGE.md` is the API and the setup. Self-hosted speech models
+behind OpenAI's audio API, so that one is added to the gateway and not to
+every client. Served: `audio8-asr` (Audio8-ASR-0.1B ONNX int8, **CC BY-NC
+4.0, non-commercial**) and `audio8-tts` (Audio8 TTS 0.1B ONNX int8).
+Measured 10-14 (EDGE.md has the table): the recognizer is right and costs
+~1.3 s a request however short the clip, with the words only at the end —
+an offline comparison tool, not a turn-path candidate; the synthesizer makes
+noise, 6.4 s to its first chunk, on this CPU with this onnxruntime — listed,
+not used, with the things to try written down. VibeASR.cpp is cloned
+(`~/edge/vibeasr`) and unbuilt: no `cmake` on the box (a `pip install cmake`
+into a venv would do). The gateway serializes requests per model (429 after
+10 s), normalizes audio both ways, streams synthesis, and says in
+`/v1/models` what each model is and whether it is up.
+
+- Python on the box is 3.14 without `ensurepip`: `python3 -m venv
+  --without-pip DIR && python3 -m pip --python DIR/bin/python install …`.
+  Pins to old onnxruntime/numpy have no wheels for it; loosened, both
+  runtimes install.
+- The full bundle (26 MB now) is refused by the file bridge; ship the gateway
+  as `golive-edge.tar.gz` (the binary and `phone-brain.sh`) until that is
+  understood, and the rest as before.
+
 ## The call journal
 
 `scripts/phone-brain.sh journal start` on the box serves a page on the home

@@ -727,3 +727,11 @@ That part is only measurable from a recording made at the handset end.
 5. **The pause itself.** `vad.min_silence_ms` is what `+pause` adds. Lower it
    only with `duplex.semantic_endpointing` on, which gives it back to callers
    who stop mid-thought.
+
+## The edge test group
+
+Speech models run on the box itself, served through an OpenAI-compatible
+API by `cmd/edge` on port 8030: `scripts/phone-brain.sh edge start|status|
+models|probe|say`. What is served, how to call it, what was measured and how
+the runtimes were set up are all in `EDGE.md`. The Audio8-ASR model is
+licensed for non-commercial use only.

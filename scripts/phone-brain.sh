@@ -109,6 +109,16 @@ CRM_PORT="${CRM_PORT:-8791}"
 CRM_DIR="${CRM_DIR:-$HOME/golive-crm}"
 if [ -z "${CRM_ADDR:-}" ]; then _ip="$(lan_ip)"; CRM_ADDR="127.0.0.1:$CRM_PORT${_ip:+,$_ip:$CRM_PORT}"; fi
 CRM_URL="http://127.0.0.1:$CRM_PORT"
+# The edge gateway: self-hosted speech models (under EDGE_HOME) behind an
+# OpenAI-compatible API, on this machine and the home network, token in
+# EDGE_DIR/api.token. See EDGE.md.
+EDGE_PORT="${EDGE_PORT:-8030}"
+EDGE_DIR="${EDGE_DIR:-$HOME/golive-edge}"
+EDGE_HOME="${EDGE_HOME:-$HOME/edge}"
+EDGE_ASR_PORT="${EDGE_ASR_PORT:-7860}"
+EDGE_TTS_PORT="${EDGE_TTS_PORT:-8024}"
+if [ -z "${EDGE_ADDR:-}" ]; then _ip="$(lan_ip)"; EDGE_ADDR="127.0.0.1:$EDGE_PORT${_ip:+,$_ip:$EDGE_PORT}"; fi
+EDGE_URL="http://127.0.0.1:$EDGE_PORT"
 DEMO_PROFILE="${DEMO_PROFILE:-configs/tencent-deepseek-minimax.json}"
 DEMO_MAX_SESSIONS="${DEMO_MAX_SESSIONS:-2}"
 JOURNAL_REPO="${JOURNAL_REPO:-https://github.com/chuanmingliu/full-duplex-go-live}"
@@ -263,6 +273,56 @@ capi() {
   local method="$1" path="$2"; shift 2
   [ -r "$CRM_DIR/api.token" ] || { say "no token at $CRM_DIR/api.token: scripts/phone-brain.sh crm start"; return 1; }
   curl -sS -m 60 -X "$method" -H @<(printf 'Authorization: Bearer %s\nX-Operator: %s\n' "$(cat "$CRM_DIR/api.token")" "${USER:-box}") "$@" "$CRM_URL$path"
+}
+
+# The edge gateway and the two model runtimes it fronts. The runtimes are
+# Python services in their own virtual environments under EDGE_HOME (EDGE.md
+# says how they were set up); the gateway is ours. All three are left alone by
+# a restart of golive.
+EBIN="./bin/edge-linux-$ARCH"; EPID="$STATE.edge.pid"; ELOG="edge.out"
+ASR_HOME="$EDGE_HOME/asr"; TTS_HOME="$EDGE_HOME/Audio8_TTS/onnx_runtime_0_1b_int8"
+erunning() { [ -f "$EPID" ] && kill -0 "$(cat "$EPID")" 2>/dev/null; }
+asr_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_ASR_PORT/health" >/dev/null 2>&1; }
+tts_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_TTS_PORT/api/health" >/dev/null 2>&1; }
+runtimes_start() {
+  if [ -x "$ASR_HOME/.venv/bin/python" ] && ! asr_up; then
+    ( cd "$ASR_HOME" && setsid nohup env PYTHON=.venv/bin/python HOST=127.0.0.1 PORT="$EDGE_ASR_PORT" bash run_local.sh >> service.log 2>&1 < /dev/null & )
+    for _ in $(seq 1 60); do asr_up && break; sleep 2; done
+    asr_up && say "audio8-asr is up on 127.0.0.1:$EDGE_ASR_PORT" || say "audio8-asr did not come up; see $ASR_HOME/service.log"
+  fi
+  if [ -x "$TTS_HOME/.venv/bin/python" ] && ! tts_up; then
+    ( cd "$TTS_HOME" && PORT="$EDGE_TTS_PORT" ARKTTS_THREADS="${EDGE_TTS_THREADS:-5}" bash start_server.sh 2>&1 | tail -1 | sed 's/^/  /' )
+  fi
+}
+runtimes_stop() {
+  [ -x "$TTS_HOME/stop_server.sh" ] && ( cd "$TTS_HOME" && bash stop_server.sh >/dev/null 2>&1 )
+  pkill -f "server.py --bundle_dir $ASR_HOME" 2>/dev/null || true
+}
+estop() {
+  if erunning; then kill "$(cat "$EPID")" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8; do erunning || break; sleep 0.5; done; fi
+  rm -f "$EPID"
+}
+estart() {
+  chmod +x "$EBIN" 2>/dev/null
+  [ -x "$EBIN" ] || { say "no binary at $EBIN"; return 1; }
+  runtimes_start
+  estop
+  mkdir -p "$EDGE_DIR" && chmod 700 "$EDGE_DIR"
+  local args=()
+  asr_up && args+=(-audio8-asr "http://127.0.0.1:$EDGE_ASR_PORT")
+  tts_up && args+=(-audio8-tts "http://127.0.0.1:$EDGE_TTS_PORT")
+  [ ${#args[@]} -gt 0 ] || { say "neither runtime is up; nothing to serve"; return 1; }
+  setsid nohup "$EBIN" -addr "$EDGE_ADDR" -dir "$EDGE_DIR" "${args[@]}" >> "$ELOG" 2>&1 < /dev/null &
+  echo $! > "$EPID"
+  sleep 1
+  if erunning; then say "the edge gateway is up on $EDGE_ADDR (pid $(cat "$EPID")): $(curl -s -m 3 "$EDGE_URL/healthz" | cut -c1-160)"
+  else say "the edge gateway did not start; see $ELOG"; tail -3 "$ELOG"; return 1; fi
+}
+# eapi METHOD PATH [curl args]: a request to the gateway with its token.
+eapi() {
+  local method="$1" path="$2"; shift 2
+  [ -r "$EDGE_DIR/api.token" ] || { say "no token at $EDGE_DIR/api.token: scripts/phone-brain.sh edge start"; return 1; }
+  curl -sS -m 300 -X "$method" -H @<(printf 'Authorization: Bearer %s\n' "$(cat "$EDGE_DIR/api.token")") "$@" "$EDGE_URL$path"
 }
 
 # The browser demo is a separate process from the phone line's golive, with its
@@ -774,6 +834,42 @@ else: print("call placed: %s on %s" % (d["call_id"], d["line"]))' "$2"
 for c in json.load(sys.stdin).get("calls", []): print("%s  %-22s %s v%d  prompt %s (%d characters)  %s" % (c["at"][:19], c.get("call_id") or "-", c["template"], c["version"], c["render"], c["chars"], "ok" if c["ok"] else "FAILED: " + c.get("error", "")))'
       ;;
     *) say "crm start | stop | status | verify | token | put NAME FILE | templates | greeting [LINE] | render NAME JSON | call NAME JSON [dry] | calls"; exit 2 ;;
+  esac
+  ;;
+
+edge)
+  # The edge gateway: self-hosted speech models behind an OpenAI-compatible API.
+  #   edge start | stop | status       the runtimes under EDGE_HOME, then the gateway
+  #   edge token                       print the API token (to your terminal only)
+  #   edge models                      GET /v1/models
+  #   edge probe [WAV]                 one transcription (of WAV, or of what the synthesis made) and one synthesis, timed
+  #   edge say 'TEXT' [OUT.wav]        synthesize to a file
+  case "${2:-status}" in
+    start|restart) estart || exit 1 ;;
+    stop) estop; runtimes_stop; say "the edge gateway and its runtimes are stopped" ;;
+    status)
+      if erunning; then say "the edge gateway is up on $EDGE_ADDR (pid $(cat "$EPID")): $(curl -s -m 5 "$EDGE_URL/healthz" | cut -c1-160)"
+      else say "the edge gateway is not running"; fi
+      asr_up && say "  audio8-asr runtime: up on 127.0.0.1:$EDGE_ASR_PORT" || say "  audio8-asr runtime: down"
+      tts_up && say "  audio8-tts runtime: up on 127.0.0.1:$EDGE_TTS_PORT" || say "  audio8-tts runtime: down"
+      ;;
+    token) cat "$EDGE_DIR/api.token" ;;
+    models) eapi GET /v1/models | python3 -c 'import json,sys
+for m in json.load(sys.stdin)["data"]: e=m["edge"]; print("%-12s %-14s %-12s %6s Hz  %s  %s" % (m["id"], e["kind"], e["status"], e.get("sample_rate",""), e.get("licence",""), e.get("note","")[:70]))' ;;
+    say)
+      [ -n "${3:-}" ] || { say "edge say 'TEXT' [OUT.wav]"; exit 2; }
+      out="${4:-$EDGE_DIR/say.wav}"
+      eapi POST /v1/audio/speech -H 'Content-Type: application/json' -o "$out" -w "first audio %{time_starttransfer}s, done %{time_total}s, %{size_download} bytes -> $out\n" \
+        -d "$(python3 -c 'import json,sys; print(json.dumps({"model":"audio8-tts","input":sys.argv[1],"response_format":"wav","sample_rate":16000}))' "$3")" ;;
+    probe)
+      wav="${3:-}"
+      if [ -z "$wav" ]; then
+        wav="$EDGE_DIR/probe.wav"
+        eapi POST /v1/audio/speech -H 'Content-Type: application/json' -o "$wav" -w "synthesis: first audio %{time_starttransfer}s, done %{time_total}s, %{size_download} bytes\n" \
+          -d '{"model":"audio8-tts","input":"你好，这是一个测试。","response_format":"wav","sample_rate":16000}' || exit 1
+      fi
+      eapi POST /v1/audio/transcriptions -F model=audio8-asr -F language=zh -F response_format=verbose_json -F "file=@$wav" -w "\ntranscription: %{time_total}s\n" | cut -c1-400 ;;
+    *) say "edge start | stop | status | token | models | probe [WAV] | say 'TEXT' [OUT.wav]"; exit 2 ;;
   esac
   ;;
 
