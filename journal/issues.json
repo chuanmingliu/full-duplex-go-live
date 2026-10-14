@@ -311,7 +311,7 @@
    "found": "2026-10-11",
    "found_on": "21:51 call, 1354 ms turn",
    "found_call": "out-mv3vt758-ln5f",
-   "symptom": "One turn's first token took 845 ms with four copies on two accounts. On 10-12 at 23:14 a whole call sat in one: 12 of 13 turns over 1200 (p50 1309), every one with the first token 577 to 631 ms after the headers; measured outside golive straight after, the fastest of eight copies was at 707 and 712 ms at the median, with every copy over 550 ms in 23 of 24 rounds. The night before, 602 ms at 23:53 and 161 to 202 from 00:08. The same build at 14:28 the next day: 6 turns, p50 831, none over, first token 123 ms after the headers; outside golive 213 and 192 ms. At 21:15 on 10-13, an ordinary evening: 47 turns, p50 884, p95 1045, none over, first token 260 ms after the headers.",
+   "symptom": "One turn's first token took 845 ms with four copies on two accounts. On 10-12 at 23:14 a whole call sat in one: 12 of 13 turns over 1200 (p50 1309), every one with the first token 577 to 631 ms after the headers; measured outside golive straight after, the fastest of eight copies was at 707 and 712 ms at the median, with every copy over 550 ms in 23 of 24 rounds. The night before, 602 ms at 23:53 and 161 to 202 from 00:08. The same build at 14:28 the next day: 6 turns, p50 831, none over, first token 123 ms after the headers; outside golive 213 and 192 ms. At 21:15 on 10-13, an ordinary evening: 47 turns, p50 884, p95 1045, none over, first token 260 ms after the headers. 10-14 at 15:40, in the afternoon: fastest of eight copies 806 ms at the median, 9 rounds of 10 slow on every copy; one turn of the 15:37 call over 1200 for it.",
    "cause": "The vendor as a whole is slow at that moment; and several times slower in its busy hours (602 ms at 23:53 against ~170 ms after midnight).",
    "fix": "Eight copies help the ordinary tail (p90 −30 to −100 ms). A second, independent vendor in the race is what would cover these moments.",
    "commits": [
@@ -525,7 +525,7 @@
    ],
    "verified": "2026-10-13",
    "verified_call": "out-mv6peicf-0trz",
-   "note": "Checked on the 21:15 call as the journal now plays it: 6.2 s of repeated quiet frames left out, and the caller's words end within 0.15 to 0.25 s of their stamps in the first, middle and last third alike (as recorded they slid by seconds). The recorder's own correction is in build b5ad7c6 and has not yet recorded a call. Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
+   "note": "Checked on the 21:15 call as the journal now plays it: 6.2 s of repeated quiet frames left out, and the caller's words end within 0.15 to 0.25 s of their stamps in the first, middle and last third alike (as recorded they slid by seconds). The recorder's own correction is in build b5ad7c6 and recorded its first call at 15:37 on 10-14: the session record says the caller's track was kept on the clock, and the journal applied no correction. Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
   }
  ]
 }
