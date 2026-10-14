@@ -435,3 +435,41 @@ func TestATemplateFileChangedOnDiskIsRefused(t *testing.T) {
 		t.Errorf("a template edited in place: %d %s", code, text)
 	}
 }
+
+// The default opening line is what a call opens with when the request gives
+// neither greeting nor start, and is start when the template reads it.
+func TestTheDefaultOpeningLineIsUsedWhenNoneIsGiven(t *testing.T) {
+	fx := newFixture(t)
+	fx.do("PUT", "/api/templates/car", testPrompt, nil)
+	body := map[string]any{"template": "car", "vars": map[string]any{"carNum": "沪A12345"}}
+	if code, text := fx.do("POST", "/api/call", body, nil); code != 422 || !strings.Contains(text, "opening line") {
+		t.Errorf("with no opening line anywhere: %d %s", code, text)
+	}
+	if code, _ := fx.do("PUT", "/api/greeting", "  您好，我是小翠儿。 ", nil); code != 200 {
+		t.Fatalf("setting the line: %d", code)
+	}
+	var r Rendered
+	fx.do("POST", "/api/render", body, &r)
+	if !strings.Contains(r.Instructions, `开场白:"您好，我是小翠儿。"`) || strings.Join(r.Defaulted, ",") != "start" || len(r.Undefined) != 2 {
+		t.Errorf("rendered %+v", r)
+	}
+	var res CallResult
+	fx.do("POST", "/api/call", body, &res)
+	if res.Greeting != "您好，我是小翠儿。" || fx.dials[0]["greeting"] != "您好，我是小翠儿。" {
+		t.Errorf("the call opened with %q", fx.dials[0]["greeting"])
+	}
+	// A start of its own still wins, and so does an explicit greeting.
+	fx.do("POST", "/api/call", map[string]any{"template": "car", "vars": map[string]any{"start": "喂。"}}, &res)
+	if fx.dials[1]["greeting"] != "喂。" || !strings.Contains(fx.dials[1]["instructions"], `开场白:"喂。"`) {
+		t.Errorf("start given: %q", fx.dials[1]["greeting"])
+	}
+	// It survives a restart.
+	fx.api.Close()
+	fx.svc.Close()
+	fx.open(fx.svc.cfg.OriginatorURL, fx.svc.cfg.OriginatorEnv, fx.svc.cfg.GoliveURL)
+	var g struct{ Greeting string }
+	fx.do("GET", "/api/greeting", nil, &g)
+	if g.Greeting != "您好，我是小翠儿。" {
+		t.Errorf("after a restart the line is %q", g.Greeting)
+	}
+}

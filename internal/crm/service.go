@@ -53,12 +53,50 @@ type Service struct {
 	prompts *Prompts
 	token   string
 
-	mu      sync.Mutex
-	calls   []CallRecord // newest last
-	dialing bool
+	mu       sync.Mutex
+	calls    []CallRecord // newest last
+	dialing  bool
+	greeting string
 }
 
 const tokenFile = "api.token"
+
+// greetingFile holds the default opening line: what a call opens with when
+// the request gives neither greeting nor start.
+const greetingFile = "greeting.txt"
+
+// Greeting is the default opening line.
+func (s *Service) Greeting() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.greeting
+}
+
+// SetGreeting changes it, for good.
+func (s *Service) SetGreeting(line, by string) error {
+	line = strings.TrimSpace(line)
+	if line == "" || len([]rune(line)) > 300 {
+		return fail(http.StatusUnprocessableEntity, "the opening line is one to three hundred characters")
+	}
+	if err := writeFileAtomic(filepath.Join(s.cfg.Dir, greetingFile), []byte(line+"\n")); err != nil {
+		return err
+	}
+	if _, err := s.events.Append(Event{By: by, Type: "greeting.put", Note: fmt.Sprintf("%d characters", len([]rune(line)))}); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.greeting = line
+	s.mu.Unlock()
+	s.log.Info("crm: default opening line set", "chars", len([]rune(line)), "by", by)
+	return nil
+}
+
+func (s *Service) defaults() map[string]any {
+	if g := s.Greeting(); g != "" {
+		return map[string]any{"start": g}
+	}
+	return nil
+}
 
 // Open starts the service on its directory, replaying its log.
 func Open(cfg Config) (*Service, error) {
@@ -95,6 +133,9 @@ func Open(cfg Config) (*Service, error) {
 	s.events, s.prompts.log = events, events
 	if torn > 0 {
 		s.log.Warn("crm: the log ended in a line that was never finished; it was cut off", "bytes", torn)
+	}
+	if data, err := os.ReadFile(filepath.Join(cfg.Dir, greetingFile)); err == nil {
+		s.greeting = strings.TrimSpace(string(data))
 	}
 	if s.token, err = loadToken(filepath.Join(cfg.Dir, tokenFile)); err != nil {
 		events.Close()
@@ -182,7 +223,7 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 		return nil, fail(http.StatusBadRequest, "%v", err)
 	}
 	now := time.Now().In(s.cfg.Location)
-	r, err := s.prompts.Render(req.Template, req.Version, vars, now)
+	r, err := s.prompts.RenderWith(req.Template, req.Version, vars, now, s.defaults())
 	if err != nil {
 		return nil, renderFailure(err)
 	}
@@ -190,7 +231,12 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 	if greeting == "" {
 		if start, ok := vars["start"].(string); ok {
 			greeting = start
+		} else {
+			greeting = s.Greeting()
 		}
+	}
+	if greeting == "" {
+		return nil, fail(http.StatusUnprocessableEntity, "no opening line: give greeting or start, or set the default with PUT /api/greeting")
 	}
 	res := &CallResult{Line: "the originator's locked line", Greeting: greeting, Render: r, DryRun: req.DryRun}
 	if strings.TrimSpace(r.Instructions) == "" {
@@ -411,7 +457,7 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
-		out, err := s.prompts.Render(req.Template, req.Version, vars, time.Now().In(s.cfg.Location))
+		out, err := s.prompts.RenderWith(req.Template, req.Version, vars, time.Now().In(s.cfg.Location), s.defaults())
 		if err != nil {
 			return renderFailure(err)
 		}
@@ -428,6 +474,31 @@ func (s *Service) Handler() http.Handler {
 			return err
 		}
 		writeJSON(w, http.StatusOK, res)
+		return nil
+	}))
+	mux.HandleFunc("GET /api/greeting", s.authed(func(w http.ResponseWriter, r *http.Request) error {
+		writeJSON(w, http.StatusOK, map[string]any{"greeting": s.Greeting()})
+		return nil
+	}))
+	mux.HandleFunc("PUT /api/greeting", s.authed(func(w http.ResponseWriter, r *http.Request) error {
+		raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+		if err != nil {
+			return fail(http.StatusBadRequest, "the line could not be read")
+		}
+		line := string(raw)
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			var in struct {
+				Greeting string `json:"greeting"`
+			}
+			if err := json.Unmarshal(raw, &in); err != nil {
+				return fail(http.StatusBadRequest, "send the line as text, or as JSON with greeting")
+			}
+			line = in.Greeting
+		}
+		if err := s.SetGreeting(line, who(r)); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"greeting": s.Greeting()})
 		return nil
 	}))
 	mux.HandleFunc("GET /api/calls", s.authed(func(w http.ResponseWriter, r *http.Request) error {

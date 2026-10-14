@@ -164,6 +164,9 @@ type Rendered struct {
 	Supplied  []string `json:"supplied"`
 	Undefined []string `json:"undefined"`
 	Unused    []string `json:"unused"`
+	// Defaulted are the variables filled in from the service's defaults (the
+	// default opening line as start).
+	Defaulted []string `json:"defaulted,omitempty"`
 	// StaticChars is how much of the template comes before its first
 	// variable: the part a model's prompt cache can keep between leads.
 	StaticChars int `json:"static_chars"`
@@ -173,6 +176,13 @@ type Rendered struct {
 // nowDateTime that is not supplied is given the time of the render, as
 // "2006-01-02 15:04:05" in loc.
 func (p *Prompts) Render(name string, version int, vars map[string]any, now time.Time) (*Rendered, error) {
+	return p.RenderWith(name, version, vars, now, nil)
+}
+
+// RenderWith is Render with defaults: variables the template reads that the
+// request does not give are taken from defaults first, and are reported as
+// supplied by default rather than undefined.
+func (p *Prompts) RenderWith(name string, version int, vars map[string]any, now time.Time, defaults map[string]any) (*Rendered, error) {
 	t, err := p.Get(name, version)
 	if err != nil {
 		return nil, err
@@ -200,12 +210,20 @@ func (p *Prompts) Render(name string, version int, vars map[string]any, now time
 	if _, has := given["nowDateTime"]; !has && reads["nowDateTime"] {
 		given["nowDateTime"] = now.Format("2006-01-02 15:04:05")
 	}
+	var defaulted []string
+	for k, v := range defaults {
+		if _, has := given[k]; !has && reads[k] && v != nil && v != "" {
+			given[k] = v
+			defaulted = append(defaulted, k)
+		}
+	}
+	sort.Strings(defaulted)
 	text, err := parsed.Render(given)
 	if err != nil {
 		return nil, err
 	}
 	r := &Rendered{Template: t.Name, Version: t.Version, TemplateSHA: t.SHA, SHA: shortSHA(text), Instructions: text,
-		Chars: len([]rune(text)), StaticChars: t.StaticChars, Supplied: []string{}, Undefined: []string{}, Unused: []string{}}
+		Chars: len([]rune(text)), StaticChars: t.StaticChars, Supplied: []string{}, Undefined: []string{}, Unused: []string{}, Defaulted: defaulted}
 	for k := range vars {
 		r.Supplied = append(r.Supplied, k)
 		if !reads[k] {

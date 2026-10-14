@@ -191,7 +191,9 @@ curl -H "$T" -d '{"template":"car-renewal","vars":{…},"lead":"L000123"}'      
 Things to know:
 
 - **The opening line** is `greeting`, or the variable `start` when that is
-  left out. `nowDateTime` is filled in with the time of the render when the
+  left out, or the service's default (`crm greeting 'LINE'`, `PUT
+  /api/greeting`) when both are; the default is also filled in as `start`
+  when the template reads it and the request does not give it. `nowDateTime` is filled in with the time of the render when the
   template reads it and the request does not give it.
 - **A missing variable renders as Jinja2 renders it**: as nothing, or as the
   branch the template takes for it. `undefined` in the answer lists them. A

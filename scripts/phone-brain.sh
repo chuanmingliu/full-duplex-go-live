@@ -717,6 +717,7 @@ crm)
   #   crm templates                     what is saved
   #   crm render NAME 'JSON' [VERSION]  render with variables; prints the prompt
   #   crm call NAME 'JSON' [dry]        render and place the call (dry: stop before dialling)
+  #   crm greeting ['LINE']             show or set the default opening line
   #   crm calls                         the calls placed
   case "${2:-status}" in
     start|restart) touch "$STATE.crm"; cstart || exit 1 ;;
@@ -762,11 +763,15 @@ if kind == "render":
 elif d.get("dry_run"): print("dry run: nothing dialled. Opening line: %d characters" % len(d["greeting"]))
 else: print("call placed: %s on %s" % (d["call_id"], d["line"]))' "$2"
       ;;
+    greeting)
+      if [ -n "${3:-}" ]; then capi PUT /api/greeting -H 'Content-Type: text/plain; charset=utf-8' --data-binary "$3" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("error") or "default opening line set: %d characters" % len(d["greeting"]))'
+      else capi GET /api/greeting | python3 -c 'import json,sys; g=json.load(sys.stdin).get("greeting",""); print("default opening line: %s" % (("%d characters" % len(g)) if g else "not set"))'; fi
+      ;;
     calls)
       capi GET "/api/calls?n=${3:-20}" | python3 -c 'import json,sys
 for c in json.load(sys.stdin).get("calls", []): print("%s  %-22s %s v%d  prompt %s (%d characters)  %s" % (c["at"][:19], c.get("call_id") or "-", c["template"], c["version"], c["render"], c["chars"], "ok" if c["ok"] else "FAILED: " + c.get("error", "")))'
       ;;
-    *) say "crm start | stop | status | verify | token | put NAME FILE | templates | render NAME JSON | call NAME JSON [dry] | calls"; exit 2 ;;
+    *) say "crm start | stop | status | verify | token | put NAME FILE | templates | greeting [LINE] | render NAME JSON | call NAME JSON [dry] | calls"; exit 2 ;;
   esac
   ;;
 
