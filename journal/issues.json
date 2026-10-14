@@ -538,7 +538,9 @@
    "symptom": "The caller said a listed murmur over the last word of an answer. The floor was kept and the answer not interrupted, but an answer to the murmur was begun, held, and spoken 2.7 s later, and the turn counted at 3657 ms.",
    "cause": "Whether words are an acknowledgement was judged by whether the assistant was speaking at that instant. The murmur's words arrived a moment after the audio ended, while the floor hold opened during the audio was still pending, so the words read as a turn; and a hold's verdict swallowed the utterance without abandoning the guess already begun on it.",
    "fix": "A pending floor hold counts as the assistant having the floor; a swallowed utterance abandons any speculation begun on it.",
-   "commits": [],
+   "commits": [
+    "7d0a46a"
+   ],
    "verified": "",
    "verified_call": "",
    "note": "To be seen on the next call with a murmur over the assistant."
