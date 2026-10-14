@@ -196,9 +196,12 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 		timer := time.NewTimer(wait)
 		defer timer.Stop()
 		var sch <-chan TTSChunk
+		var sstart chan ttsStarted // the second vendor's Synthesize, when asked
 		var scancel context.CancelFunc
 		var second TTSStream
-		// ask puts the segment to the second vendor, once.
+		// ask puts the segment to the second vendor, once, in the background:
+		// its Synthesize returns when the vendor has answered the request,
+		// which is a round trip, and the primary's audio must not wait on it.
 		ask := func(why string) {
 			if second != nil {
 				return
@@ -209,26 +212,28 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 			}
 			var sctx context.Context
 			sctx, scancel = context.WithCancel(ctx)
-			ch, err := second.Synthesize(sctx, text)
-			if err != nil {
-				s.tts.log.Warn("tts fallback: the second vendor refused the segment", "err", err)
-				s.release()
-				second, scancel = nil, nil
-				return
-			}
-			sch = ch
+			sstart = make(chan ttsStarted, 1)
+			go func(st TTSStream, res chan<- ttsStarted) {
+				ch, err := st.Synthesize(sctx, text)
+				res <- ttsStarted{ch: ch, err: err}
+			}(second, sstart)
 			s.tts.log.Info("tts fallback: asking the second vendor too", "why", why,
 				"vendor", s.tts.second.Name(), "waited_ms", time.Since(began).Milliseconds(), "chars", len([]rune(text)))
 		}
 		// finish drains and frees the second vendor's connection once the
-		// race is over, in the background.
+		// race is over, in the background, waiting for its Synthesize to
+		// return if it has not yet.
 		finish := func() {
 			if second == nil {
 				return
 			}
 			scancel()
-			ch := sch
+			ch, start := sch, sstart
 			go func() {
+				if ch == nil && start != nil {
+					st := <-start
+					ch = st.ch
+				}
 				if ch != nil {
 					drainTTS(ch)
 				}
@@ -244,15 +249,35 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 				return
 			case <-timer.C:
 				ask("no audio from the primary yet")
+			case st := <-sstart:
+				sstart = nil
+				if st.err != nil {
+					if ctx.Err() == nil {
+						s.tts.log.Warn("tts fallback: the second vendor refused the segment", "err", st.err)
+					}
+					s.release()
+					second, scancel = nil, nil
+					if pch == nil {
+						pcancel()
+						if pErr != nil {
+							select {
+							case out <- TTSChunk{Err: pErr}:
+							case <-ctx.Done():
+							}
+						}
+						return
+					}
+					continue
+				}
+				sch = st.ch
 			case c, ok := <-pch:
 				if !ok {
 					// The primary finished without a single chunk: nothing to
 					// say, or an error already passed on. If the second
 					// vendor was asked, its audio is still worth playing.
-					if pErr != nil || sch == nil {
+					if second == nil {
 						pcancel()
-						finish()
-						if pErr != nil && sch == nil {
+						if pErr != nil {
 							select {
 							case out <- TTSChunk{Err: pErr}:
 							case <-ctx.Done():
@@ -265,9 +290,9 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 				}
 				if c.Err != nil {
 					pErr = c.Err
-					if sch == nil {
+					if second == nil {
 						ask("the primary failed the segment")
-						if sch == nil {
+						if second == nil {
 							pcancel()
 							select {
 							case out <- c:
