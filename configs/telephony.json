@@ -100,7 +100,7 @@
     "focus": "veto",
     "focus_url": "ws://127.0.0.1:8032/verify",
     "focus_token_file": "",
-    "focus_veto_share": 0.7,
+    "focus_veto_share": 0.95,
     "focus_min_voiced_ms": 240,
     "speculate_while_patient": true,
     "early_final_ms": 120

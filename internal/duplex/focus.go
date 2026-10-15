@@ -204,13 +204,17 @@ func (e *Engine) judgeFocus() {
 		if p.open {
 			// Judged on what is labelled so far; the rest comes when the
 			// utterance closes. Only a clear "somebody else" acts now.
-			if a.Others < e.focusVetoShare() || a.VoicedMS < e.focusMinVoicedMS() {
+			if a.Others < e.focusVetoShare() || a.VoicedMS < e.focusMinVoicedMS() || a.Primary > 0 {
 				continue
 			}
 		}
 		delete(fs.pending, id)
 		fs.judged++
-		others := a.VoicedMS >= e.focusMinVoicedMS() && a.Others >= e.focusVetoShare()
+		// Another voice's only when the caller is in none of it: under a
+		// show the caller's own windows score as a mixture and come out
+		// half "other", and four of the caller's answers were dropped on
+		// that (the 23:20 call). A mixture is the caller talking.
+		others := a.VoicedMS >= e.focusMinVoicedMS() && a.Others >= e.focusVetoShare() && a.Primary == 0
 		t := p.turn.Timings()
 		heard := !t.FirstAudioOut.IsZero()
 		e.log.Debug("focus: utterance attributed", "turn", p.turn.ID, "primary_share", round2(a.Primary), "others_share", round2(a.Others),
@@ -336,7 +340,7 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 		verdict, why = bargeInWait, "labels not in yet"
 	case a.VoicedMS == 0:
 		verdict, why = bargeInKeep, "nobody but the assistant's own return"
-	case a.Others >= e.focusVetoShare():
+	case a.Others >= e.focusVetoShare() && primaryMS == 0:
 		verdict, why = bargeInKeep, "another voice"
 	default:
 		verdict, why = bargeInWait, "undecided"
@@ -381,10 +385,12 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 	return bargeInYield
 }
 
-// focusEnrolments is how many utterances the caller's voice is taken from:
-// the first one alone to start on, then the next few the labels said were
-// the caller's, each extending the enrolment.
-const focusEnrolments = 5
+// focusEnrolments is how many utterances the caller's voice is taken from.
+// One: the first the caller made alone. Extending it with later ones the
+// labels called the caller's was tried (10-15 23:20) and, with a show in
+// the background, mixed the show into the enrolment — the show then scored
+// as the caller.
+const focusEnrolments = 1
 
 // enrolFocus tells a target-speaker service whose voice the caller's is:
 // an utterance the caller made alone — long enough to carry a voice, not
@@ -448,7 +454,7 @@ func (e *Engine) judgeUtteranceFocus() {
 		e.uttVerdict = uttCaller
 	case e.uttVerdict == uttIgnored:
 		// Still not the caller's.
-	case a.VoicedMS >= e.focusMinVoicedMS() && a.Others >= e.focusVetoShare():
+	case a.VoicedMS >= e.focusMinVoicedMS() && a.Others >= e.focusVetoShare() && primaryMS == 0:
 		e.ignoreUtterance("another voice", a, span)
 	case a.VoicedMS == 0 && span >= 800:
 		e.ignoreUtterance("nothing voiced", a, span)

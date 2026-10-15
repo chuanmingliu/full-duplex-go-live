@@ -907,6 +907,17 @@ focus: the open utterance is not the caller's  why="another voice" others_share=
 focus: the utterance went by; no turn made of it
 ```
 
+**What a mixture is.** With a show playing *under* the caller's voice every
+window is a mixture, and the mixture scores like a stranger (the 23:20
+call: 1,130 voiced windows, 83 over 0.35, none over 0.5; four of the
+caller's own answers dropped as "another voice"). So no verdict acts on a
+mixture: an answer is vetoed, the floor kept, an utterance let go by only
+when the span has **no caller voice at all** (`focus_veto_share` 0.95 and a
+zero-primary rule), and the enrolment is the first utterance only — a later
+one is a mixture too. What that leaves is the show cutting in sometimes;
+taking it out of the audio is a different model (target-speaker extraction)
+and the next thing to evaluate.
+
 Measured on this line's archive (`.runner` jobs 249–251): against a 2 s
 enrolment from one call, the caller's own later utterances score 0.45–0.68
 (p10 0.45), the assistant's voice on the caller track 0.11–0.16, the

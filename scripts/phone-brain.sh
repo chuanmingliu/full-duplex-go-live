@@ -123,7 +123,7 @@ EDGE_DIAR_MODE="${EDGE_DIAR_MODE:-ultra_low_latency}"
 # The target-speaker service (edge/tsv_server.py): is this window the caller?
 EDGE_TSV_PORT="${EDGE_TSV_PORT:-8032}"
 EDGE_TSV_THREADS="${EDGE_TSV_THREADS:-2}"
-EDGE_TSV_THRESHOLD="${EDGE_TSV_THRESHOLD:-0.35}"
+EDGE_TSV_THRESHOLD="${EDGE_TSV_THRESHOLD:-0.28}"
 if [ -z "${EDGE_ADDR:-}" ]; then _ip="$(lan_ip)"; EDGE_ADDR="127.0.0.1:$EDGE_PORT${_ip:+,$_ip:$EDGE_PORT}"; fi
 EDGE_URL="http://127.0.0.1:$EDGE_PORT"
 DEMO_PROFILE="${DEMO_PROFILE:-configs/tencent-deepseek-minimax.json}"

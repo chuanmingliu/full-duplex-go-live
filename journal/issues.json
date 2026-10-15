@@ -599,6 +599,20 @@
       "symptom": "With a show in the background the diarizer's labels were 340–480 ms behind at the start of the call and 1–1.2 s behind within a minute; 37 of 38 sounds over the answer were decided on the recognizer's words because the labels had not arrived inside the 900 ms wait; two of the show's lines were answered before the labels came.",
       "cause": "Nemotron-3-Diarization runs at about real time on the ThinkPad's CPU; continuous speech leaves it no gap to catch up, and skipping chunks does not hold it under a second.",
       "fix": "A target-speaker service (edge/tsv_server.py, CAM++ zh/en embedding, 10 ms a window) in place of the diarizer on the focus channel: the caller's voice is enrolled from their first utterance alone (extended by the next few the labels call theirs), every 100 ms window is scored against it, labels one window behind. The engine judges the open utterance as it is said (judgeUtteranceFocus): not the caller's and it goes by with no turn. Tests: TestABackgroundVoicesUtteranceIsLetGoBy; measured on the archive: caller 0.45–0.68, assistant 0.14–0.21, the show under 0.25 against a 2 s enrolment.",
+      "verified_on": "out-mv9oqusr-3h0z (23:20): labels 0–140 ms behind, every judgment in time; but four of the caller's own utterances were vetoed as another voice's — under the show every window is a mixture and scores 0.1–0.4. Retuned: a verdict needs zero primary voice; enrolment from the first utterance only; threshold 0.28. See ISS-036."
+    },
+    {
+      "id": "ISS-036",
+      "title": "With a show under the caller's voice, speaker verification cannot separate them: the caller's own answers were vetoed",
+      "area": "focus",
+      "status": "mitigated",
+      "commit": "(next)",
+      "found": "2026-10-15",
+      "found_on": "the 23:20 call, 4 of the caller's answers dropped unheard",
+      "found_call": "out-mv9oqusr-3h0z",
+      "symptom": "Four of the caller's utterances were judged another voice's and their answers dropped; the caller's windows scored 0.1–0.4 against the enrolment (quiet line: 0.42–0.63), because every 800 ms window was a mixture of the caller and the show.",
+      "cause": "A speaker-embedding score on overlapped speech is the score of the mixture; a 70% 'other' share is routine for the caller talking over a television. Extending the enrolment with such utterances put the show into the enrolment.",
+      "fix": "Mitigation: every verdict requires zero primary voice (a mixture is the caller), focus_veto_share 0.95, enrolment from the first utterance only, threshold 0.28. Real fix, to evaluate: target-speaker extraction (removing everything but the enrolled voice from the audio before the gate and the recognizer), if a model runs in real time on the box's CPU.",
       "verified_on": ""
     }
   ]
