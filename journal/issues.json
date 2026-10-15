@@ -557,7 +557,7 @@
       "cause": "The model server runs at about real time on the ThinkPad's CPU (~330 ms per 345 ms chunk at steady state) and queues chunks during a long stretch of speech instead of catching up.",
       "fix": "edge/diar_server.py --max-backlog (1): chunks queued beyond it are skipped unlabelled so the labels stay within about one chunk of the audio; the skipped span gets no frames, so the client's coverage says it is missing. Unverified on a call.",
       "verified_on": "",
-      "commit": "(next)"
+      "commit": "16c7eed"
     },
     {
       "id": "ISS-033",
@@ -571,7 +571,7 @@
       "cause": "Both end-of-turn witnesses are fooled by the same noise: the energy gate by its level, the recognizer by transcribing it. The diarizer on the focus side channel labelled only 2,160 ms of voice in those 29 s but is not consulted for ending turns, and its labels were 3.4 s behind by then (ISS-032).",
       "fix": "vad.floor_track_ms (2000): the quietest frame of the last 2 s of an open utterance becomes the floor when nothing in that time dipped under the bar, so the noise stops reading as voiced and the utterance closes on the caller's next 380 quiet ms. Test: a steady rumble closes within 3.5 s, a 4 s sentence is heard to its end. The gate's record is kept in session.json and drawn in the journal (the Gate lane).",
       "verified_on": "",
-      "commit": "(next)"
+      "commit": "16c7eed"
     }
   ]
 }
