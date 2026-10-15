@@ -762,6 +762,10 @@ type FocusEvent struct {
 	// AnotherVoice then means the answer was not the caller's to stop, and
 	// Vetoed that it was indeed kept going (veto mode).
 	BargeIn bool `json:"barge_in,omitempty"`
+	// Utterance says this judged an open utterance as it was being said:
+	// AnotherVoice that it was not the caller's, Vetoed that it was let go
+	// by with no turn made of it (veto mode).
+	Utterance bool `json:"utterance,omitempty"`
 }
 
 // InputBackchannelEvent is golive.input_backchannel: the caller said something

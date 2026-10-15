@@ -120,6 +120,10 @@ EDGE_TTS_PORT="${EDGE_TTS_PORT:-8024}"
 EDGE_DIAR_PORT="${EDGE_DIAR_PORT:-8031}"
 EDGE_DIAR_THREADS="${EDGE_DIAR_THREADS:-4}"
 EDGE_DIAR_MODE="${EDGE_DIAR_MODE:-ultra_low_latency}"
+# The target-speaker service (edge/tsv_server.py): is this window the caller?
+EDGE_TSV_PORT="${EDGE_TSV_PORT:-8032}"
+EDGE_TSV_THREADS="${EDGE_TSV_THREADS:-2}"
+EDGE_TSV_THRESHOLD="${EDGE_TSV_THRESHOLD:-0.35}"
 if [ -z "${EDGE_ADDR:-}" ]; then _ip="$(lan_ip)"; EDGE_ADDR="127.0.0.1:$EDGE_PORT${_ip:+,$_ip:$EDGE_PORT}"; fi
 EDGE_URL="http://127.0.0.1:$EDGE_PORT"
 DEMO_PROFILE="${DEMO_PROFILE:-configs/tencent-deepseek-minimax.json}"
@@ -283,12 +287,18 @@ capi() {
 # says how they were set up); the gateway is ours. All three are left alone by
 # a restart of golive.
 EBIN="./bin/edge-linux-$ARCH"; EPID="$STATE.edge.pid"; ELOG="edge.out"
-ASR_HOME="$EDGE_HOME/asr"; TTS_HOME="$EDGE_HOME/Audio8_TTS/onnx_runtime_0_1b_int8"; DIAR_HOME="$EDGE_HOME/diar"
+ASR_HOME="$EDGE_HOME/asr"; TTS_HOME="$EDGE_HOME/Audio8_TTS/onnx_runtime_0_1b_int8"; DIAR_HOME="$EDGE_HOME/diar"; TSV_HOME="$EDGE_HOME/tsv"
 erunning() { [ -f "$EPID" ] && kill -0 "$(cat "$EPID")" 2>/dev/null; }
 asr_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_ASR_PORT/health" >/dev/null 2>&1; }
 tts_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_TTS_PORT/api/health" >/dev/null 2>&1; }
 diar_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_DIAR_PORT/health" >/dev/null 2>&1; }
+tsv_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_TSV_PORT/health" >/dev/null 2>&1; }
 runtimes_start() {
+  if [ -x "$TSV_HOME/.venv/bin/python" ] && [ -f "$TSV_HOME/tsv_server.py" ] && ! tsv_up; then
+    ( cd "$TSV_HOME" && setsid nohup .venv/bin/python tsv_server.py --threads "$EDGE_TSV_THREADS" --threshold "$EDGE_TSV_THRESHOLD" --host 127.0.0.1 --port "$EDGE_TSV_PORT" >> service.log 2>&1 < /dev/null & )
+    for _ in $(seq 1 20); do tsv_up && break; sleep 1; done
+    tsv_up && say "target-speaker service is up on 127.0.0.1:$EDGE_TSV_PORT (threshold $EDGE_TSV_THRESHOLD)" || say "the target-speaker service did not come up; see $TSV_HOME/service.log"
+  fi
   if [ -x "$DIAR_HOME/.venv/bin/python" ] && [ -f "$DIAR_HOME/diar_server.py" ] && ! diar_up; then
     ( cd "$DIAR_HOME" && setsid nohup .venv/bin/python diar_server.py --model model --mode "$EDGE_DIAR_MODE" --threads "$EDGE_DIAR_THREADS" --host 127.0.0.1 --port "$EDGE_DIAR_PORT" >> service.log 2>&1 < /dev/null & )
     for _ in $(seq 1 60); do diar_up && break; sleep 2; done
@@ -307,6 +317,7 @@ runtimes_stop() {
   [ -x "$TTS_HOME/stop_server.sh" ] && ( cd "$TTS_HOME" && bash stop_server.sh >/dev/null 2>&1 )
   pkill -f "server.py --bundle_dir $ASR_HOME" 2>/dev/null || true
   pkill -f "diar_server.py" 2>/dev/null || true
+  pkill -f "tsv_server.py" 2>/dev/null || true
 }
 estop() {
   if erunning; then kill "$(cat "$EPID")" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8; do erunning || break; sleep 0.5; done; fi
@@ -888,6 +899,7 @@ edge)
       asr_up && say "  audio8-asr runtime: up on 127.0.0.1:$EDGE_ASR_PORT" || say "  audio8-asr runtime: down"
       tts_up && say "  audio8-tts runtime: up on 127.0.0.1:$EDGE_TTS_PORT" || say "  audio8-tts runtime: down"
       diar_up && say "  nemotron-diar runtime: $(curl -s -m 3 "http://127.0.0.1:$EDGE_DIAR_PORT/health" | cut -c1-200)" || say "  nemotron-diar runtime: down"
+      tsv_up && say "  target-speaker runtime: $(curl -s -m 3 "http://127.0.0.1:$EDGE_TSV_PORT/health" | cut -c1-200)" || say "  target-speaker runtime: down"
       ;;
     token) cat "$EDGE_DIR/api.token" ;;
     models) eapi GET /v1/models | python3 -c 'import json,sys

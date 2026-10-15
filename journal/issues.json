@@ -585,6 +585,20 @@
       "symptom": "With an English-language show in the caller's background the answer was cut 30 times in 3.7 minutes: 20 utterances opened over the assistant's speech at exactly 320 ms, the recognizer made words of the show (or of the assistant's echo at −28 dB), and the hold ruled them not a backchannel.",
       "cause": "The floor hold had one witness, the recognizer, and the recognizer transcribes any voice. The speaker labels knew (two of the judged utterances had no voice at all, one was entirely another voice's, labels 280–520 ms behind) but were not asked about barge-ins, and the tracker masked everything said while the assistant spoke.",
       "fix": "Tracker.Echo tells the assistant's return apart (the voice heard mostly while the assistant speaks, ≥800 ms, ≥70% of its activity); Tracker.AttributeOver reads a span through the masks with the echo taken out; judgeBargeInFocus holds a barge-in with words for the labels up to focus_barge_in_wait_ms (900): the caller's voice (≥160 ms) yields, another voice or the echo alone keeps the floor and the utterance goes by without a turn unless the caller joins in; in observe mode the verdict is logged and the words decide. The telephony profile goes to focus: veto. Tests: TestASoundOverTheAnswerIsReadWithTheEchoTakenOut, TestAnotherVoiceOverTheAnswerDoesNotCutIt.",
+      "verified_on": "out-mv9mxpzt-0ur9 (22:29): the path fired once in time (one answer kept) and 37 times too late — the diarizer's labels 1–1.2 s behind under continuous background speech. Superseded by ISS-035."
+    },
+    {
+      "id": "ISS-035",
+      "title": "The diarizer's labels fall seconds behind under continuous background speech, so every judgment on them comes too late",
+      "area": "focus",
+      "status": "fixed",
+      "commit": "(next)",
+      "found": "2026-10-15",
+      "found_on": "the 22:29 call, 38 barge-ins judged, 1 in time",
+      "found_call": "out-mv9mxpzt-0ur9",
+      "symptom": "With a show in the background the diarizer's labels were 340–480 ms behind at the start of the call and 1–1.2 s behind within a minute; 37 of 38 sounds over the answer were decided on the recognizer's words because the labels had not arrived inside the 900 ms wait; two of the show's lines were answered before the labels came.",
+      "cause": "Nemotron-3-Diarization runs at about real time on the ThinkPad's CPU; continuous speech leaves it no gap to catch up, and skipping chunks does not hold it under a second.",
+      "fix": "A target-speaker service (edge/tsv_server.py, CAM++ zh/en embedding, 10 ms a window) in place of the diarizer on the focus channel: the caller's voice is enrolled from their first utterance alone (extended by the next few the labels call theirs), every 100 ms window is scored against it, labels one window behind. The engine judges the open utterance as it is said (judgeUtteranceFocus): not the caller's and it goes by with no turn. Tests: TestABackgroundVoicesUtteranceIsLetGoBy; measured on the archive: caller 0.45–0.68, assistant 0.14–0.21, the show under 0.25 against a 2 s enrolment.",
       "verified_on": ""
     }
   ]

@@ -444,6 +444,18 @@ made on one build.
   `focus_barge_in_wait_ms` (900) and keeps the floor on another voice or
   the echo alone ("A sound over the answer" in `TELEPHONY.md`); the profile
   is in `focus: veto`. Not yet verified on a call.
+- **Under continuous background speech the diarizer's labels arrive too
+  late to act on.** The 22:29 call on 10-15 (the show on, `f3bd554`): 38
+  sounds over the answer judged, 1 in time, labels 1–1.2 s behind within a
+  minute (ISS-035). The owner's rule: only the primary voice counts. So
+  `edge/tsv_server.py` — CAM++ speaker verification, 10 ms a window — now
+  sits on the focus channel in the diarizer's place (`focus_url:
+  ws://127.0.0.1:8032/verify`): the caller's voice is enrolled from their
+  first utterance alone and every 100 ms window is scored against it; the
+  engine judges the open utterance as it is said and lets a non-caller's go
+  by with no turn ("Only the primary voice" in `TELEPHONY.md`). Measured on
+  the archive: caller 0.45–0.68, assistant 0.14–0.21, the show under 0.25
+  against a 2 s enrolment. Not yet verified on a call.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
@@ -581,7 +593,10 @@ server on the box). See "Keeping to one voice" in `TELEPHONY.md` and the
 measurements in `EDGE.md`. The idea in one line: the diarizer's labels are
 too late to decide turns and early enough to veto answers, so they ride a
 side channel and never touch the audio the recognizer hears. On the box
-since 10-15 12:51, `observe` until 22:20 and `veto` since (`duplex.focus`); every bench utterance
+since 10-15 12:51, `observe` until 22:20 and `veto` since (`duplex.focus`);
+since 23:10 the focus channel is the target-speaker service
+(`edge/tsv_server.py`, port 8032), the diarizer (8031) still running for
+`phone-brain.sh edge probe` and as the fallback `focus_url`; every bench utterance
 since has been attributed to the primary with the labels 220–330 ms behind
 the audio on short sessions. Open: whether the labels still arrive before
 the first audio on a long call (steady-state compute is ~330 ms per 345 ms

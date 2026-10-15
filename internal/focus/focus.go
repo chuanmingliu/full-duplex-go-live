@@ -41,6 +41,13 @@ type Frame struct {
 	P []float32
 }
 
+// Enroller is a Scorer that can be told whose voice the caller's is: a
+// target-speaker service (edge/tsv_server.py). The engine tells it the
+// first utterance the caller alone made.
+type Enroller interface {
+	Enrol(fromMS, toMS int64) error
+}
+
 // Scorer is a speaker-activity model fed the caller's audio as it arrives.
 type Scorer interface {
 	// Push gives the model more audio: 16 kHz PCM16 mono, with the session
@@ -131,6 +138,19 @@ func (t *Tracker) Mask(fromMS, toMS int64) {
 		return
 	}
 	t.masked = append(t.masked, span{fromMS, toMS})
+}
+
+// MaskedWithin reports whether the assistant was speaking at any point of
+// the span: what rules a span out as an enrolment.
+func (t *Tracker) MaskedWithin(fromMS, toMS int64) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, m := range t.masked {
+		if m.from < toMS && m.to > fromMS {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Tracker) isMasked(startMS, endMS int64) bool {

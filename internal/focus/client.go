@@ -2,6 +2,7 @@ package focus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -90,6 +91,10 @@ func (c *Client) read() {
 			c.log.Warn("focus: the diarization service reported an error", "message", msg.Message)
 			continue
 		}
+		if msg.Type == "enrolled" {
+			c.log.Info("focus: the caller's voice is enrolled", "from_ms", msg.StartMS, "voiced_ms", msg.VoicedMS)
+			continue
+		}
 		for _, f := range msg.Expand() {
 			select {
 			case c.frames <- f:
@@ -119,6 +124,19 @@ func (c *Client) Push(pcm []byte, atMS int64) error {
 }
 
 func (c *Client) Frames() <-chan Frame { return c.frames }
+
+// Enrol tells the service the caller spoke from fromMS to toMS: a
+// target-speaker service takes the caller's voice from it (see EnrolMsg).
+func (c *Client) Enrol(fromMS, toMS int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return errors.New("focus: closed")
+	}
+	data, _ := json.Marshal(EnrolMsg{Type: "enrol", FromMS: fromMS, ToMS: toMS})
+	c.conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
+	return c.conn.WriteMessage(websocket.TextMessage, data)
+}
 
 func (c *Client) Lag() time.Duration { return c.lag }
 

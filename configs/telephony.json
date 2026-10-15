@@ -98,7 +98,7 @@
     "backend_prefix_warm_start": true,
     "ignore_hesitations": true,
     "focus": "veto",
-    "focus_url": "ws://127.0.0.1:8030/v1/audio/diarize?model=nemotron-diar",
+    "focus_url": "ws://127.0.0.1:8032/verify",
     "focus_token_file": "",
     "focus_veto_share": 0.7,
     "focus_min_voiced_ms": 240,

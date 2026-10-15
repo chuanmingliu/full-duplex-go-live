@@ -46,6 +46,11 @@ type focusState struct {
 	// labels, and kept how many of those kept the floor.
 	bargeIns int
 	kept     int
+	// enrolments is how many times a target-speaker service has been told
+	// the caller's voice (see enrolFocus); ignored counts utterances let go
+	// by as not the caller's, with no turn made of them.
+	enrolments int
+	ignored    int
 	// lag is the model's own: its input buffer. Compute is on top.
 	lag time.Duration
 }
@@ -374,4 +379,118 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 		return bargeInKeep
 	}
 	return bargeInYield
+}
+
+// focusEnrolments is how many utterances the caller's voice is taken from:
+// the first one alone to start on, then the next few the labels said were
+// the caller's, each extending the enrolment.
+const focusEnrolments = 5
+
+// enrolFocus tells a target-speaker service whose voice the caller's is:
+// an utterance the caller made alone — long enough to carry a voice, not
+// over the assistant, nothing of the assistant's in it — and, once the
+// service is scoring, only ones its own labels called the caller's.
+func (e *Engine) enrolFocus(startMS, endMS int64, activeMS float64, bargeIn bool) {
+	fs := e.focus
+	if fs == nil || fs.enrolments >= focusEnrolments {
+		return
+	}
+	en, ok := fs.scorer.(focus.Enroller)
+	if !ok {
+		return
+	}
+	if bargeIn || activeMS < 600 || fs.tracker.MaskedWithin(startMS, endMS+focusEchoTailMS) {
+		return
+	}
+	if fs.enrolments > 0 && e.uttVerdict != uttCaller {
+		return
+	}
+	if err := en.Enrol(startMS, endMS); err != nil {
+		e.log.Warn("focus: the caller's voice could not be enrolled", "err", err)
+		return
+	}
+	fs.enrolments++
+	e.log.Info("focus: enrolling the caller's voice", "from_ms", startMS, "to_ms", endMS, "voiced_ms", int(activeMS), "enrolment", fs.enrolments)
+}
+
+// judgeUtteranceFocus is called on each tick while an utterance is open: is
+// the open utterance the caller's? With labels a window behind the audio,
+// the answer comes while the words are still arriving — before anything is
+// prepared on them. Not the caller's (another voice, or nothing voiced for
+// a while though the gate is open) and the utterance is let go by: no
+// guess, no turn, no interruption, unless the caller's voice joins in. The
+// verdict is logged either way; only veto mode acts on it.
+func (e *Engine) judgeUtteranceFocus() {
+	fs := e.focus
+	if fs == nil || !e.userOpen || e.uttVerdict == uttCaller {
+		return
+	}
+	now := e.inputMS.Load()
+	to := fs.tracker.LabelledTo()
+	if to > now {
+		to = now
+	}
+	span := to - e.utterStartMS
+	if span < 300 {
+		return
+	}
+	a := fs.tracker.AttributeOver(e.utterStartMS, to)
+	if !a.Known {
+		return
+	}
+	primaryMS := int64(a.Primary * float64(a.VoicedMS))
+	switch {
+	case primaryMS >= 160:
+		if e.uttVerdict == uttIgnored {
+			e.log.Info("focus: the caller's voice joined the utterance; taking it up", "primary_ms", primaryMS, "span_ms", span)
+			e.stopIgnoring()
+		}
+		e.uttVerdict = uttCaller
+	case e.uttVerdict == uttIgnored:
+		// Still not the caller's.
+	case a.VoicedMS >= e.focusMinVoicedMS() && a.Others >= e.focusVetoShare():
+		e.ignoreUtterance("another voice", a, span)
+	case a.VoicedMS == 0 && span >= 800:
+		e.ignoreUtterance("nothing voiced", a, span)
+	}
+}
+
+type uttVerdict int
+
+const (
+	uttUnjudged uttVerdict = iota
+	uttCaller
+	uttIgnored
+)
+
+func (e *Engine) ignoreUtterance(why string, a focus.Attribution, span int64) {
+	fs := e.focus
+	fs.ignored++
+	mode := e.opts.Cfg.Duplex.Focus
+	e.log.Info("focus: the open utterance is not the caller's", "why", why, "others_share", round2(a.Others),
+		"voiced_ms", a.VoicedMS, "span_ms", span, "coverage", round2(a.Coverage), "mode", mode,
+		"acting", mode == "veto")
+	e.deps.Emit(live.FocusEvent{Envelope: live.Envelope{Type: live.ExtFocus}, Utterance: true,
+		PrimaryShare: round2(a.Primary), OthersShare: round2(a.Others), VoicedMS: a.VoicedMS, Coverage: round2(a.Coverage),
+		Primary: fs.tracker.Primary(), AnotherVoice: true, Vetoed: mode == "veto"})
+	if mode != "veto" {
+		return
+	}
+	e.uttVerdict = uttIgnored
+	if e.hold != nil && !e.hold.kept {
+		fs.kept++
+		e.hold.kept = true
+		e.hold.words = true
+	}
+	e.abandonSpeculation("the utterance is not the caller's")
+}
+
+// ignoring reports whether the open utterance is being let go by.
+func (e *Engine) ignoring() bool { return e.uttVerdict == uttIgnored }
+
+func (e *Engine) stopIgnoring() {
+	e.uttVerdict = uttUnjudged
+	if e.hold != nil && e.hold.kept {
+		e.releaseHold("the caller's voice joined in")
+	}
 }

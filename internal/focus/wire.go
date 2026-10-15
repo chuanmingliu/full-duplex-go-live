@@ -34,6 +34,17 @@ type FramesMsg struct {
 	FrameMS int         `json:"frame_ms"`
 	P       [][]float32 `json:"p"`
 	Message string      `json:"message,omitempty"`
+	// For an "enrolled" reply: how much voice the enrolment had.
+	VoicedMS int `json:"voiced_ms,omitempty"`
+}
+
+// EnrolMsg tells a target-speaker service whose voice the caller's is: the
+// audio between from_ms and to_ms of session time (edge/tsv_server.py). A
+// diarizer ignores it.
+type EnrolMsg struct {
+	Type   string `json:"type"`
+	FromMS int64  `json:"from_ms"`
+	ToMS   int64  `json:"to_ms"`
 }
 
 // EncodeAudio frames a chunk for the wire.

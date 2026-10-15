@@ -867,6 +867,55 @@ focus: this call  ... barge_ins_judged=9 barge_ins_kept=7 echo_speaker=2
 In `observe` mode the verdict is logged and the words still decide. The
 telephony profile is in `veto` since 10-15. `-1` turns the wait off.
 
+### Only the primary voice: the target-speaker service
+
+The owner's rule (10-15): target my voice; a second voice is ignored. The
+diarizer cannot keep that promise on a CPU under continuous background
+speech — on the 22:29 call its labels were 1–1.2 s behind within a minute,
+and 37 of 38 sounds over the answer were decided on the recognizer's words
+because the labels had not come. The question is narrower than "who are all
+the speakers": it is "is this window the caller", and a speaker-verification
+embedding answers it in 10 ms.
+
+`edge/tsv_server.py` (CAM++ zh/en, ONNX, from the sherpa-onnx model set;
+runtime under `~/edge/tsv`, port 8032; `phone-brain.sh edge start` starts it
+with the others) speaks the diarizer's wire, so `focus_url` simply points at
+it (`ws://127.0.0.1:8032/verify`) and the tracker and every judgment stay as
+they are. What is different:
+
+- **Enrolment.** The engine tells the service the first utterance the caller
+  made alone (≥ 600 ms voiced, not over the assistant, nothing of the
+  assistant's in it), and extends it with the next few the labels call the
+  caller's (`focusEnrolments`, 5), up to 8 s of voice. Before enrolment every
+  frame is unknown and nothing is judged.
+- **Scores.** Every 100 ms, the 800 ms window ending there is scored against
+  the enrolment: voiced and over `--threshold` (0.35) → the caller (speaker
+  0); voiced and under → another voice; not voiced → nobody. Speaker 0 is
+  therefore always the caller, and the tracker enrols it as the primary on
+  its own rule. The similarity is in the message (`sim`).
+- **The open utterance is judged as it is said** (`judgeUtteranceFocus`):
+  from 300 ms of labels in, another voice (≥ 240 ms voiced, ≥ 70% others) or
+  nothing voiced for 800 ms of an open gate means the utterance is let go by:
+  no guess, no turn, no interruption, no transcript shown — unless the
+  caller's voice joins in (160 ms), which takes it up at once. In observe
+  mode the verdict is logged and nothing is let go.
+
+```
+focus: enrolling the caller's voice  from_ms=7820 to_ms=10280 voiced_ms=1480 enrolment=1
+focus: the caller's voice is enrolled  voiced_ms=1480
+focus: the open utterance is not the caller's  why="another voice" others_share=1 voiced_ms=640 span_ms=900 mode=veto acting=true
+focus: the utterance went by; no turn made of it
+```
+
+Measured on this line's archive (`.runner` jobs 249–251): against a 2 s
+enrolment from one call, the caller's own later utterances score 0.45–0.68
+(p10 0.45), the assistant's voice on the caller track 0.11–0.16, the
+assistant's own channel 0.14–0.21, the lines of the 21:59 call with the show
+on 0.18–0.35 (p90). A 0.9 s enrolment is not enough (the caller's later
+utterances 0.13–0.24): hence the extension. Phone audio of the same voice on
+different days scores lower than on one call; the threshold is 0.35 and the
+journal's similarities are what to set it from.
+
 ## Working memory, and work that takes longer than a turn
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",

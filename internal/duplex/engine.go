@@ -237,6 +237,9 @@ type Engine struct {
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
 	speaking atomic.Bool
+	// uttVerdict is what the focus labels have said about the open
+	// utterance so far (see judgeUtteranceFocus).
+	uttVerdict uttVerdict
 	// focus is the speaker-focus side channel, nil when off; utterStartMS is
 	// where the current utterance began, on the audio clock.
 	focus        *focusState
@@ -730,6 +733,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// whatever was already being said when it began.
 		e.turnBeforeUtterance = e.tracker.Current()
 		e.utterStartMS = d.StartMS
+		e.uttVerdict = uttUnjudged
 		e.log.Debug("listen: utterance opened",
 			"start_ms", d.StartMS,
 			"active_ms", int(d.ActiveMS),
@@ -782,6 +786,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.speechEndAt = time.Now()
 		e.speechEndMS = d.EndMS
 		e.speechEndSilenceMS = int64(d.SilenceMS)
+		e.enrolFocus(d.StartMS, d.EndMS, d.ActiveMS, d.BargeIn)
 		// ...but only for a turn this utterance actually produced. A turn that
 		// was already live when the caller started talking belongs to an
 		// earlier utterance, or to none at all — the greeting is the clearest
@@ -824,6 +829,7 @@ func (e *Engine) onTick() {
 	e.observeTTFA()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
+	e.judgeUtteranceFocus()
 	e.judgeFocus()
 	e.maybeDeliver()
 	e.drainDeferred()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,12 +17,13 @@ import (
 // fakeScorer labels audio by a schedule: who is speaking at each moment of
 // the session's audio clock, voiced or not. Labels come out after lag.
 type fakeScorer struct {
-	who    func(atMS int64) int // speaker index, or -1 for nobody
-	lag    time.Duration
-	frames chan focus.Frame
-	mu     sync.Mutex
-	pushed int64
-	closed bool
+	who      func(atMS int64) int // speaker index, or -1 for nobody
+	lag      time.Duration
+	frames   chan focus.Frame
+	mu       sync.Mutex
+	pushed   int64
+	closed   bool
+	enrolled [][2]int64
 }
 
 func newFakeScorer(who func(int64) int, lag time.Duration) *fakeScorer {
@@ -69,7 +71,21 @@ func (f *fakeScorer) Push(pcm []byte, atMS int64) error {
 }
 
 func (f *fakeScorer) Frames() <-chan focus.Frame { return f.frames }
-func (f *fakeScorer) Lag() time.Duration         { return f.lag }
+
+// Enrol records what the engine would tell a target-speaker service.
+func (f *fakeScorer) Enrol(fromMS, toMS int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.enrolled = append(f.enrolled, [2]int64{fromMS, toMS})
+	return nil
+}
+
+func (f *fakeScorer) enrolments() [][2]int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][2]int64(nil), f.enrolled...)
+}
+func (f *fakeScorer) Lag() time.Duration { return f.lag }
 func (f *fakeScorer) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -168,8 +184,8 @@ func TestAnotherVoicesUtteranceIsNotAnswered(t *testing.T) {
 	if got := c.audioMS(); got > heard+40 {
 		t.Fatalf("the other voice was answered: %.0f ms of audio after the caller's %.0f", got-heard, heard)
 	}
-	if n := len(c.delegationReasons()); n != 2 {
-		t.Fatalf("delegations %d; the second should have been begun and then dropped", n)
+	if n := len(c.delegationReasons()); n != 1 && n != 2 {
+		t.Fatalf("delegations %d; the second voice's should have been let go by, or begun and then dropped", n)
 	}
 }
 
@@ -276,7 +292,7 @@ func TestAnotherVoiceOverTheAnswerDoesNotCutIt(t *testing.T) {
 			cut := c.count(live.ExtAudioTruncated)
 			var judged []live.FocusEvent
 			for _, ev := range c.focusEvents() {
-				if ev.BargeIn {
+				if ev.BargeIn || ev.Utterance {
 					judged = append(judged, ev)
 				}
 			}
@@ -294,4 +310,72 @@ func TestAnotherVoiceOverTheAnswerDoesNotCutIt(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The target-speaker path: the caller's first utterance alone is what the
+// service is told to take their voice from; a background voice's utterance,
+// while the assistant is silent, is let go by with no turn made of it; the
+// caller's next one is answered as usual.
+func TestABackgroundVoicesUtteranceIsLetGoBy(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊今天天气怎么样明天有空吗")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	// Speaker 0 is the caller; the television (1) talks in the window set
+	// below, once the first answer is over; the caller again after.
+	var tvFrom, tvTo atomic.Int64
+	tvFrom.Store(1 << 40)
+	scorer := newFakeScorer(func(atMS int64) int {
+		if atMS >= tvFrom.Load() && atMS < tvTo.Load() {
+			return 1
+		}
+		return 0
+	}, 150*time.Millisecond)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, Log: logger}, scorer)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+
+	speak(e, rate, 700)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	if en := scorer.enrolments(); len(en) != 1 || en[0][0] != 0 || en[0][1] < 600 {
+		t.Fatalf("enrolments %v; wanted the first utterance", en)
+	}
+	listenThrough(t, e, rate)
+	delegated := len(c.delegationReasons())
+	// The television for 1.5 s, then quiet.
+	tvFrom.Store(e.inputMS.Load() - 300)
+	tvTo.Store(e.inputMS.Load() + 1800)
+	speak(e, rate, 1500)
+	pause(e, rate, 1500)
+	var judged []live.FocusEvent
+	for _, ev := range c.focusEvents() {
+		if ev.Utterance {
+			judged = append(judged, ev)
+		}
+	}
+	if len(judged) == 0 || !judged[0].AnotherVoice || !judged[0].Vetoed {
+		t.Fatalf("the television's utterance was not let go by: %+v", judged)
+	}
+	if n := len(c.delegationReasons()); n != delegated {
+		t.Fatalf("delegations went from %d to %d on the television's words", delegated, n)
+	}
+	if en := scorer.enrolments(); len(en) != 1 {
+		t.Fatalf("enrolled on the television's utterance: %v", en)
+	}
+	// The caller again: answered.
+	heard := c.audioMS()
+	speak(e, rate, 800)
+	pause(e, rate, 700)
+	waitFor(t, "the caller's next utterance to be answered", 6*time.Second, func() bool { return c.audioMS() > heard+100 })
 }

@@ -156,6 +156,12 @@ func (e *Engine) conclude(run *asrRun, text string) {
 	if e.hold != nil && e.judgeHold(text, true) {
 		return
 	}
+	if e.ignoring() && !e.userOpen {
+		// Not the caller's: no turn is made of it.
+		e.log.Debug("focus: the utterance went by; no turn made of it", "chars", len([]rune(text)))
+		e.uttVerdict = uttUnjudged
+		return
+	}
 	if e.hold == nil && text != "" {
 		e.emitInputTranscript(run, text, true)
 	}
@@ -328,7 +334,7 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	// While the hold is still undecided the utterance may yet be swallowed
 	// whole, and a transcript cannot be taken back, so nothing is shown for
 	// it. The next event after the hold resolves catches the client up.
-	if e.hold == nil {
+	if e.hold == nil && !e.ignoring() {
 		e.emitInputTranscript(run, text, ev.res.Final)
 	}
 
@@ -538,7 +544,7 @@ func (e *Engine) acknowledging(text string) bool {
 // The gates are maybeSpeculate's, less the ones that exist because a partial
 // may not be the whole of what was said: this is.
 func (e *Engine) speculateOnFinal(text string) {
-	if !e.opts.Speculative || e.muted || e.hold != nil || text == "" || e.liveSpeculation() != nil {
+	if !e.opts.Speculative || e.muted || e.hold != nil || e.ignoring() || text == "" || e.liveSpeculation() != nil {
 		return
 	}
 	if e.acknowledging(text) {
@@ -884,9 +890,9 @@ func (e *Engine) maybeSpeculate() {
 	if !e.opts.Speculative || e.muted {
 		return
 	}
-	if e.hold != nil && e.hold.kept {
-		// The labels said this sound over the answer is not the caller's:
-		// nothing in it is a turn to prepare for.
+	if (e.hold != nil && e.hold.kept) || e.ignoring() {
+		// The labels said this utterance is not the caller's: nothing in it
+		// is a turn to prepare for.
 		return
 	}
 	// Sound resuming after the pause is not, by itself, the speaker carrying
@@ -1003,7 +1009,7 @@ func (e *Engine) maybeSpeculate() {
 // slow. When the final agrees the turn is simply confirmed; when it does not,
 // the turn is revised exactly as a mid-pause guess would have been.
 func (e *Engine) speculateAtClose() {
-	if !e.opts.Speculative || e.muted || e.hold != nil {
+	if !e.opts.Speculative || e.muted || e.hold != nil || e.ignoring() {
 		return
 	}
 	run := e.asrRun
