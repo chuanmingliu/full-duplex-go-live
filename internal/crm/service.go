@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type Service struct {
 	log     *slog.Logger
 	events  *Log
 	prompts *Prompts
+	configs *Configs
 	token   string
 
 	mu       sync.Mutex
@@ -120,8 +122,10 @@ func Open(cfg Config) (*Service, error) {
 	}
 	s := &Service{cfg: cfg, log: cfg.Log}
 	s.prompts = &Prompts{dir: cfg.Dir, templates: map[string][]*Template{}, parsed: map[string]*jinja.Template{}}
+	s.configs = &Configs{dir: cfg.Dir, versions: map[string][]*ConfigVersion{}}
 	events, torn, err := OpenLog(cfg.Dir, func(ev Event) error {
 		s.prompts.apply(ev)
+		s.configs.apply(ev)
 		if ev.Type == "call.placed" && ev.Call != nil {
 			s.calls = append(s.calls, *ev.Call)
 		}
@@ -130,7 +134,15 @@ func Open(cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.events, s.prompts.log = events, events
+	s.events, s.prompts.log, s.configs.log = events, events, events
+	// The quotation rules start as placeholders, so that a quote can be asked
+	// for before the business has put its own tables in.
+	if _, err := s.configs.Get(QuoteRulesName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(QuoteRulesName, []byte(DefaultQuoteRules), "placeholder rules: every number is made up", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
 	if torn > 0 {
 		s.log.Warn("crm: the log ended in a line that was never finished; it was cut off", "bytes", torn)
 	}
@@ -144,6 +156,49 @@ func Open(cfg Config) (*Service, error) {
 	s.log.Info("crm: open", "dir", cfg.Dir, "events", events.Seq(), "templates", len(s.prompts.templates), "calls", len(s.calls))
 	return s, nil
 }
+
+// Quote prices a coverage selection under the quotation rules, and records
+// that it did. The rules' simulate_delay_ms, when set, is waited out first:
+// it stands in for a real rating service's time, so that the assistant's
+// handling of a slow answer can be exercised.
+func (s *Service) Quote(req QuoteRequest) (*Quote, error) {
+	began := time.Now()
+	v, err := s.configs.Get(QuoteRulesName, req.RulesVersion)
+	if err != nil {
+		return nil, err
+	}
+	var rules QuoteRules
+	if err := json.Unmarshal(v.Body, &rules); err != nil {
+		return nil, fmt.Errorf("crm: the quote rules v%d are not readable: %w", v.Version, err)
+	}
+	if rules.SimulateDelayMS > 0 {
+		time.Sleep(time.Duration(rules.SimulateDelayMS) * time.Millisecond)
+	}
+	q, err := rules.Compute(req)
+	rec := &QuoteRecord{At: began, Call: req.Call, RulesVersion: v.Version, MemoryVersion: req.MemoryVersion, ComputeMS: time.Since(began).Milliseconds()}
+	for name, choice := range req.Config {
+		if b, ok := choice.(bool); ok && !b {
+			continue
+		}
+		rec.Coverages = append(rec.Coverages, name)
+	}
+	sort.Strings(rec.Coverages)
+	if err != nil {
+		rec.Error = err.Error()
+	} else {
+		q.RulesVersion, q.RulesSHA, q.MemoryVersion = v.Version, v.SHA, req.MemoryVersion
+		q.ComputedAt, q.ComputeMS = began, rec.ComputeMS
+		rec.Total = q.Total
+	}
+	if _, lerr := s.events.Append(Event{By: "tool", Type: "quote.computed", Ref: req.Call, Quote: rec}); lerr != nil {
+		s.log.Warn("crm: a quote was not recorded", "err", lerr)
+	}
+	s.log.Info("crm: quote", "call", req.Call, "coverages", len(rec.Coverages), "total", rec.Total, "rules", v.Version, "ms", rec.ComputeMS, "err", rec.Error)
+	return q, err
+}
+
+// Configs is the service's versioned configs.
+func (s *Service) Configs() *Configs { return s.configs }
 
 // Close finishes with the log.
 func (s *Service) Close() error { return s.events.Close() }
@@ -446,6 +501,53 @@ func (s *Service) Handler() http.Handler {
 		}
 		s.log.Info("crm: template saved", "template", t.Name, "version", t.Version, "sha", t.SHA, "chars", t.Chars, "by", who(r))
 		writeJSON(w, http.StatusOK, map[string]any{"template": t})
+		return nil
+	}))
+	mux.HandleFunc("GET /api/configs", s.authed(func(w http.ResponseWriter, r *http.Request) error {
+		writeJSON(w, http.StatusOK, map[string]any{"configs": s.configs.List()})
+		return nil
+	}))
+	mux.HandleFunc("GET /api/configs/{name}", s.authed(func(w http.ResponseWriter, r *http.Request) error {
+		version, _ := strconv.Atoi(r.URL.Query().Get("version"))
+		v, err := s.configs.Get(r.PathValue("name"), version)
+		if err != nil {
+			return renderFailure(err)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"config": v})
+		return nil
+	}))
+	mux.HandleFunc("PUT /api/configs/{name}", s.authed(func(w http.ResponseWriter, r *http.Request) error {
+		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+		if err != nil {
+			return fail(http.StatusBadRequest, "the config could not be read")
+		}
+		if r.PathValue("name") == QuoteRulesName {
+			var rules QuoteRules
+			if err := json.Unmarshal(raw, &rules); err != nil || len(rules.Coverages) == 0 {
+				return fail(http.StatusUnprocessableEntity, "the quote rules are a JSON object with coverages; see internal/crm/quote.go")
+			}
+		}
+		v, err := s.configs.Save(r.PathValue("name"), raw, r.URL.Query().Get("note"), who(r))
+		if err != nil {
+			if strings.HasPrefix(err.Error(), "crm: a config") || strings.HasPrefix(err.Error(), "crm: the config") {
+				return fail(http.StatusUnprocessableEntity, "%v", err)
+			}
+			return err
+		}
+		s.log.Info("crm: config saved", "config", v.Name, "version", v.Version, "sha", v.SHA, "by", who(r))
+		writeJSON(w, http.StatusOK, map[string]any{"config": v})
+		return nil
+	}))
+	mux.HandleFunc("POST /api/tools/quote", s.authed(func(w http.ResponseWriter, r *http.Request) error {
+		var req QuoteRequest
+		if err := readJSON(r, &req); err != nil {
+			return err
+		}
+		q, err := s.Quote(req)
+		if err != nil {
+			return fail(http.StatusUnprocessableEntity, "%v", err)
+		}
+		writeJSON(w, http.StatusOK, q)
 		return nil
 	}))
 	mux.HandleFunc("POST /api/render", s.authed(func(w http.ResponseWriter, r *http.Request) error {

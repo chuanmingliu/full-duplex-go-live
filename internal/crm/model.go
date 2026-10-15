@@ -229,9 +229,9 @@ type Event struct {
 	At  time.Time `json:"at"`
 	By  string    `json:"by"`
 	// Type is what happened: lead.put, lead.delete, variable.put,
-	// variable.delete, contact.put, template.put, booking.put, settings.put,
-	// and — for the trail only, changing nothing — import.done, export.done,
-	// call.placed, auth.login, auth.refused.
+	// variable.delete, contact.put, template.put, config.put, booking.put,
+	// settings.put, and — for the trail only, changing nothing — import.done,
+	// export.done, call.placed, quote.computed, auth.login, auth.refused.
 	Type string `json:"type"`
 	// Ref is the thing it happened to, and Lead the lead it concerns.
 	Ref  string `json:"ref,omitempty"`
@@ -241,13 +241,15 @@ type Event struct {
 	Note    string   `json:"note,omitempty"`
 	Changes []Change `json:"changes,omitempty"`
 	// Exactly one of these holds what the thing is after the event.
-	Variable *Variable   `json:"variable,omitempty"`
-	LeadRec  *Lead       `json:"lead_rec,omitempty"`
-	Contact  *Contact    `json:"contact,omitempty"`
-	Template *Template   `json:"template,omitempty"`
-	Booking  *Booking    `json:"booking,omitempty"`
-	Settings *Settings   `json:"settings,omitempty"`
-	Call     *CallRecord `json:"call,omitempty"`
+	Variable *Variable      `json:"variable,omitempty"`
+	LeadRec  *Lead          `json:"lead_rec,omitempty"`
+	Contact  *Contact       `json:"contact,omitempty"`
+	Template *Template      `json:"template,omitempty"`
+	Booking  *Booking       `json:"booking,omitempty"`
+	Settings *Settings      `json:"settings,omitempty"`
+	Call     *CallRecord    `json:"call,omitempty"`
+	Config   *ConfigVersion `json:"config,omitempty"`
+	Quote    *QuoteRecord   `json:"quote,omitempty"`
 	// Chain is a checksum of this event and every one before it: a line
 	// changed, lost or put in by hand breaks it from there on.
 	Chain string `json:"chain"`

@@ -794,6 +794,8 @@ crm)
   #   crm call NAME 'JSON' [dry]        render and place the call (dry: stop before dialling)
   #   crm greeting ['LINE']             show or set the default opening line
   #   crm calls                         the calls placed
+  #   crm config NAME [FILE] [NOTE]     show a versioned config (quote-rules), or save FILE as its next version
+  #   crm quote 'JSON'                  price a coverage selection: {"config":{...},"vars":{...}}
   case "${2:-status}" in
     start|restart) touch "$STATE.crm"; cstart || exit 1 ;;
     stop) rm -f "$STATE.crm"; cstop; say "the lead service is stopped, and stays off when golive is restarted" ;;
@@ -846,7 +848,22 @@ else: print("call placed: %s on %s" % (d["call_id"], d["line"]))' "$2"
       capi GET "/api/calls?n=${3:-20}" | python3 -c 'import json,sys
 for c in json.load(sys.stdin).get("calls", []): print("%s  %-22s %s v%d  prompt %s (%d characters)  %s" % (c["at"][:19], c.get("call_id") or "-", c["template"], c["version"], c["render"], c["chars"], "ok" if c["ok"] else "FAILED: " + c.get("error", "")))'
       ;;
-    *) say "crm start | stop | status | verify | token | put NAME FILE | templates | greeting [LINE] | render NAME JSON | call NAME JSON [dry] | calls"; exit 2 ;;
+    config)
+      [ -n "${3:-}" ] || { say "crm config NAME [FILE] [NOTE]"; exit 2; }
+      if [ -n "${4:-}" ]; then
+        [ -r "$4" ] || { say "no file $4"; exit 2; }
+        note="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "${5:-}")"
+        capi PUT "/api/configs/$3?note=$note" -H 'Content-Type: application/json' --data-binary "@$4" | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d.get("config") or d; print("saved" if "version" in c else d, c.get("name"), "v%s" % c.get("version"), c.get("sha"), "%s characters" % c.get("chars"))'
+      else
+        capi GET "/api/configs/$3" | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d.get("config") or d; print("%s v%s %s (%s)" % (c.get("name"), c.get("version"), c.get("sha"), c.get("created_at","")[:19])); print(json.dumps(c.get("body"), ensure_ascii=False, indent=1) if isinstance(c.get("body"), (dict, list)) else c.get("body"))'
+      fi ;;
+    quote)
+      [ -n "${3:-}" ] || { say "crm quote 'JSON'"; exit 2; }
+      capi POST /api/tools/quote -H 'Content-Type: application/json' -d "$3" | python3 -c 'import json,sys; q=json.load(sys.stdin)
+if "error" in q: print("refused:", q["error"]); sys.exit(1)
+for l in q["lines"]: print("  %-8s %-6s base %9.2f x %.4f = %9.2f" % (l["coverage"], l.get("choice",""), l["base"], l["factor"], l["premium"]))
+print("  total %.2f %s  (rules v%d, %d ms%s)" % (q["total"], q["currency"], q["rules_version"], q["compute_ms"], ("; skipped: " + ", ".join(q["skipped"])) if q.get("skipped") else ""))' ;;
+    *) say "crm start | stop | status | verify | token | put NAME FILE | templates | greeting [LINE] | render NAME JSON | call NAME JSON [dry] | calls | config NAME [FILE] | quote JSON"; exit 2 ;;
   esac
   ;;
 

@@ -473,3 +473,61 @@ func TestTheDefaultOpeningLineIsUsedWhenNoneIsGiven(t *testing.T) {
 		t.Errorf("after a restart the line is %q", g.Greeting)
 	}
 }
+
+// The quotation subtask: rules are a versioned config the service starts
+// with, a quote is priced under them and recorded, and new rules are a new
+// version that later quotes name.
+func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
+	fx := newFixture(t)
+	var list struct {
+		Configs []ConfigVersion `json:"configs"`
+	}
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 1 || list.Configs[0].Name != QuoteRulesName || list.Configs[0].Version != 1 {
+		t.Fatalf("configs: %d %s", code, body)
+	}
+	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
+		Vars: map[string]any{"vehiclePrice": "12.8万", "seats": 5, "vehicleAge": 2, "ncd": 1}, MemoryVersion: 7, Call: "out-test"}
+	var q Quote
+	if code, body := fx.do("POST", "/api/tools/quote", req, &q); code != 200 {
+		t.Fatalf("quote: %d %s", code, body)
+	}
+	// 交强险 950 (no factor); 车损 128000×0.012=1536 ×0.95×0.85=1240.32; 三者 1450×0.8075=1170.88;
+	// 座位 45×5=225 ×0.8075=181.69; 玻璃险 unknown → skipped.
+	want := 950 + 1240.32 + 1170.88 + 181.69
+	if q.Total < want-0.05 || q.Total > want+0.05 || len(q.Lines) != 4 || len(q.Skipped) != 1 || q.Skipped[0] != "玻璃险" || q.RulesVersion != 1 || q.MemoryVersion != 7 {
+		t.Fatalf("quote %+v (want total %.2f)", q, want)
+	}
+	// An option the table does not have is an error the caller can act on.
+	bad := req
+	bad.Config = map[string]any{"三者险": "800万"}
+	if code, body := fx.do("POST", "/api/tools/quote", bad, nil); code != 422 || !strings.Contains(body, "800万") {
+		t.Fatalf("bad option: %d %s", code, body)
+	}
+	// New rules: a new version, used from then on.
+	rules := strings.Replace(DefaultQuoteRules, `"flat": 950`, `"flat": 1000`, 1)
+	var saved struct {
+		Config ConfigVersion `json:"config"`
+	}
+	if code, body := fx.do("PUT", "/api/configs/"+QuoteRulesName+"?note=test", rules, &saved); code != 200 || saved.Config.Version != 2 {
+		t.Fatalf("save: %d %s", code, body)
+	}
+	if code, body := fx.do("PUT", "/api/configs/"+QuoteRulesName, `{"not":"rules"}`, nil); code != 422 {
+		t.Fatalf("bad rules accepted: %d %s", code, body)
+	}
+	req.Config = map[string]any{"交强险": true}
+	if code, _ := fx.do("POST", "/api/tools/quote", req, &q); code != 200 || q.Total != 1000 || q.RulesVersion != 2 {
+		t.Fatalf("under v2: %+v", q)
+	}
+	req.RulesVersion = 1
+	if code, _ := fx.do("POST", "/api/tools/quote", req, &q); code != 200 || q.Total != 950 || q.RulesVersion != 1 {
+		t.Fatalf("under v1: %+v", q)
+	}
+	// Every quote is in the log, choices only.
+	n, err := VerifyLog(fx.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 5 {
+		t.Fatalf("%d events; expected the rules, the quotes and the new rules", n)
+	}
+}
