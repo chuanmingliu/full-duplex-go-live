@@ -12,6 +12,7 @@ What is behind it today, on the ThinkPad:
 | --- | --- | --- | --- | --- |
 | `audio8-asr` | speech → text, whole clip | Audio8-ASR-0.1B, ONNX int8 (`~/edge/asr`, port 7860) | takes 16 kHz | **CC BY-NC 4.0 — non-commercial** |
 | `audio8-tts` | text → speech, streamed | Audio8 TTS 0.1B DualAR, ONNX int8 (`~/edge/Audio8_TTS/onnx_runtime_0_1b_int8`, port 8024) | makes 44.1 kHz | Apache 2.0 |
+| `nemotron-diar` | who is speaking, frame by frame, streamed | Nemotron-3-Diarization (streaming Sortformer, ~100 M params) on CPU PyTorch via Transformers (`~/edge/diar`, `edge/diar_server.py`, port 8031) | takes 16 kHz | OpenMDW 1.1 |
 
 VibeVoice-ASR-BitNet (`microsoft/VibeASR.cpp`, MIT) is cloned at
 `~/edge/vibeasr` and not yet built: the box has no `cmake`. It is a
@@ -173,6 +174,25 @@ with c.audio.speech.with_streaming_response.create(model="audio8-tts", voice="de
         play(chunk)
 ```
 
+### `GET /v1/audio/diarize?model=nemotron-diar` (WebSocket)
+
+Not an OpenAI shape — OpenAI has no streaming diarization — so it is a
+WebSocket of our own, documented in `internal/focus/wire.go`. The client
+sends binary messages of 16 kHz PCM16 mono, each prefixed by an 8-byte
+little-endian session time in ms of its first sample. The server sends JSON:
+
+```json
+{"type":"ready","lag_ms":345,"frame_ms":80,"model":"nemotron-3-diarization","mode":"ultra_low_latency"}
+{"type":"frames","start_ms":1200,"frame_ms":80,"p":[[0.93,0.02],[0.91,0.01]],"compute_ms":41}
+```
+
+`p` is one row per 80 ms frame from `start_ms`, one column per speaker in
+the order the model first heard them; the values are activity probabilities.
+`lag_ms` is the model's input buffer: a frame's label arrives that long after
+its audio, plus compute. One session at a time per model (the second gets
+429), the token as everywhere else. golive's `internal/focus` is the client;
+`duplex.focus` in a profile turns it on.
+
 ### Errors
 
 OpenAI's object, with the status it implies:
@@ -253,6 +273,22 @@ the model card offers one, and the runtime's own CLI with its tests
 (`.venv/bin/python -m pytest -q tests`) to separate "slow" from "broken".
 Until then the model is listed, honest about itself, and not used.
 
+**nemotron-diar runs in real time on the CPU, just.** Measured with
+`edge/probe_diar.py` on archived caller tracks, `ultra_low_latency` (chunk
+345 ms, 4 threads): compute per chunk 127 ms at the median on a 22 s track,
+but **329 ms at the median, 480 at p90, 637 at worst on a 120 s track** —
+the speaker cache and FIFO fill over the first ~20 s and attention over them
+is the steady-state cost. So RTF ≈ 0.95 in steady state and the labels run
+345 + ~330 ≈ 700 ms behind the audio, with no headroom; 8 threads were no
+faster than 4. `very_low_latency` (665 ms chunks) costs about the same per
+chunk, RTF ≈ 0.5, labels ~1 s behind. The model separated a second voice
+mixed into a real caller track at −8 dB (7.2 of 9.1 s of it labelled as a
+second speaker) and at −3 dB (5.7 of 6.7 s); the assistant's own echo on
+the caller track did not become a speaker of its own. Things to try for
+headroom: a shorter speaker cache / FIFO (the config's 264 frames), the
+`q8_0.gguf` the model card ships through NeMo-Speech.cpp, int8 dynamic
+quantization of the encoder in PyTorch.
+
 ## Setting up the runtimes
 
 Python on the box is 3.14 without `ensurepip`, so `python3 -m venv` makes an
@@ -274,4 +310,12 @@ python3 -m pip --python <dir>/.venv/bin/python install -r requirements.txt
   5.19) and runs. The repository is the model (2.9 GB, `hf download
   Edge0/Audio8-ASR-0.1B-onnx-runtime --local-dir asr`);
   `PYTHON=.venv/bin/python PORT=7860 bash run_local.sh`.
+- Nemotron-3-Diarization: NeMo 2.5 does not import on this Python (protobuf
+  and ml_dtypes conflicts), so the runtime is Transformers from source
+  (`pip install git+https://github.com/huggingface/transformers`) with CPU
+  PyTorch (`--index-url https://download.pytorch.org/whl/cpu torch`), in
+  `~/edge/diar/.venv`; the model (678 MB) is `hf download
+  nvidia/Nemotron-3-Diarization --local-dir ~/edge/diar/model`. The server is
+  `edge/diar_server.py` from this repository, copied to `~/edge/diar/`;
+  `phone-brain.sh edge start` runs it (`EDGE_DIAR_MODE`, `EDGE_DIAR_THREADS`).
 - The `hf` CLI lives in its own environment, `~/edge/hfcli`.

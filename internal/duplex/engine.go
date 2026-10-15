@@ -40,6 +40,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/endpoint"
+	"github.com/chuanmingliu/golive/internal/focus"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
@@ -235,6 +236,12 @@ type Engine struct {
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
 	speaking atomic.Bool
+	// focus is the speaker-focus side channel, nil when off; utterStartMS is
+	// where the current utterance began, on the audio clock.
+	focus        *focusState
+	utterStartMS int64
+	// focusDial, when set, replaces the WebSocket dial (tests).
+	focusDial func(ctx context.Context) (focus.Scorer, error)
 
 	ttsMu     sync.Mutex
 	ttsStream provider.TTSStream
@@ -401,6 +408,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
+	e.startFocus(e.ctx)
 	// The session has just opened and nobody is waiting on anything yet, which
 	// makes this the cheapest moment in the whole call to pay for handshakes.
 	e.prewarm("session open")
@@ -465,6 +473,7 @@ func (e *Engine) Close() {
 		// here needs no lock.
 		e.latencySummary()
 		e.lineSummary()
+		e.focusSummary()
 		e.ttsMu.Lock()
 		if e.ttsStream != nil {
 			_ = e.ttsStream.Close()
@@ -650,6 +659,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	if e.muted {
 		return
 	}
+	atMS := e.inputMS.Load()
 	e.inputMS.Add(int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
 
 	converted, err := audio.ResamplePCM16(pcm, e.opts.ClientRate, provider.PipelineRate)
@@ -657,6 +667,7 @@ func (e *Engine) onAudio(pcm []byte) {
 		e.deps.Emit(live.NewError("invalid_request_error", "bad_audio", err.Error(), ""))
 		return
 	}
+	e.focusPush(converted, atMS)
 	for _, frame := range e.framer.Push(converted) {
 		samples, err := audio.DecodePCM16(frame)
 		if err != nil {
@@ -701,6 +712,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// Remembered so the utterance's speech-end origin is not applied to
 		// whatever was already being said when it began.
 		e.turnBeforeUtterance = e.tracker.Current()
+		e.utterStartMS = d.StartMS
 		e.log.Debug("listen: utterance opened",
 			"start_ms", d.StartMS,
 			"active_ms", int(d.ActiveMS),
@@ -777,6 +789,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			SilenceMS: int64(d.SilenceMS),
 		})
 		e.closeUtteranceASR(d)
+		e.focusUtteranceClosed(d.EndMS)
 		e.speculateAtClose()
 		e.publishState()
 	}
@@ -791,6 +804,7 @@ func (e *Engine) onTick() {
 	e.observeTTFA()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
+	e.judgeFocus()
 	e.drainDeferred()
 	// The session's lifetime is the session's business: the server bounds it
 	// with a deadline on the context it hands this engine, and says so in
@@ -1707,6 +1721,7 @@ func (e *Engine) onSegmentHeard(turnID, text string, playAt time.Time) {
 
 func (e *Engine) onSpeakingChanged(speaking bool) {
 	e.speaking.Store(speaking)
+	e.post(func() { e.focusSpeaking(speaking) })
 	// The VAD raises its barge-in bar while we hold the floor. This is the
 	// closest a cascade gets to echo cancellation without a reference signal.
 	e.vad.SetAssistantSpeaking(speaking)

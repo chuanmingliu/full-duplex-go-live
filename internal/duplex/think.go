@@ -176,6 +176,13 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	e.delegatedTurn = turn
 	e.filled = false
 	e.cancelBackend()
+	if spoken {
+		end := e.speechEndMS
+		if e.userOpen {
+			end = e.inputMS.Load()
+		}
+		e.focusNote(turn, e.utterStartMS, end, e.userOpen)
+	}
 
 	e.log.Debug("think: delegating",
 		"turn", turn.ID,

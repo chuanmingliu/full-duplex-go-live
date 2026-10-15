@@ -8,6 +8,7 @@
 //	GET  /v1/models/{id}
 //	POST /v1/audio/transcriptions     speech to text (multipart as OpenAI takes it, or a raw body)
 //	POST /v1/audio/speech             text to speech, streamed as it is made
+//	GET  /v1/audio/diarize            who is speaking, a WebSocket (not an OpenAI shape; see diarize.go)
 //	GET  /healthz                     the gateway and each model's service
 //
 // The shapes are OpenAI's where OpenAI has one, so an OpenAI client points at
@@ -57,6 +58,7 @@ type Model struct {
 
 	transcriber Transcriber
 	speaker     Speaker
+	diarizer    *DiarizeUpstream
 	health      func(ctx context.Context) error
 }
 

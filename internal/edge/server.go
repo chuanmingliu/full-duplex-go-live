@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/models/{id}", s.auth(s.getModel))
 	mux.HandleFunc("POST /v1/audio/transcriptions", s.auth(s.transcribe))
 	mux.HandleFunc("POST /v1/audio/speech", s.auth(s.speech))
+	mux.HandleFunc("GET /v1/audio/diarize", s.auth(s.diarize))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "invalid_request_error", "", fmt.Sprintf("there is no %s %s here; see /v1/models", r.Method, r.URL.Path))
 	})

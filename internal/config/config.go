@@ -421,6 +421,25 @@ type DuplexConfig struct {
 	// sentence the hesitation was the start of.
 	IgnoreHesitations bool `json:"ignore_hesitations"`
 
+	// Focus keeps the conversation on one voice, with a speaker-activity
+	// model run beside the audio (internal/focus). "" is off. "veto" abandons
+	// an answer begun on an utterance that was mostly somebody else's — a
+	// television, a bystander — before it is heard; the model's labels arrive
+	// too late to decide turns, and early enough for that. "observe" runs the
+	// model and logs attributions without acting on them.
+	Focus string `json:"focus"`
+	// FocusURL is the diarization WebSocket (the edge gateway's
+	// /v1/audio/diarize?model=nemotron-diar); FocusTokenFile holds its bearer
+	// token.
+	FocusURL       string `json:"focus_url"`
+	FocusTokenFile string `json:"focus_token_file"`
+	// FocusVetoShare is the share of an utterance's voiced frames that must be
+	// another voice's, with the primary silent, before its answer is vetoed;
+	// FocusMinVoicedMS is how much voiced audio the model must have heard in
+	// it before any judgment is made.
+	FocusVetoShare   float64 `json:"focus_veto_share"`
+	FocusMinVoicedMS int     `json:"focus_min_voiced_ms"`
+
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
 	// ResetTTSOnInterrupt closes the synthesis connection whenever an answer is
@@ -776,6 +795,9 @@ func (c *Config) applyEnv() {
 	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
 	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
+	setString(&c.Duplex.Focus, "GOLIVE_FOCUS")
+	setString(&c.Duplex.FocusURL, "GOLIVE_FOCUS_URL")
+	setString(&c.Duplex.FocusTokenFile, "GOLIVE_FOCUS_TOKEN_FILE")
 	setBool(&c.Duplex.SemanticEndpointing, "GOLIVE_SEMANTIC_ENDPOINTING")
 	setBool(&c.Duplex.BackendPrefixWarm, "GOLIVE_BACKEND_PREFIX_WARM")
 	setInt(&c.ClientRate, "GOLIVE_CLIENT_RATE")

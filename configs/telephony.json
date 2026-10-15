@@ -82,6 +82,11 @@
     "settled_close_ms": 600,
     "backend_prefix_warm_start": true,
     "ignore_hesitations": true,
+    "focus": "observe",
+    "focus_url": "ws://127.0.0.1:8030/v1/audio/diarize?model=nemotron-diar",
+    "focus_token_file": "",
+    "focus_veto_share": 0.7,
+    "focus_min_voiced_ms": 240,
     "speculate_while_patient": true,
     "early_final_ms": 120
   },

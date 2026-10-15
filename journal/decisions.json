@@ -87,6 +87,17 @@
    "undo": "yes: tts_fallback empty",
    "needs": "A call with a stall in it, to see it fire; the owner's ear on the two voices (~/golive-voices/fish-*.wav)",
    "status": "on since 10-14 (owner: go)"
+  },
+  {
+   "rank": 9,
+   "title": "Speaker focus: a diarizer beside the audio, vetoing answers to other voices",
+   "gain": "An answer to a television or a bystander is dropped before it is heard; the transcript can say whose words were whose. Nothing on an ordinary turn: the model is off the critical path.",
+   "basis": "Nemotron-3-Diarization on the box's CPU: 127 ms per 345 ms chunk on a short track, ~330 ms (p90 480) in steady state on a 120 s track; a second voice mixed at −8 dB was labelled as its own speaker for 7.2 of 9.1 s. Labels 220–330 ms behind the audio on the first bench sessions.",
+   "cost": "Four CPU threads busy during a call; ~700 ms label lag means a veto lands before the first audio only when the answer is not fast; the model is a third-party 100 M-parameter network with its own failure modes",
+   "guard": "observe mode first: attributions logged, nothing acted on; veto only once a call shows the labels in time; a down model is a call without focus",
+   "undo": "yes: duplex.focus empty",
+   "needs": "A call with somebody talking in the background; then veto; a recording of a real background-talker situation to anchor the thresholds",
+   "status": "observe since 10-15 12:51 (owner: go ahead to implement)"
   }
  ]
 }

@@ -58,6 +58,8 @@ func run() error {
 		ttsURL    = flag.String("audio8-tts", "", "the Audio8 TTS 0.1B ONNX service (http://127.0.0.1:8024); empty leaves it out")
 		ttsID     = flag.String("audio8-tts-id", "audio8-tts", "the model id it is served as")
 		ttsTokens = flag.Int("audio8-tts-max-tokens", 512, "the most tokens one synthesis may run to (46 ms of audio each)")
+		diarURL   = flag.String("diarize", "", "the streaming diarization service (http://127.0.0.1:8031); empty leaves it out")
+		diarID    = flag.String("diarize-id", "nemotron-diar", "the model id it is served as")
 		queueWait = flag.Duration("queue-wait", 10*time.Second, "how long a request waits for a busy model before it is refused with 429")
 		logPath   = flag.String("log", "", "write the operational log here as well as to stderr (default <dir>/edge.log)")
 		showVer   = flag.Bool("version", false, "print the version and exit")
@@ -67,8 +69,8 @@ func run() error {
 		fmt.Println(version)
 		return nil
 	}
-	if *asrURL == "" && *ttsURL == "" {
-		return errors.New("nothing to serve: give -audio8-asr and/or -audio8-tts")
+	if *asrURL == "" && *ttsURL == "" && *diarURL == "" {
+		return errors.New("nothing to serve: give -audio8-asr, -audio8-tts and/or -diarize")
 	}
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		return err
@@ -103,6 +105,9 @@ func run() error {
 		t := edge.NewAudio8TTS(*ttsURL)
 		t.MaxNewTokens = *ttsTokens
 		srv.Add(t.Model(*ttsID))
+	}
+	if *diarURL != "" {
+		srv.Add(edge.NewDiarizeUpstream(*diarURL).Model(*diarID))
 	}
 	for _, m := range srv.Models() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

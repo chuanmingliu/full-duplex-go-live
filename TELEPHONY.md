@@ -753,3 +753,35 @@ API by `cmd/edge` on port 8030: `scripts/phone-brain.sh edge start|status|
 models|probe|say`. What is served, how to call it, what was measured and how
 the runtimes were set up are all in `EDGE.md`. The Audio8-ASR model is
 licensed for non-commercial use only.
+
+## Keeping to one voice
+
+A callee is rarely alone — a television, a colleague, a passenger — and the
+recognizer transcribes all of it. `duplex.focus` runs a speaker-activity
+model (Nemotron-3-Diarization, on the box, through the edge gateway) beside
+the caller's audio and uses what it says in the one way its lateness allows:
+the labels arrive ~700 ms after the sound, too late to decide whether a turn
+is over (the final transcript is in hand ~210 ms after the last sound) but
+early enough to abandon an answer, which takes ~650 ms more to become audio.
+The audio the recognizer hears is never changed.
+
+- The primary speaker is whoever first says 600 ms of speech after the
+  greeting — the person who answered. The assistant's own voice coming back
+  down the line is masked out by the moments the assistant was speaking (plus
+  a 600 ms tail). Another voice becomes the primary only after carrying the
+  conversation alone for 4 s with the primary silent: the phone handed over.
+- Every turn begun on the caller's words is judged once most of its audio is
+  labelled: `focus: utterance attributed` in the log, `golive.focus` as an
+  event (primary share, others' share, voiced ms, coverage, whether it was
+  another voice, whether its answer was dropped), and a line per call
+  (`focus: this call`: judged, vetoed, too late, primary speaker, hand-overs).
+- `"focus": "observe"` judges and logs only; `"veto"` also abandons the
+  answer to an utterance in which another voice was active for at least
+  `focus_veto_share` (0.7) of the voiced frames with the primary silent, and
+  at least `focus_min_voiced_ms` (240) was voiced — before the first audio
+  when the labels come in time, with `focus: … answered before the labels
+  came` in the log when they do not. The telephony profile is on `observe`
+  until a call has shown the labels arriving in time.
+- `focus_url` is the gateway's WebSocket, the token comes from
+  `GOLIVE_FOCUS_TOKEN_FILE` (`phone-brain.sh` sets it to the gateway's), and
+  a gateway or model that is down is a call without focus, logged once.

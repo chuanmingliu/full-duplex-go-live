@@ -117,6 +117,9 @@ EDGE_DIR="${EDGE_DIR:-$HOME/golive-edge}"
 EDGE_HOME="${EDGE_HOME:-$HOME/edge}"
 EDGE_ASR_PORT="${EDGE_ASR_PORT:-7860}"
 EDGE_TTS_PORT="${EDGE_TTS_PORT:-8024}"
+EDGE_DIAR_PORT="${EDGE_DIAR_PORT:-8031}"
+EDGE_DIAR_THREADS="${EDGE_DIAR_THREADS:-4}"
+EDGE_DIAR_MODE="${EDGE_DIAR_MODE:-ultra_low_latency}"
 if [ -z "${EDGE_ADDR:-}" ]; then _ip="$(lan_ip)"; EDGE_ADDR="127.0.0.1:$EDGE_PORT${_ip:+,$_ip:$EDGE_PORT}"; fi
 EDGE_URL="http://127.0.0.1:$EDGE_PORT"
 DEMO_PROFILE="${DEMO_PROFILE:-configs/tencent-deepseek-minimax.json}"
@@ -280,11 +283,17 @@ capi() {
 # says how they were set up); the gateway is ours. All three are left alone by
 # a restart of golive.
 EBIN="./bin/edge-linux-$ARCH"; EPID="$STATE.edge.pid"; ELOG="edge.out"
-ASR_HOME="$EDGE_HOME/asr"; TTS_HOME="$EDGE_HOME/Audio8_TTS/onnx_runtime_0_1b_int8"
+ASR_HOME="$EDGE_HOME/asr"; TTS_HOME="$EDGE_HOME/Audio8_TTS/onnx_runtime_0_1b_int8"; DIAR_HOME="$EDGE_HOME/diar"
 erunning() { [ -f "$EPID" ] && kill -0 "$(cat "$EPID")" 2>/dev/null; }
 asr_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_ASR_PORT/health" >/dev/null 2>&1; }
 tts_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_TTS_PORT/api/health" >/dev/null 2>&1; }
+diar_up() { curl -sf -m 3 "http://127.0.0.1:$EDGE_DIAR_PORT/health" >/dev/null 2>&1; }
 runtimes_start() {
+  if [ -x "$DIAR_HOME/.venv/bin/python" ] && [ -f "$DIAR_HOME/diar_server.py" ] && ! diar_up; then
+    ( cd "$DIAR_HOME" && setsid nohup .venv/bin/python diar_server.py --model model --mode "$EDGE_DIAR_MODE" --threads "$EDGE_DIAR_THREADS" --host 127.0.0.1 --port "$EDGE_DIAR_PORT" >> service.log 2>&1 < /dev/null & )
+    for _ in $(seq 1 60); do diar_up && break; sleep 2; done
+    diar_up && say "nemotron-diar is up on 127.0.0.1:$EDGE_DIAR_PORT ($EDGE_DIAR_MODE, $EDGE_DIAR_THREADS threads)" || say "nemotron-diar did not come up; see $DIAR_HOME/service.log"
+  fi
   if [ -x "$ASR_HOME/.venv/bin/python" ] && ! asr_up; then
     ( cd "$ASR_HOME" && setsid nohup env PYTHON=.venv/bin/python HOST=127.0.0.1 PORT="$EDGE_ASR_PORT" bash run_local.sh >> service.log 2>&1 < /dev/null & )
     for _ in $(seq 1 60); do asr_up && break; sleep 2; done
@@ -297,6 +306,7 @@ runtimes_start() {
 runtimes_stop() {
   [ -x "$TTS_HOME/stop_server.sh" ] && ( cd "$TTS_HOME" && bash stop_server.sh >/dev/null 2>&1 )
   pkill -f "server.py --bundle_dir $ASR_HOME" 2>/dev/null || true
+  pkill -f "diar_server.py" 2>/dev/null || true
 }
 estop() {
   if erunning; then kill "$(cat "$EPID")" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8; do erunning || break; sleep 0.5; done; fi
@@ -311,6 +321,7 @@ estart() {
   local args=()
   asr_up && args+=(-audio8-asr "http://127.0.0.1:$EDGE_ASR_PORT")
   tts_up && args+=(-audio8-tts "http://127.0.0.1:$EDGE_TTS_PORT")
+  diar_up && args+=(-diarize "http://127.0.0.1:$EDGE_DIAR_PORT")
   [ ${#args[@]} -gt 0 ] || { say "neither runtime is up; nothing to serve"; return 1; }
   setsid nohup "$EBIN" -addr "$EDGE_ADDR" -dir "$EDGE_DIR" "${args[@]}" >> "$ELOG" 2>&1 < /dev/null &
   echo $! > "$EPID"
@@ -390,6 +401,8 @@ start_golive() {
     export GOLIVE_STORE_DIR="$CALLS_DIR" GOLIVE_REALTIME_STORE_CALLS=1
     export GOLIVE_STORE_TTL_HOURS="${GOLIVE_STORE_TTL_HOURS:-$CALLS_TTL_HOURS}"
   fi
+  # The speaker-focus side channel reaches the edge gateway with its token.
+  [ -r "$EDGE_DIR/api.token" ] && export GOLIVE_FOCUS_TOKEN_FILE="${GOLIVE_FOCUS_TOKEN_FILE:-$EDGE_DIR/api.token}"
   # A lane — a connection of its own — for each copy of a completion the
   # profile asks for; the chat-model adapter keeps four unless told otherwise.
   local copies
@@ -852,6 +865,7 @@ edge)
       else say "the edge gateway is not running"; fi
       asr_up && say "  audio8-asr runtime: up on 127.0.0.1:$EDGE_ASR_PORT" || say "  audio8-asr runtime: down"
       tts_up && say "  audio8-tts runtime: up on 127.0.0.1:$EDGE_TTS_PORT" || say "  audio8-tts runtime: down"
+      diar_up && say "  nemotron-diar runtime: $(curl -s -m 3 "http://127.0.0.1:$EDGE_DIAR_PORT/health" | cut -c1-200)" || say "  nemotron-diar runtime: down"
       ;;
     token) cat "$EDGE_DIR/api.token" ;;
     models) eapi GET /v1/models | python3 -c 'import json,sys

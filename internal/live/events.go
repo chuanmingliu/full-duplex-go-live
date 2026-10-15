@@ -60,7 +60,10 @@ const (
 	ExtTurnMetrics      = "golive.turn.metrics"
 	ExtBackchannel      = "golive.backchannel"
 	ExtInputBackchannel = "golive.input_backchannel"
-	ExtChannelState     = "golive.channel.state"
+	// ExtFocus says whose voice an answered utterance was, by the speaker-
+	// activity model, and whether its answer was dropped for it. See FocusEvent.
+	ExtFocus        = "golive.focus"
+	ExtChannelState = "golive.channel.state"
 	// ExtInputTranscript carries the recognizer's whole current hypothesis for
 	// an utterance, revisions included. See InputTranscriptEvent.
 	ExtInputTranscript = "golive.input_transcript.updated"
@@ -713,6 +716,23 @@ type BackchannelEvent struct {
 	Envelope
 	Kind string `json:"kind,omitempty"`
 	Text string `json:"text"`
+}
+
+// FocusEvent is golive.focus: the speaker-activity model's view of one
+// answered utterance. PrimaryShare and OthersShare are shares of its voiced
+// frames; Coverage how much of it was labelled when judged; AnotherVoice
+// whether it read as somebody else's; Vetoed whether the answer was dropped
+// for that before anyone heard it.
+type FocusEvent struct {
+	Envelope
+	TurnID       string  `json:"turn_id"`
+	PrimaryShare float64 `json:"primary_share"`
+	OthersShare  float64 `json:"others_share"`
+	VoicedMS     int64   `json:"voiced_ms"`
+	Coverage     float64 `json:"coverage"`
+	Primary      int     `json:"primary_speaker"`
+	AnotherVoice bool    `json:"another_voice"`
+	Vetoed       bool    `json:"vetoed,omitempty"`
 }
 
 // InputBackchannelEvent is golive.input_backchannel: the caller said something

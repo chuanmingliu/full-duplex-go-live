@@ -544,6 +544,23 @@ into a venv would do). The gateway serializes requests per model (429 after
   as `golive-edge.tar.gz` (the binary and `phone-brain.sh`) until that is
   understood, and the rest as before.
 
+## Keeping to one voice (focus)
+
+`internal/focus` (the tracker, the WebSocket client, the wire),
+`internal/duplex/focus.go` (where the engine uses it), `internal/edge/
+diarize.go` (the gateway's WebSocket proxy), `edge/diar_server.py` (the model
+server on the box). See "Keeping to one voice" in `TELEPHONY.md` and the
+measurements in `EDGE.md`. The idea in one line: the diarizer's labels are
+too late to decide turns and early enough to veto answers, so they ride a
+side channel and never touch the audio the recognizer hears. On the box
+since 10-15 12:51 in `observe` mode (`duplex.focus`); every bench utterance
+since has been attributed to the primary with the labels 220–330 ms behind
+the audio on short sessions. Open: whether the labels still arrive before
+the first audio on a long call (steady-state compute is ~330 ms per 345 ms
+chunk), then `veto`; the journal does not draw the focus lane yet; the
+Tier-1 cheap features (level distance, F0) that could keep a background
+voice from opening a turn in the first place are not built.
+
 ## The call journal
 
 `scripts/phone-brain.sh journal start` on the box serves a page on the home

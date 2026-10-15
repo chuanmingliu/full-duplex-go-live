@@ -187,6 +187,13 @@ func (t *Turn) commit(emit func(any)) {
 
 // kill abandons the turn: nothing held for it is ever sent, and nothing more
 // will be.
+// Dead reports whether the turn has been killed.
+func (t *Turn) Dead() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.dead
+}
+
 func (t *Turn) kill() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
