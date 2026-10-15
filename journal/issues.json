@@ -578,7 +578,7 @@
       "title": "A background voice, or the assistant's own echo, cut the answer: the hold trusted the recognizer's words",
       "area": "turn-taking",
       "status": "fixed",
-      "commit": "(next)",
+      "commit": "0254658",
       "found": "2026-10-15",
       "found_on": "the 21:59 call, 30 answers cut",
       "found_call": "out-mv9lu7za-7rmd",
