@@ -62,7 +62,7 @@
 #                   and opening line (~/golive-last-call.json), for `call`
 #   CALLS_DIR=…     where recorded calls are kept (~/golive-calls), mode 700
 #   CALLS_TTL_HOURS=…  how long golive's working copy of a recorded call is
-#                   kept (168: a week); the archive has the call for good
+#                   kept (720: a month, the owner's choice 10-15); the archive has the call for good
 #   ARCHIVE_DIR=…   the archive: every finished call, recording and text, kept
 #                   for good (~/golive-archive, mode 700). Fed by the journal.
 #   ARCHIVE_MIRROR=…  a second copy, for `archive mirror`: a directory on
@@ -81,7 +81,7 @@ LOG="${LOGFILE:-golive-telephony.log}"
 PROFILE="${PROFILE:-configs/telephony.json}"
 LAST_CALL="${LAST_CALL:-$HOME/golive-last-call.json}"
 CALLS_DIR="${CALLS_DIR:-$HOME/golive-calls}"
-CALLS_TTL_HOURS="${CALLS_TTL_HOURS:-168}"
+CALLS_TTL_HOURS="${CALLS_TTL_HOURS:-720}"
 # The journal shows what was said on calls, so it listens on one address: the
 # one this box has on the home network (the interface the default route
 # leaves by) - not on every interface, which here would include a VPN tunnel

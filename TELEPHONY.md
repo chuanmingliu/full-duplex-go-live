@@ -256,7 +256,7 @@ Where its content comes from:
 | | Source | Kept |
 | --- | --- | --- |
 | Figures, stages, conversation | `golive-telephony.log`, re-read when it grows | for good, in the archive (below) |
-| Audio | `~/golive-calls/<session>/` (golive's store) until the call is archived | for good, in the archive; golive's working copy goes after `CALLS_TTL_HOURS`, a week |
+| Audio | `~/golive-calls/<session>/` (golive's store) until the call is archived | for good, in the archive; golive's working copy goes after `CALLS_TTL_HOURS`, a month since 10-15 |
 | Retrospectives, issues, decisions | `journal/` in this repository, shipped in the bundle | with the code |
 | The owner's notes | written from the page | `~/golive-journal/feedback/` |
 
