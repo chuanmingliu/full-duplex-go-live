@@ -1,549 +1,562 @@
 {
- "issues": [
-  {
-   "id": "ISS-001",
-   "title": "The end-of-turn pause was waited through with nothing in hand",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "bench and first calls, median 1210 ms",
-   "found_call": "",
-   "symptom": "Answers began only after the turn closed; about half the turns of the first calls were over 1200 ms.",
-   "cause": "The recognizer's partial results trail the audio by 300 ms and more, so the words in hand during the pause were short of the sentence and any guess made on them was thrown away at the final.",
-   "fix": "End the recognition 120 ms into a pause, begin the answer on that final, and open a continuation to hear anything that follows (duplex.early_final_ms).",
-   "commits": [
-    "42b5f54"
-   ],
-   "verified": "Bench median 1159 → 943 ms; the pause length no longer adds latency.",
-   "verified_call": "",
-   "effect": "p50 −216 ms on the bench"
-  },
-  {
-   "id": "ISS-002",
-   "title": "A guess was made on trailing words while the final was on its way",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "box log after 42b5f54",
-   "found_call": "",
-   "symptom": "A prepared answer was thrown away 50–80 ms after it was started.",
-   "cause": "Speculation on partials still ran in the window between asking for the early final and receiving it.",
-   "fix": "No guess on partials while an early final is pending.",
-   "commits": [
-    "ea3a478"
-   ],
-   "verified": "Bench p95 1244 → 1123.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-003",
-   "title": "The full stop on an early final was read as 'the caller has finished'",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "13:09 call",
-   "found_call": "",
-   "symptom": "\"就是。\", \"呃。\" and \"我想问你一下啊。\" were taken as finished turns and answered.",
-   "cause": "A final asked for in a pause ends in \"。\" whatever was said; it was read as the recognizer's opinion.",
-   "fix": "The forced stop is ignored when judging whether the caller is done.",
-   "commits": [
-    "b8883c6"
-   ],
-   "verified": "14:22 call onwards.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-004",
-   "title": "An interruption was weighed on words that arrived late",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "13:09 call, slowest turn",
-   "found_call": "",
-   "symptom": "Three syllables said over the assistant took 1382 ms to be acted on.",
-   "cause": "The early final was skipped while a floor hold was undecided, so the decision waited for trailing partials.",
-   "fix": "The early final is also asked for during an interruption.",
-   "commits": [
-    "b8883c6"
-   ],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-005",
-   "title": "The latency console refused every golive event",
-   "area": "telemetry",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "owner's console showed no golive turns",
-   "found_call": "",
-   "symptom": "None of golive's turns appeared in the console.",
-   "cause": "The console rejects a whole batch for one unknown key in `extra`; golive sent `agent` on every event.",
-   "fix": "Only the keys the console accepts are sent.",
-   "commits": [
-    "8382c52"
-   ],
-   "verified": "13:09 call: 61 events, none refused.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-006",
-   "title": "The gateway's turn detection was read as absent",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "reading the session.update the gateway sends",
-   "found_call": "",
-   "symptom": "golive believed the gateway sent no end-of-turn setting.",
-   "cause": "Active Call sends it in camelCase (`silenceDurationMs: 150`).",
-   "fix": "Both spellings are read; the telephony profile declines 150 ms and keeps 380 (honor_turn_detection: false).",
-   "commits": [],
-   "verified": "Logged shape of session.update on every call.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-007",
-   "title": "The first completion of a call was slow",
-   "area": "chat model",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "14:22 call, first turn 1561 ms",
-   "found_call": "",
-   "symptom": "The first answer of a call took over a second to its first token even with the prompt cached.",
-   "cause": "The vendor's first completion on a connection and prefix is slow regardless of cache.",
-   "fix": "A one-token request with the session's instructions while the phone rings and again as the greeting starts (backend_prefix_warm_start).",
-   "commits": [
-    "ea5d26d"
-   ],
-   "verified": "Bench median first token ~430 → 342 ms.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-008",
-   "title": "A bare hesitation was answered",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "14:22 call",
-   "found_call": "",
-   "symptom": "\"呃\" was waited on for 700 ms as a mid-thought and then answered anyway.",
-   "cause": "Hesitation sounds were treated as words.",
-   "fix": "Hesitation-only turns are left with the caller (ignore_hesitations).",
-   "commits": [
-    "ea5d26d"
-   ],
-   "verified": "0 answered on later calls.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-009",
-   "title": "A mid-thought wait cost a whole backend round on top of itself",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "18:34 call, 1481 ms turn",
-   "found_call": "",
-   "symptom": "Words that read as unfinished got 700 ms of patience, and the answer was begun only after it: 700 + ~780 ms.",
-   "cause": "Speculation was not started while the engine was being patient.",
-   "fix": "The answer is prepared on the early final during the wait (speculate_while_patient).",
-   "commits": [
-    "c2fbf96"
-   ],
-   "verified": "Patient turns on later calls: 566–879 ms.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-010",
-   "title": "A deadline flushed a single character to the synthesizer",
-   "area": "synthesizer",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "18:34 call (a regression of dcf68a8)",
-   "found_call": "",
-   "symptom": "The caller heard \"加\", then \"上了吗？\".",
-   "cause": "The shortened first-clause deadline flushed whatever the model had produced, even one character.",
-   "fix": "The deadline flush waits for stream_first_chunk_chars.",
-   "commits": [
-    "c2fbf96"
-   ],
-   "verified": "Regression introduced by this work and caught only on a live call.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-011",
-   "title": "Event ids were reissued after a restart, then made invalid",
-   "area": "telemetry",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "20:18 call: all 70 turns' events refused (a regression)",
-   "found_call": "",
-   "symptom": "The console refused events as duplicates after each restart; the first fix made every id invalid.",
-   "cause": "Ids were boot id + producer + a count from one; starting the count from the clock made them too long for the console.",
-   "fix": "Ids carry a short per-run token: boot:<id>:golive-<component>-r<run>:<count>. Probe a new id shape against the console before deploying it.",
-   "commits": [
-    "779002e"
-   ],
-   "verified": "21:51 call: 367 events, none refused.",
-   "verified_call": "out-mv3vt758-ln5f",
-   "effect": ""
-  },
-  {
-   "id": "ISS-012",
-   "title": "The settled-words close fired 5 ms before the final arrived",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "20:18 call, one of five slow turns",
-   "found_call": "",
-   "symptom": "A turn was closed on stale hypotheses with half the sentence missing.",
-   "cause": "\"No new words for 600 ms\" was judged on partials while an early final was pending.",
-   "fix": "The settled close waits for a final that is on its way.",
-   "commits": [
-    "779002e"
-   ],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-013",
-   "title": "A trailing \"啊\" threw the prepared answer away",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "20:18 call, one of five slow turns",
-   "found_call": "",
-   "symptom": "The answer begun on \"也可以是吧\" was discarded when the final read \"也可以是吧，啊\".",
-   "cause": "Guess and final were compared exactly.",
-   "fix": "A trailing interjection is not a different turn (sameWords).",
-   "commits": [
-    "779002e"
-   ],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-014",
-   "title": "Copies of a completion were slow together",
-   "area": "chat model",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "hedge 2 → 4 bought little",
-   "found_call": "",
-   "symptom": "Four copies left one turn in ten slow where independence predicted one in a hundred.",
-   "cause": "All copies were streams on one HTTP/2 connection on one account.",
-   "fix": "Each copy goes down a lane: one key on one connection of its own; a pool of keys.",
-   "commits": [
-    "f374c41"
-   ],
-   "verified": "Two accounts: fastest-copy first token p90 504 → 416 ms in 40 rounds. Vendor-wide slow moments remain.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-015",
-   "title": "Racing every first synthesis hit the vendor's rate limit",
-   "area": "synthesizer",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "bench on 779002e: 2 of 30 turns lost",
-   "found_call": "",
-   "symptom": "Two answers were never heard: \"rate limit exceeded(RPM)\".",
-   "cause": "A second request per turn took the account past its allowance.",
-   "fix": "Asking both connections every time is off; the second is asked only when the first is slow (tts_hedge_after_ms).",
-   "commits": [
-    "507f334",
-    "c9a0738"
-   ],
-   "verified": "No refusal on any call since.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-016",
-   "title": "Turns of two or three characters got no head start",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "21:51 and 22:21 calls: all 12 turns without a prepared answer",
-   "found_call": "out-mv3wvlrt-sglf",
-   "symptom": "Answers to \"嗯。\" were begun from nothing when the pause ran out; 4 of the 22:21 call's 5 slow turns.",
-   "cause": "speculative_min_chars, meant for fragments of a hypothesis, was applied to a final asked for in a pause.",
-   "fix": "The length floor no longer applies to an early final.",
-   "commits": [
-    "c9a0738"
-   ],
-   "verified": "23:08 call: 37 of 37 turns prepared.",
-   "verified_call": "out-mv3ykjf0-w5hx",
-   "effect": "~160 ms on each such turn"
-  },
-  {
-   "id": "ISS-017",
-   "title": "The synthesizer stalls for seconds on every connection at once",
-   "area": "synthesizer",
-   "status": "open",
-   "found": "2026-10-11",
-   "found_on": "22:21 call (8 s), 22:44 probe, 23:08 call (4 s)",
-   "found_call": "out-mv3wvlrt-sglf",
-   "symptom": "First audio of 1.3–4 s, and a segment missing for 3.3 s in the middle of an answer. The worst turn so far: 4603 ms.",
-   "cause": "Not known. Not load: slow syntheses came at 13–17 requests a minute. Not one connection: a second connection asked 260 ms in had nothing either. A probe with TLS handshakes every second caught no stall.",
-   "fix": "None yet. A second connection (insurance against one bad connection) is in place. Options: the vendor's HTTP endpoint as a second route; a holding phrase on slow turns; openers from the phrase cache. A pool of two accounts is on since 10-12 22:35: an answer's first segment is asked of both and the faster is played. In 30 probe rounds the accounts were never slow together (worst 689 ms alone, 337 for the faster), but no multi-second stall occurred in them, so whether a stall is one account's or everyone's is still not known.",
-   "commits": [],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-018",
-   "title": "The chat model has minutes when every copy is slow",
-   "area": "chat model",
-   "status": "decision",
-   "found": "2026-10-11",
-   "found_on": "21:51 call, 1354 ms turn",
-   "found_call": "out-mv3vt758-ln5f",
-   "symptom": "One turn's first token took 845 ms with four copies on two accounts. On 10-12 at 23:14 a whole call sat in one: 12 of 13 turns over 1200 (p50 1309), every one with the first token 577 to 631 ms after the headers; measured outside golive straight after, the fastest of eight copies was at 707 and 712 ms at the median, with every copy over 550 ms in 23 of 24 rounds. The night before, 602 ms at 23:53 and 161 to 202 from 00:08. The same build at 14:28 the next day: 6 turns, p50 831, none over, first token 123 ms after the headers; outside golive 213 and 192 ms. At 21:15 on 10-13, an ordinary evening: 47 turns, p50 884, p95 1045, none over, first token 260 ms after the headers. 10-14 at 15:40, in the afternoon: fastest of eight copies 806 ms at the median, 9 rounds of 10 slow on every copy; one turn of the 15:37 call over 1200 for it.",
-   "cause": "The vendor as a whole is slow at that moment; and several times slower in its busy hours (602 ms at 23:53 against ~170 ms after midnight).",
-   "fix": "Eight copies help the ordinary tail (p90 −30 to −100 ms). A second, independent vendor in the race is what would cover these moments.",
-   "commits": [
-    "9f2ae31"
-   ],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-019",
-   "title": "Opening clauses were synthesized again every time",
-   "area": "synthesizer",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "two calls: 1 answer in 8 opened with words already said",
-   "found_call": "",
-   "symptom": "\"好的，\", \"是的，\" and the like waited ~190 ms for the synthesizer on every use.",
-   "cause": "Only fixed phrases were kept in the phrase cache.",
-   "fix": "Any answer segment of 12 characters or fewer is remembered and played from memory (phrase_cache_learn_chars). Lost on restart.",
-   "commits": [
-    "4b029b3"
-   ],
-   "verified": "23:08 call: 4 ordinary turns opened from memory, 515–756 ms.",
-   "verified_call": "out-mv3ykjf0-w5hx",
-   "effect": ""
-  },
-  {
-   "id": "ISS-020",
-   "title": "The owner's prompt could only be dialled from one browser",
-   "area": "tooling",
-   "status": "fixed",
-   "found": "2026-10-11",
-   "found_on": "owner asked for a way to call away from the Mac",
-   "found_call": "",
-   "symptom": "A call placed from anywhere but the originator's page ran without the owner's prompt.",
-   "cause": "The prompt lives in that page's browser storage.",
-   "fix": "golive keeps the last answered call's instructions and opening line; `phone-brain.sh call` redials them.",
-   "commits": [
-    "e517e3a"
-   ],
-   "verified": "23:34 call: same 13,116 characters, same hash.",
-   "verified_call": "out-mv3zhd05-7w5b",
-   "effect": ""
-  },
-  {
-   "id": "ISS-021",
-   "title": "The request budget starved the hedge it was there to ration",
-   "area": "synthesizer",
-   "status": "fixed",
-   "found": "2026-10-12",
-   "found_on": "09:34 call: both turns over 1200 ms",
-   "found_call": "out-mv4kxcji-s18u",
-   "symptom": "The second synthesis connection was refused all four times it was wanted; first audio 938 and 646 ms went unhedged.",
-   "cause": "The budget capped the account's total at 18 requests a minute; the call made 22.5 a minute by itself.",
-   "fix": "The budget bounds what hedging adds (4 second requests a minute), not the total.",
-   "commits": [
-    "365e4f3"
-   ],
-   "verified": "2026-10-12",
-   "verified_call": "out-mv4rvtp9-d3fw",
-   "effect": "A second request was wanted twice and allowed twice; none refused. On the call before, four were wanted and four refused."
-  },
-  {
-   "id": "ISS-022",
-   "title": "The first-sound echo estimate cannot measure this line",
-   "area": "line",
-   "status": "open",
-   "found": "2026-10-12",
-   "found_on": "09:24 and 09:34 calls",
-   "found_call": "out-mv4kk4gz-1yiq",
-   "symptom": "No measurement on one call; 4 readings against 49 failed attempts on the next, of which two are plausible. On the first recorded call (quiet place) it took 3 readings (300, 620, 740 ms) against 14 failed attempts, and the recording holds no echo to support them.",
-   "cause": "The idle line is never quiet enough (the caller was on a metro), and the line returns the assistant's voice only some of the time.",
-   "fix": "Each failed attempt now says why. Replaced by recording the call and correlating over the whole of it (echoprobe).",
-   "commits": [
-    "1287536",
-    "c8a8477",
-    "c6a9f5d"
-   ],
-   "verified": "echoprobe has run on synthetic calls only.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-023",
-   "title": "The phone leg has never been measured",
-   "area": "line",
-   "status": "open",
-   "found": "2026-10-10",
-   "found_on": "every figure here stops at golive's edge",
-   "found_call": "",
-   "symptom": "The gateway, the PBX and the phone network, both ways, are on top of every number in this journal. On the first recorded call, echoprobe found no echo of the assistant's voice at any delay up to 1.5 s (significance 1.9 against a threshold of 6.0): a quiet handset cancels its own echo.",
-   "cause": "Nothing outside golive reports a timestamp; the owner's console holds only golive's own events.",
-   "fix": "Not fixed. What is left is a recording made beside the handset during a call, lined up with the box's recording of the same call.",
-   "commits": [],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-024",
-   "title": "Recognition on phone audio is poor",
-   "area": "recognizer",
-   "status": "open",
-   "found": "2026-10-11",
-   "found_on": "several calls: wrong words",
-   "found_call": "",
-   "symptom": "Words are misrecognized on the phone line.",
-   "cause": "The 16 kHz engine is run on audio the phone network has band-limited to 8 kHz.",
-   "fix": "Untried: the 8k_zh engine, which needs the adapter to send 8 kHz audio.",
-   "commits": [],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-025",
-   "title": "A phone line is never quiet, and returns the assistant's voice",
-   "area": "line",
-   "status": "watching",
-   "found": "2026-10-10",
-   "found_on": "second real call",
-   "found_call": "",
-   "symptom": "A finished question was held open for 3.3 s on line noise; an answer was thrown away eight times. On out-mv4rvtp9-d3fw one of two interruptions was flagged as possibly the assistant's own voice returning.",
-   "cause": "The energy detector never saw silence; the assistant's own voice came back loud enough to read as the caller.",
-   "fix": "settled_close_ms, vad.echo_tail_ms, vad.barge_in_margin_db.",
-   "commits": [],
-   "verified": "One 'looks like the assistant's own voice' warning per call remains.",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-026",
-   "title": "Outbound calls ended in 408 with the phone never ringing",
-   "area": "line",
-   "status": "fixed",
-   "found": "2026-10-10",
-   "found_on": "several attempts to place a call",
-   "found_call": "",
-   "symptom": "Every outbound call timed out after 32 s.",
-   "cause": "The GSM gateway changes its SIP port when it re-registers; the PBX trunk pointed at the old one.",
-   "fix": "A timer on the box keeps the trunk in step with the gateway (outside this repository).",
-   "commits": [],
-   "verified": "",
-   "verified_call": "",
-   "effect": ""
-  },
-  {
-   "id": "ISS-027",
-   "title": "Any word the caller murmured stopped the assistant, and a listed murmur lost its head start",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-12",
-   "found_on": "the owner's review of the backchannel settings",
-   "found_call": "",
-   "symptom": "The phone profile's list of murmurs was empty, so \"嗯\" or \"对\" said over an answer cut it off. And any word put on the list would have had its turns answered without a head start when said into a silence.",
-   "cause": "The list was shipped empty on purpose (each entry is a phrase the caller can no longer interrupt with). The list was also consulted when deciding whether to begin an answer early, wherever the word was said.",
-   "fix": "The owner's 33 phrases are in the phone profile. The list now only decides who has the floor: a listed word said while the assistant is silent is begun on its early final like any short turn.",
-   "commits": [],
-   "verified": "2026-10-12",
-   "verified_call": "out-mv5d1ax7-96wc",
-   "effect": "A listed word said into a silence came up three times and was answered each time with its head start. No murmur was said over the assistant on that call, so keeping the floor through one is still not heard on a line; seven real interruptions were each recognised 0.1 to 0.4 s in.",
-   "note": "10-13 21:15 call: a listed murmur said twelve times, each into a silence and each answered with its head start; none said over the assistant, so the keeping of the floor is still not seen on a call."
-  },
-  {
-   "id": "ISS-028",
-   "title": "A call's recording was deleted after a week, and its text lived in one log file",
-   "area": "tooling",
-   "status": "fixed",
-   "found": "2026-10-12",
-   "found_on": "the owner asking for persistent storage of every call",
-   "found_call": "",
-   "symptom": "Recordings expired after 7 days. The conversation and the measurements existed only as the journal's reading of a single log file.",
-   "cause": "golive's store is working storage with a retention; nothing was built to keep a call.",
-   "fix": "An archive on the box that nothing deletes from: per call, the recording as one stereo file, the conversation to read, everything measured, golive's own session record and the call's lines of the log, with checksums. The journal feeds it between calls and plays from it. A second copy on another disk is one command, not yet scheduled.",
-   "commits": [],
-   "verified": "2026-10-12",
-   "verified_call": "out-mv5d1ax7-96wc",
-   "effect": "The call was archived, recording and text, within a minute of ending, with nobody opening the page."
-  },
-  {
-   "id": "ISS-029",
-   "title": "The pool treated a ten-a-minute account like a thirty-a-minute one",
-   "area": "synthesizer",
-   "status": "fixed",
-   "found": "2026-10-12",
-   "found_on": "pacing the second account alone after its first call",
-   "found_call": "out-mv5d1ax7-96wc",
-   "symptom": "Nothing was lost on the call. Paced alone at 30 requests a minute, the second account refused 42 of 76 requests from the 28th second on; the first has carried 22 to 31 a minute unrefused. With one limit for both, a busy call that found both counted full stayed on whichever account it was on, including the small one past its real limit, and a refused request had nowhere to go when the other account was counted full.",
-   "cause": "One `tts_account_rpm` for every account, taken from the vendor's page; and the rule for a full account only moved a session to an account with room left, never to the roomier of two full ones.",
-   "fix": "Each account's allowance is written beside its key (`MINIMAX_TTS_RPM=20`, `MINIMAX_TTS_RPM_2=8`: the vendor's page gives a topped-up account 20 a minute and a free one 10) and counted by itself; with both full the session goes to the roomier account; a request an account refuses is asked of the other at once, room or no room, and the refusing account is treated as full for the minute.",
-   "commits": [],
-   "verified": "2026-10-12",
-   "verified_call": "out-mv5e7gyt-r2kf",
-   "effect": "All 13 turns were asked of both accounts; the second spoke first 7 times, the first 6; nothing refused and neither account reached its limit.",
-   "note": "10-13 21:15 call, 47 turns: 33 first segments asked of both accounts (17 and 13 first), four moves between accounts, about 21 requests a minute, nothing refused."
-  },
-  {
-   "id": "ISS-030",
-   "title": "The caller's side of a recording ran late against the assistant's",
-   "area": "tooling",
-   "status": "fixed",
-   "found": "2026-10-13",
-   "found_on": "the owner reading the 21:15 call's conversation against its recording",
-   "found_call": "out-mv6peicf-0trz",
-   "symptom": "In the journal a caller's question was stamped at 1:40 and its answer at 1:41, but in the recording the question was heard about two seconds later, after the answer had begun; by the end of the call the caller's side was six seconds late. The stamps and every latency figure were right: they come from the log's clock, and the assistant's side of the recording matched them within 0.16 s all call long.",
-   "cause": "The phone side delivered the caller's audio faster than time passed: a 20 ms chunk every 19.6 ms on this call. Nine evening calls show it (19.4 to 19.6 ms a chunk), four daytime calls do not (19.97 to 20.02). The recorder appended the caller's audio as it arrived and only ever corrected a track that had fallen behind the clock, never one that had run ahead. Why the phone side does it is not known.",
-   "fix": "The recorder leaves out a chunk that is the previous chunk over again, the frame a quiet line repeats, while the caller's track is ahead of the clock; speech is never dropped. For recordings made before that, the journal does the same as it plays them, from the log's marks of how much audio had arrived by when, says how much it left out, and offers the file exactly as recorded. A caller's line is now stamped where it began, as the assistant's are.",
-   "commits": [
-    "a755be2"
-   ],
-   "verified": "2026-10-13",
-   "verified_call": "out-mv6peicf-0trz",
-   "note": "Checked on the 21:15 call as the journal now plays it: 6.2 s of repeated quiet frames left out, and the caller's words end within 0.15 to 0.25 s of their stamps in the first, middle and last third alike (as recorded they slid by seconds). The recorder's own correction is in build b5ad7c6 and recorded its first call at 15:37 on 10-14: the session record says the caller's track was kept on the clock, and the journal applied no correction. Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
-  },
-  {
-   "id": "ISS-031",
-   "title": "A murmur said as the answer ended was answered as a turn",
-   "area": "turn-taking",
-   "status": "fixed",
-   "found": "2026-10-14",
-   "found_on": "the 15:44 call, 3657 ms turn",
-   "found_call": "out-mv7t0tay-sj97",
-   "symptom": "The caller said a listed murmur over the last word of an answer. The floor was kept and the answer not interrupted, but an answer to the murmur was begun, held, and spoken 2.7 s later, and the turn counted at 3657 ms.",
-   "cause": "Whether words are an acknowledgement was judged by whether the assistant was speaking at that instant. The murmur's words arrived a moment after the audio ended, while the floor hold opened during the audio was still pending, so the words read as a turn; and a hold's verdict swallowed the utterance without abandoning the guess already begun on it.",
-   "fix": "A pending floor hold counts as the assistant having the floor; a swallowed utterance abandons any speculation begun on it.",
-   "commits": [
-    "7d0a46a"
-   ],
-   "verified": "",
-   "verified_call": "",
-   "note": "To be seen on the next call with a murmur over the assistant."
-  }
- ]
+  "issues": [
+    {
+      "id": "ISS-001",
+      "title": "The end-of-turn pause was waited through with nothing in hand",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "bench and first calls, median 1210 ms",
+      "found_call": "",
+      "symptom": "Answers began only after the turn closed; about half the turns of the first calls were over 1200 ms.",
+      "cause": "The recognizer's partial results trail the audio by 300 ms and more, so the words in hand during the pause were short of the sentence and any guess made on them was thrown away at the final.",
+      "fix": "End the recognition 120 ms into a pause, begin the answer on that final, and open a continuation to hear anything that follows (duplex.early_final_ms).",
+      "commits": [
+        "42b5f54"
+      ],
+      "verified": "Bench median 1159 → 943 ms; the pause length no longer adds latency.",
+      "verified_call": "",
+      "effect": "p50 −216 ms on the bench"
+    },
+    {
+      "id": "ISS-002",
+      "title": "A guess was made on trailing words while the final was on its way",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "box log after 42b5f54",
+      "found_call": "",
+      "symptom": "A prepared answer was thrown away 50–80 ms after it was started.",
+      "cause": "Speculation on partials still ran in the window between asking for the early final and receiving it.",
+      "fix": "No guess on partials while an early final is pending.",
+      "commits": [
+        "ea3a478"
+      ],
+      "verified": "Bench p95 1244 → 1123.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-003",
+      "title": "The full stop on an early final was read as 'the caller has finished'",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "13:09 call",
+      "found_call": "",
+      "symptom": "\"就是。\", \"呃。\" and \"我想问你一下啊。\" were taken as finished turns and answered.",
+      "cause": "A final asked for in a pause ends in \"。\" whatever was said; it was read as the recognizer's opinion.",
+      "fix": "The forced stop is ignored when judging whether the caller is done.",
+      "commits": [
+        "b8883c6"
+      ],
+      "verified": "14:22 call onwards.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-004",
+      "title": "An interruption was weighed on words that arrived late",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "13:09 call, slowest turn",
+      "found_call": "",
+      "symptom": "Three syllables said over the assistant took 1382 ms to be acted on.",
+      "cause": "The early final was skipped while a floor hold was undecided, so the decision waited for trailing partials.",
+      "fix": "The early final is also asked for during an interruption.",
+      "commits": [
+        "b8883c6"
+      ],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-005",
+      "title": "The latency console refused every golive event",
+      "area": "telemetry",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "owner's console showed no golive turns",
+      "found_call": "",
+      "symptom": "None of golive's turns appeared in the console.",
+      "cause": "The console rejects a whole batch for one unknown key in `extra`; golive sent `agent` on every event.",
+      "fix": "Only the keys the console accepts are sent.",
+      "commits": [
+        "8382c52"
+      ],
+      "verified": "13:09 call: 61 events, none refused.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-006",
+      "title": "The gateway's turn detection was read as absent",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "reading the session.update the gateway sends",
+      "found_call": "",
+      "symptom": "golive believed the gateway sent no end-of-turn setting.",
+      "cause": "Active Call sends it in camelCase (`silenceDurationMs: 150`).",
+      "fix": "Both spellings are read; the telephony profile declines 150 ms and keeps 380 (honor_turn_detection: false).",
+      "commits": [],
+      "verified": "Logged shape of session.update on every call.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-007",
+      "title": "The first completion of a call was slow",
+      "area": "chat model",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "14:22 call, first turn 1561 ms",
+      "found_call": "",
+      "symptom": "The first answer of a call took over a second to its first token even with the prompt cached.",
+      "cause": "The vendor's first completion on a connection and prefix is slow regardless of cache.",
+      "fix": "A one-token request with the session's instructions while the phone rings and again as the greeting starts (backend_prefix_warm_start).",
+      "commits": [
+        "ea5d26d"
+      ],
+      "verified": "Bench median first token ~430 → 342 ms.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-008",
+      "title": "A bare hesitation was answered",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "14:22 call",
+      "found_call": "",
+      "symptom": "\"呃\" was waited on for 700 ms as a mid-thought and then answered anyway.",
+      "cause": "Hesitation sounds were treated as words.",
+      "fix": "Hesitation-only turns are left with the caller (ignore_hesitations).",
+      "commits": [
+        "ea5d26d"
+      ],
+      "verified": "0 answered on later calls.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-009",
+      "title": "A mid-thought wait cost a whole backend round on top of itself",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "18:34 call, 1481 ms turn",
+      "found_call": "",
+      "symptom": "Words that read as unfinished got 700 ms of patience, and the answer was begun only after it: 700 + ~780 ms.",
+      "cause": "Speculation was not started while the engine was being patient.",
+      "fix": "The answer is prepared on the early final during the wait (speculate_while_patient).",
+      "commits": [
+        "c2fbf96"
+      ],
+      "verified": "Patient turns on later calls: 566–879 ms.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-010",
+      "title": "A deadline flushed a single character to the synthesizer",
+      "area": "synthesizer",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "18:34 call (a regression of dcf68a8)",
+      "found_call": "",
+      "symptom": "The caller heard \"加\", then \"上了吗？\".",
+      "cause": "The shortened first-clause deadline flushed whatever the model had produced, even one character.",
+      "fix": "The deadline flush waits for stream_first_chunk_chars.",
+      "commits": [
+        "c2fbf96"
+      ],
+      "verified": "Regression introduced by this work and caught only on a live call.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-011",
+      "title": "Event ids were reissued after a restart, then made invalid",
+      "area": "telemetry",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "20:18 call: all 70 turns' events refused (a regression)",
+      "found_call": "",
+      "symptom": "The console refused events as duplicates after each restart; the first fix made every id invalid.",
+      "cause": "Ids were boot id + producer + a count from one; starting the count from the clock made them too long for the console.",
+      "fix": "Ids carry a short per-run token: boot:<id>:golive-<component>-r<run>:<count>. Probe a new id shape against the console before deploying it.",
+      "commits": [
+        "779002e"
+      ],
+      "verified": "21:51 call: 367 events, none refused.",
+      "verified_call": "out-mv3vt758-ln5f",
+      "effect": ""
+    },
+    {
+      "id": "ISS-012",
+      "title": "The settled-words close fired 5 ms before the final arrived",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "20:18 call, one of five slow turns",
+      "found_call": "",
+      "symptom": "A turn was closed on stale hypotheses with half the sentence missing.",
+      "cause": "\"No new words for 600 ms\" was judged on partials while an early final was pending.",
+      "fix": "The settled close waits for a final that is on its way.",
+      "commits": [
+        "779002e"
+      ],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-013",
+      "title": "A trailing \"啊\" threw the prepared answer away",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "20:18 call, one of five slow turns",
+      "found_call": "",
+      "symptom": "The answer begun on \"也可以是吧\" was discarded when the final read \"也可以是吧，啊\".",
+      "cause": "Guess and final were compared exactly.",
+      "fix": "A trailing interjection is not a different turn (sameWords).",
+      "commits": [
+        "779002e"
+      ],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-014",
+      "title": "Copies of a completion were slow together",
+      "area": "chat model",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "hedge 2 → 4 bought little",
+      "found_call": "",
+      "symptom": "Four copies left one turn in ten slow where independence predicted one in a hundred.",
+      "cause": "All copies were streams on one HTTP/2 connection on one account.",
+      "fix": "Each copy goes down a lane: one key on one connection of its own; a pool of keys.",
+      "commits": [
+        "f374c41"
+      ],
+      "verified": "Two accounts: fastest-copy first token p90 504 → 416 ms in 40 rounds. Vendor-wide slow moments remain.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-015",
+      "title": "Racing every first synthesis hit the vendor's rate limit",
+      "area": "synthesizer",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "bench on 779002e: 2 of 30 turns lost",
+      "found_call": "",
+      "symptom": "Two answers were never heard: \"rate limit exceeded(RPM)\".",
+      "cause": "A second request per turn took the account past its allowance.",
+      "fix": "Asking both connections every time is off; the second is asked only when the first is slow (tts_hedge_after_ms).",
+      "commits": [
+        "507f334",
+        "c9a0738"
+      ],
+      "verified": "No refusal on any call since.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-016",
+      "title": "Turns of two or three characters got no head start",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "21:51 and 22:21 calls: all 12 turns without a prepared answer",
+      "found_call": "out-mv3wvlrt-sglf",
+      "symptom": "Answers to \"嗯。\" were begun from nothing when the pause ran out; 4 of the 22:21 call's 5 slow turns.",
+      "cause": "speculative_min_chars, meant for fragments of a hypothesis, was applied to a final asked for in a pause.",
+      "fix": "The length floor no longer applies to an early final.",
+      "commits": [
+        "c9a0738"
+      ],
+      "verified": "23:08 call: 37 of 37 turns prepared.",
+      "verified_call": "out-mv3ykjf0-w5hx",
+      "effect": "~160 ms on each such turn"
+    },
+    {
+      "id": "ISS-017",
+      "title": "The synthesizer stalls for seconds on every connection at once",
+      "area": "synthesizer",
+      "status": "open",
+      "found": "2026-10-11",
+      "found_on": "22:21 call (8 s), 22:44 probe, 23:08 call (4 s)",
+      "found_call": "out-mv3wvlrt-sglf",
+      "symptom": "First audio of 1.3–4 s, and a segment missing for 3.3 s in the middle of an answer. The worst turn so far: 4603 ms.",
+      "cause": "Not known. Not load: slow syntheses came at 13–17 requests a minute. Not one connection: a second connection asked 260 ms in had nothing either. A probe with TLS handshakes every second caught no stall.",
+      "fix": "None yet. A second connection (insurance against one bad connection) is in place. Options: the vendor's HTTP endpoint as a second route; a holding phrase on slow turns; openers from the phrase cache. A pool of two accounts is on since 10-12 22:35: an answer's first segment is asked of both and the faster is played. In 30 probe rounds the accounts were never slow together (worst 689 ms alone, 337 for the faster), but no multi-second stall occurred in them, so whether a stall is one account's or everyone's is still not known.",
+      "commits": [],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-018",
+      "title": "The chat model has minutes when every copy is slow",
+      "area": "chat model",
+      "status": "decision",
+      "found": "2026-10-11",
+      "found_on": "21:51 call, 1354 ms turn",
+      "found_call": "out-mv3vt758-ln5f",
+      "symptom": "One turn's first token took 845 ms with four copies on two accounts. On 10-12 at 23:14 a whole call sat in one: 12 of 13 turns over 1200 (p50 1309), every one with the first token 577 to 631 ms after the headers; measured outside golive straight after, the fastest of eight copies was at 707 and 712 ms at the median, with every copy over 550 ms in 23 of 24 rounds. The night before, 602 ms at 23:53 and 161 to 202 from 00:08. The same build at 14:28 the next day: 6 turns, p50 831, none over, first token 123 ms after the headers; outside golive 213 and 192 ms. At 21:15 on 10-13, an ordinary evening: 47 turns, p50 884, p95 1045, none over, first token 260 ms after the headers. 10-14 at 15:40, in the afternoon: fastest of eight copies 806 ms at the median, 9 rounds of 10 slow on every copy; one turn of the 15:37 call over 1200 for it.",
+      "cause": "The vendor as a whole is slow at that moment; and several times slower in its busy hours (602 ms at 23:53 against ~170 ms after midnight).",
+      "fix": "Eight copies help the ordinary tail (p90 −30 to −100 ms). A second, independent vendor in the race is what would cover these moments.",
+      "commits": [
+        "9f2ae31"
+      ],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-019",
+      "title": "Opening clauses were synthesized again every time",
+      "area": "synthesizer",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "two calls: 1 answer in 8 opened with words already said",
+      "found_call": "",
+      "symptom": "\"好的，\", \"是的，\" and the like waited ~190 ms for the synthesizer on every use.",
+      "cause": "Only fixed phrases were kept in the phrase cache.",
+      "fix": "Any answer segment of 12 characters or fewer is remembered and played from memory (phrase_cache_learn_chars). Lost on restart.",
+      "commits": [
+        "4b029b3"
+      ],
+      "verified": "23:08 call: 4 ordinary turns opened from memory, 515–756 ms.",
+      "verified_call": "out-mv3ykjf0-w5hx",
+      "effect": ""
+    },
+    {
+      "id": "ISS-020",
+      "title": "The owner's prompt could only be dialled from one browser",
+      "area": "tooling",
+      "status": "fixed",
+      "found": "2026-10-11",
+      "found_on": "owner asked for a way to call away from the Mac",
+      "found_call": "",
+      "symptom": "A call placed from anywhere but the originator's page ran without the owner's prompt.",
+      "cause": "The prompt lives in that page's browser storage.",
+      "fix": "golive keeps the last answered call's instructions and opening line; `phone-brain.sh call` redials them.",
+      "commits": [
+        "e517e3a"
+      ],
+      "verified": "23:34 call: same 13,116 characters, same hash.",
+      "verified_call": "out-mv3zhd05-7w5b",
+      "effect": ""
+    },
+    {
+      "id": "ISS-021",
+      "title": "The request budget starved the hedge it was there to ration",
+      "area": "synthesizer",
+      "status": "fixed",
+      "found": "2026-10-12",
+      "found_on": "09:34 call: both turns over 1200 ms",
+      "found_call": "out-mv4kxcji-s18u",
+      "symptom": "The second synthesis connection was refused all four times it was wanted; first audio 938 and 646 ms went unhedged.",
+      "cause": "The budget capped the account's total at 18 requests a minute; the call made 22.5 a minute by itself.",
+      "fix": "The budget bounds what hedging adds (4 second requests a minute), not the total.",
+      "commits": [
+        "365e4f3"
+      ],
+      "verified": "2026-10-12",
+      "verified_call": "out-mv4rvtp9-d3fw",
+      "effect": "A second request was wanted twice and allowed twice; none refused. On the call before, four were wanted and four refused."
+    },
+    {
+      "id": "ISS-022",
+      "title": "The first-sound echo estimate cannot measure this line",
+      "area": "line",
+      "status": "open",
+      "found": "2026-10-12",
+      "found_on": "09:24 and 09:34 calls",
+      "found_call": "out-mv4kk4gz-1yiq",
+      "symptom": "No measurement on one call; 4 readings against 49 failed attempts on the next, of which two are plausible. On the first recorded call (quiet place) it took 3 readings (300, 620, 740 ms) against 14 failed attempts, and the recording holds no echo to support them.",
+      "cause": "The idle line is never quiet enough (the caller was on a metro), and the line returns the assistant's voice only some of the time.",
+      "fix": "Each failed attempt now says why. Replaced by recording the call and correlating over the whole of it (echoprobe).",
+      "commits": [
+        "1287536",
+        "c8a8477",
+        "c6a9f5d"
+      ],
+      "verified": "echoprobe has run on synthetic calls only.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-023",
+      "title": "The phone leg has never been measured",
+      "area": "line",
+      "status": "open",
+      "found": "2026-10-10",
+      "found_on": "every figure here stops at golive's edge",
+      "found_call": "",
+      "symptom": "The gateway, the PBX and the phone network, both ways, are on top of every number in this journal. On the first recorded call, echoprobe found no echo of the assistant's voice at any delay up to 1.5 s (significance 1.9 against a threshold of 6.0): a quiet handset cancels its own echo.",
+      "cause": "Nothing outside golive reports a timestamp; the owner's console holds only golive's own events.",
+      "fix": "Not fixed. What is left is a recording made beside the handset during a call, lined up with the box's recording of the same call.",
+      "commits": [],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-024",
+      "title": "Recognition on phone audio is poor",
+      "area": "recognizer",
+      "status": "open",
+      "found": "2026-10-11",
+      "found_on": "several calls: wrong words",
+      "found_call": "",
+      "symptom": "Words are misrecognized on the phone line.",
+      "cause": "The 16 kHz engine is run on audio the phone network has band-limited to 8 kHz.",
+      "fix": "Untried: the 8k_zh engine, which needs the adapter to send 8 kHz audio.",
+      "commits": [],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-025",
+      "title": "A phone line is never quiet, and returns the assistant's voice",
+      "area": "line",
+      "status": "watching",
+      "found": "2026-10-10",
+      "found_on": "second real call",
+      "found_call": "",
+      "symptom": "A finished question was held open for 3.3 s on line noise; an answer was thrown away eight times. On out-mv4rvtp9-d3fw one of two interruptions was flagged as possibly the assistant's own voice returning.",
+      "cause": "The energy detector never saw silence; the assistant's own voice came back loud enough to read as the caller.",
+      "fix": "settled_close_ms, vad.echo_tail_ms, vad.barge_in_margin_db.",
+      "commits": [],
+      "verified": "One 'looks like the assistant's own voice' warning per call remains.",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-026",
+      "title": "Outbound calls ended in 408 with the phone never ringing",
+      "area": "line",
+      "status": "fixed",
+      "found": "2026-10-10",
+      "found_on": "several attempts to place a call",
+      "found_call": "",
+      "symptom": "Every outbound call timed out after 32 s.",
+      "cause": "The GSM gateway changes its SIP port when it re-registers; the PBX trunk pointed at the old one.",
+      "fix": "A timer on the box keeps the trunk in step with the gateway (outside this repository).",
+      "commits": [],
+      "verified": "",
+      "verified_call": "",
+      "effect": ""
+    },
+    {
+      "id": "ISS-027",
+      "title": "Any word the caller murmured stopped the assistant, and a listed murmur lost its head start",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-12",
+      "found_on": "the owner's review of the backchannel settings",
+      "found_call": "",
+      "symptom": "The phone profile's list of murmurs was empty, so \"嗯\" or \"对\" said over an answer cut it off. And any word put on the list would have had its turns answered without a head start when said into a silence.",
+      "cause": "The list was shipped empty on purpose (each entry is a phrase the caller can no longer interrupt with). The list was also consulted when deciding whether to begin an answer early, wherever the word was said.",
+      "fix": "The owner's 33 phrases are in the phone profile. The list now only decides who has the floor: a listed word said while the assistant is silent is begun on its early final like any short turn.",
+      "commits": [],
+      "verified": "2026-10-12",
+      "verified_call": "out-mv5d1ax7-96wc",
+      "effect": "A listed word said into a silence came up three times and was answered each time with its head start. No murmur was said over the assistant on that call, so keeping the floor through one is still not heard on a line; seven real interruptions were each recognised 0.1 to 0.4 s in.",
+      "note": "10-13 21:15 call: a listed murmur said twelve times, each into a silence and each answered with its head start; none said over the assistant, so the keeping of the floor is still not seen on a call."
+    },
+    {
+      "id": "ISS-028",
+      "title": "A call's recording was deleted after a week, and its text lived in one log file",
+      "area": "tooling",
+      "status": "fixed",
+      "found": "2026-10-12",
+      "found_on": "the owner asking for persistent storage of every call",
+      "found_call": "",
+      "symptom": "Recordings expired after 7 days. The conversation and the measurements existed only as the journal's reading of a single log file.",
+      "cause": "golive's store is working storage with a retention; nothing was built to keep a call.",
+      "fix": "An archive on the box that nothing deletes from: per call, the recording as one stereo file, the conversation to read, everything measured, golive's own session record and the call's lines of the log, with checksums. The journal feeds it between calls and plays from it. A second copy on another disk is one command, not yet scheduled.",
+      "commits": [],
+      "verified": "2026-10-12",
+      "verified_call": "out-mv5d1ax7-96wc",
+      "effect": "The call was archived, recording and text, within a minute of ending, with nobody opening the page."
+    },
+    {
+      "id": "ISS-029",
+      "title": "The pool treated a ten-a-minute account like a thirty-a-minute one",
+      "area": "synthesizer",
+      "status": "fixed",
+      "found": "2026-10-12",
+      "found_on": "pacing the second account alone after its first call",
+      "found_call": "out-mv5d1ax7-96wc",
+      "symptom": "Nothing was lost on the call. Paced alone at 30 requests a minute, the second account refused 42 of 76 requests from the 28th second on; the first has carried 22 to 31 a minute unrefused. With one limit for both, a busy call that found both counted full stayed on whichever account it was on, including the small one past its real limit, and a refused request had nowhere to go when the other account was counted full.",
+      "cause": "One `tts_account_rpm` for every account, taken from the vendor's page; and the rule for a full account only moved a session to an account with room left, never to the roomier of two full ones.",
+      "fix": "Each account's allowance is written beside its key (`MINIMAX_TTS_RPM=20`, `MINIMAX_TTS_RPM_2=8`: the vendor's page gives a topped-up account 20 a minute and a free one 10) and counted by itself; with both full the session goes to the roomier account; a request an account refuses is asked of the other at once, room or no room, and the refusing account is treated as full for the minute.",
+      "commits": [],
+      "verified": "2026-10-12",
+      "verified_call": "out-mv5e7gyt-r2kf",
+      "effect": "All 13 turns were asked of both accounts; the second spoke first 7 times, the first 6; nothing refused and neither account reached its limit.",
+      "note": "10-13 21:15 call, 47 turns: 33 first segments asked of both accounts (17 and 13 first), four moves between accounts, about 21 requests a minute, nothing refused."
+    },
+    {
+      "id": "ISS-030",
+      "title": "The caller's side of a recording ran late against the assistant's",
+      "area": "tooling",
+      "status": "fixed",
+      "found": "2026-10-13",
+      "found_on": "the owner reading the 21:15 call's conversation against its recording",
+      "found_call": "out-mv6peicf-0trz",
+      "symptom": "In the journal a caller's question was stamped at 1:40 and its answer at 1:41, but in the recording the question was heard about two seconds later, after the answer had begun; by the end of the call the caller's side was six seconds late. The stamps and every latency figure were right: they come from the log's clock, and the assistant's side of the recording matched them within 0.16 s all call long.",
+      "cause": "The phone side delivered the caller's audio faster than time passed: a 20 ms chunk every 19.6 ms on this call. Nine evening calls show it (19.4 to 19.6 ms a chunk), four daytime calls do not (19.97 to 20.02). The recorder appended the caller's audio as it arrived and only ever corrected a track that had fallen behind the clock, never one that had run ahead. Why the phone side does it is not known.",
+      "fix": "The recorder leaves out a chunk that is the previous chunk over again, the frame a quiet line repeats, while the caller's track is ahead of the clock; speech is never dropped. For recordings made before that, the journal does the same as it plays them, from the log's marks of how much audio had arrived by when, says how much it left out, and offers the file exactly as recorded. A caller's line is now stamped where it began, as the assistant's are.",
+      "commits": [
+        "a755be2"
+      ],
+      "verified": "2026-10-13",
+      "verified_call": "out-mv6peicf-0trz",
+      "note": "Checked on the 21:15 call as the journal now plays it: 6.2 s of repeated quiet frames left out, and the caller's words end within 0.15 to 0.25 s of their stamps in the first, middle and last third alike (as recorded they slid by seconds). The recorder's own correction is in build b5ad7c6 and recorded its first call at 15:37 on 10-14: the session record says the caller's track was kept on the clock, and the journal applied no correction. Open: what upstream sends 2% more audio than time on evening calls (gateway, PBX or phone bridge)."
+    },
+    {
+      "id": "ISS-031",
+      "title": "A murmur said as the answer ended was answered as a turn",
+      "area": "turn-taking",
+      "status": "fixed",
+      "found": "2026-10-14",
+      "found_on": "the 15:44 call, 3657 ms turn",
+      "found_call": "out-mv7t0tay-sj97",
+      "symptom": "The caller said a listed murmur over the last word of an answer. The floor was kept and the answer not interrupted, but an answer to the murmur was begun, held, and spoken 2.7 s later, and the turn counted at 3657 ms.",
+      "cause": "Whether words are an acknowledgement was judged by whether the assistant was speaking at that instant. The murmur's words arrived a moment after the audio ended, while the floor hold opened during the audio was still pending, so the words read as a turn; and a hold's verdict swallowed the utterance without abandoning the guess already begun on it.",
+      "fix": "A pending floor hold counts as the assistant having the floor; a swallowed utterance abandons any speculation begun on it.",
+      "commits": [
+        "7d0a46a"
+      ],
+      "verified": "",
+      "verified_call": "",
+      "note": "To be seen on the next call with a murmur over the assistant."
+    },
+    {
+      "id": "ISS-032",
+      "title": "Speaker-focus labels fall behind on long utterances",
+      "area": "focus",
+      "status": "open",
+      "found": "2026-10-15",
+      "found_on": "the 19:34 call, item_6",
+      "found_call": "out-mv9gobf1-evwj",
+      "symptom": "On a 2.2 s utterance the diarizer's labels arrived 1,660 ms behind the audio, after the answer's first audio (heard=true); on the shorter utterance of the same call 480 ms, on the 13:52 call 360 ms. In veto mode a background voice that long could not be vetoed before it was answered.",
+      "cause": "The model server runs at about real time on the ThinkPad's CPU (~330 ms per 345 ms chunk at steady state) and queues chunks during a long stretch of speech instead of catching up.",
+      "fix": "Not yet. Options: judge on the labels in hand at the veto deadline (partial coverage) rather than waiting for the utterance's full coverage; a larger chunk with fewer threads contending; skip chunks when the queue is deeper than one.",
+      "verified_on": ""
+    }
+  ]
 }
