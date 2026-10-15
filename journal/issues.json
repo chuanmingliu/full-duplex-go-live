@@ -606,7 +606,7 @@
       "title": "With a show under the caller's voice, speaker verification cannot separate them: the caller's own answers were vetoed",
       "area": "focus",
       "status": "mitigated",
-      "commit": "(next)",
+      "commit": "4a95dd5",
       "found": "2026-10-15",
       "found_on": "the 23:20 call, 4 of the caller's answers dropped unheard",
       "found_call": "out-mv9oqusr-3h0z",
