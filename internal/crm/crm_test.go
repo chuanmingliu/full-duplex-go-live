@@ -531,3 +531,31 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 		t.Fatalf("%d events; expected the rules, the quotes and the new rules", n)
 	}
 }
+
+// golive's tool executor posts the call's working memory; the plan under
+// "quote" is the coverage selection and the rest are the variables.
+func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
+	fx := newFixture(t)
+	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "sess_x", "arguments": map[string]any{},
+		"memory": map[string]any{"quote": map[string]any{"交强险": true, "三者险": "200万"}, "vehiclePrice": "12.8万", "vehicleAge": 2, "ncd": 1, "seats": 5},
+		"memory_version": 4}
+	var q Quote
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 {
+		t.Fatalf("quote: %d %s", code, body)
+	}
+	want := 950 + 1450*0.95*0.85
+	if q.Total < want-0.05 || q.Total > want+0.05 || q.MemoryVersion != 4 || len(q.Lines) != 2 {
+		t.Fatalf("quote %+v want %.2f", q, want)
+	}
+	// Arguments lay over the memory.
+	call["arguments"] = map[string]any{"config": map[string]any{"三者险": "300万"}}
+	if code, _ := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Lines[len(q.Lines)-1].Choice != "300万" && q.Lines[0].Choice != "300万" {
+		t.Fatalf("override: %+v", q)
+	}
+	// Nothing settled yet: a clear error for the model.
+	call["memory"] = map[string]any{}
+	call["arguments"] = map[string]any{}
+	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 400 || !strings.Contains(body, "quote") {
+		t.Fatalf("empty: %d %s", code, body)
+	}
+}

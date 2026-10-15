@@ -104,6 +104,20 @@ type Config struct {
 	// on your machine rather than somebody else's.
 	StoreTTLHours int `json:"store_ttl_hours"`
 
+	// Tools the assistant can call that golive carries out itself (see
+	// internal/tools): quick ones answered in the same turn, slow ones
+	// (async) submitted to a pool and reported when they finish. ToolsMemory
+	// gives the model the update_memory builtin and renders the call's
+	// working memory into its context. ToolsToken is read from ToolsTokenFile
+	// and sent as a bearer to the tools' services. ToolsWorkers bounds the
+	// pool; ToolsDeliverWaitMS is how long a finished task waits for a gap in
+	// the conversation before it is announced over whatever is going on.
+	Tools              []ToolConfig `json:"tools,omitempty"`
+	ToolsMemory        bool         `json:"tools_memory"`
+	ToolsTokenFile     string       `json:"tools_token_file"`
+	ToolsWorkers       int          `json:"tools_workers"`
+	ToolsDeliverWaitMS int          `json:"tools_deliver_wait_ms"`
+
 	// Providers, by registry name.
 	ASR string `json:"asr"`
 	LLM string `json:"llm"`
@@ -221,6 +235,17 @@ type Config struct {
 
 	// VAD
 	VAD VADProfile `json:"vad"`
+}
+
+// ToolConfig is one tool the assistant may call, as the profile declares it.
+type ToolConfig struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+	URL         string          `json:"url"`
+	Async       bool            `json:"async,omitempty"`
+	TimeoutMS   int             `json:"timeout_ms,omitempty"`
+	ETASeconds  int             `json:"eta_s,omitempty"`
 }
 
 // DuplexConfig tunes the simulated full-duplex behaviour.
@@ -795,6 +820,7 @@ func (c *Config) applyEnv() {
 	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
 	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
+	setString(&c.ToolsTokenFile, "GOLIVE_TOOLS_TOKEN_FILE")
 	setString(&c.Duplex.Focus, "GOLIVE_FOCUS")
 	setString(&c.Duplex.FocusURL, "GOLIVE_FOCUS_URL")
 	setString(&c.Duplex.FocusTokenFile, "GOLIVE_FOCUS_TOKEN_FILE")

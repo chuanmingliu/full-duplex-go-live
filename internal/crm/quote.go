@@ -211,6 +211,66 @@ type QuoteRequest struct {
 	Call string `json:"call,omitempty"`
 }
 
+// toolCall is the shape golive's tool executor posts (internal/tools
+// Request): the call's working memory and the model's arguments.
+type toolCall struct {
+	Tool          string          `json:"tool"`
+	CallID        string          `json:"call_id"`
+	Session       string          `json:"session"`
+	Arguments     json.RawMessage `json:"arguments"`
+	Memory        map[string]any  `json:"memory"`
+	MemoryVersion int             `json:"memory_version"`
+}
+
+// quoteRequestFrom reads either a QuoteRequest or golive's tool call. From
+// a tool call the coverage selection is memory.quote (the plan the
+// conversation has settled on) with anything in arguments.config laid over
+// it, and the variables are the rest of the memory.
+func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
+	var probe struct {
+		Tool string `json:"tool"`
+	}
+	if json.Unmarshal(raw, &probe) == nil && probe.Tool != "" {
+		var tc toolCall
+		if err := json.Unmarshal(raw, &tc); err != nil {
+			return QuoteRequest{}, errors.New("the tool call is not readable")
+		}
+		req := QuoteRequest{Config: map[string]any{}, Vars: map[string]any{}, MemoryVersion: tc.MemoryVersion, Call: tc.Session}
+		for k, v := range tc.Memory {
+			if k == "quote" {
+				if m, ok := v.(map[string]any); ok {
+					for ck, cv := range m {
+						req.Config[ck] = cv
+					}
+				}
+				continue
+			}
+			req.Vars[k] = v
+		}
+		var args struct {
+			Config map[string]any `json:"config"`
+			Vars   map[string]any `json:"vars"`
+		}
+		if len(tc.Arguments) > 0 && json.Unmarshal(tc.Arguments, &args) == nil {
+			for k, v := range args.Config {
+				req.Config[k] = v
+			}
+			for k, v := range args.Vars {
+				req.Vars[k] = v
+			}
+		}
+		if len(req.Config) == 0 {
+			return req, errors.New("no coverage selection: nothing under \"quote\" in the working memory and no config in the arguments")
+		}
+		return req, nil
+	}
+	var req QuoteRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return req, errors.New("the request is not the JSON this expects")
+	}
+	return req, nil
+}
+
 // QuoteLine is one coverage priced.
 type QuoteLine struct {
 	Coverage string  `json:"coverage"`

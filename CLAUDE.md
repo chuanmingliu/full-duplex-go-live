@@ -561,6 +561,22 @@ chunk), then `veto`; the journal does not draw the focus lane yet; the
 Tier-1 cheap features (level distance, F0) that could keep a background
 voice from opening a turn in the first place are not built.
 
+## Working memory and background tools
+
+`internal/tools` (definitions, the pool, the HTTP executor, the memory),
+`internal/duplex/tools.go` (server-side tool calls, delivery of results),
+`internal/crm/quote.go` (versioned configs and the quotation). "Working
+memory, and work that takes longer than a turn" in `TELEPHONY.md`. The
+shape: `update_memory` keeps the plan in the model's context (after the
+instructions, so the prefix cache holds); an `async` tool is answered
+"running" at once and its result is delivered at the next gap as a turn
+with reason `task_result`, saying which memory version it was computed on.
+Tests: `internal/duplex/tools_test.go` (a scripted chat model and a slow
+tool: the conversation goes on, the result is read out, a changed plan is
+flagged, a newer request supersedes). The telephony profile has
+`quote_total` on the lead service with `eta_s: 8`. Not verified on a call
+yet; the first one should show `tools: task submitted` → `delivering`.
+
 ## The call journal
 
 `scripts/phone-brain.sh journal start` on the box serves a page on the home

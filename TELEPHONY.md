@@ -790,3 +790,47 @@ The audio the recognizer hears is never changed.
 - `focus_url` is the gateway's WebSocket, the token comes from
   `GOLIVE_FOCUS_TOKEN_FILE` (`phone-brain.sh` sets it to the gateway's), and
   a gateway or model that is down is a call without focus, logged once.
+
+## Working memory, and work that takes longer than a turn
+
+A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",
+"那一共多少钱" — and pricing takes seconds. Two things in the telephony
+profile deal with that; neither touches the turn's latency.
+
+**Working memory** (`tools_memory: true`). The model keeps what the call has
+settled — the coverage plan, the vehicle, the person's choices — in a JSON
+object it edits through the builtin `update_memory(patch)` (keys set, `null`
+deletes, nested objects merge). Every edit is a version. The memory is
+rendered into the model's context on every request as 【工作记忆 vN】, *after*
+the instructions, so the cached prefix is unchanged and the latest plan is
+always in view; `golive.memory` events carry each edit.
+
+**Tools that run in the background** (`tools`, `async: true`). A tool call
+is carried out by golive itself: a quick one (`async: false`) runs and its
+output goes back to the model in the same turn; a slow one is submitted to
+a pool (`tools_workers`) and the model is answered at once with
+`{"status":"running","task_id":…,"eta_s":…}` — so it tells the caller to
+hold on and goes on answering whatever else they ask. The tool's service
+is posted the call's memory and its version (`internal/tools.Request`). When
+the result comes, it is delivered as a turn of its own at the first gap —
+nobody speaking, no answer in flight — or, after `tools_deliver_wait_ms`
+with no gap, over whatever is going on. The note the model gets says what
+the result was computed on and whether the memory has changed since, so it
+reports "按您刚才的方案…" or asks whether to recompute. A newer call of the
+same tool supersedes an older one still running; a result nobody wants any
+more (the call ended) is dropped. `golive.task` events: running → done →
+delivered, with the wait.
+
+**The quotation** is the first such tool: `quote_total` → the lead service's
+`POST /api/tools/quote`, which takes the plan under `quote` in the memory as
+the coverage selection and the rest as variables, prices it under the
+versioned `quote-rules` config (`phone-brain.sh crm config quote-rules
+rules.json` to replace the placeholder tables with the business's), records
+every quote as `quote.computed` (choices and total, never the person), and
+can be made slow for testing (`simulate_delay_ms` in the rules). Log lines:
+`tools: memory updated`, `tools: task submitted`, `tools: task done`,
+`tools: delivering a task's result`, and `tools: this call` at the end.
+
+Not yet: seeding the memory from the lead's record when the lead service
+places the call, writing the final memory back as the contact's summary,
+the task events in the journal.

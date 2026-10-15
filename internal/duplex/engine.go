@@ -45,6 +45,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/segment"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // Emit delivers a server event to the client. Implementations must be safe for
@@ -242,6 +243,10 @@ type Engine struct {
 	utterStartMS int64
 	// focusDial, when set, replaces the WebSocket dial (tests).
 	focusDial func(ctx context.Context) (focus.Scorer, error)
+	// tools is what the engine can do besides talk, nil when the profile
+	// declares none; toolExec, when set, replaces the HTTP executor (tests).
+	tools    *toolState
+	toolExec tools.Executor
 
 	ttsMu     sync.Mutex
 	ttsStream provider.TTSStream
@@ -408,6 +413,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
+	e.setupTools()
 	e.startFocus(e.ctx)
 	// The session has just opened and nobody is waiting on anything yet, which
 	// makes this the cheapest moment in the whole call to pay for handshakes.
@@ -474,6 +480,7 @@ func (e *Engine) Close() {
 		e.latencySummary()
 		e.lineSummary()
 		e.focusSummary()
+		e.closeTools()
 		e.ttsMu.Lock()
 		if e.ttsStream != nil {
 			_ = e.ttsStream.Close()
@@ -805,6 +812,7 @@ func (e *Engine) onTick() {
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
 	e.judgeFocus()
+	e.maybeDeliver()
 	e.drainDeferred()
 	// The session's lifetime is the session's business: the server bounds it
 	// with a deadline on the context it hands this engine, and says so in

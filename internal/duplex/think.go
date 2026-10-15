@@ -299,6 +299,7 @@ func (e *Engine) backendRequest(msgs []provider.Message, front bool) provider.LL
 		req.MaxTokens = e.backend.MaxOutputTokens
 	}
 	req.Tools = append([]json.RawMessage(nil), e.backend.Tools...)
+	req.Tools = append(req.Tools, e.toolDefinitions()...)
 	req.ToolChoice = e.backend.ToolChoice
 	req.ParallelToolCalls = e.backend.ParallelToolCalls
 	return req
@@ -319,6 +320,11 @@ func (e *Engine) systemPrompt(front bool) string {
 	}
 	if front {
 		parts = append(parts, delegationPolicy)
+	}
+	// The working memory last: everything before it is the same from one
+	// turn to the next and stays in the provider's prefix cache.
+	if !front {
+		parts = append(parts, e.memoryBlock())
 	}
 	var kept []string
 	for _, p := range parts {
@@ -483,8 +489,18 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		// result for a call the engine has not yet recorded would be refused.
 		if job.front {
 			e.post(func() { e.onDelegateCalls(job, calls) })
+		} else if mine, theirs := e.splitCalls(calls); len(theirs) == 0 {
+			e.post(func() { e.onServerCalls(job, mine) })
 		} else {
-			e.post(func() { e.onToolCalls(job, calls) })
+			if len(mine) > 0 {
+				// Both kinds in one response: the engine's are run and their
+				// outputs wait with the application's; the backend resumes
+				// when all are in.
+				e.post(func() { e.onServerCallsAmong(job, mine, theirs) })
+			} else {
+				e.post(func() { e.onToolCalls(job, calls) })
+			}
+			calls = theirs
 			for i, call := range calls {
 				report(map[string]any{
 					"type":         "response.output_item.done",

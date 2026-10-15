@@ -32,6 +32,20 @@
   "tts_pool_after_ms": 0,
   "tts_fallback": "fish",
   "tts_fallback_after_ms": 320,
+  "tools_memory": true,
+  "tools_workers": 4,
+  "tools_deliver_wait_ms": 1500,
+  "tools": [
+    {
+      "name": "quote_total",
+      "description": "计算当前投保方案的总保费（含各险种明细）。当用户要求报价、问“一共多少钱”、或方案改动后要求重新算时调用。计算在后台进行，需要几秒；调用后立即告诉用户稍等，并继续回答用户的其他问题，结果出来后系统会通知你再向用户报告。方案以工作记忆中的 quote 字段为准，调用前请确保已用 update_memory 记录了用户确认的险种组合。",
+      "parameters": {"type": "object", "properties": {"config": {"type": "object", "description": "可选：临时覆盖工作记忆中的险种选择，键为险种名，值为 true/false 或档位（如“300万”）"}}},
+      "url": "http://127.0.0.1:8791/api/tools/quote",
+      "async": true,
+      "timeout_ms": 60000,
+      "eta_s": 8
+    }
+  ],
   "history_turns": 16,
   "duplex": {
     "backchannel": false,

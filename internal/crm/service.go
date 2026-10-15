@@ -539,9 +539,13 @@ func (s *Service) Handler() http.Handler {
 		return nil
 	}))
 	mux.HandleFunc("POST /api/tools/quote", s.authed(func(w http.ResponseWriter, r *http.Request) error {
-		var req QuoteRequest
-		if err := readJSON(r, &req); err != nil {
-			return err
+		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+		if err != nil {
+			return fail(http.StatusBadRequest, "the request could not be read")
+		}
+		req, err := quoteRequestFrom(raw)
+		if err != nil {
+			return fail(http.StatusBadRequest, "%v", err)
 		}
 		q, err := s.Quote(req)
 		if err != nil {

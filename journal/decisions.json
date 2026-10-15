@@ -98,6 +98,17 @@
    "undo": "yes: duplex.focus empty",
    "needs": "A call with somebody talking in the background; then veto; a recording of a real background-talker situation to anchor the thresholds",
    "status": "observe since 10-15 12:51 (owner: go ahead to implement)"
+  },
+  {
+   "rank": 10,
+   "title": "Working memory and background tools: the quotation does not hold the conversation",
+   "gain": "A price that takes seconds is asked for and the call goes on; the plan the caller keeps changing is in the model's context as one object, not scattered over twenty turns",
+   "basis": "Built 10-15 on the owner's design (async task pool + working memory, reusing the lead service's versioned configs for the quotation); engine tests with a scripted model and a slow tool",
+   "cost": "One extra chat-model round when a tool is called (the model's 稍等 after the running answer); a result delivered over the caller when no gap comes within 1.5 s",
+   "guard": "Delivery waits for a gap; a newer request supersedes an older task; a result nobody wants is dropped; the memory block is after the instructions so the prefix cache holds",
+   "undo": "yes: tools_memory false, tools empty",
+   "needs": "A call that asks for a price; the business's real quote-rules tables; seeding the memory from the lead",
+   "status": "on since 10-15 (not yet seen on a call)"
   }
  ]
 }

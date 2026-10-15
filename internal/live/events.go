@@ -60,6 +60,11 @@ const (
 	ExtTurnMetrics      = "golive.turn.metrics"
 	ExtBackchannel      = "golive.backchannel"
 	ExtInputBackchannel = "golive.input_backchannel"
+	// ExtMemory is golive.memory: the call's working memory was edited
+	// (Version after the edit, Patch what was merged). ExtTask is
+	// golive.task: a slow tool call was submitted, finished, or delivered.
+	ExtMemory = "golive.memory"
+	ExtTask   = "golive.task"
 	// ExtFocus says whose voice an answered utterance was, by the speaker-
 	// activity model, and whether its answer was dropped for it. See FocusEvent.
 	ExtFocus        = "golive.focus"
@@ -716,6 +721,26 @@ type BackchannelEvent struct {
 	Envelope
 	Kind string `json:"kind,omitempty"`
 	Text string `json:"text"`
+}
+
+// MemoryEvent is golive.memory.
+type MemoryEvent struct {
+	Envelope
+	Version int             `json:"version"`
+	Patch   json.RawMessage `json:"patch"`
+}
+
+// TaskEvent is golive.task: Status is "running", "done" or "delivered".
+type TaskEvent struct {
+	Envelope
+	TaskID        string `json:"task_id"`
+	Tool          string `json:"tool"`
+	Status        string `json:"status"`
+	MemoryVersion int    `json:"memory_version"`
+	TookMS        int64  `json:"took_ms,omitempty"`
+	WaitedMS      int64  `json:"waited_ms,omitempty"`
+	Interrupting  bool   `json:"interrupting,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 // FocusEvent is golive.focus: the speaker-activity model's view of one

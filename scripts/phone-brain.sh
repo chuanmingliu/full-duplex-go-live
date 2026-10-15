@@ -401,6 +401,8 @@ start_golive() {
     export GOLIVE_STORE_DIR="$CALLS_DIR" GOLIVE_REALTIME_STORE_CALLS=1
     export GOLIVE_STORE_TTL_HOURS="${GOLIVE_STORE_TTL_HOURS:-$CALLS_TTL_HOURS}"
   fi
+  # The assistant's tools run on the lead service, with its token.
+  [ -r "$CRM_DIR/api.token" ] && export GOLIVE_TOOLS_TOKEN_FILE="${GOLIVE_TOOLS_TOKEN_FILE:-$CRM_DIR/api.token}"
   # The speaker-focus side channel reaches the edge gateway with its token.
   [ -r "$EDGE_DIR/api.token" ] && export GOLIVE_FOCUS_TOKEN_FILE="${GOLIVE_FOCUS_TOKEN_FILE:-$EDGE_DIR/api.token}"
   # A lane — a connection of its own — for each copy of a completion the
