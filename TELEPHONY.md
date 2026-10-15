@@ -857,9 +857,28 @@ scripts/phone-brain.sh crm config quote-api api.json   # save a new version
 scripts/phone-brain.sh crm quote '{"tool":"quote_total","memory":{"quote":{"交强险":true,"车损险":true,"三者险":"300万"},"carNum":"浙A12345"}}'
 ```
 
-The quote tool's `eta_s` is 20 in the profile and its timeout 120 s, which
-is what the service is expected to take; `tools: task done … took_ms` in
-the log says what it did take.
+**Where the pieces run.** The quotation service is on the business's
+intranet, so the lead service runs there too, next to it, and golive on the
+box reaches the lead service over the network. Two addresses are therefore
+deployment settings, not profile or config content:
+
+- the lead service's address for golive: `tools_base_url` in the profile
+  (`http://127.0.0.1:8791` by default), overridden by `GOLIVE_TOOLS_BASE_URL`;
+  tool URLs in the profile are paths (`/api/tools/quote`) joined with it.
+  The intranet lead service's `api.token` is copied to the box and named by
+  `GOLIVE_TOOLS_TOKEN_FILE`. `phone-brain.sh restart` passes both through.
+- the quotation service's address for the lead service: `-quote-api` /
+  `CRM_QUOTE_API_BASE` (`http://<host>/intranet`), which overrides the
+  `quote-api` config's `base_url`; the config keeps what is the business's
+  (channel ids, the coverage map, the test identity) and is saved on the
+  intranet instance with `crm config quote-api api.json`.
+
+On the intranet host: `bin/crm-linux-amd64 -addr 0.0.0.0:8791 -dir
+~/golive-crm -quote-api http://<quote-host>/intranet -golive ""` (the
+originator flags matter only where calls are placed from). The quote tool's
+`eta_s` is 20 in the profile and its timeout 120 s, which is what the
+service is expected to take; `tools: task done … took_ms` in the log says
+what it did take.
 
 Not yet: seeding the memory from the lead's record (phone, plate, last
 year's plan) when the lead service places the call, writing the final

@@ -263,7 +263,7 @@ cstart() {
   [ -x "$CBIN" ] || { say "no binary at $CBIN"; return 1; }
   cstop
   mkdir -p "$CRM_DIR" && chmod 700 "$CRM_DIR"
-  setsid nohup "$CBIN" -addr "$CRM_ADDR" -dir "$CRM_DIR" -originator "${ARIA_URL:-http://127.0.0.1:3000}" \
+  setsid nohup env ${CRM_QUOTE_API_BASE:+CRM_QUOTE_API_BASE="$CRM_QUOTE_API_BASE"} "$CBIN" -addr "$CRM_ADDR" -dir "$CRM_DIR" -originator "${ARIA_URL:-http://127.0.0.1:3000}" \
     -originator-env "${ARIA_ENV:-$HOME/aria/.env}" -golive "http://127.0.0.1:$PORT" >> "$CLOG" 2>&1 < /dev/null &
   echo $! > "$CPID"
   sleep 1
@@ -401,8 +401,11 @@ start_golive() {
     export GOLIVE_STORE_DIR="$CALLS_DIR" GOLIVE_REALTIME_STORE_CALLS=1
     export GOLIVE_STORE_TTL_HOURS="${GOLIVE_STORE_TTL_HOURS:-$CALLS_TTL_HOURS}"
   fi
-  # The assistant's tools run on the lead service, with its token.
-  [ -r "$CRM_DIR/api.token" ] && export GOLIVE_TOOLS_TOKEN_FILE="${GOLIVE_TOOLS_TOKEN_FILE:-$CRM_DIR/api.token}"
+  # The assistant's tools run on the lead service, with its token: here by
+  # default, or on the intranet (GOLIVE_TOOLS_BASE_URL=http://<host>:8791,
+  # with that service's api.token copied to GOLIVE_TOOLS_TOKEN_FILE).
+  export GOLIVE_TOOLS_BASE_URL="${GOLIVE_TOOLS_BASE_URL:-$CRM_URL}"
+  [ -r "${GOLIVE_TOOLS_TOKEN_FILE:-$CRM_DIR/api.token}" ] && export GOLIVE_TOOLS_TOKEN_FILE="${GOLIVE_TOOLS_TOKEN_FILE:-$CRM_DIR/api.token}"
   # The speaker-focus side channel reaches the edge gateway with its token.
   [ -r "$EDGE_DIR/api.token" ] && export GOLIVE_FOCUS_TOKEN_FILE="${GOLIVE_FOCUS_TOKEN_FILE:-$EDGE_DIR/api.token}"
   # A lane — a connection of its own — for each copy of a completion the

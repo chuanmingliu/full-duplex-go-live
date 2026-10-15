@@ -112,11 +112,14 @@ type Config struct {
 	// and sent as a bearer to the tools' services. ToolsWorkers bounds the
 	// pool; ToolsDeliverWaitMS is how long a finished task waits for a gap in
 	// the conversation before it is announced over whatever is going on.
-	Tools              []ToolConfig `json:"tools,omitempty"`
-	ToolsMemory        bool         `json:"tools_memory"`
-	ToolsTokenFile     string       `json:"tools_token_file"`
-	ToolsWorkers       int          `json:"tools_workers"`
-	ToolsDeliverWaitMS int          `json:"tools_deliver_wait_ms"`
+	Tools []ToolConfig `json:"tools,omitempty"`
+	// ToolsBaseURL is where tools whose URL is a path live: the lead service,
+	// on this machine or on the intranet (GOLIVE_TOOLS_BASE_URL).
+	ToolsBaseURL       string `json:"tools_base_url"`
+	ToolsMemory        bool   `json:"tools_memory"`
+	ToolsTokenFile     string `json:"tools_token_file"`
+	ToolsWorkers       int    `json:"tools_workers"`
+	ToolsDeliverWaitMS int    `json:"tools_deliver_wait_ms"`
 
 	// Providers, by registry name.
 	ASR string `json:"asr"`
@@ -821,6 +824,7 @@ func (c *Config) applyEnv() {
 	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
 	setString(&c.ToolsTokenFile, "GOLIVE_TOOLS_TOKEN_FILE")
+	setString(&c.ToolsBaseURL, "GOLIVE_TOOLS_BASE_URL")
 	setString(&c.Duplex.Focus, "GOLIVE_FOCUS")
 	setString(&c.Duplex.FocusURL, "GOLIVE_FOCUS_URL")
 	setString(&c.Duplex.FocusTokenFile, "GOLIVE_FOCUS_TOKEN_FILE")

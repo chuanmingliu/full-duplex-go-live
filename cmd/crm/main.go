@@ -45,15 +45,16 @@ func main() {
 func run() error {
 	home, _ := os.UserHomeDir()
 	var (
-		addr    = flag.String("addr", "127.0.0.1:8791", "addresses to listen on, comma-separated; never one a tunnel publishes")
-		dir     = flag.String("dir", filepath.Join(home, "golive-crm"), "where everything is kept: the event log, templates, rendered prompts, the token")
-		origin  = flag.String("originator", "http://127.0.0.1:3000", "the call originator")
-		envFile = flag.String("originator-env", filepath.Join(home, "aria", ".env"), "the originator's env file, which names the number it will dial")
-		golive  = flag.String("golive", "http://127.0.0.1:8765", "the phone line's golive, asked whether a call is in progress; empty skips the question")
-		logPath = flag.String("log", "", "write the operational log here as well as to stderr (default <dir>/crm.log)")
-		zone    = flag.String("timezone", "Asia/Shanghai", "the time zone nowDateTime is written in")
-		verify  = flag.Bool("verify", false, "check the event log against its checksums, say how many events it holds, and exit")
-		showVer = flag.Bool("version", false, "print the version and exit")
+		addr     = flag.String("addr", "127.0.0.1:8791", "addresses to listen on, comma-separated; never one a tunnel publishes")
+		dir      = flag.String("dir", filepath.Join(home, "golive-crm"), "where everything is kept: the event log, templates, rendered prompts, the token")
+		origin   = flag.String("originator", "http://127.0.0.1:3000", "the call originator")
+		envFile  = flag.String("originator-env", filepath.Join(home, "aria", ".env"), "the originator's env file, which names the number it will dial")
+		golive   = flag.String("golive", "http://127.0.0.1:8765", "the phone line's golive, asked whether a call is in progress; empty skips the question")
+		quoteAPI = flag.String("quote-api", os.Getenv("CRM_QUOTE_API_BASE"), "the business's quotation service, up to and including /intranet (CRM_QUOTE_API_BASE); overrides the quote-api config's base_url; empty keeps the config's")
+		logPath  = flag.String("log", "", "write the operational log here as well as to stderr (default <dir>/crm.log)")
+		zone     = flag.String("timezone", "Asia/Shanghai", "the time zone nowDateTime is written in")
+		verify   = flag.Bool("verify", false, "check the event log against its checksums, say how many events it holds, and exit")
+		showVer  = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Parse()
 	if *showVer {
@@ -85,7 +86,7 @@ func run() error {
 	defer lf.Close()
 	log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, lf), &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	svc, err := crm.Open(crm.Config{Dir: *dir, OriginatorURL: *origin, OriginatorEnv: *envFile, GoliveURL: *golive, Location: loc, Log: log})
+	svc, err := crm.Open(crm.Config{Dir: *dir, OriginatorURL: *origin, OriginatorEnv: *envFile, GoliveURL: *golive, QuoteAPIBase: *quoteAPI, Location: loc, Log: log})
 	if err != nil {
 		return err
 	}

@@ -64,8 +64,12 @@ func (e *Engine) setupTools() {
 		if c.Name == "" || c.Name == tools.UpdateMemoryTool.Name {
 			continue
 		}
+		url := c.URL
+		if strings.HasPrefix(url, "/") && cfg.ToolsBaseURL != "" {
+			url = strings.TrimRight(cfg.ToolsBaseURL, "/") + url
+		}
 		ts.defs = append(ts.defs, tools.Tool{Name: c.Name, Description: c.Description, Parameters: c.Parameters,
-			URL: c.URL, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds})
+			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds})
 	}
 	for _, d := range ts.defs {
 		ts.byName[d.Name] = d
@@ -97,7 +101,7 @@ func (e *Engine) setupTools() {
 			names = append(names, d.Name)
 		}
 	}
-	e.log.Info("tools: on", "tools", strings.Join(names, ", "), "memory", ts.memory != nil, "workers", workers)
+	e.log.Info("tools: on", "tools", strings.Join(names, ", "), "memory", ts.memory != nil, "workers", workers, "base_url", cfg.ToolsBaseURL)
 }
 
 // SeedMemory puts values into the call's working memory before anything is

@@ -38,6 +38,10 @@ type Config struct {
 	// GoliveURL is the phone line's golive: it is asked whether a call is in
 	// progress before another is placed. Empty skips the question.
 	GoliveURL string
+	// QuoteAPIBase, when set, is the quotation service's address (up to and
+	// including /intranet) and overrides the quote-api config's base_url: the
+	// address is the deployment's, the rest of the config the business's.
+	QuoteAPIBase string
 	// Location is the time zone a render's nowDateTime is written in.
 	Location *time.Location
 	Log      *slog.Logger
@@ -185,7 +189,13 @@ func (s *Service) quoteAPI() (*QuoteAPI, *ConfigVersion) {
 		return nil, nil
 	}
 	var api QuoteAPI
-	if err := json.Unmarshal(v.Body, &api); err != nil || strings.TrimSpace(api.BaseURL) == "" {
+	if err := json.Unmarshal(v.Body, &api); err != nil {
+		return nil, nil
+	}
+	if s.cfg.QuoteAPIBase != "" {
+		api.BaseURL = s.cfg.QuoteAPIBase
+	}
+	if strings.TrimSpace(api.BaseURL) == "" {
 		return nil, nil
 	}
 	return &api, v
