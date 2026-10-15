@@ -782,6 +782,11 @@ The audio the recognizer hears is never changed.
   when the labels come in time, with `focus: … answered before the labels
   came` in the log when they do not. The telephony profile is on `observe`
   until a call has shown the labels arriving in time.
+- The journal shows it: a badge on each answered turn (caller's voice /
+  other voice / dropped / too late, with the shares and the labels' lag), a
+  note on a caller's line whose answer was dropped, a marker on the
+  recording's timeline, a "Speaker focus" count group and a dot plot of how
+  far behind the audio the labels were at each judgment.
 - `focus_url` is the gateway's WebSocket, the token comes from
   `GOLIVE_FOCUS_TOKEN_FILE` (`phone-brain.sh` sets it to the gateway's), and
   a gateway or model that is down is a call without focus, logged once.

@@ -753,6 +753,8 @@
   var MARKERS = {
     interrupted: { name: 'answer cut by the caller', shape: 'tri' },
     dropped: { name: 'prepared answer dropped', shape: 'ring' },
+    vetoed: { name: 'answer to another voice dropped', shape: 'ring' },
+    focus_late: { name: 'another voice answered', shape: 'dia' },
     tts_slow: { name: 'slow synthesizer', shape: 'dia' },
     hedge_refused: { name: 'second synthesis refused', shape: 'diao' },
     over: { name: 'turn over target', shape: 'none' }
@@ -1076,6 +1078,9 @@
         rows.push({ el: gap, answered: true, gap: true });
       }
       var note = l.kind === 'greeting' ? 'opening line' : (caller && !answered ? 'not answered' : (!caller && l.interrupted ? 'cut short by the caller' : ''));
+      if (caller && l.focus === 'vetoed') note = 'another voice; the answer was dropped unheard';
+      else if (caller && l.focus === 'late') note = 'another voice; judged after the answer began';
+      else if (caller && l.focus === 'other') note = 'another voice (observing only)';
       var playBtn = null;
       // Every line is stamped where it begins: an answer at its first audio, the
       // caller where they began to speak when the log says, which is a moment
@@ -1242,6 +1247,13 @@
     if (t.hedge_refused) add('2nd synth refused', 'tts', 'A second synthesis request was wanted and refused by the request budget.');
     else if (t.hedge_asked && t.hedge_winner === 2) add('2nd synth won', 'tts', 'A second synthesis connection was asked and spoke first.');
     else if (t.hedge_asked) add('2nd synth asked', 'tts', 'A second synthesis connection was asked; the first still spoke first.');
+    if (t.focus) {
+      var f = t.focus, shares = Math.round(f.primary_share * 100) + '% the caller, ' + Math.round(f.others_share * 100) + '% another voice, of ' + f.voiced_ms + ' ms voiced; labels ' + f.lag_ms + ' ms behind.';
+      if (f.vetoed) add('other voice: dropped', 'warn', 'The utterance was another voice\'s and its answer was dropped before it was heard. ' + shares);
+      else if (f.late) add('other voice: too late', 'warn', 'The utterance was another voice\'s; the labels came after the answer\'s first audio. ' + shares);
+      else if (f.another_voice) add('other voice', 'warn', 'The utterance read as another voice\'s (observing only). ' + shares);
+      else add('caller\'s voice', 'quiet', 'The speaker-activity model attributed the utterance to the caller. ' + shares);
+    }
     if (t.winner_copy) add('copy ' + t.winner_copy + (t.copies ? '/' + t.copies : ''), 'quiet num', 'Copy ' + t.winner_copy + (t.copies ? ' of ' + t.copies : '') + ' of the completion answered first.');
     return b;
   }
@@ -1420,13 +1432,21 @@
       h('div', { class: 'cnt-group' }, h('h3', null, 'Speaking'), h('div', { class: 'cnts' },
         cnt(ev.segments, 'segments synthesized'), cnt(ev.cache_plays, 'played from memory'), cnt(ev.abandoned_tasks, 'synthesis tasks abandoned', 'Started and thrown away at an interruption or a dropped guess.'))),
       h('div', { class: 'cnt-group' }, h('h3', null, 'Second synthesis'), h('div', { class: 'cnts' },
-        cnt(ev.hedge_asked, 'asked'), cnt(ev.hedge_won, 'won'), cnt(ev.hedge_refused, 'refused', 'Wanted, and refused by the request budget.'))));
+        cnt(ev.hedge_asked, 'asked'), cnt(ev.hedge_won, 'won'), cnt(ev.hedge_refused, 'refused', 'Wanted, and refused by the request budget.'))),
+      ev.focus_mode ? h('div', { class: 'cnt-group' }, h('h3', null, 'Speaker focus (' + ev.focus_mode + ')'), h('div', { class: 'cnts' },
+        cnt(ev.focus_judged, 'utterances judged', 'Answered utterances the speaker-activity model attributed to a voice.'),
+        cnt(ev.focus_other, 'another voice', 'Judged to be mostly somebody other than the caller.'),
+        cnt(ev.focus_vetoed, 'answers dropped', 'Dropped for being another voice\'s, before they were heard.'),
+        cnt(ev.focus_late, 'too late', 'Another voice, judged only after the answer\'s first audio.'),
+        cnt(ev.focus_handovers, 'hand-overs', 'The primary speaker changed: another voice carried the call alone for seconds.'))) : null);
 
     var charts = h('div', { class: 'charts' });
     var llm = ev.llm_first_tokens || [], tts = ev.tts_first_audios || [];
     var xMax = Math.max(600, Math.ceil(Math.max.apply(null, llm.concat(tts, [0])) / 200) * 200);
     if (llm.length) charts.appendChild(chartBox('Chat model, first token', plural(llm.length, 'completion') + ', ms. One dot each; the fastest copy of each.', dotPlot(llm, xMax, 'c-llm', 'completions')));
     if (tts.length) charts.appendChild(chartBox('Synthesizer, first audio', plural(tts.length, 'segment') + ', ms, on the same scale.', dotPlot(tts, xMax, 'c-tts', 'segments')));
+    var flag = ev.focus_lag_ms || [];
+    if (flag.length) charts.appendChild(chartBox('Speaker labels, how far behind the audio', plural(flag.length, 'judgment') + ', ms, on the same scale. An answer\'s first audio is ~650 ms after the turn; labels behind that are too late to veto.', dotPlot(flag, xMax, 'c-own', 'judgments')));
     if (ev.copy_wins && ev.copy_wins.length) charts.appendChild(chartBox('Which copy answered first', 'Turns won by each of ' + ev.copy_wins.length + ' copies of the completion.', copyWins(ev.copy_wins)));
     var pauses = ev.pauses_inside || [];
     if (pauses.length) {

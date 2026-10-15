@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fixtureCalls reads testdata/call.log: one real three-minute call, with every
@@ -271,5 +272,91 @@ func TestCallerLinesSayWhereTheyBegan(t *testing.T) {
 	first, last := c.AudioIn[0], c.AudioIn[len(c.AudioIn)-1]
 	if per := (last.TS - first.TS) / float64(last.Frames-first.Frames) * 1000; per < 19.9 || per > 20.1 {
 		t.Errorf("the fixture call's audio arrived every %.3f ms; it was a call on time", per)
+	}
+}
+
+// The speaker-activity model's verdicts are kept with the turns they judged,
+// and counted for the call, from the engine's focus lines.
+func TestFocusVerdictsAreKeptWithTheirTurns(t *testing.T) {
+	// A caller's line in the fixture that nobody answered: the veto goes
+	// just after it, as it would on a call.
+	var unanswered Said
+	base := fixtureCalls(t)[0]
+	for _, line := range base.Transcript {
+		if line.Who == "caller" && line.Turn == 0 && line.TS > 5 {
+			unanswered = line
+			break
+		}
+	}
+	if unanswered.Text == "" {
+		t.Fatal("the fixture has no unanswered caller line")
+	}
+	vetoAt := base.StartedAt.Add(time.Duration((unanswered.TS + 0.6) * float64(time.Second)))
+	stamp := func(tm time.Time) string { return tm.Format("2006-01-02T15:04:05.000-07:00") }
+
+	f, err := os.Open("testdata/call.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ix := NewIndexer()
+	if err := ix.ReadLog(f); err != nil {
+		t.Fatal(err)
+	}
+	// Focus lines for the fixture's session, as the engine writes them.
+	extra := `time=2026-10-12T09:34:40.000+08:00 level=INFO msg="focus: on" session=sess_811ccb6206d6013bacb8559a mode=veto lag_ms=345 veto_share=0.7 min_voiced_ms=240
+time=2026-10-12T09:34:53.000+08:00 level=DEBUG msg="focus: utterance attributed" session=sess_811ccb6206d6013bacb8559a turn=item_2 primary_share=1 others_share=0 voiced_ms=960 coverage=0.92 primary_speaker=0 labelled_lag_ms=360 another_voice=false heard=false
+time=` + stamp(vetoAt) + ` level=DEBUG msg="focus: utterance attributed" session=sess_811ccb6206d6013bacb8559a turn=item_99 primary_share=0.1 others_share=0.9 voiced_ms=520 coverage=0.88 primary_speaker=0 labelled_lag_ms=410 another_voice=true heard=false
+time=` + stamp(vetoAt) + ` level=INFO msg="focus: vetoing the answer: the utterance was another voice's" session=sess_811ccb6206d6013bacb8559a turn=item_99 others_share=0.9 voiced_ms=520 waited_ms=700
+time=2026-10-12T09:36:00.000+08:00 level=INFO msg="focus: this call" session=sess_811ccb6206d6013bacb8559a judged=2 vetoed=1 too_late=0 primary_speaker=0 handovers=0
+`
+	if err := ix.ReadLog(strings.NewReader(extra)); err != nil {
+		t.Fatal(err)
+	}
+	c := ix.Calls()[0]
+	ev := c.Events
+	if ev.FocusMode != "veto" || ev.FocusJudged != 2 || ev.FocusOther != 1 || ev.FocusVetoed != 1 || ev.FocusLate != 0 || len(ev.FocusLagMS) != 2 {
+		t.Fatalf("events %+v", ev)
+	}
+	judged := 0
+	for _, turn := range c.Turns {
+		if turn.Focus == nil {
+			continue
+		}
+		judged++
+		if turn.Focus.AnotherVoice || turn.Focus.PrimaryShare != 1 || turn.Focus.LagMS != 360 {
+			t.Fatalf("judged turn %+v", turn.Focus)
+		}
+	}
+	// A vetoed turn was never answered, so it is not among the answered turns;
+	// its verdict lives on the caller's line in the conversation and in the
+	// call's counts.
+	if judged != 1 {
+		t.Fatalf("judged %d on the answered turns", judged)
+	}
+	marked := 0
+	for _, line := range c.Transcript {
+		if line.Who == "caller" && line.Focus == "vetoed" {
+			marked++
+			if line.Text != unanswered.Text {
+				t.Fatalf("the wrong caller line was marked: %.1f s, wanted %.1f s", line.TS, unanswered.TS)
+			}
+		}
+		// item_2 is the first answered turn of the fixture.
+		if line.Who == "caller" && line.Turn == 1 && line.Focus != "caller" {
+			t.Fatalf("turn 1's caller line is %q; wanted the caller's own voice", line.Focus)
+		}
+	}
+	if marked != 1 {
+		t.Fatalf("%d caller lines marked vetoed in the conversation", marked)
+	}
+	found := false
+	for _, m := range c.Markers {
+		if m.Kind == "vetoed" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no marker for the vetoed answer")
 	}
 }

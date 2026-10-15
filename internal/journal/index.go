@@ -63,10 +63,32 @@ type Turn struct {
 	HedgeRefused bool `json:"hedge_refused,omitempty"`
 	HedgeWinner  int  `json:"hedge_winner,omitempty"`
 
+	// Focus is the speaker-activity model's view of the utterance this turn
+	// answered, when focus was on: see FocusMark.
+	Focus *FocusMark `json:"focus,omitempty"`
+
 	// Cause is the journal's own reading of why a turn over target was slow:
 	// the stage carrying the excess. It is a first guess from the numbers,
 	// not a diagnosis; the retrospective is where a cause is argued.
 	Cause string `json:"cause,omitempty"`
+}
+
+// FocusMark is whose voice an answered utterance was, by the diarizer:
+// PrimaryShare and OthersShare are shares of its voiced frames (the primary
+// speaking; somebody else speaking with the primary silent), Coverage how
+// much of it was labelled when judged, LagMS how far the labels were behind
+// the audio then. AnotherVoice is the verdict; Vetoed says the answer was
+// dropped for it before anyone heard it, Late that it was judged so only
+// after the caller had heard the answer.
+type FocusMark struct {
+	PrimaryShare float64 `json:"primary_share"`
+	OthersShare  float64 `json:"others_share"`
+	VoicedMS     int     `json:"voiced_ms"`
+	Coverage     float64 `json:"coverage"`
+	LagMS        int     `json:"lag_ms"`
+	AnotherVoice bool    `json:"another_voice"`
+	Vetoed       bool    `json:"vetoed,omitempty"`
+	Late         bool    `json:"late,omitempty"`
 }
 
 // Marker is a moment in a call worth seeing on its timeline.
@@ -99,6 +121,11 @@ type Said struct {
 	TotalMS     int  `json:"total_ms,omitempty"`
 	Over        bool `json:"over,omitempty"`
 	Interrupted bool `json:"interrupted,omitempty"`
+	// Focus, on a caller's line, is the speaker-activity model's verdict on
+	// it when there was one: "caller", "other" (judged another voice's, the
+	// answer played anyway), "vetoed" (another voice's; the answer dropped
+	// unheard), "late" (another voice's; judged after the answer began).
+	Focus string `json:"focus,omitempty"`
 }
 
 // Stats summarises a set of turns the way scripts/call-latency.sh does.
@@ -150,6 +177,18 @@ type Events struct {
 	NoiseFloorDB   float64 `json:"noise_floor_db"`
 	IdleLevelDB    float64 `json:"idle_level_db"`
 	HasIdleLevel   bool    `json:"has_idle_level"`
+	// Speaker focus, when it was on: the mode ("observe" or "veto"), how many
+	// utterances were judged, how many answers were vetoed or judged too late,
+	// which speaker was the primary, how many times that changed, and how far
+	// behind the audio the labels were at each judgment.
+	FocusMode      string `json:"focus_mode,omitempty"`
+	FocusJudged    int    `json:"focus_judged,omitempty"`
+	FocusOther     int    `json:"focus_other,omitempty"`
+	FocusVetoed    int    `json:"focus_vetoed,omitempty"`
+	FocusLate      int    `json:"focus_late,omitempty"`
+	FocusPrimary   int    `json:"focus_primary,omitempty"`
+	FocusHandovers int    `json:"focus_handovers,omitempty"`
+	FocusLagMS     []int  `json:"focus_lag_ms,omitempty"`
 }
 
 // Warning is a WARN or ERROR line logged during a call.
@@ -209,6 +248,7 @@ type turnBuild struct {
 	hedgeAsked   bool
 	hedgeRefused bool
 	hedgeWinner  int
+	focus        *FocusMark
 	latency      *Line
 }
 
@@ -252,6 +292,9 @@ type callBuild struct {
 		at   time.Time
 		took int
 	}
+	// vetoes are when answers to another voice were dropped: the caller's
+	// line before each is marked.
+	vetoes                   []time.Time
 	pendingWinner, pendingOf int
 	pendingHedge             struct {
 		asked, refused bool
@@ -592,6 +635,40 @@ func (ix *Indexer) Feed(l Line) {
 		}
 	case "think: prefix warmed":
 		ev.PrefixWarmMS = append(ev.PrefixWarmMS, l.N("ms"))
+	case "focus: on":
+		ev.FocusMode = l.Get("mode")
+	case "focus: utterance attributed":
+		t := cb.turn(l.Get("turn"))
+		ps, _ := l.Float("primary_share")
+		os, _ := l.Float("others_share")
+		cov, _ := l.Float("coverage")
+		t.focus = &FocusMark{PrimaryShare: ps, OthersShare: os, VoicedMS: l.N("voiced_ms"), Coverage: cov,
+			LagMS: l.N("labelled_lag_ms"), AnotherVoice: l.Get("another_voice") == "true"}
+		ev.FocusJudged++
+		ev.FocusLagMS = append(ev.FocusLagMS, l.N("labelled_lag_ms"))
+		if t.focus.AnotherVoice {
+			ev.FocusOther++
+		}
+	case "focus: vetoing the answer: the utterance was another voice's":
+		t := cb.turn(l.Get("turn"))
+		if t.focus == nil {
+			t.focus = &FocusMark{AnotherVoice: true}
+		}
+		t.focus.Vetoed = true
+		ev.FocusVetoed++
+		cb.vetoes = append(cb.vetoes, l.Time)
+		cb.mark(l.Time, "vetoed", "An answer to another voice was dropped before it was heard")
+	case "focus: another voice's utterance was answered before the labels came":
+		t := cb.turn(l.Get("turn"))
+		if t.focus == nil {
+			t.focus = &FocusMark{AnotherVoice: true}
+		}
+		t.focus.Late = true
+		ev.FocusLate++
+		cb.mark(l.Time, "focus_late", "Another voice was answered: the labels came after the first audio")
+	case "focus: this call":
+		ev.FocusPrimary = l.N("primary_speaker")
+		ev.FocusHandovers = l.N("handovers")
 	case "session: response latency summary":
 		if cb.call.EndedAt.IsZero() {
 			cb.call.EndedAt = l.Time
@@ -735,6 +812,34 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 	// A caller's line is logged where their utterance ended and has just been
 	// moved to their last sound, which can be before a line it was after.
 	inOrder()
+	// The speaker-activity model's verdicts, on the caller's lines: an
+	// answered turn's from its turn; a vetoed one on the last unanswered
+	// caller line before the veto.
+	for i := range out {
+		if out[i].Who != "caller" || out[i].Turn == 0 || turns[out[i].Turn-1].Focus == nil {
+			continue
+		}
+		switch f := turns[out[i].Turn-1].Focus; {
+		case f.Late:
+			out[i].Focus = "late"
+		case f.AnotherVoice:
+			out[i].Focus = "other"
+		default:
+			out[i].Focus = "caller"
+		}
+	}
+	for _, v := range cb.vetoes {
+		at := cb.at(v)
+		best := -1
+		for i := range out {
+			if out[i].Who == "caller" && out[i].Turn == 0 && out[i].Focus == "" && out[i].TS <= at {
+				best = i
+			}
+		}
+		if best >= 0 {
+			out[best].Focus = "vetoed"
+		}
+	}
 	return out
 }
 
@@ -757,6 +862,7 @@ func (cb *callBuild) turnOf(t *turnBuild, n int) Turn {
 		Interrupted: t.interrupted, HeardMS: t.heardMS,
 		WinnerCopy: t.winner, Copies: t.of,
 		HedgeAsked: t.hedgeAsked, HedgeRefused: t.hedgeRefused, HedgeWinner: t.hedgeWinner,
+		Focus:      t.focus,
 		LastSoundS: -1, AudioOutS: -1,
 	}
 	if !hasStart {
