@@ -592,7 +592,7 @@
       "title": "The diarizer's labels fall seconds behind under continuous background speech, so every judgment on them comes too late",
       "area": "focus",
       "status": "fixed",
-      "commit": "(next)",
+      "commit": "be069bb",
       "found": "2026-10-15",
       "found_on": "the 22:29 call, 38 barge-ins judged, 1 in time",
       "found_call": "out-mv9mxpzt-0ur9",
