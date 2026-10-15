@@ -537,7 +537,7 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
 	fx := newFixture(t)
 	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "sess_x", "arguments": map[string]any{},
-		"memory": map[string]any{"quote": map[string]any{"交强险": true, "三者险": "200万"}, "vehiclePrice": "12.8万", "vehicleAge": 2, "ncd": 1, "seats": 5},
+		"memory":         map[string]any{"quote": map[string]any{"交强险": true, "三者险": "200万"}, "vehiclePrice": "12.8万", "vehicleAge": 2, "ncd": 1, "seats": 5},
 		"memory_version": 4}
 	var q Quote
 	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 {
