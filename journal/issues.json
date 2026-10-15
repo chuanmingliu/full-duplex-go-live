@@ -557,6 +557,19 @@
       "cause": "The model server runs at about real time on the ThinkPad's CPU (~330 ms per 345 ms chunk at steady state) and queues chunks during a long stretch of speech instead of catching up.",
       "fix": "Not yet. Options: judge on the labels in hand at the veto deadline (partial coverage) rather than waiting for the utterance's full coverage; a larger chunk with fewer threads contending; skip chunks when the queue is deeper than one.",
       "verified_on": ""
+    },
+    {
+      "id": "ISS-033",
+      "title": "A noisy line kept an utterance open for 30 s: the energy gate and the recognizer both called the noise speech",
+      "area": "turn-taking",
+      "status": "open",
+      "found": "2026-10-15",
+      "found_on": "the 19:41 call, first 40 s",
+      "found_call": "out-mv9gx9fj-ydv1",
+      "symptom": "After the caller's first words the detector stayed active for 29 of 30 s (no 380 quiet ms on the line) and the recognizer produced a new hypothesis every 0.5–1 s from the background sound, so the settled close never saw unchanged words. The utterance ended at the 30 s cap; the assistant was silent for ~35 s.",
+      "cause": "Both end-of-turn witnesses are fooled by the same noise: the energy gate by its level, the recognizer by transcribing it. The diarizer on the focus side channel labelled only 2,160 ms of voice in those 29 s but is not consulted for ending turns, and its labels were 3.4 s behind by then (ISS-032).",
+      "fix": "Proposed: a voice-quiet close from the focus channel (no voiced frames for ~800 ms after the last voiced one, detector still active, words in hand → take the turn), plus the diarizer dropping queued chunks so its lag stays bounded. Cheaper half-measure: a cap on an utterance that has words in hand well under 30 s.",
+      "verified_on": ""
     }
   ]
 }
