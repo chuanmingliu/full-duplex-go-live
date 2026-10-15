@@ -109,6 +109,17 @@ type VADConfig struct {
 	BargeInMarginDB float64
 	// BargeInMinSpeechMS likewise raises MinSpeechMS during playback.
 	BargeInMinSpeechMS int
+	// FloorTrackMS is how long an open utterance may go without a single
+	// frame under the bar before the floor is raised to the quietest frame
+	// in that time. Speech has gaps between words that fall to the line's
+	// own level; a subway, a street or a carrier's comfort noise does not,
+	// and the floor, which adapts only on frames it believes are not speech,
+	// can otherwise never learn a noise that sits above the bar: a real call
+	// held an utterance open for 30 s that way. Zero disables it.
+	FloorTrackMS int
+	// TraceMS is how often a sample of the gate — levels, floor, bar, state —
+	// is kept for the record (see Trace). Zero keeps none.
+	TraceMS int
 	// EchoTailMS keeps that raised bar up for this long after the assistant
 	// stops producing audio. On a phone line the caller is still hearing it —
 	// a gateway's playout buffer, the carrier, the handset — and what comes
@@ -135,6 +146,8 @@ func DefaultVADConfig() VADConfig {
 		GapToleranceMS:     160,
 		BargeInMarginDB:    6,
 		BargeInMinSpeechMS: 320,
+		FloorTrackMS:       2000,
+		TraceMS:            100,
 	}
 }
 
@@ -182,6 +195,35 @@ func (c *VADConfig) applyDefaults() {
 	if c.BargeInMinSpeechMS <= 0 {
 		c.BargeInMinSpeechMS = d.BargeInMinSpeechMS
 	}
+	if c.FloorTrackMS == 0 {
+		c.FloorTrackMS = d.FloorTrackMS
+	}
+	if c.TraceMS == 0 {
+		c.TraceMS = d.TraceMS
+	}
+}
+
+// GateSample is the state of the gate over one slice of the call, kept so
+// that a call can be looked at afterwards: what the line measured against
+// what the gate believed. Levels are dBFS to a tenth.
+type GateSample struct {
+	// MS is the slice's start on the audio clock.
+	MS int `json:"t"`
+	// Hi and Lo are the loudest and quietest frame in the slice.
+	Hi float64 `json:"hi"`
+	Lo float64 `json:"lo"`
+	// Floor is the noise floor and Bar the level a frame had to exceed to be
+	// voiced, at the end of the slice.
+	Floor float64 `json:"f"`
+	Bar   float64 `json:"b"`
+	// VoicedMS is how much of the slice was judged voiced.
+	VoicedMS int `json:"v"`
+	// Open says an utterance was open at the end of the slice, Speaking that
+	// the assistant was producing audio, Raised that the floor was raised to
+	// the quietest recent frame during the slice (see FloorTrackMS).
+	Open     bool `json:"o,omitempty"`
+	Speaking bool `json:"s,omitempty"`
+	Raised   bool `json:"r,omitempty"`
 }
 
 // VAD is a streaming energy/ZCR voice-activity detector with an adaptive noise
@@ -261,6 +303,143 @@ type VAD struct {
 	// whoever wants to know; nobody has taken it yet when echoMissReady.
 	echoMiss      EchoMiss
 	echoMissReady bool
+
+	// The window-minimum tracker (FloorTrackMS): the quietest frame of each
+	// 100 ms block, the last few blocks, and the block being filled.
+	blockMin   float64
+	blockMS    float64
+	blockMins  []float64
+	blockPos   int
+	blockCount int
+	floorRaise struct {
+		from, to float64
+		ready    bool
+	}
+
+	// The trace (TraceMS): the sample being filled and the ones kept.
+	trace   []GateSample
+	cur     GateSample
+	curMS   float64
+	curSet  bool
+	curRais bool
+}
+
+// FloorRaise is the last time the floor was raised to the quietest recent
+// frame, once: from and to in dBFS. Nobody has taken it when !ok.
+func (v *VAD) TakeFloorRaise() (from, to float64, ok bool) {
+	if !v.floorRaise.ready {
+		return 0, 0, false
+	}
+	v.floorRaise.ready = false
+	return v.floorRaise.from, v.floorRaise.to, true
+}
+
+// Trace is every gate sample kept so far (see GateSample). The slice is the
+// detector's own; read it, do not keep it.
+func (v *VAD) Trace() []GateSample {
+	return v.trace
+}
+
+// maxTraceSamples bounds the record: two hours at 100 ms.
+const maxTraceSamples = 2 * 60 * 60 * 10
+
+// sample folds one frame into the trace.
+func (v *VAD) sample(level float64, voiced bool) {
+	if v.cfg.TraceMS <= 0 {
+		return
+	}
+	if !v.curSet {
+		v.cur = GateSample{MS: int(v.clockMS - v.frameMS), Hi: level, Lo: level}
+		v.curSet = true
+	}
+	if level > v.cur.Hi {
+		v.cur.Hi = level
+	}
+	if level < v.cur.Lo {
+		v.cur.Lo = level
+	}
+	if voiced {
+		v.cur.VoicedMS += int(v.frameMS)
+	}
+	v.curMS += v.frameMS
+	if v.curMS < float64(v.cfg.TraceMS) {
+		return
+	}
+	marginDB, _ := v.thresholds()
+	v.cur.Floor = round1(v.noiseFloorDB)
+	v.cur.Bar = round1(v.noiseFloorDB + marginDB)
+	v.cur.Hi, v.cur.Lo = round1(v.cur.Hi), round1(v.cur.Lo)
+	v.cur.Open = v.open
+	v.cur.Speaking = v.speaking.Load()
+	v.cur.Raised = v.curRais
+	if len(v.trace) < maxTraceSamples {
+		v.trace = append(v.trace, v.cur)
+	}
+	v.curSet, v.curMS, v.curRais = false, 0, false
+}
+
+func round1(x float64) float64 {
+	if math.IsNaN(x) || math.IsInf(x, 0) {
+		return -99
+	}
+	return math.Round(x*10) / 10
+}
+
+// trackFloor is the window-minimum tracker. An open utterance that has not
+// had one frame under the bar for FloorTrackMS is not speech, or not only
+// speech: the floor goes to the quietest frame of that time, and the frames
+// at the noise's level stop reading as voiced.
+func (v *VAD) trackFloor(level, marginDB float64) {
+	if v.cfg.FloorTrackMS <= 0 {
+		return
+	}
+	const blockMS = 100
+	if v.blockMS == 0 {
+		v.blockMin = level
+	} else if level < v.blockMin {
+		v.blockMin = level
+	}
+	v.blockMS += v.frameMS
+	if v.blockMS < blockMS {
+		return
+	}
+	n := v.cfg.FloorTrackMS / blockMS
+	if n < 2 {
+		n = 2
+	}
+	if len(v.blockMins) != n {
+		v.blockMins = make([]float64, n)
+		v.blockPos, v.blockCount = 0, 0
+	}
+	v.blockMins[v.blockPos] = v.blockMin
+	v.blockPos = (v.blockPos + 1) % n
+	if v.blockCount < n {
+		v.blockCount++
+	}
+	v.blockMS = 0
+	if !v.open || v.blockCount < n {
+		return
+	}
+	quietest := v.blockMins[0]
+	for _, m := range v.blockMins[1:] {
+		if m < quietest {
+			quietest = m
+		}
+	}
+	if quietest <= v.noiseFloorDB+marginDB {
+		return
+	}
+	to := quietest
+	if to > v.cfg.MaxNoiseFloorDB {
+		to = v.cfg.MaxNoiseFloorDB
+	}
+	if to <= v.noiseFloorDB {
+		return
+	}
+	v.floorRaise.from, v.floorRaise.to, v.floorRaise.ready = v.noiseFloorDB, to, true
+	v.noiseFloorDB = to
+	v.curRais = true
+	v.blockCount = 0
 }
 
 // EchoMiss is one start of the assistant's speech whose echo was not timed.
@@ -669,6 +848,11 @@ func (v *VAD) Push(frame []float32) Decision {
 			v.noiseFloorDB = v.cfg.MaxNoiseFloorDB
 		}
 	}
+
+	// The window-minimum tracker runs on the level before this frame's
+	// decision was made; a raise applies from the next frame.
+	v.trackFloor(level, marginDB)
+	v.sample(level, voiced)
 
 	if !v.open {
 		return v.pushClosed(frame, voiced, minSpeechMS)

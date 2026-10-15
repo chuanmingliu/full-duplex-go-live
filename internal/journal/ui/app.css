@@ -376,9 +376,9 @@ h3 { font-size: 13.5px; font-weight: 650; }
 .pmini-turn.over { background: var(--over); top: 0; height: 10px; }
 .pmini-win { top: -3px; height: 16px; border: 1.5px solid var(--ink); border-radius: 2px; }
 .pmini-head { top: -3px; height: 16px; width: 1px; background: var(--ink); }
-.pstage { position: relative; height: 138px; cursor: pointer; touch-action: pan-y; user-select: none; -webkit-user-select: none; overflow: hidden; }
-.wave { display: block; width: 100%; height: 138px; }
-.playhead { position: absolute; left: 0; top: 14px; width: 1.5px; height: 110px; margin-left: -0.75px; background: var(--ink); pointer-events: none; }
+.pstage { position: relative; height: 202px; cursor: pointer; touch-action: pan-y; user-select: none; -webkit-user-select: none; overflow: hidden; }
+.wave { display: block; width: 100%; height: 202px; }
+.playhead { position: absolute; left: 0; top: 14px; width: 1.5px; height: 174px; margin-left: -0.75px; background: var(--ink); pointer-events: none; }
 .playhead::before { content: ""; position: absolute; left: -3.25px; top: -1px; border: 4px solid transparent; border-top: 5px solid var(--ink); border-bottom: 0; }
 .lane-l { position: absolute; left: 0; padding: 0 5px 0 2px; font-size: 11px; line-height: 14px; color: var(--ink-3); background: var(--surface); border-radius: 2px; pointer-events: none; opacity: 0.92; }
 .pmsg { font-size: 12.5px; color: var(--warn-ink); }
@@ -763,3 +763,12 @@ h3 { font-size: 13.5px; font-weight: 650; }
 @media (prefers-reduced-motion: reduce) {
   .cv-line.flash, .wf-row.flash { animation: none; box-shadow: inset 3px 0 0 var(--ink); }
 }
+
+/* the gate lane's legend */
+.gatekey { display: inline-block; width: 14px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
+.gatekey.level { background: var(--ink-2); opacity: 0.55; }
+.gatekey.floor { height: 0; border-top: 1.5px solid var(--gate-floor, var(--st-asr)); vertical-align: 3px; }
+.gatekey.bar { height: 0; border-top: 1.5px dashed var(--gate-bar, var(--over)); vertical-align: 3px; }
+.gatekey.open { background: var(--gate-open, var(--gap)); opacity: 0.35; }
+.gatekey.barge { background: var(--gate-barge, var(--over)); opacity: 0.35; }
+.mshape.up { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 7px solid var(--ink); background: none; }

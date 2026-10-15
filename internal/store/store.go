@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chuanmingliu/golive/internal/audio"
 	"io"
 	"os"
 	"path/filepath"
@@ -70,6 +71,10 @@ type Meta struct {
 	// History is the conversation as the backend was shown it, which is what a
 	// fork continues from.
 	History []provider.Message `json:"history,omitempty"`
+	// Gate is the energy gate's record of the call: the line's level against
+	// the noise floor and the bar, sampled every vad.gate_trace_ms. What the
+	// journal draws to show why an utterance opened, or did not close.
+	Gate []audio.GateSample `json:"gate,omitempty"`
 }
 
 // Store is a directory of stored sessions.

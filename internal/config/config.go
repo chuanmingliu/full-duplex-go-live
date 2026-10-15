@@ -577,6 +577,16 @@ type VADProfile struct {
 	// assistant stops sending audio: on a phone line the caller is still
 	// hearing it, and its echo is still coming back. 0 for a line with none.
 	EchoTailMS int `json:"echo_tail_ms"`
+	// FloorTrackMS raises the noise floor to the quietest frame of the last
+	// this-many ms of an open utterance when none of it dipped under the
+	// bar: a line whose noise sits above the bar (a subway, a street) can
+	// otherwise hold an utterance open until max_speech_ms. 0 for the
+	// default, -1 to turn it off.
+	FloorTrackMS int `json:"floor_track_ms"`
+	// GateTraceMS is how often the gate's state is sampled for the stored
+	// session's record (the journal draws it). 0 for the default, -1 for
+	// none.
+	GateTraceMS int `json:"gate_trace_ms"`
 }
 
 // Default returns a configuration that runs end to end with the mock providers

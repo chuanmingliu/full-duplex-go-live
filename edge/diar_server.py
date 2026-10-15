@@ -25,6 +25,7 @@ ap.add_argument("--threads", type=int, default=4)
 ap.add_argument("--host", default="127.0.0.1")
 ap.add_argument("--port", type=int, default=8031)
 ap.add_argument("--frame-ms", type=int, default=80, help="how finely the 10 ms output is reported")
+ap.add_argument("--max-backlog", type=int, default=1, help="chunks allowed to queue before older ones are skipped unlabelled (see Session.skip)")
 args = ap.parse_args()
 
 torch.set_num_threads(args.threads)
@@ -37,7 +38,7 @@ STEP = proc.num_samples_per_audio_chunk
 MEL_STEP = proc.num_mel_frames_per_step
 LAG_MS = int(round(STEP / SR * 1000))
 lock = threading.Lock()
-stats = {"sessions": 0, "chunks": 0, "compute_ms": []}
+stats = {"sessions": 0, "chunks": 0, "skipped": 0, "compute_ms": []}
 
 
 class Session:
@@ -64,6 +65,26 @@ class Session:
             return len(self.buf) >= need
         start = proc.audio_chunk_start(self.mel_idx)
         return len(self.buf) >= start + STEP
+
+    def backlog(self):
+        """How many whole chunks are waiting beyond the one about to run."""
+        if self.first:
+            return 0
+        start = proc.audio_chunk_start(self.mel_idx)
+        return max(0, (len(self.buf) - start) // STEP - 1)
+
+    def skip(self, chunks: int):
+        """Leave chunks unlabelled and move on, so the labels stay close
+        to the audio. The model runs at about real time on this CPU and a
+        long stretch of speech would otherwise put it seconds behind: on a
+        call the labels were 3.4 s late by the end of a 30 s utterance, and
+        a verdict that late is no use to anyone. The skipped span gets no
+        frames at all, so the client's coverage says it is missing rather
+        than silent."""
+        for _ in range(chunks):
+            self.mel_idx += MEL_STEP
+            self.out_frames += STEP // (SR // 100)
+        stats["skipped"] += chunks
 
     def step(self):
         if self.first:
@@ -105,7 +126,7 @@ async def health(_):
     c = stats["compute_ms"][-200:]
     return web.json_response({"ok": True, "model": "nemotron-3-diarization", "mode": args.mode, "lag_ms": LAG_MS,
                               "frame_ms": args.frame_ms, "threads": args.threads, "sessions": stats["sessions"],
-                              "chunks": stats["chunks"],
+                              "chunks": stats["chunks"], "skipped_chunks": stats["skipped"], "max_backlog": args.max_backlog,
                               "compute_ms_p50": int(np.percentile(c, 50)) if c else None,
                               "compute_ms_p90": int(np.percentile(c, 90)) if c else None})
 
@@ -125,6 +146,9 @@ async def diarize(request):
             if item is None:
                 return
             while s.ready():
+                behind = s.backlog()
+                if behind > args.max_backlog:
+                    s.skip(behind - args.max_backlog)
                 msg = await loop.run_in_executor(None, s.step)
                 if msg and not ws.closed:
                     await ws.send_json(msg)

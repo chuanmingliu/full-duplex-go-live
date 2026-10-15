@@ -549,27 +549,29 @@
       "id": "ISS-032",
       "title": "Speaker-focus labels fall behind on long utterances",
       "area": "focus",
-      "status": "open",
+      "status": "fixed",
       "found": "2026-10-15",
       "found_on": "the 19:34 call, item_6",
       "found_call": "out-mv9gobf1-evwj",
       "symptom": "On a 2.2 s utterance the diarizer's labels arrived 1,660 ms behind the audio, after the answer's first audio (heard=true); on the shorter utterance of the same call 480 ms, on the 13:52 call 360 ms. In veto mode a background voice that long could not be vetoed before it was answered.",
       "cause": "The model server runs at about real time on the ThinkPad's CPU (~330 ms per 345 ms chunk at steady state) and queues chunks during a long stretch of speech instead of catching up.",
-      "fix": "Not yet. Options: judge on the labels in hand at the veto deadline (partial coverage) rather than waiting for the utterance's full coverage; a larger chunk with fewer threads contending; skip chunks when the queue is deeper than one.",
-      "verified_on": ""
+      "fix": "edge/diar_server.py --max-backlog (1): chunks queued beyond it are skipped unlabelled so the labels stay within about one chunk of the audio; the skipped span gets no frames, so the client's coverage says it is missing. Unverified on a call.",
+      "verified_on": "",
+      "commit": "(next)"
     },
     {
       "id": "ISS-033",
       "title": "A noisy line kept an utterance open for 30 s: the energy gate and the recognizer both called the noise speech",
       "area": "turn-taking",
-      "status": "open",
+      "status": "fixed",
       "found": "2026-10-15",
       "found_on": "the 19:41 call, first 40 s",
       "found_call": "out-mv9gx9fj-ydv1",
       "symptom": "After the caller's first words the detector stayed active for 29 of 30 s (no 380 quiet ms on the line) and the recognizer produced a new hypothesis every 0.5–1 s from the background sound, so the settled close never saw unchanged words. The utterance ended at the 30 s cap; the assistant was silent for ~35 s.",
       "cause": "Both end-of-turn witnesses are fooled by the same noise: the energy gate by its level, the recognizer by transcribing it. The diarizer on the focus side channel labelled only 2,160 ms of voice in those 29 s but is not consulted for ending turns, and its labels were 3.4 s behind by then (ISS-032).",
-      "fix": "Proposed: a voice-quiet close from the focus channel (no voiced frames for ~800 ms after the last voiced one, detector still active, words in hand → take the turn), plus the diarizer dropping queued chunks so its lag stays bounded. Cheaper half-measure: a cap on an utterance that has words in hand well under 30 s.",
-      "verified_on": ""
+      "fix": "vad.floor_track_ms (2000): the quietest frame of the last 2 s of an open utterance becomes the floor when nothing in that time dipped under the bar, so the noise stops reading as voiced and the utterance closes on the caller's next 380 quiet ms. Test: a steady rumble closes within 3.5 s, a 4 s sentence is heard to its end. The gate's record is kept in session.json and drawn in the journal (the Gate lane).",
+      "verified_on": "",
+      "commit": "(next)"
     }
   ]
 }

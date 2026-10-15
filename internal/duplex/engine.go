@@ -263,6 +263,7 @@ type Engine struct {
 	// before this one. Loop goroutine only. See measureLine.
 	echoReturns    []float64
 	echoMisses     int
+	floorRaises    int
 	pausesInside   []int
 	silentBeforeMS float64
 
@@ -365,6 +366,8 @@ func New(opts Options, deps Deps) *Engine {
 		BargeInMarginDB:    opts.Cfg.VAD.BargeInMarginDB,
 		BargeInMinSpeechMS: opts.Cfg.VAD.BargeInMinSpeechMS,
 		EchoTailMS:         opts.Cfg.VAD.EchoTailMS,
+		FloorTrackMS:       opts.Cfg.VAD.FloorTrackMS,
+		TraceMS:            opts.Cfg.VAD.GateTraceMS,
 	}
 	vad := audio.NewVAD(vcfg)
 
@@ -488,6 +491,13 @@ func (e *Engine) Close() {
 		}
 		e.ttsMu.Unlock()
 	})
+}
+
+// GateTrace is the energy gate's record of the call (see audio.GateSample):
+// the line's level against the floor and the bar, every vad.gate_trace_ms.
+// Call it after Close; the trace is the loop goroutine's until then.
+func (e *Engine) GateTrace() []audio.GateSample {
+	return append([]audio.GateSample(nil), e.vad.Trace()...)
 }
 
 // Greet speaks the configured greeting, if any.
@@ -1906,6 +1916,12 @@ func (e *Engine) measureLine() {
 		e.log.Debug("listen: the assistant's voice came back",
 			"ms", int(ms), "level_db", round1(level))
 	}
+	if from, to, ok := e.vad.TakeFloorRaise(); ok {
+		e.floorRaises++
+		e.log.Info("listen: the line never dipped under the bar; the floor is raised to its quietest",
+			"from_db", round1(from), "to_db", round1(to),
+			"over_ms", e.opts.Cfg.VAD.FloorTrackMS)
+	}
 	if miss, ok := e.vad.TakeEchoMiss(); ok {
 		e.echoMisses++
 		e.log.Debug("listen: the assistant's voice coming back was not timed",
@@ -1939,6 +1955,10 @@ func (e *Engine) lineSummary() {
 	} else if e.echoMisses > 0 {
 		// Tried and never managed: say so, or it reads as a line with no echo.
 		e.log.Info("listen: echo return time", "n", 0, "not_timed", e.echoMisses)
+	}
+	if e.floorRaises > 0 {
+		e.log.Info("listen: a line that never dipped under the bar", "floor_raises", e.floorRaises,
+			"noise_floor_db", round1(e.vad.NoiseFloorDB()))
 	}
 	if n := len(e.pausesInside); n > 0 {
 		var under80, under100, under120, longer int

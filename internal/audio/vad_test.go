@@ -635,3 +635,102 @@ func TestAnEchoThatIsNotTimedSaysWhy(t *testing.T) {
 		}
 	})
 }
+
+// rumble is a line that is never quiet: a low tone with a slow wobble, like a
+// subway car, at about the given dBFS. Its zero-crossing rate is speech-like,
+// so energy is all the gate has to go on.
+func rumble(rate, ms int, dbfs float64) []float32 {
+	n := rate * ms / 1000
+	out := make([]float32, n)
+	amp := math.Pow(10, dbfs/20) * math.Sqrt2
+	for i := range out {
+		t := float64(i) / float64(rate)
+		wobble := 1 + 0.15*math.Sin(2*math.Pi*0.7*t)
+		out[i] = float32(amp * wobble * math.Sin(2*math.Pi*85*t))
+	}
+	return out
+}
+
+// A noise that sits above the bar and never dips used to hold an utterance
+// open until the 30 s cap: the floor adapts only on frames it believes are
+// not speech, and it believed every one of these was. The tracker raises
+// the floor to the quietest recent frame once nothing has dipped under the
+// bar for FloorTrackMS, and the utterance then closes on the noise.
+func TestVADLearnsANoiseFloorThatSitsAboveTheBar(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate, FloorTrackMS: 2000})
+	signal := append(quiet(rate, 200), rumble(rate, 12000, -36)...)
+	decisions := feed(v, signal)
+	var stop *Decision
+	for i := range decisions {
+		if decisions[i].Kind == DecisionStopped {
+			stop = &decisions[i]
+			break
+		}
+	}
+	if stop == nil {
+		t.Fatalf("the utterance never closed on 12 s of steady noise")
+	}
+	if stop.EndMS > 3500 {
+		t.Fatalf("the utterance closed at %d ms; it should close soon after the %d ms the tracker needs", stop.EndMS, v.cfg.FloorTrackMS)
+	}
+	if v.NoiseFloorDB() < -42 {
+		t.Fatalf("noise floor %.1f dB; the tracker should have raised it to about the noise", v.NoiseFloorDB())
+	}
+	if _, to, ok := v.TakeFloorRaise(); !ok || to < -42 {
+		t.Fatalf("the raise was not reported (ok=%v to=%.1f)", ok, to)
+	}
+	var raised int
+	for _, g := range v.Trace() {
+		if g.Raised {
+			raised++
+		}
+	}
+	if raised != 1 {
+		t.Fatalf("trace marks %d raises, want 1", raised)
+	}
+}
+
+// Speech has gaps, and the tracker must not mistake a long sentence for noise:
+// a caller who talks for four seconds is heard to the end.
+func TestVADDoesNotCutOffASustainedSpeaker(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate, FloorTrackMS: 2000})
+	signal := append(quiet(rate, 200), tone(rate, 4000, 0.45)...)
+	signal = append(signal, quiet(rate, 800)...)
+	decisions := feed(v, signal)
+	var stops []Decision
+	for _, d := range decisions {
+		if d.Kind == DecisionStopped {
+			stops = append(stops, d)
+		}
+	}
+	if len(stops) != 1 {
+		t.Fatalf("stops: %d, want 1", len(stops))
+	}
+	if stops[0].EndMS < 4000 {
+		t.Fatalf("the utterance closed at %d ms, before the speaker finished at 4200", stops[0].EndMS)
+	}
+}
+
+// The trace is a sample every TraceMS with the levels and the gate's state.
+func TestVADTraceFollowsTheGate(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate, TraceMS: 100})
+	signal := append(quiet(rate, 300), tone(rate, 600, 0.45)...)
+	signal = append(signal, quiet(rate, 600)...)
+	feed(v, signal)
+	tr := v.Trace()
+	if len(tr) != 15 {
+		t.Fatalf("samples: %d, want 15", len(tr))
+	}
+	if tr[0].Open || tr[0].VoicedMS != 0 || tr[0].Lo > -90 {
+		t.Fatalf("first sample should be quiet and closed: %+v", tr[0])
+	}
+	if !tr[5].Open || tr[5].VoicedMS != 100 || tr[5].Hi < tr[5].Bar {
+		t.Fatalf("sample during speech should be open, voiced and over the bar: %+v", tr[5])
+	}
+	if tr[14].Open {
+		t.Fatalf("last sample should be closed: %+v", tr[14])
+	}
+}

@@ -642,6 +642,44 @@ listen: no new words and the line never went quiet; taking the turn
 And sound resuming after a pause no longer throws away the answer begun in that
 pause; only the *words* changing does.
 
+**The noise sits above the bar.** A subway car (the 19:41 call on 10-15, the
+owner's target scenario) is louder than the bar the whole time, and the floor
+cannot learn it: it adapts only on frames it believes are not speech, and it
+believed every one of these was. The recognizer does no better — it transcribes
+the noise, a new hypothesis every half second, so the settled close above never
+sees unchanged words either. That call held one utterance open for the full
+`vad.max_speech_ms` (30 s) and the assistant said nothing for 35 s. Speech has
+gaps between words that fall to the line's own level; noise does not. So the
+gate now tracks the quietest frame of the last `vad.floor_track_ms` (2000) of an
+open utterance, and when none of it dipped under the bar, raises the floor to
+that quietest frame (bounded by `max_noise_floor_db`, −28):
+
+```
+listen: the line never dipped under the bar; the floor is raised to its quietest  from_db=-60 to_db=-37.4 over_ms=2000
+listen: a line that never dipped under the bar  floor_raises=3 noise_floor_db=-35.1
+```
+
+The frames at the noise's level stop reading as voiced, and the utterance
+closes on the next 380 ms that the *caller* is quiet. The floor comes back down
+by itself afterwards (the release is fast on quiet frames). The cost: a caller
+who talks for two seconds without one gap near the room's level — a loud,
+continuous voice in a quiet room — has the floor raised to the quietest part of
+their own voice, and a soft trailing word can then close the turn early. The
+tests in `internal/audio/vad_test.go` hold both sides: a steady rumble closes
+within 3.5 s, a four-second sentence is heard to its end. `-1` turns it off.
+
+**Seeing what the gate saw.** Every 100 ms the gate keeps a sample — the
+loudest and quietest frame, the floor, the bar, how much was judged voiced,
+whether it was open, whether the assistant was speaking, whether the floor was
+raised (`vad.gate_trace_ms`) — in the stored session's record (`gate` in
+`session.json`, so the archive has it). The call journal draws it as the third
+lane of the player, "Gate": the level as a band, the floor as a line, the bar
+dashed, the openings shaded (red when opened over the assistant), a bar at the
+end of an opening that ran into the 30 s cap or was taken by the settled close,
+and an arrow where the floor was raised. Hover for the figures. On the subway
+call it shows the whole story in one glance: the band sitting above the dashed
+line for thirty seconds. `/api/calls/<id>/gate` is the data.
+
 **The assistant hears itself.** The end of its own sentence comes back through
 the caller's handset after golive has finished sending it, and opens a turn.
 `vad.barge_in_margin_db` (16) is how far above the room a sound must be to

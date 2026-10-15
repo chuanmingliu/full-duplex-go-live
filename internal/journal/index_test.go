@@ -360,3 +360,78 @@ time=2026-10-12T09:36:00.000+08:00 level=INFO msg="focus: this call" session=ses
 		t.Fatal("no marker for the vetoed answer")
 	}
 }
+
+// The gate lane: every opening of the energy gate, on the audio clock, with
+// how it closed, so a call on a noisy line shows where the gate stayed open.
+func TestTheGateLaneReadsEveryOpeningAndHowItClosed(t *testing.T) {
+	base := fixtureCalls(t)[0]
+	opened, closed := 0, 0
+	for _, u := range base.Utterances {
+		opened++
+		if u.EndS > 0 {
+			closed++
+			if u.EndS <= u.StartS {
+				t.Fatalf("utterance ends before it starts: %+v", u)
+			}
+			if u.Close != "silence" && u.Close != "settled" {
+				t.Fatalf("the fixture's utterances closed on silence or settled words; got %q", u.Close)
+			}
+		}
+	}
+	if opened == 0 || closed == 0 {
+		t.Fatalf("utterances: %d opened, %d closed", opened, closed)
+	}
+	if base.Events.Utterances != opened {
+		t.Fatalf("the count says %d utterances, the lane has %d", base.Events.Utterances, opened)
+	}
+
+	// A line that never went quiet: the settled close and the cap, as the
+	// engine logs them, and a floor raise.
+	sid := "sess_811ccb6206d6013bacb8559a"
+	extra := `time=2026-10-12T09:40:00.000+08:00 level=DEBUG msg="listen: utterance opened" session=` + sid + ` start_ms=300000 active_ms=320 barge_in=true noise_floor_db=-60
+time=2026-10-12T09:40:02.100+08:00 level=INFO msg="listen: the line never dipped under the bar; the floor is raised to its quietest" session=` + sid + ` from_db=-60 to_db=-37.4 over_ms=2000
+time=2026-10-12T09:40:30.000+08:00 level=DEBUG msg="listen: utterance closed" session=` + sid + ` start_ms=300000 end_ms=330000 active_ms=29000 barge_in=true
+time=2026-10-12T09:40:31.000+08:00 level=DEBUG msg="listen: utterance opened" session=` + sid + ` start_ms=330000 active_ms=200 barge_in=false noise_floor_db=-37.4
+time=2026-10-12T09:40:34.000+08:00 level=INFO msg="listen: no new words and the line never went quiet; taking the turn" session=` + sid + ` words_unchanged_ms=600 voiced_since_ms=300
+time=2026-10-12T09:40:34.000+08:00 level=DEBUG msg="listen: utterance closed" session=` + sid + ` start_ms=330000 end_ms=334920 active_ms=3560 barge_in=false
+`
+	f, err := os.Open("testdata/call.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ix := NewIndexer()
+	if err := ix.ReadLog(f); err != nil {
+		t.Fatal(err)
+	}
+	if err := ix.ReadLog(strings.NewReader(extra)); err != nil {
+		t.Fatal(err)
+	}
+	c := ix.Calls()[0]
+	n := len(c.Utterances)
+	if n != opened+2 {
+		t.Fatalf("utterances: %d, want %d", n, opened+2)
+	}
+	capped, settled := c.Utterances[n-2], c.Utterances[n-1]
+	if capped.Close != "cap" || !capped.BargeIn || capped.StartS != 300 || capped.EndS != 330 || capped.ActiveMS != 29000 {
+		t.Fatalf("the capped utterance: %+v", capped)
+	}
+	if settled.Close != "settled" || settled.BargeIn || settled.EndS != 334.92 {
+		t.Fatalf("the settled utterance: %+v", settled)
+	}
+	if c.Events.CappedCloses != 1 || c.Events.SettledCloses != base.Events.SettledCloses+1 || c.Events.FloorRaises != 1 {
+		t.Fatalf("counts: capped %d settled %d raises %d", c.Events.CappedCloses, c.Events.SettledCloses, c.Events.FloorRaises)
+	}
+	var raised int
+	for _, m := range c.Markers {
+		if m.Kind == "floor_raised" {
+			raised++
+			if !strings.Contains(m.Label, "-37.4") {
+				t.Fatalf("the raise's marker does not say where the floor went: %q", m.Label)
+			}
+		}
+	}
+	if raised != 1 {
+		t.Fatalf("floor_raised markers: %d", raised)
+	}
+}

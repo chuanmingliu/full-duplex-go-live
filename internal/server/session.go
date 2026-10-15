@@ -213,6 +213,7 @@ func (s *Session) Serve(ctx context.Context) {
 
 	var usage *live.UsageBody
 	var history []provider.Message
+	var gate []audio.GateSample
 	record := resolved
 	if engine != nil {
 		if rec != nil {
@@ -224,6 +225,9 @@ func (s *Session) Serve(ctx context.Context) {
 		u := engine.Usage()
 		usage = &u
 		engine.Close()
+		if rec != nil {
+			gate = engine.GateTrace()
+		}
 	}
 	if rec != nil {
 		if err := rec.Close(store.Meta{
@@ -231,6 +235,7 @@ func (s *Session) Serve(ctx context.Context) {
 			CreatedAt: s.createdAt,
 			Session:   record,
 			History:   history,
+			Gate:      gate,
 		}); err != nil {
 			s.log.Warn("stored session did not close cleanly", "err", err)
 		}

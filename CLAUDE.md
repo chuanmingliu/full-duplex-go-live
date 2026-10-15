@@ -418,6 +418,20 @@ made on one build.
   chunk while the track is ahead (`internal/store`), and the journal does the
   same at play time for older recordings (`Recording.Realign`). Timestamps and
   latency figures were never affected: they come from the log's clock.
+- **A subway car holds the gate open for 30 s, and the recognizer cannot
+  save it.** The 19:41 call on 10-15 (the owner's target scenario): noise
+  above the bar the whole time, the floor pinned at −60 because it adapts
+  only on frames it believes are not speech, the recognizer producing a new
+  hypothesis from the noise every half second so the settled close never saw
+  unchanged words; one utterance open for the full `max_speech_ms`, the
+  assistant silent for 35 s (ISS-033). The diarizer on the side channel
+  labelled 2.2 s of voice in those 29 s and was 3.4 s behind by the end.
+  Fix: `vad.floor_track_ms` raises the floor to the quietest frame of the
+  last 2 s of an open utterance when nothing dipped under the bar ("A line
+  that is never quiet" in `TELEPHONY.md`); the gate's record (`gate` in
+  `session.json`) is drawn as the player's third lane in the journal; the
+  diarizer server skips chunks beyond `--max-backlog` (1) unlabelled so its
+  labels stay near the audio (ISS-032). Not yet verified on a subway call.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

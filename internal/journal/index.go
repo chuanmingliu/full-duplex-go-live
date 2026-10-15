@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -189,6 +190,13 @@ type Events struct {
 	FocusPrimary   int    `json:"focus_primary,omitempty"`
 	FocusHandovers int    `json:"focus_handovers,omitempty"`
 	FocusLagMS     []int  `json:"focus_lag_ms,omitempty"`
+	// FloorRaises is how often the gate raised its floor to a line that
+	// never dipped under the bar (vad.floor_track_ms); SettledCloses how
+	// many utterances were taken on words that stood still, CappedCloses
+	// how many ran into vad.max_speech_ms.
+	FloorRaises   int `json:"floor_raises,omitempty"`
+	SettledCloses int `json:"settled_closes,omitempty"`
+	CappedCloses  int `json:"capped_closes,omitempty"`
 }
 
 // Warning is a WARN or ERROR line logged during a call.
@@ -222,10 +230,13 @@ type Call struct {
 	Turns        []Turn  `json:"turns"`
 	Transcript   []Said  `json:"transcript"`
 	// AudioIn is the caller's audio as it arrived, a mark every few seconds.
-	AudioIn  []AudioMark `json:"audio_in,omitempty"`
-	Markers  []Marker    `json:"markers"`
-	Events   Events      `json:"events"`
-	Warnings []Warning   `json:"warnings"`
+	AudioIn []AudioMark `json:"audio_in,omitempty"`
+	// Utterances is every time the energy gate opened on the caller's side,
+	// and how it closed: what the gate lane of the player is drawn from.
+	Utterances []Utterance `json:"utterances,omitempty"`
+	Markers    []Marker    `json:"markers"`
+	Events     Events      `json:"events"`
+	Warnings   []Warning   `json:"warnings"`
 }
 
 // --- reading the log ---
@@ -256,6 +267,19 @@ type heardLine struct {
 	at    time.Time
 	began time.Time // when the detector opened on these words; zero when unknown
 	text  string
+}
+
+// Utterance is one opening of the energy gate: on the audio clock, with how
+// much of it the gate judged voiced and how it ended. BargeIn says the
+// assistant was speaking when it opened. Close is "silence" (the trailing
+// quiet the gate waits for), "settled" (the words stood still on a line that
+// never went quiet), "cap" (vad.max_speech_ms ran out), or "" while open.
+type Utterance struct {
+	StartS   float64 `json:"start_s"`
+	EndS     float64 `json:"end_s,omitempty"`
+	ActiveMS int     `json:"active_ms,omitempty"`
+	BargeIn  bool    `json:"barge_in,omitempty"`
+	Close    string  `json:"close,omitempty"`
 }
 
 // AudioMark is how much of the caller's audio had arrived at a moment of the
@@ -292,6 +316,9 @@ type callBuild struct {
 		at   time.Time
 		took int
 	}
+	// settledClose says the utterance about to close was taken by the
+	// settled close, not by silence.
+	settledClose bool
 	// vetoes are when answers to another voice were dropped: the caller's
 	// line before each is marked.
 	vetoes                   []time.Time
@@ -518,6 +545,34 @@ func (ix *Indexer) Feed(l Line) {
 		if f, ok := l.Float("noise_floor_db"); ok {
 			cb.noise = append(cb.noise, f)
 		}
+		cb.call.Utterances = append(cb.call.Utterances, Utterance{
+			StartS: float64(l.N("start_ms")) / 1000, BargeIn: l.Get("barge_in") == "true"})
+	case "listen: no new words and the line never went quiet; taking the turn":
+		cb.settledClose = true
+	case "listen: utterance closed":
+		u := &Utterance{StartS: float64(l.N("start_ms")) / 1000, BargeIn: l.Get("barge_in") == "true"}
+		if n := len(cb.call.Utterances); n > 0 && cb.call.Utterances[n-1].EndS == 0 {
+			u = &cb.call.Utterances[n-1]
+		} else {
+			cb.call.Utterances = append(cb.call.Utterances, *u)
+			u = &cb.call.Utterances[len(cb.call.Utterances)-1]
+		}
+		u.EndS = float64(l.N("end_ms")) / 1000
+		u.ActiveMS = l.N("active_ms")
+		switch {
+		case cb.settledClose:
+			u.Close = "settled"
+			ev.SettledCloses++
+		case l.N("end_ms")-l.N("start_ms") >= 30000:
+			u.Close = "cap"
+			ev.CappedCloses++
+		default:
+			u.Close = "silence"
+		}
+		cb.settledClose = false
+	case "listen: the line never dipped under the bar; the floor is raised to its quietest":
+		ev.FloorRaises++
+		cb.mark(l.Time, "floor_raised", "The line never dipped under the bar for "+strconv.Itoa(l.N("over_ms"))+" ms: the floor was raised from "+l.Get("from_db")+" to "+l.Get("to_db")+" dB")
 	case "asr: asking for a final on the words so far; a continuation is listening":
 		ev.EarlyFinals++
 		cb.lastAskPause = l.N("pause_ms")

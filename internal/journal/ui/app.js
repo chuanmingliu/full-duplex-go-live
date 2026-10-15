@@ -757,7 +757,8 @@
     focus_late: { name: 'another voice answered', shape: 'dia' },
     tts_slow: { name: 'slow synthesizer', shape: 'dia' },
     hedge_refused: { name: 'second synthesis refused', shape: 'diao' },
-    over: { name: 'turn over target', shape: 'none' }
+    over: { name: 'turn over target', shape: 'none' },
+    floor_raised: { name: 'the gate raised its floor to a line that never dipped', shape: 'up' }
   };
 
   function Player(call, audioInfo, target) {
@@ -775,7 +776,8 @@
     var stage = h('div', { class: 'pstage', tabindex: '0', role: 'slider', 'aria-label': 'Position in the recording', 'aria-valuemin': '0', 'aria-valuemax': String(Math.round(D)), 'aria-valuenow': '0' },
       canvas, head,
       h('span', { class: 'lane-l', style: { top: '20px' } }, 'Caller'),
-      h('span', { class: 'lane-l', style: { top: '80px' } }, 'Assistant'));
+      h('span', { class: 'lane-l', style: { top: '80px' } }, 'Assistant'),
+      h('span', { class: 'lane-l', style: { top: '138px' } }, 'Gate'));
     var mini = h('div', { class: 'pmini', title: 'The whole call. Click to move.' });
     var miniWin = h('i', { class: 'pmini-win' });
     var miniHead = h('i', { class: 'pmini-head' });
@@ -837,10 +839,19 @@
         h('span', { class: 'lg-item' }, h('i', { class: 'mshape ring' }), 'prepared answer dropped'),
         h('span', { class: 'lg-item' }, h('i', { class: 'mshape dia' }), 'slow synthesizer'),
         h('span', { class: 'lg-item' }, h('i', { class: 'mshape diao' }), 'second synthesis refused'),
+        h('span', { class: 'lg-item' }, h('i', { class: 'gatekey level' }), 'gate: the line\'s level'),
+        h('span', { class: 'lg-item' }, h('i', { class: 'gatekey floor' }), 'noise floor'),
+        h('span', { class: 'lg-item' }, h('i', { class: 'gatekey bar' }), 'bar (floor + margin)'),
+        h('span', { class: 'lg-item' }, h('i', { class: 'gatekey open' }), 'gate open'),
+        h('span', { class: 'lg-item' }, h('i', { class: 'gatekey barge' }), 'opened over the assistant'),
+        h('span', { class: 'lg-item' }, h('i', { class: 'mshape up' }), 'floor raised'),
         h('span', { class: 'lg-item keys' }, 'Space plays, ← → move 2 s')),
       audio);
 
-    var H = 138, LANE = [[18, 60], [76, 118]], STRIP = 16;
+    var H = 202, LANE = [[18, 60], [76, 118]], GATE = [134, 182], BOTTOM = 186, STRIP = 16;
+    var gate = null; // { samples, utterances } from /gate, when the call has a record
+    var DB_LO = -78, DB_HI = -8;
+    function Y(db) { return GATE[1] - (Math.max(DB_LO, Math.min(DB_HI, db)) - DB_LO) / (DB_HI - DB_LO) * (GATE[1] - GATE[0]); }
     function X(t) { return (t - viewT0) / viewSpan * stage.clientWidth; }
     function T(x) { return viewT0 + x / stage.clientWidth * viewSpan; }
 
@@ -864,10 +875,10 @@
       g.fillStyle = ink3; g.strokeStyle = line; g.lineWidth = 1;
       for (var t = Math.ceil(viewT0 / step) * step; t <= viewT0 + viewSpan + 0.001; t += step) {
         var x = Math.round(X(t)) + 0.5;
-        g.beginPath(); g.moveTo(x, STRIP); g.lineTo(x, 122); g.stroke();
+        g.beginPath(); g.moveTo(x, STRIP); g.lineTo(x, BOTTOM); g.stroke();
         var lab = Math.floor(t / 60) + ':' + pad(Math.round(t % 60));
         var tw = g.measureText(lab).width;
-        g.fillText(lab, Math.min(Math.max(x - tw / 2, 0), W - tw), 130);
+        g.fillText(lab, Math.min(Math.max(x - tw / 2, 0), W - tw), BOTTOM + 8);
       }
       // lane baselines
       LANE.forEach(function (l) {
@@ -918,13 +929,67 @@
         });
       }
 
+      // the energy gate: when it was open, what the line measured, where the floor and the bar were
+      (function () {
+        var y0 = GATE[0], y1 = GATE[1];
+        g.strokeStyle = line; g.lineWidth = 1;
+        [-20, -40, -60].forEach(function (db) {
+          var y = Math.round(Y(db)) + 0.5;
+          g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+          g.fillStyle = ink3; g.fillText(db + '', W - 24, y - 5);
+        });
+        if (!gate) return;
+        var open = cssVar('--gate-open') || gap, barge = cssVar('--gate-barge') || over,
+          floorC = cssVar('--gate-floor') || cssVar('--st-asr'), barC = cssVar('--gate-bar') || over;
+        (gate.utterances || []).forEach(function (u) {
+          var a = X(u.start_s), b = X(u.end_s > 0 ? u.end_s : D);
+          if (b < 0 || a > W) return;
+          g.globalAlpha = 0.18; g.fillStyle = u.barge_in ? barge : open;
+          g.fillRect(a, y0, Math.max(b - a, 1.5), y1 - y0);
+          g.globalAlpha = 1;
+          if (u.close === 'cap' || u.close === 'settled') {
+            g.fillStyle = u.close === 'cap' ? over : ink3;
+            g.fillRect(b - 1.5, y0, 1.5, y1 - y0);
+          }
+        });
+        var sm = gate.samples, n = sm.length;
+        if (!n) return;
+        var step = n > 1 ? (sm[1].t - sm[0].t) / 1000 : 0.1;
+        function at(t) { var i = Math.floor((t - sm[0].t / 1000) / step); return i >= 0 && i < n ? sm[i] : null; }
+        // level: the band between the quietest and loudest frame of each slice
+        g.fillStyle = ink2; g.globalAlpha = 0.55;
+        g.beginPath();
+        for (var x = 0; x < W; x++) {
+          var hi = -200, lo = 200, any = false;
+          for (var t = T(x); t < T(x + 1) + 1e-9; t += step) { var q = at(t); if (!q) continue; any = true; if (q.hi > hi) hi = q.hi; if (q.lo < lo) lo = q.lo; }
+          if (!any) { var q1 = at(T(x)); if (!q1) continue; hi = q1.hi; lo = q1.lo; }
+          var ya = Y(hi), yb = Y(lo);
+          g.rect(x, ya, 1, Math.max(yb - ya, 1));
+        }
+        g.fill(); g.globalAlpha = 1;
+        // the floor and the bar
+        [['f', floorC, []], ['b', barC, [3, 3]]].forEach(function (spec) {
+          g.strokeStyle = spec[1]; g.lineWidth = 1.25; g.setLineDash(spec[2]);
+          g.beginPath();
+          var started = false;
+          for (var x = 0; x < W; x++) {
+            var q = at(T(x)); if (!q) { started = false; continue; }
+            var y = Y(q[spec[0]]);
+            if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y);
+          }
+          g.stroke(); g.setLineDash([]);
+        });
+        g.lineWidth = 1;
+      })();
+
       // markers
       markers.forEach(function (m) {
         var x = X(m.t_s), k = MARKERS[m.kind] || { shape: 'tick' };
         if (x < -6 || x > W + 6 || k.shape === 'none') return;
         var y = 8;
         g.lineWidth = 1.5;
-        if (k.shape === 'tri') { g.fillStyle = ink; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y - 4); g.lineTo(x, y + 4); g.closePath(); g.fill(); }
+        if (k.shape === 'up') { y = GATE[0] - 7; g.fillStyle = ink; g.beginPath(); g.moveTo(x - 4, y + 3); g.lineTo(x + 4, y + 3); g.lineTo(x, y - 4); g.closePath(); g.fill(); }
+        else if (k.shape === 'tri') { g.fillStyle = ink; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y - 4); g.lineTo(x, y + 4); g.closePath(); g.fill(); }
         else if (k.shape === 'ring') { g.strokeStyle = ink3; g.beginPath(); g.arc(x, y, 3.2, 0, Math.PI * 2); g.stroke(); }
         else if (k.shape === 'dia' || k.shape === 'diao') {
           g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 4.5, y); g.lineTo(x, y + 5); g.lineTo(x - 4.5, y); g.closePath();
@@ -1017,6 +1082,15 @@
       var box = h('div', null, h('div', { class: 'tip-title num' }, pos(t)));
       if (tn) box.appendChild(h('div', { class: 'tip-line' + (tn.over ? ' over' : '') }, 'Turn ' + tn.n + ': ' + num(tn.total_ms) + ' ms from last sound to first audio' + (tn.over ? ', over target' : '')));
       near.forEach(function (m) { if (m.kind !== 'over') box.appendChild(h('div', { class: 'tip-line' }, m.label)); });
+      if (gate && gate.samples && gate.samples.length) {
+        var sm = gate.samples, step = sm.length > 1 ? (sm[1].t - sm[0].t) / 1000 : 0.1;
+        var i = Math.floor((t - sm[0].t / 1000) / step), q = i >= 0 && i < sm.length ? sm[i] : null;
+        if (q) {
+          var u = (gate.utterances || []).filter(function (v) { return t >= v.start_s && (v.end_s === undefined || v.end_s === 0 || t <= v.end_s); })[0];
+          box.appendChild(h('div', { class: 'tip-line num' }, 'gate: level ' + q.lo + '…' + q.hi + ' dB, floor ' + q.f + ', bar ' + q.b + (q.v ? ', voiced ' + q.v + ' ms' : '') + (q.o ? ', open' : ', closed') + (q.s ? ', assistant speaking' : '')));
+          if (u) box.appendChild(h('div', { class: 'tip-line' }, 'utterance from ' + pos(u.start_s) + (u.end_s ? ' to ' + pos(u.end_s) + ', ' + (u.close === 'cap' ? 'cut off at the 30 s cap' : u.close === 'settled' ? 'taken on words that stood still' : 'closed on silence') : ', still open') + (u.barge_in ? ', opened over the assistant' : '') + (u.active_ms ? '; ' + u.active_ms + ' ms judged voiced' : '')));
+        }
+      }
       return box;
     });
 
@@ -1044,6 +1118,8 @@
     var n = Math.max(1200, Math.min(8000, Math.round(D * 20)));
     api('/api/calls/' + encodeURIComponent(call.id) + '/peaks?n=' + n).then(function (p) { peaks = p; draw(); })
       .catch(function () { msg.textContent = 'The waveform could not be read; the recording still plays.'; });
+    api('/api/calls/' + encodeURIComponent(call.id) + '/gate').then(function (gt) { gate = gt; draw(); })
+      .catch(function () { gate = { samples: [], utterances: call.utterances || [] }; draw(); });
   }
 
   // ----- the conversation -----

@@ -430,6 +430,34 @@ func (s *Server) rawRecording(c *Call) (rec *Recording, record string, err error
 	return rec, filepath.Join(s.cfg.StoreDir, c.Session, recordFile), err
 }
 
+// gateTrace reads the gate samples from a call's session record, in the
+// archive if it is there and otherwise in golive's store. nil when the
+// record has none (a call before the record was kept, or a build without it).
+func (s *Server) gateTrace(c *Call) []json.RawMessage {
+	path := filepath.Join(s.cfg.StoreDir, c.Session, recordFile)
+	if e := s.archive.Entry(c.ID); e != nil {
+		if p := s.archive.Path(c.ID, archSession); fileExists(p) {
+			path = p
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var rec struct {
+		Gate []json.RawMessage `json:"gate"`
+	}
+	if json.Unmarshal(data, &rec) != nil || len(rec.Gate) == 0 {
+		return nil
+	}
+	return rec.Gate
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
+}
+
 // onClock reports whether a session's record says its caller's track was kept
 // on the session clock as it was written.
 func onClock(recordPath string) bool {
@@ -686,6 +714,19 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 			n = 1200
 		}
 		writeJSON(w, http.StatusOK, rec.Peaks(n))
+	case "gate":
+		// The energy gate's record of the call, from golive's session
+		// record: the line's level against the floor and the bar, every
+		// 100 ms, with the gate's openings from the log beside it.
+		samples := s.gateTrace(c)
+		if samples == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "this call has no gate record"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"samples":    samples,
+			"utterances": c.Utterances,
+		})
 	case "feedback":
 		s.handleFeedback(w, r, c)
 	default:
