@@ -215,6 +215,19 @@ Things to know:
   this costs the first answer little — but a template whose variables come
   late keeps more of it warm.
 
+### The panel
+
+The service serves a page at its root — on the box `http://192.168.71.9:8791/`
+on the home network — over the same API: templates and their versions (read,
+save a new version), the configs (`quote-rules`, `quote-api`, any other, as
+JSON, in versions), render a template with a lead's variables and read the
+prompt, a dry run, placing the call, the default opening line, the quotation
+tool as the assistant would be answered, and every call placed with the
+prompt it ran on and a link to its journal page. The page asks once for the
+token (`cat ~/golive-crm/api.token`) and keeps it in that browser; the API is
+not opened to anything without it. Like the journal, the page has no login of
+its own, so it is for the home network, not the tunnel.
+
 ## The call journal
 
 Every call golive answers, kept where the next round of work can look at it:

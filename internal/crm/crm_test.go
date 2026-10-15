@@ -669,3 +669,33 @@ func TestAQuoteGoesToTheBusinessServiceWhenConfigured(t *testing.T) {
 		t.Fatalf("no plate: %d %s", code, body)
 	}
 }
+
+// The panel is served at the root without a token; everything it does goes
+// through the API, which still wants one.
+func TestThePanelIsServedAndTheAPIStaysGated(t *testing.T) {
+	fx := newFixture(t)
+	resp, err := http.Get(fx.api.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "Lead service") || !strings.Contains(string(body), "app.js") {
+		t.Fatalf("the panel: %d %q", resp.StatusCode, string(body[:min(len(body), 80)]))
+	}
+	for _, name := range []string{"/app.js", "/app.css"} {
+		r, err := http.Get(fx.api.URL + name)
+		if err != nil || r.StatusCode != 200 {
+			t.Fatalf("%s: %v %v", name, err, r)
+		}
+		r.Body.Close()
+	}
+	r, err := http.Get(fx.api.URL + "/api/templates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the API without a token answered %d", r.StatusCode)
+	}
+}

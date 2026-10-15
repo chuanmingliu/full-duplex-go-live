@@ -513,10 +513,12 @@ made on one build.
 `cmd/crm`, `internal/crm`, `internal/jinja`; on the box `phone-brain.sh crm
 …`, port 8791, data in `~/golive-crm`. See "A call on a rendered prompt" in
 `TELEPHONY.md`. What exists: templates in versions, rendering, a call placed
-on the result, an append-only checksummed event log. What is planned and not
-built (the owner agreed the plan on 10-13): leads and a variable catalogue,
-contacts with summaries that become variables, import/export, a scheduler, a
-page. `internal/crm/model.go` already has those records' shapes.
+on the result, versioned configs and the quotation (rules or the business's
+API), an append-only checksummed event log, and a page over all of it
+(`internal/crm/ui`, served at the root; "The panel" in `TELEPHONY.md`). What
+is planned and not built (the owner agreed the plan on 10-13): leads and a
+variable catalogue, contacts with summaries that become variables,
+import/export, a scheduler. `internal/crm/model.go` already has those records' shapes.
 
 - The owner's prompts are Jinja2 written for a Python renderer. `internal/
   jinja` must render them to the character: `testdata/gen.py` renders every

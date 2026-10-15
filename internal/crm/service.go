@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -525,6 +527,9 @@ func (s *Service) Calls(n int) []CallRecord {
 
 // --- HTTP ---
 
+//go:embed ui
+var uiFiles embed.FS
+
 // Handler is the service's API. Every request but the health check must
 // carry the token: Authorization: Bearer <token>.
 func (s *Service) Handler() http.Handler {
@@ -701,6 +706,11 @@ func (s *Service) Handler() http.Handler {
 		_, _ = io.WriteString(w, text)
 		return nil
 	}))
+	// The panel: a page over this API, served from the copy built in. The
+	// files are public; everything they ask for carries the token.
+	if sub, err := fs.Sub(uiFiles, "ui"); err == nil {
+		mux.Handle("GET /", http.FileServer(http.FS(sub)))
+	}
 	return s.logged(mux)
 }
 
