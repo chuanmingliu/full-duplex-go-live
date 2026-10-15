@@ -572,6 +572,20 @@
       "fix": "vad.floor_track_ms (2000): the quietest frame of the last 2 s of an open utterance becomes the floor when nothing in that time dipped under the bar, so the noise stops reading as voiced and the utterance closes on the caller's next 380 quiet ms. Test: a steady rumble closes within 3.5 s, a 4 s sentence is heard to its end. The gate's record is kept in session.json and drawn in the journal (the Gate lane).",
       "verified_on": "",
       "commit": "16c7eed"
+    },
+    {
+      "id": "ISS-034",
+      "title": "A background voice, or the assistant's own echo, cut the answer: the hold trusted the recognizer's words",
+      "area": "turn-taking",
+      "status": "fixed",
+      "commit": "(next)",
+      "found": "2026-10-15",
+      "found_on": "the 21:59 call, 30 answers cut",
+      "found_call": "out-mv9lu7za-7rmd",
+      "symptom": "With an English-language show in the caller's background the answer was cut 30 times in 3.7 minutes: 20 utterances opened over the assistant's speech at exactly 320 ms, the recognizer made words of the show (or of the assistant's echo at −28 dB), and the hold ruled them not a backchannel.",
+      "cause": "The floor hold had one witness, the recognizer, and the recognizer transcribes any voice. The speaker labels knew (two of the judged utterances had no voice at all, one was entirely another voice's, labels 280–520 ms behind) but were not asked about barge-ins, and the tracker masked everything said while the assistant spoke.",
+      "fix": "Tracker.Echo tells the assistant's return apart (the voice heard mostly while the assistant speaks, ≥800 ms, ≥70% of its activity); Tracker.AttributeOver reads a span through the masks with the echo taken out; judgeBargeInFocus holds a barge-in with words for the labels up to focus_barge_in_wait_ms (900): the caller's voice (≥160 ms) yields, another voice or the echo alone keeps the floor and the utterance goes by without a turn unless the caller joins in; in observe mode the verdict is logged and the words decide. The telephony profile goes to focus: veto. Tests: TestASoundOverTheAnswerIsReadWithTheEchoTakenOut, TestAnotherVoiceOverTheAnswerDoesNotCutIt.",
+      "verified_on": ""
     }
   ]
 }

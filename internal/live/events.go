@@ -758,6 +758,10 @@ type FocusEvent struct {
 	Primary      int     `json:"primary_speaker"`
 	AnotherVoice bool    `json:"another_voice"`
 	Vetoed       bool    `json:"vetoed,omitempty"`
+	// BargeIn says this judged a sound over the answer rather than a turn:
+	// AnotherVoice then means the answer was not the caller's to stop, and
+	// Vetoed that it was indeed kept going (veto mode).
+	BargeIn bool `json:"barge_in,omitempty"`
 }
 
 // InputBackchannelEvent is golive.input_backchannel: the caller said something

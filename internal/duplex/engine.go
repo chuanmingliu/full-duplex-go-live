@@ -772,6 +772,9 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			// The final transcript is now imminent — closing the recognizer is
 			// what asks for it. Do not time out on the last leg.
 			e.hold.sawEvidence()
+			if e.hold.kept {
+				e.hold.until = time.Now().Add(1500 * time.Millisecond)
+			}
 		}
 		// The origin for every latency this turn will report. A speculative
 		// turn is already running by now, so it is stamped here rather than at
@@ -1454,6 +1457,12 @@ type floorHold struct {
 	until   time.Time
 	hold    time.Duration
 	bargeIn bool
+	// words says the recognizer has already called the sound a turn, and
+	// only the focus labels are being waited for (see judgeBargeInFocus);
+	// kept that the labels said it was not the caller's, and the rest of
+	// the utterance is being let go by, unless the caller joins in.
+	words bool
+	kept  bool
 }
 
 // sawEvidence extends the hold to its ceiling, and is called once the
@@ -1577,6 +1586,21 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 	if e.hold == nil {
 		return false
 	}
+	if e.hold.kept {
+		// Not the caller's voice, so far. Each new transcript is a chance
+		// for the labels to say the caller has joined in; otherwise the
+		// utterance goes by, and the hold with it when it ends.
+		if e.judgeBargeInFocus(text) == bargeInYield {
+			e.releaseHold("the caller's voice joined in")
+			return false
+		}
+		if final && !e.userOpen {
+			e.log.Debug("listen: the sound over the answer went by; keeping the floor",
+				"held_ms", time.Since(e.hold.started).Milliseconds())
+			e.hold = nil
+		}
+		return true
+	}
 	// No words in it. The VAD heard something and the recognizer found nothing
 	// to transcribe, which is a cough, a door, or the assistant's own voice
 	// returning through a speaker — and none of those is a reason to stop
@@ -1618,6 +1642,18 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 		// keep listening either, so yield and let the empty transcript be
 		// dropped downstream.
 	}
+	// Words, and not an acknowledgement. On a quiet line that is the caller
+	// interrupting. On a noisy one the recognizer makes words of a
+	// television, a bystander, or the assistant's own voice returning, and
+	// cutting the answer on those is the wrong call: the speaker labels say
+	// whose voice it was, and are waited for a moment if they are not in
+	// yet.
+	switch e.judgeBargeInFocus(text) {
+	case bargeInKeep:
+		return true
+	case bargeInWait:
+		return false
+	}
 	e.log.Debug("listen: not a backchannel; yielding the floor",
 		"text", text, "final", final)
 	e.releaseHold("transcript")
@@ -1643,7 +1679,28 @@ func (e *Engine) releaseHold(reason string) {
 // Continuing to talk over someone on the strength of no evidence is the worse
 // failure of the two, so silence resolves as an interruption.
 func (e *Engine) expireHold() {
-	if e.hold == nil || time.Now().Before(e.hold.until) {
+	if e.hold == nil {
+		return
+	}
+	if e.hold.kept {
+		// Let go by; cleared by the utterance's final, or a moment after
+		// its close if no final ever comes.
+		if !e.userOpen && time.Now().After(e.hold.until) {
+			e.hold = nil
+		}
+		return
+	}
+	if e.hold.words {
+		// The words have spoken; the labels are what is waited for, and
+		// they may have landed since the last transcript event.
+		switch e.judgeBargeInFocus("") {
+		case bargeInKeep, bargeInWait:
+			return
+		}
+		e.releaseHold("transcript; the labels did not say otherwise")
+		return
+	}
+	if time.Now().Before(e.hold.until) {
 		return
 	}
 	e.releaseHold("hold expired without a decisive transcript")
@@ -1920,7 +1977,7 @@ func (e *Engine) measureLine() {
 		e.floorRaises++
 		e.log.Info("listen: the line never dipped under the bar; the floor is raised to its quietest",
 			"from_db", round1(from), "to_db", round1(to),
-			"over_ms", e.opts.Cfg.VAD.FloorTrackMS)
+			"over_ms", e.vad.FloorTrackMS())
 	}
 	if miss, ok := e.vad.TakeEchoMiss(); ok {
 		e.echoMisses++

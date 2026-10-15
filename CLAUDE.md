@@ -432,6 +432,18 @@ made on one build.
   `session.json`) is drawn as the player's third lane in the journal; the
   diarizer server skips chunks beyond `--max-backlog` (1) unlabelled so its
   labels stay near the audio (ISS-032). Not yet verified on a subway call.
+- **A background voice cuts the answer unless the labels are asked.** The
+  21:59 and 22:07 calls on 10-15, an English show in the caller's
+  background: 30 and 20 answers cut, most by utterances that opened over
+  the assistant at exactly 320 ms and whose "words" were the recognizer's
+  guesses at the show or at the assistant's echo (−28 dB on this line); of
+  the utterances the focus channel judged, two had no voice at all and one
+  was entirely another voice's, labels 280–520 ms behind (ISS-034). Fix:
+  the tracker identifies the echo speaker and reads a barge-in through its
+  masks with the echo taken out; the hold waits for the labels up to
+  `focus_barge_in_wait_ms` (900) and keeps the floor on another voice or
+  the echo alone ("A sound over the answer" in `TELEPHONY.md`); the profile
+  is in `focus: veto`. Not yet verified on a call.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
@@ -569,7 +581,7 @@ server on the box). See "Keeping to one voice" in `TELEPHONY.md` and the
 measurements in `EDGE.md`. The idea in one line: the diarizer's labels are
 too late to decide turns and early enough to veto answers, so they ride a
 side channel and never touch the audio the recognizer hears. On the box
-since 10-15 12:51 in `observe` mode (`duplex.focus`); every bench utterance
+since 10-15 12:51, `observe` until 22:20 and `veto` since (`duplex.focus`); every bench utterance
 since has been attributed to the primary with the labels 220–330 ms behind
 the audio on short sessions. Open: whether the labels still arrive before
 the first audio on a long call (steady-state compute is ~330 ms per 345 ms

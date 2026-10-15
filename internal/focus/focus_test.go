@@ -119,3 +119,41 @@ func TestNothingIsAttributedBeforeAPrimaryIsKnown(t *testing.T) {
 		t.Fatal("known before enrolment")
 	}
 }
+
+// A sound over the answer: the masks say nothing about it, so AttributeOver
+// reads through them, with the assistant's own return taken out. The echo is
+// the voice heard mostly while the assistant speaks.
+func TestASoundOverTheAnswerIsReadWithTheEchoTakenOut(t *testing.T) {
+	tr := NewTracker(Config{})
+	// The caller (1) enrols; then the assistant speaks 2000–6000 with its
+	// echo (0) back the whole time.
+	feed(tr, frames(0, 10, 1))
+	tr.Mask(2000, 6000)
+	feed(tr, frames(2000, 50, 0))
+	if tr.Echo() != 0 {
+		t.Fatalf("echo speaker %d; wanted 0", tr.Echo())
+	}
+	// Only the echo in that span: nothing voiced, nobody to yield to.
+	a := tr.AttributeOver(3000, 4000)
+	if a.VoicedMS != 0 || a.Coverage < 0.99 {
+		t.Fatalf("the echo alone read as voice: %+v", a)
+	}
+	// The caller speaks over the assistant 4000–4800: the primary, through
+	// the mask.
+	tr.Mask(6000, 9000)
+	feed(tr, frames(6000, 10, 0, 1))
+	a = tr.AttributeOver(6000, 6800)
+	if a.Primary < 0.99 || a.VoicedMS != 800 {
+		t.Fatalf("the caller over the assistant was not heard as the primary: %+v", a)
+	}
+	// A television over the assistant: another voice (2), not the caller.
+	tr.Mask(9000, 12000)
+	feed(tr, frames(9000, 10, 0, 2))
+	a = tr.AttributeOver(9000, 9800)
+	if a.Others < 0.99 || a.Primary != 0 {
+		t.Fatalf("the television was not read as another voice: %+v", a)
+	}
+	if tr.Primary() != 1 {
+		t.Fatalf("the primary changed to %d", tr.Primary())
+	}
+}

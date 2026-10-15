@@ -1,7 +1,9 @@
 package duplex
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -226,5 +228,70 @@ func TestObserveModeDoesNotVeto(t *testing.T) {
 	evs := c.focusEvents()
 	if len(evs) < 2 || !evs[len(evs)-1].AnotherVoice || evs[len(evs)-1].Vetoed {
 		t.Fatalf("judgment %+v; wanted another voice noted, not vetoed", evs)
+	}
+}
+
+// A television over the answer. The recognizer makes words of it, which used
+// to cut the answer as any interruption does; the labels say the voice is
+// not the caller's, and in veto mode the answer carries on.
+func TestAnotherVoiceOverTheAnswerDoesNotCutIt(t *testing.T) {
+	for _, mode := range []string{"veto", "observe"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := earlyFinalConfig(120)
+			cfg.opts.Cfg.Duplex.Focus = mode
+			cfg.opts.Cfg.Duplex.AllowBargeIn = true
+			cfg.opts.Cfg.Duplex.OnNewQuery = "cut"
+			cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 600
+			rate := cfg.opts.Cfg.ClientRate
+			c := newCollector(rate)
+			asr := newTrailingASR("多少钱啊今天天气怎么样")
+			asr.msPerRune = 150
+			llm := mock.NewLLM()
+			llm.DelayPerRune = 40 * time.Millisecond // a long answer to talk over
+			llm.FirstTokenDelay = 300 * time.Millisecond
+			scorer := newFakeScorer(func(atMS int64) int {
+				if atMS < 1000 {
+					return 0
+				}
+				return 1
+			}, 150*time.Millisecond)
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, Log: logger}, scorer)
+			t.Cleanup(func() {
+				if t.Failed() {
+					t.Log(logs.String())
+				}
+			})
+
+			speak(e, rate, 600)
+			pause(e, rate, 700)
+			waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 250 })
+			if e.focus.tracker.Primary() != 0 {
+				t.Fatalf("primary speaker %d; wanted the caller, 0", e.focus.tracker.Primary())
+			}
+			// The television, 1000 ms, over the answer; then the line as it is.
+			speak(e, rate, 1000)
+			pause(e, rate, 1500)
+			cut := c.count(live.ExtAudioTruncated)
+			var judged []live.FocusEvent
+			for _, ev := range c.focusEvents() {
+				if ev.BargeIn {
+					judged = append(judged, ev)
+				}
+			}
+			if len(judged) == 0 {
+				t.Fatalf("the sound over the answer was never judged by the labels")
+			}
+			if !judged[0].AnotherVoice {
+				t.Fatalf("the television was not read as another voice: %+v", judged[0])
+			}
+			if mode == "veto" && cut != 0 {
+				t.Fatalf("the answer was cut %d time(s) by another voice", cut)
+			}
+			if mode == "observe" && cut == 0 {
+				t.Fatalf("observe mode must still cut on the words; it did not")
+			}
+		})
 	}
 }

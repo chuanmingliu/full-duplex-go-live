@@ -52,6 +52,7 @@ class Session:
         self.mel_idx = MEL_STEP
         self.cache = None
         self.out_frames = 0        # 10 ms frames emitted so far
+        self.frames_per_chunk = 0  # what one chunk produced last time, for skip
 
     def push(self, pcm: bytes, at_ms: int):
         x = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
@@ -81,9 +82,10 @@ class Session:
         a verdict that late is no use to anyone. The skipped span gets no
         frames at all, so the client's coverage says it is missing rather
         than silent."""
+        per = self.frames_per_chunk or STEP // (SR // 100)
         for _ in range(chunks):
             self.mel_idx += MEL_STEP
-            self.out_frames += STEP // (SR // 100)
+            self.out_frames += per
         stats["skipped"] += chunks
 
     def step(self):
@@ -110,6 +112,8 @@ class Session:
         prob = torch.sigmoid(out.logits[0]).numpy()  # (n, 8) at 10 ms
         start_ms = self.t0_ms + self.out_frames * 10
         self.out_frames += len(prob)
+        if not isfirst:
+            self.frames_per_chunk = len(prob)
         # report at frame_ms granularity: the mean over each group of 10 ms frames
         g = max(1, args.frame_ms // 10)
         n = (len(prob) // g) * g

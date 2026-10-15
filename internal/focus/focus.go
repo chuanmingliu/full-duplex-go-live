@@ -83,8 +83,10 @@ type Tracker struct {
 	frames  []Frame // in time order
 	masked  []span  // when the assistant was speaking: its echo is not a speaker
 	primary int     // -1 until enrolled
-	// spoken is how many ms each speaker has been active, unmasked.
-	spoken []int64
+	// spoken is how many ms each speaker has been active, unmasked; masked
+	// how many inside the assistant's own speech, where its echo lives.
+	spoken   []int64
+	maskedMS []int64
 	// otherSince is when a speaker other than the primary began carrying the
 	// conversation alone; 0 when the primary is heard.
 	otherSince int64
@@ -151,12 +153,21 @@ func (t *Tracker) Observe(f Frame) {
 	for len(t.frames) > 0 && t.frames[0].EndMS < f.EndMS-keep {
 		t.frames = t.frames[1:]
 	}
-	if t.isMasked(f.StartMS, f.EndMS) {
-		return
-	}
 	dur := f.EndMS - f.StartMS
 	for len(t.spoken) < len(f.P) {
 		t.spoken = append(t.spoken, 0)
+		t.maskedMS = append(t.maskedMS, 0)
+	}
+	if t.isMasked(f.StartMS, f.EndMS) {
+		// Who talks while the assistant talks is mostly the assistant,
+		// coming back down the line; counted apart so the echo can be told
+		// (Echo) and so it never enrols or hands over.
+		for s, p := range f.P {
+			if p >= t.cfg.Active {
+				t.maskedMS[s] += dur
+			}
+		}
+		return
 	}
 	loudest, loudestP := -1, float32(0)
 	for s, p := range f.P {
@@ -189,6 +200,50 @@ func (t *Tracker) Observe(f Frame) {
 		t.otherSince = 0
 		t.handovers++
 	}
+}
+
+// Echo is the speaker the model hears mostly while the assistant speaks —
+// the assistant's own voice returning through the caller's handset — or -1
+// when no speaker looks like that yet. It takes echoMinMS of such activity
+// and echoShare of the speaker's activity inside the assistant's speech;
+// the primary is never the echo.
+func (t *Tracker) Echo() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.echo()
+}
+
+const (
+	echoMinMS = 800
+	echoShare = 0.7
+)
+
+func (t *Tracker) echo() int {
+	best, bestMS := -1, int64(0)
+	for s := range t.maskedMS {
+		if s == t.primary || t.maskedMS[s] < echoMinMS {
+			continue
+		}
+		total := t.maskedMS[s] + t.spoken[s]
+		if float64(t.maskedMS[s])/float64(total) < echoShare {
+			continue
+		}
+		if t.maskedMS[s] > bestMS {
+			best, bestMS = s, t.maskedMS[s]
+		}
+	}
+	return best
+}
+
+// AttributeOver is Attribute for a span the assistant was speaking through:
+// the masks are ignored, and the echo speaker (Echo) is read as silence. It
+// is what says whether a sound over the answer was the caller — the one
+// reason to stop talking — or the assistant's own return, a television, a
+// bystander.
+func (t *Tracker) AttributeOver(startMS, endMS int64) Attribution {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.attribute(startMS, endMS, true, t.echo())
 }
 
 // Primary is the primary speaker's index, or -1 before one is known.
@@ -233,6 +288,10 @@ type Attribution struct {
 func (t *Tracker) Attribute(startMS, endMS int64) Attribution {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.attribute(startMS, endMS, false, -1)
+}
+
+func (t *Tracker) attribute(startMS, endMS int64, throughMasks bool, echo int) Attribution {
 	a := Attribution{Known: t.primary >= 0}
 	if endMS <= startMS {
 		return a
@@ -245,11 +304,14 @@ func (t *Tracker) Attribute(startMS, endMS int64) Attribution {
 		from, to := max64(f.StartMS, startMS), min64(f.EndMS, endMS)
 		d := to - from
 		labelled += d
-		if t.isMasked(f.StartMS, f.EndMS) {
+		if !throughMasks && t.isMasked(f.StartMS, f.EndMS) {
 			continue
 		}
 		anyone, prim := false, false
 		for s, p := range f.P {
+			if s == echo {
+				continue
+			}
 			if p >= t.cfg.Active {
 				anyone = true
 				if s == t.primary {

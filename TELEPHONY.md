@@ -842,6 +842,31 @@ The audio the recognizer hears is never changed.
   `GOLIVE_FOCUS_TOKEN_FILE` (`phone-brain.sh` sets it to the gateway's), and
   a gateway or model that is down is a call without focus, logged once.
 
+### A sound over the answer
+
+The floor hold (`user_backchannel_hold_ms`) used to have one witness: the
+recognizer. Words that were not an acknowledgement cut the answer. On a quiet
+line that is the caller interrupting; with a show playing in the background
+(the 21:59 call on 10-15) the recognizer made words of the show, and of the
+assistant's own voice returning at −28 dB, and cut the answer thirty times in
+four minutes. The labels are the second witness. The tracker tells the
+assistant's return apart — the voice it hears mostly while the assistant
+speaks — and reads the sound over the answer with that voice taken out:
+
+- the caller's voice (160 ms of it) yields, as always;
+- another voice, or nothing but the echo, keeps the floor: the rest of that
+  utterance goes by without a turn, unless the caller joins in;
+- labels not in yet are waited for, up to `focus_barge_in_wait_ms` (900) from
+  the hold's start; then the words decide as before.
+
+```
+focus: a sound over the answer was judged  verdict=keep why="another voice" primary_ms=0 others_share=1 voiced_ms=480 coverage=0.84 echo_speaker=2 waited_ms=450
+focus: this call  ... barge_ins_judged=9 barge_ins_kept=7 echo_speaker=2
+```
+
+In `observe` mode the verdict is logged and the words still decide. The
+telephony profile is in `veto` since 10-15. `-1` turns the wait off.
+
 ## Working memory, and work that takes longer than a turn
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",

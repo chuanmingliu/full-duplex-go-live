@@ -334,6 +334,9 @@ func (v *VAD) TakeFloorRaise() (from, to float64, ok bool) {
 	return v.floorRaise.from, v.floorRaise.to, true
 }
 
+// FloorTrackMS is the window the floor tracker uses, after defaults.
+func (v *VAD) FloorTrackMS() int { return v.cfg.FloorTrackMS }
+
 // Trace is every gate sample kept so far (see GateSample). The slice is the
 // detector's own; read it, do not keep it.
 func (v *VAD) Trace() []GateSample {

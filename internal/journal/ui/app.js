@@ -758,7 +758,8 @@
     tts_slow: { name: 'slow synthesizer', shape: 'dia' },
     hedge_refused: { name: 'second synthesis refused', shape: 'diao' },
     over: { name: 'turn over target', shape: 'none' },
-    floor_raised: { name: 'the gate raised its floor to a line that never dipped', shape: 'up' }
+    floor_raised: { name: 'the gate raised its floor to a line that never dipped', shape: 'up' },
+    barge_kept: { name: 'a sound over the answer was another voice\'s', shape: 'ring' }
   };
 
   function Player(call, audioInfo, target) {

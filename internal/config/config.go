@@ -467,6 +467,13 @@ type DuplexConfig struct {
 	// it before any judgment is made.
 	FocusVetoShare   float64 `json:"focus_veto_share"`
 	FocusMinVoicedMS int     `json:"focus_min_voiced_ms"`
+	// FocusBargeInWaitMS is how long a sound over the answer is held for the
+	// model's labels before the recognizer's words alone decide it (900). A
+	// barge-in whose labelled voice is not the caller's — the assistant's
+	// own return, a television, a bystander — does not stop the answer, in
+	// veto mode; in observe mode the verdict is only logged. 0 for the
+	// default, -1 to decide on the words alone as before.
+	FocusBargeInWaitMS int `json:"focus_barge_in_wait_ms"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`

@@ -42,6 +42,10 @@ type focusState struct {
 	judged  int
 	vetoed  int
 	late    int
+	// bargeIns is how many sounds over the answer were judged by the
+	// labels, and kept how many of those kept the floor.
+	bargeIns int
+	kept     int
 	// lag is the model's own: its input buffer. Compute is on top.
 	lag time.Duration
 }
@@ -268,8 +272,106 @@ func (e *Engine) focusSummary() {
 		return
 	}
 	e.log.Info("focus: this call", "judged", fs.judged, "vetoed", fs.vetoed, "too_late", fs.late,
+		"barge_ins_judged", fs.bargeIns, "barge_ins_kept", fs.kept, "echo_speaker", fs.tracker.Echo(),
 		"primary_speaker", fs.tracker.Primary(), "handovers", fs.tracker.Handovers())
 	_ = fs.scorer.Close()
 }
 
 func round2(f float64) float64 { return float64(int(f*100+0.5)) / 100 }
+
+// bargeInVerdict is what the labels say about a sound over the answer.
+type bargeInVerdict int
+
+const (
+	// bargeInYield: the caller's voice, or no labels to say otherwise in
+	// time; the answer is cut as it always was.
+	bargeInYield bargeInVerdict = iota
+	// bargeInKeep: not the caller's voice; the answer carries on.
+	bargeInKeep
+	// bargeInWait: the labels are not in yet and there is time to wait.
+	bargeInWait
+)
+
+// focusBargeInWait is how long a barge-in with words is held for labels.
+func (e *Engine) focusBargeInWait() time.Duration {
+	v := e.opts.Cfg.Duplex.FocusBargeInWaitMS
+	if v < 0 {
+		return 0
+	}
+	if v == 0 {
+		v = 900
+	}
+	return time.Duration(v) * time.Millisecond
+}
+
+// judgeBargeInFocus decides a barge-in the recognizer has made words of,
+// from the speaker labels over the sound so far (see Tracker.AttributeOver).
+// The caller's voice yields; another voice, or the assistant's own return
+// with nobody else in it, keeps the floor; labels not in yet are waited for,
+// up to focus_barge_in_wait_ms from the hold's start, after which the words
+// decide as they did before. In observe mode the verdict is logged and the
+// words decide.
+func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
+	h, fs := e.hold, e.focus
+	if h == nil || fs == nil || e.focusBargeInWait() == 0 {
+		return bargeInYield
+	}
+	now := e.inputMS.Load()
+	a := fs.tracker.AttributeOver(e.utterStartMS, now)
+	echo := fs.tracker.Echo()
+	waited := time.Since(h.started)
+	verdict, why := bargeInYield, ""
+	primaryMS := int64(a.Primary * float64(a.VoicedMS))
+	switch {
+	case !a.Known:
+		why = "no primary speaker known yet"
+	case primaryMS >= 160:
+		why = "the caller's voice"
+	case a.Coverage < 0.6:
+		verdict, why = bargeInWait, "labels not in yet"
+	case a.VoicedMS == 0:
+		verdict, why = bargeInKeep, "nobody but the assistant's own return"
+	case a.Others >= e.focusVetoShare():
+		verdict, why = bargeInKeep, "another voice"
+	default:
+		verdict, why = bargeInWait, "undecided"
+	}
+	if h.kept {
+		// Already let go by: only the caller's own voice changes that.
+		if primaryMS < 160 {
+			return bargeInKeep
+		}
+	} else if verdict == bargeInWait && waited >= e.focusBargeInWait() {
+		verdict, why = bargeInYield, why+"; waited out"
+	}
+	if !h.words {
+		h.words = true
+		fs.bargeIns++
+	}
+	if verdict == bargeInWait {
+		return bargeInWait
+	}
+	if h.kept && verdict == bargeInKeep {
+		return bargeInKeep // already said so
+	}
+	e.log.Info("focus: a sound over the answer was judged", "verdict", map[bargeInVerdict]string{bargeInYield: "yield", bargeInKeep: "keep"}[verdict],
+		"why", why, "primary_ms", primaryMS, "others_share", round2(a.Others), "voiced_ms", a.VoicedMS,
+		"coverage", round2(a.Coverage), "echo_speaker", echo, "waited_ms", waited.Milliseconds(), "text", text,
+		"mode", e.opts.Cfg.Duplex.Focus)
+	e.deps.Emit(live.FocusEvent{Envelope: live.Envelope{Type: live.ExtFocus}, TurnID: "", BargeIn: true,
+		PrimaryShare: round2(a.Primary), OthersShare: round2(a.Others), VoicedMS: a.VoicedMS, Coverage: round2(a.Coverage),
+		Primary: fs.tracker.Primary(), AnotherVoice: verdict == bargeInKeep, Vetoed: verdict == bargeInKeep && e.opts.Cfg.Duplex.Focus == "veto"})
+	if verdict == bargeInKeep {
+		if e.opts.Cfg.Duplex.Focus != "veto" {
+			// Observing: say what would have happened and cut as before.
+			return bargeInYield
+		}
+		if !h.kept {
+			fs.kept++
+			h.kept = true
+			e.abandonSpeculation("the voice over the answer was not the caller's")
+		}
+		return bargeInKeep
+	}
+	return bargeInYield
+}

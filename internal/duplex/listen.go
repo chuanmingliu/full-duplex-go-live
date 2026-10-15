@@ -884,6 +884,11 @@ func (e *Engine) maybeSpeculate() {
 	if !e.opts.Speculative || e.muted {
 		return
 	}
+	if e.hold != nil && e.hold.kept {
+		// The labels said this sound over the answer is not the caller's:
+		// nothing in it is a turn to prepare for.
+		return
+	}
 	// Sound resuming after the pause is not, by itself, the speaker carrying
 	// on. It used to be taken for that and the guess abandoned on the spot,
 	// which is right in a quiet room and wrong on a line that is never quiet:

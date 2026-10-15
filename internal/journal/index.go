@@ -190,6 +190,10 @@ type Events struct {
 	FocusPrimary   int    `json:"focus_primary,omitempty"`
 	FocusHandovers int    `json:"focus_handovers,omitempty"`
 	FocusLagMS     []int  `json:"focus_lag_ms,omitempty"`
+	// FocusBargeIns is how many sounds over the answer the labels judged,
+	// and FocusKept how many of those kept the answer going.
+	FocusBargeIns int `json:"focus_barge_ins,omitempty"`
+	FocusKept     int `json:"focus_kept,omitempty"`
 	// FloorRaises is how often the gate raised its floor to a line that
 	// never dipped under the bar (vad.floor_track_ms); SettledCloses how
 	// many utterances were taken on words that stood still, CappedCloses
@@ -724,6 +728,16 @@ func (ix *Indexer) Feed(l Line) {
 	case "focus: this call":
 		ev.FocusPrimary = l.N("primary_speaker")
 		ev.FocusHandovers = l.N("handovers")
+		ev.FocusBargeIns = l.N("barge_ins_judged")
+		ev.FocusKept = l.N("barge_ins_kept")
+	case "focus: a sound over the answer was judged":
+		if l.Get("verdict") == "keep" {
+			if l.Get("mode") == "veto" {
+				cb.mark(l.Time, "barge_kept", "A sound over the answer was another voice's ("+l.Get("why")+"): the answer carried on")
+			} else {
+				cb.mark(l.Time, "barge_kept", "A sound over the answer was another voice's ("+l.Get("why")+"); observing, so the answer was cut")
+			}
+		}
 	case "session: response latency summary":
 		if cb.call.EndedAt.IsZero() {
 			cb.call.EndedAt = l.Time
