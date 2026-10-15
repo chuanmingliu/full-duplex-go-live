@@ -42,8 +42,8 @@
       "parameters": {"type": "object", "properties": {"config": {"type": "object", "description": "可选：临时覆盖工作记忆中的险种选择，键为险种名，值为 true/false 或档位（如“300万”）"}}},
       "url": "http://127.0.0.1:8791/api/tools/quote",
       "async": true,
-      "timeout_ms": 60000,
-      "eta_s": 8
+      "timeout_ms": 120000,
+      "eta_s": 20
     }
   ],
   "history_turns": 16,

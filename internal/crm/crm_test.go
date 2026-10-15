@@ -482,7 +482,7 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 1 || list.Configs[0].Name != QuoteRulesName || list.Configs[0].Version != 1 {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 2 || list.Configs[1].Name != QuoteRulesName || list.Configs[1].Version != 1 || list.Configs[0].Name != QuoteAPIName {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
@@ -557,5 +557,115 @@ func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
 	call["arguments"] = map[string]any{}
 	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 400 || !strings.Contains(body, "quote") {
 		t.Fatalf("empty: %d %s", code, body)
+	}
+}
+
+// fakeIntranet is the business's quotation service as the document
+// describes it: the inquiry answers "ok" at once; the query returns the
+// quote that was there before until, a few polls later, the new one.
+type fakeIntranet struct {
+	mu        sync.Mutex
+	inquiries []map[string]any
+	queries   int
+	readyAt   int // the query number at which the new quote appears
+	fail      bool
+}
+
+func (f *fakeIntranet) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /intranet/vehicle/innerProcess/vehicleApplyInquiryPriceAsync", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.inquiries = append(f.inquiries, body)
+		f.mu.Unlock()
+		w.Write([]byte(`{"code":0,"msg":"ok","data":"ok"}`))
+	})
+	mux.HandleFunc("POST /intranet/vehicle/simpleProcess/queryLastQuoteDetailByPhone", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("vehicleNo") == "" {
+			w.Write([]byte(`{"code":1,"msg":"vehicleNo 必填"}`))
+			return
+		}
+		f.mu.Lock()
+		f.queries++
+		n := f.queries
+		f.mu.Unlock()
+		old := `{"quotePriceId":100,"result":"0","insureFlowCode":"OLD","sumPreimum":"7000.00","coverageList":[]}`
+		if n < f.readyAt {
+			fmt.Fprintf(w, `{"code":0,"msg":"ok","data":{"Result":"0","ResultMessage":"操作成功","quotePriceInfos":[%s]}}`, old)
+			return
+		}
+		if f.fail {
+			w.Write([]byte(`{"code":0,"msg":"ok","data":{"Result":"0","quotePriceInfos":[{"quotePriceId":101,"result":"1","resultMessage":"车辆信息有误","insureFlowCode":"NEW"}]}}`))
+			return
+		}
+		w.Write([]byte(`{"code":0,"msg":"ok","data":{"Result":"0","ResultMessage":"操作成功","preimumDiff":"120.5","quotePriceInfos":[{"quotePriceId":101,"result":"0","planType":"1",
+		  "businessDiscount":"0.85","businessQuoteResult":"0","businessSumPreimum":"3873.03","bizStandardTotalPremium":"4556.5","bizDiscountPremium":"683.47",
+		  "businessEffectiveDate":"2026-07-25","businessExpireDate":"2027-07-24","compelQuoteResult":"0","compelSumPreimum":"1100.00","compelEffectiveDate":"2026-07-03","compelExpireDate":"2027-07-02",
+		  "coverageList":[{"coverageCode":"951","coverageType":"0","coverageSimpleName":"机动车损失保险","amount":"188160","coveragePreimum":"2037.85","standardPremium":"2397.47"},
+		                  {"coverageCode":"952","coverageType":"2","coverageSimpleName":"第三者责任险","tag":"3000000","amount":"3000000","coveragePreimum":"1605.20","standardPremium":"1888.47"}],
+		  "addServiceList":[{"coverageCode":"95M","tittle":"道路救援","time":"次","amount":"3"}],
+		  "insureFlowCode":"NEW","selfPricingRatio":"0.85","sumPreimum":"8110.28","taxPreimum":"3137.25","taxLateCharge":"137.25","isEffective":true,"orderRemainTime":3600}]}}`))
+	})
+	return mux
+}
+
+func TestAQuoteGoesToTheBusinessServiceWhenConfigured(t *testing.T) {
+	fx := newFixture(t)
+	fake := &fakeIntranet{readyAt: 4}
+	srv := httptest.NewServer(fake.handler())
+	defer srv.Close()
+	api := strings.Replace(DefaultQuoteAPI, `"base_url": ""`, `"base_url": "`+srv.URL+`/intranet"`, 1)
+	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 30`, 1)
+	api = strings.Replace(api, `"timeout_ms": 90000`, `"timeout_ms": 5000, "default_phone": "13800000000"`, 1)
+	if code, body := fx.do("PUT", "/api/configs/"+QuoteAPIName+"?note=test", api, nil); code != 200 {
+		t.Fatalf("config: %d %s", code, body)
+	}
+	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "sess_x", "arguments": map[string]any{},
+		"memory":         map[string]any{"quote": map[string]any{"交强险": true, "车损险": true, "三者险": "300万", "玻璃险": true}, "carNum": "浙A·12345", "vehicleAge": 2},
+		"memory_version": 5}
+	var q APIQuote
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 {
+		t.Fatalf("quote: %d %s", code, body)
+	}
+	if q.Total != 8110.28 || q.BusinessPremium != 3873.03 || q.CompelPremium != 1100 || q.TaxPremium != 3137.25 || q.InsureFlowCode != "NEW" ||
+		q.MemoryVersion != 5 || q.Source != "quote-api" || len(q.Lines) != 4 || q.Lines[1].Choice != "3000000" || len(q.Skipped) != 1 || q.Skipped[0] != "玻璃险" ||
+		q.PremiumDiff != "120.5" || len(q.Services) != 1 {
+		t.Fatalf("quote %+v", q)
+	}
+	// The inquiry carried the plan in the service's terms.
+	fake.mu.Lock()
+	in := fake.inquiries[0]
+	fake.mu.Unlock()
+	if in["phone"] != "13800000000" || in["vehicleNo"] != "浙A12345" || in["needSelectInsure"] != true || in["isInsureCompelInsurance"] != true || in["bizSource"] != "ai_test" {
+		t.Fatalf("inquiry %v", in)
+	}
+	covs := in["coverageList"].([]any)
+	if len(covs) != 2 {
+		t.Fatalf("coverages %v", covs)
+	}
+	for _, c := range covs {
+		m := c.(map[string]any)
+		if m["coverageCode"] == "952" && m["sumInsured"] != "3000000" {
+			t.Fatalf("三者 sum %v", m)
+		}
+		if m["coverageCode"] == "951" && (m["sumInsured"] != "1" || m["isNonDeductible"] != "1") {
+			t.Fatalf("车损 %v", m)
+		}
+	}
+	if fake.queries < 4 {
+		t.Fatalf("polled %d times; the old quote should have been waited out", fake.queries)
+	}
+	// A failed quote is an error the model can say.
+	fake.mu.Lock()
+	fake.fail, fake.queries, fake.readyAt = true, 0, 2
+	fake.mu.Unlock()
+	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 422 || !strings.Contains(body, "车辆信息有误") {
+		t.Fatalf("failed quote: %d %s", code, body)
+	}
+	// Nothing to quote for without a plate.
+	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true}}
+	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 422 || !strings.Contains(body, "carNum") {
+		t.Fatalf("no plate: %d %s", code, body)
 	}
 }

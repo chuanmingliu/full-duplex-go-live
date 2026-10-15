@@ -831,6 +831,36 @@ can be made slow for testing (`simulate_delay_ms` in the rules). Log lines:
 `tools: memory updated`, `tools: task submitted`, `tools: task done`,
 `tools: delivering a task's result`, and `tools: this call` at the end.
 
-Not yet: seeding the memory from the lead's record when the lead service
-places the call, writing the final memory back as the contact's summary,
-the task events in the journal.
+**The business's quotation service.** The owner's interface document
+(2026-07-21) describes an asynchronous inquiry
+(`POST …/intranet/vehicle/innerProcess/vehicleApplyInquiryPriceAsync`, answers
+"ok" at once) and a query of the latest quote by phone and plate
+(`POST …/intranet/vehicle/simpleProcess/queryLastQuoteDetailByPhone`). The
+lead service is the adapter (`internal/crm/quoteapi.go`): it notes the quote
+that is there before, submits the inquiry with the plan in the service's
+terms (coverage codes, 不计免赔, sums in yuan from "300万"; 交强险 as
+`isInsureCompelInsurance`), polls the query every `poll_every_ms` until a
+quote with a new id or flow code appears, and returns it normalized: total,
+商业险 / 交强险 / 车船税, the lines with amounts and premiums, the discount,
+the periods, the added services, the difference against last year, how long
+it is valid, and anything in the plan the service does not know (`skipped`).
+A failed quote comes back as an error with the service's reason, which the
+model says. The versioned config `quote-api` selects it: with a `base_url`
+quotes go to the service, without one to the placeholder rules. The config
+holds the intranet address, channel ids, the coverage-name → code map, and
+a `default_phone` / `default_vehicle_no` for the test line; it is the
+business's and stays on the box:
+
+```bash
+scripts/phone-brain.sh crm config quote-api            # what is set (v1 has no base_url)
+scripts/phone-brain.sh crm config quote-api api.json   # save a new version
+scripts/phone-brain.sh crm quote '{"tool":"quote_total","memory":{"quote":{"交强险":true,"车损险":true,"三者险":"300万"},"carNum":"浙A12345"}}'
+```
+
+The quote tool's `eta_s` is 20 in the profile and its timeout 120 s, which
+is what the service is expected to take; `tools: task done … took_ms` in
+the log says what it did take.
+
+Not yet: seeding the memory from the lead's record (phone, plate, last
+year's plan) when the lead service places the call, writing the final
+memory back as the contact's summary, the task events in the journal.

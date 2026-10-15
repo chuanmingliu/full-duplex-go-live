@@ -458,8 +458,14 @@ type QuoteRecord struct {
 	Call          string    `json:"call,omitempty"`
 	Coverages     []string  `json:"coverages"`
 	Total         float64   `json:"total"`
-	RulesVersion  int       `json:"rules_version"`
+	RulesVersion  int       `json:"rules_version,omitempty"`
 	MemoryVersion int       `json:"memory_version,omitempty"`
 	ComputeMS     int64     `json:"compute_ms"`
 	Error         string    `json:"error,omitempty"`
+	// Source is "rules" or "quote-api"; for the service, its config version
+	// and the flow code and quote id it answered with.
+	Source         string `json:"source,omitempty"`
+	APIVersion     int    `json:"api_version,omitempty"`
+	InsureFlowCode string `json:"insure_flow_code,omitempty"`
+	QuotePriceID   int64  `json:"quote_price_id,omitempty"`
 }

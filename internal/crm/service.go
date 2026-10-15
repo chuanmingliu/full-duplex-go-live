@@ -55,6 +55,9 @@ type Service struct {
 	configs *Configs
 	token   string
 
+	// quoteClient reaches the quotation service (nil: a default).
+	quoteClient *http.Client
+
 	mu       sync.Mutex
 	calls    []CallRecord // newest last
 	dialing  bool
@@ -136,9 +139,16 @@ func Open(cfg Config) (*Service, error) {
 	}
 	s.events, s.prompts.log, s.configs.log = events, events, events
 	// The quotation rules start as placeholders, so that a quote can be asked
-	// for before the business has put its own tables in.
+	// for before the business has put its own tables in; the service config
+	// starts without a base URL, so quotes go to the rules until it has one.
 	if _, err := s.configs.Get(QuoteRulesName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(QuoteRulesName, []byte(DefaultQuoteRules), "placeholder rules: every number is made up", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(QuoteAPIName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(QuoteAPIName, []byte(DefaultQuoteAPI), "no base_url yet: quotes go to the rules", "crm"); err != nil {
 			events.Close()
 			return nil, err
 		}
@@ -161,7 +171,57 @@ func Open(cfg Config) (*Service, error) {
 // that it did. The rules' simulate_delay_ms, when set, is waited out first:
 // it stands in for a real rating service's time, so that the assistant's
 // handling of a slow answer can be exercised.
-func (s *Service) Quote(req QuoteRequest) (*Quote, error) {
+func (s *Service) Quote(req QuoteRequest) (any, error) {
+	if api, v := s.quoteAPI(); api != nil {
+		return s.quoteViaAPI(api, v, req)
+	}
+	return s.quoteViaRules(req)
+}
+
+// quoteAPI is the service's config when it names a service to call.
+func (s *Service) quoteAPI() (*QuoteAPI, *ConfigVersion) {
+	v, err := s.configs.Get(QuoteAPIName, 0)
+	if err != nil {
+		return nil, nil
+	}
+	var api QuoteAPI
+	if err := json.Unmarshal(v.Body, &api); err != nil || strings.TrimSpace(api.BaseURL) == "" {
+		return nil, nil
+	}
+	return &api, v
+}
+
+// quoteViaAPI asks the business's quotation service and records the answer.
+func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest) (any, error) {
+	began := time.Now()
+	rec := &QuoteRecord{At: began, Call: req.Call, MemoryVersion: req.MemoryVersion, Source: "quote-api", APIVersion: v.Version}
+	for name, choice := range req.Config {
+		if selected(choice) {
+			rec.Coverages = append(rec.Coverages, name)
+		}
+	}
+	sort.Strings(rec.Coverages)
+	q, _, err := api.Quote(context.Background(), s.quoteClient, req)
+	rec.ComputeMS = time.Since(began).Milliseconds()
+	if q != nil {
+		rec.Total, rec.InsureFlowCode, rec.QuotePriceID = q.Total, q.InsureFlowCode, q.QuotePriceID
+	}
+	if err != nil {
+		rec.Error = err.Error()
+	}
+	if _, lerr := s.events.Append(Event{By: "tool", Type: "quote.computed", Ref: req.Call, Quote: rec}); lerr != nil {
+		s.log.Warn("crm: a quote was not recorded", "err", lerr)
+	}
+	s.log.Info("crm: quote via the service", "call", req.Call, "coverages", len(rec.Coverages), "total", rec.Total, "api", v.Version,
+		"ms", rec.ComputeMS, "flow", rec.InsureFlowCode, "err", rec.Error)
+	if err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+// quoteViaRules prices under the placeholder rules.
+func (s *Service) quoteViaRules(req QuoteRequest) (*Quote, error) {
 	began := time.Now()
 	v, err := s.configs.Get(QuoteRulesName, req.RulesVersion)
 	if err != nil {
@@ -175,7 +235,7 @@ func (s *Service) Quote(req QuoteRequest) (*Quote, error) {
 		time.Sleep(time.Duration(rules.SimulateDelayMS) * time.Millisecond)
 	}
 	q, err := rules.Compute(req)
-	rec := &QuoteRecord{At: began, Call: req.Call, RulesVersion: v.Version, MemoryVersion: req.MemoryVersion, ComputeMS: time.Since(began).Milliseconds()}
+	rec := &QuoteRecord{At: began, Call: req.Call, RulesVersion: v.Version, MemoryVersion: req.MemoryVersion, ComputeMS: time.Since(began).Milliseconds(), Source: "rules"}
 	for name, choice := range req.Config {
 		if b, ok := choice.(bool); ok && !b {
 			continue
@@ -525,6 +585,12 @@ func (s *Service) Handler() http.Handler {
 			var rules QuoteRules
 			if err := json.Unmarshal(raw, &rules); err != nil || len(rules.Coverages) == 0 {
 				return fail(http.StatusUnprocessableEntity, "the quote rules are a JSON object with coverages; see internal/crm/quote.go")
+			}
+		}
+		if r.PathValue("name") == QuoteAPIName {
+			var api QuoteAPI
+			if err := json.Unmarshal(raw, &api); err != nil || len(api.Coverages) == 0 {
+				return fail(http.StatusUnprocessableEntity, "the quote-api config is a JSON object with base_url and coverages; see internal/crm/quoteapi.go")
 			}
 		}
 		v, err := s.configs.Save(r.PathValue("name"), raw, r.URL.Query().Get("note"), who(r))
