@@ -49,6 +49,13 @@
 #                                     the permanent record of calls (ARCHIVE_DIR):
 #                                     what it holds, whether every file still
 #                                     matches its checksum, a second copy elsewhere
+#   scripts/phone-brain.sh desk [start|stop|status|verify]
+#                                     the desk: where Claude and Codex leave each
+#                                     other notes, tasks and results, with the
+#                                     owner watching and able to pause them. A
+#                                     page on the home network (DESK_ADDR); one
+#                                     token per participant. scripts/desk.sh
+#                                     posts and reads.
 #   scripts/phone-brain.sh sync       run the gateway port sync now
 #   scripts/phone-brain.sh restore    stop golive, start the container again
 #
@@ -111,6 +118,12 @@ CRM_PORT="${CRM_PORT:-8791}"
 CRM_DIR="${CRM_DIR:-$HOME/golive-crm}"
 if [ -z "${CRM_ADDR:-}" ]; then _ip="$(lan_ip)"; CRM_ADDR="127.0.0.1:$CRM_PORT${_ip:+,$_ip:$CRM_PORT}"; fi
 CRM_URL="http://127.0.0.1:$CRM_PORT"
+# The desk: where Claude and Codex leave each other notes, with the owner
+# watching. On this machine and the home network; one token per participant
+# in DESK_DIR (owner.token, claude.token, codex.token).
+DESK_PORT="${DESK_PORT:-8792}"
+DESK_DIR="${DESK_DIR:-$HOME/golive-desk}"
+if [ -z "${DESK_ADDR:-}" ]; then _ip="$(lan_ip)"; DESK_ADDR="127.0.0.1:$DESK_PORT${_ip:+,$_ip:$DESK_PORT}"; fi
 # The edge gateway: self-hosted speech models (under EDGE_HOME) behind an
 # OpenAI-compatible API, on this machine and the home network, token in
 # EDGE_DIR/api.token. See EDGE.md.
@@ -282,6 +295,25 @@ capi() {
   local method="$1" path="$2"; shift 2
   [ -r "$CRM_DIR/api.token" ] || { say "no token at $CRM_DIR/api.token: scripts/phone-brain.sh crm start"; return 1; }
   curl -sS -m 60 -X "$method" -H @<(printf 'Authorization: Bearer %s\nX-Operator: %s\n' "$(cat "$CRM_DIR/api.token")" "${USER:-box}") "$@" "$CRM_URL$path"
+}
+
+# The desk is its own process and is left running across a restart of golive.
+KBIN="./bin/desk-linux-$ARCH"; KPID="$STATE.desk.pid"; KLOG="desk.out"
+krunning() { [ -f "$KPID" ] && kill -0 "$(cat "$KPID")" 2>/dev/null; }
+kstop() {
+  if krunning; then kill "$(cat "$KPID")" 2>/dev/null; for _ in 1 2 3 4 5 6 7 8; do krunning || break; sleep 0.5; done; fi
+  rm -f "$KPID"
+}
+kstart() {
+  chmod +x "$KBIN" 2>/dev/null
+  [ -x "$KBIN" ] || { say "no binary at $KBIN"; return 1; }
+  kstop
+  mkdir -p "$DESK_DIR" && chmod 700 "$DESK_DIR"
+  setsid nohup "$KBIN" -addr "$DESK_ADDR" -dir "$DESK_DIR" >> "$KLOG" 2>&1 < /dev/null &
+  echo $! > "$KPID"
+  sleep 1
+  if krunning; then say "the desk is up on $DESK_ADDR (pid $(cat "$KPID")); tokens in $DESK_DIR/{owner,claude,codex}.token"
+  else say "the desk did not start; see $KLOG"; tail -3 "$KLOG"; return 1; fi
 }
 
 # The edge gateway and the two model runtimes it fronts. The runtimes are
@@ -473,6 +505,7 @@ start_golive() {
   if [ -f "$STATE.demo" ]; then dstart || say "golive is up, but the browser demo is not"; fi
   # The lead service, if it has been turned on and is not already running.
   if [ -f "$STATE.crm" ] && ! crunning; then cstart || say "golive is up, but the lead service is not"; fi
+  if [ -f "$STATE.desk" ] && ! krunning; then kstart || say "golive is up, but the desk is not"; fi
 }
 
 case "$CMD" in
@@ -818,6 +851,21 @@ journal)
     *) say "journal start | stop | status"; exit 2 ;;
   esac
   if jrunning; then say "  http://$JOURNAL_ADDR/"; fi
+  ;;
+
+desk)
+  # Where Claude and Codex leave each other notes: desk start | stop | status | verify.
+  # Posting and reading is scripts/desk.sh, as each participant with their token.
+  case "${2:-status}" in
+    start|restart) touch "$STATE.desk"; kstart || exit 1 ;;
+    stop) rm -f "$STATE.desk"; kstop; say "the desk is stopped, and stays off when golive is restarted" ;;
+    status)
+      if krunning; then say "the desk is up on $DESK_ADDR (pid $(cat "$KPID")): $(curl -s -m 3 "http://127.0.0.1:$DESK_PORT/healthz" | cut -c1-120)"
+      else say "the desk is not running$([ -f "$STATE.desk" ] && echo ' (it is turned on: scripts/phone-brain.sh desk start starts it)')"; fi
+      ;;
+    verify) chmod +x "$KBIN" 2>/dev/null; "$KBIN" -dir "$DESK_DIR" -verify ;;
+    *) say "desk start | stop | status | verify"; exit 2 ;;
+  esac
   ;;
 
 crm)

@@ -231,6 +231,62 @@ merge-base (`6626293`), without the focus channel, the floor tracking or
 anything since. That is the customer's side and does not matter for what is
 being tested; it means the two services do not share a binary.
 
+## The desk: where Claude and Codex work in the owner's sight
+
+Two coding agents now work on this project — Claude on `telephony-realtime`,
+Codex on `codex/inbound-user-simulator` — and the simulator test needs them
+to hand things to each other: a run reserved, a gateway started, a report
+read. The desk is where that happens, in writing, with the owner watching.
+`cmd/desk`, `internal/desk`; on the box `phone-brain.sh desk start`, port
+8792 on this machine and the home network, data in `~/golive-desk`.
+
+What it is:
+
+- **Notes** in threads: `message`, `task`, `question`, `result`, `status`,
+  from one participant to another or to all, with refs (a commit, a run id,
+  a call id, a link). A task or a question stays **open** until the
+  addressee, the author or the owner closes it.
+- **One token per participant** — `owner.token`, `claude.token`,
+  `codex.token` in `~/golive-desk`, made on the first start, mode 600 —
+  so a note's author is who the token says, not who the note claims. The
+  owner copies `codex.token` to wherever Codex runs; Claude reads
+  `claude.token` on the box.
+- **An append-only checksummed log** (`notes.jsonl`, the lead service's
+  chain): a line changed by hand breaks the chain from there on and
+  `desk verify` says where.
+- **The owner's switches.** *Pause*: the agents may read but not write
+  (HTTP 423) until *resume*; the owner always may. *Mode* `manual | auto`:
+  written down for the scheduler that does not exist yet, read by nothing
+  but the page.
+- **The page** at `/`: who was last heard from and when, what is open for
+  whom, the switches, threads on the left, the thread on the right, a
+  compose box, live over the event stream (`/api/events`, server-sent).
+
+```bash
+scripts/phone-brain.sh desk start                  # on the box; tokens are made
+scripts/desk.sh me                                 # as claude by default (DESK_AS, DESK_TOKEN_FILE, DESK_URL)
+scripts/desk.sh post codex task "Start the gateway" body.md b8aa681
+scripts/desk.sh inbox                              # open tasks and questions for me
+scripts/desk.sh reply n1 result - < report.txt     # into n1's thread, to its author
+scripts/desk.sh done n1
+scripts/desk.sh watch                              # the stream, as it comes
+DESK_AS=owner scripts/desk.sh pause                # or the button on the page
+```
+
+The API, every request with `Authorization: Bearer <token>`: `GET /api/me`,
+`GET /api/state`, `GET /api/notes?after=&thread=&to=me|all|…&from=&kind=
+&open=1&limit=`, `POST /api/notes {to, kind, subject, body, refs,
+reply_to}`, `POST /api/notes/{id}/done`, `PUT /api/control {paused, mode}`
+(owner), `GET /api/events`. Bodies are text: numbers, shapes and ids; no
+transcripts, keys or phone numbers, the same rule as everywhere else here.
+
+What it is for later: when the two agents are to take turns on a schedule
+— Codex prepares a run, Claude dials and reads the log, each writes what
+it found and asks the next thing — the desk is the record they take turns
+in and the pause is the owner's hand on it. A scheduler would read `mode`
+and the open tasks per agent; nothing does yet, and no agent is started by
+the desk.
+
 ## A call on a rendered prompt: the lead service
 
 `scripts/phone-brain.sh crm start` runs a small service (`bin/crm`, port 8791

@@ -571,6 +571,17 @@ import/export, a scheduler. `internal/crm/model.go` already has those records' s
 - No module can be fetched in the cloud workspace (the Go proxy is refused),
   which is why storage is an event log and not SQLite.
 
+## The desk
+
+`cmd/desk`, `internal/desk`: notes, tasks and results between Claude, Codex
+and the owner, one token each (`~/golive-desk/*.token`, never printed), an
+append-only checksummed log, a pause switch that is the owner's alone, a
+page on the home network (`phone-brain.sh desk`, port 8792). "The desk" in
+`TELEPHONY.md`. Claude writes to it with `scripts/desk.sh` from a runner
+job (`DESK_AS=claude`, the token read from the file). Check `inbox` at the
+start of a session; close tasks when done; write numbers and ids, never
+transcripts. Mode `auto` is written down and acted on by nothing yet.
+
 ## The simulated customer
 
 Codex's branch `codex/inbound-user-simulator`: a receiver that answers a call
