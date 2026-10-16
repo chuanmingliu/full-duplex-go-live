@@ -634,7 +634,7 @@
       "title": "The channel enrolled 'not the caller' as the primary and inverted every verdict; a one-utterance enrolment does not represent a voice on a phone line",
       "area": "focus",
       "status": "fixed",
-      "commit": "(next)",
+      "commit": "6a48e1d",
       "found": "2026-10-16",
       "found_on": "the 09:41 call, primary_speaker=1",
       "found_call": "out-mvaaww9l-jyt9",
