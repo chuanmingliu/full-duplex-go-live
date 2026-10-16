@@ -620,7 +620,7 @@
       "title": "A guess was kept though two more characters followed it: any number of trailing sounds counted as none",
       "area": "turn-taking",
       "status": "fixed",
-      "commit": "(next)",
+      "commit": "ff99de4",
       "found": "2026-10-16",
       "found_on": "the 09:16 call, two turns",
       "found_call": "out-mvaa10f1-cc6b",
