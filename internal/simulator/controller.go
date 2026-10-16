@@ -101,6 +101,7 @@ type run struct {
 	customerAudioGeneration                       uint64
 	voiceClosed, hangupSent                       bool
 	nativeCancelledBeforeAnswer                   bool
+	pendingHangup                                 *pendingHangup
 	events                                        []RecordedEvent
 	seq                                           uint64
 	eventsTruncated                               bool
@@ -350,6 +351,12 @@ func (c *RunController) Stop(ctx context.Context, id string) error {
 	return c.Handle(ctx, Event{Kind: "stop", Binding: b, AtMS: c.RelativeMS(), Reason: "stopped"})
 }
 func (c *RunController) Handle(ctx context.Context, e Event) error {
+	return c.handle(ctx, e, "")
+}
+
+// scriptedHangupID is supplied only by the scheduler. Registering its pending
+// evidence in the same lock as the stop transition excludes unrelated endings.
+func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID string) error {
 	c.mu.Lock()
 	r, ok := c.runs[e.Binding.RunID]
 	if !ok {
@@ -357,6 +364,10 @@ func (c *RunController) Handle(ctx context.Context, e Event) error {
 		return ErrNotFound
 	}
 	before := r.state
+	if scriptedHangupID != "" && (before.Phase != Connected || e.Kind != "stop" || !exactBinding(before.Binding, e.Binding)) {
+		c.mu.Unlock()
+		return context.Canceled
+	}
 	next, effects, err := Advance(before, e)
 	if err != nil {
 		c.mu.Unlock()
@@ -367,6 +378,9 @@ func (c *RunController) Handle(ctx context.Context, e Event) error {
 		return ctx.Err()
 	}
 	r.state = next
+	if scriptedHangupID != "" {
+		r.pendingHangup = &pendingHangup{id: scriptedHangupID, binding: next.Binding, requestedAtMS: c.RelativeMS()}
+	}
 	if next != before || len(effects) > 0 {
 		c.record(r, e.Kind, e.Reason)
 	}
@@ -379,6 +393,12 @@ func (c *RunController) Handle(ctx context.Context, e Event) error {
 	if e.Kind == "ended" && next.Phase == Completed {
 		r.observer.ended = 1
 		r.nativeCancelledBeforeAnswer = e.Reason == NativeCancelBeforeAnswerReason && (before.Phase == Ringing || before.Phase == Answering) && !before.AnswerSeen
+		if p := r.pendingHangup; p != nil && before.Phase == Ending && r.hangupSent && exactBinding(p.binding, next.Binding) {
+			// Native callbacks may omit their timestamp (zero); use receiver
+			// receipt time, and never accept supplied backwards/future evidence.
+			p.endedAtMS = c.RelativeMS()
+			p.endConfirmed = p.endedAtMS >= p.requestedAtMS && (e.AtMS == 0 || e.AtMS >= p.requestedAtMS && e.AtMS <= p.endedAtMS)
+		}
 	}
 	if (next.Phase == Ending || next.Phase.Terminal()) && next != before {
 		r.cancel()
@@ -407,6 +427,9 @@ func (c *RunController) Handle(ctx context.Context, e Event) error {
 		b := next.Binding
 		c.schedule(r, c.opts.SetupTimeout, func() { c.failIfEnding(b) })
 	}
+	// For asynchronous confirmations, make the completion visible atomically
+	// with terminal state before readers can retrieve the report.
+	hangupCompleted := c.completePendingHangup(r)
 	persistErr := c.persistSnapshot(r)
 	c.mu.Unlock()
 	var effectErrors []error
@@ -424,10 +447,14 @@ func (c *RunController) Handle(ctx context.Context, e Event) error {
 		}
 	}
 	c.mu.Lock()
+	if scriptedHangupID != "" && r.pendingHangup != nil && r.pendingHangup.id == scriptedHangupID {
+		r.pendingHangup.effectsSucceeded = len(effectErrors) == 0 && persistErr == nil
+	}
+	hangupCompleted = c.completePendingHangup(r) || hangupCompleted
 	if r.state.Phase.Terminal() && c.current == r.state.Binding.RunID {
 		c.current = ""
 	}
-	if r.state.Phase.Terminal() && len(effectErrors) > 0 {
+	if r.state.Phase.Terminal() && (len(effectErrors) > 0 || hangupCompleted) {
 		effectErrors = append(effectErrors, c.persistReport(r))
 	}
 	c.mu.Unlock()
@@ -659,6 +686,11 @@ func (c *RunController) ActionObservation(ctx context.Context, b Binding, outcom
 	known := false
 	for _, a := range r.scenario.Actions {
 		if a.ID == outcome.ID {
+			// Hangup is controller-owned; engine messages cannot substitute for
+			// the matching gateway termination confirmation.
+			if a.Kind == "hangup" {
+				return ErrInvalidTransition
+			}
 			known = true
 			break
 		}

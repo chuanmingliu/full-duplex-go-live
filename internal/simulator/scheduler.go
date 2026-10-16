@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+type pendingHangup struct {
+	id                                        string
+	binding                                   Binding
+	requestedAtMS, endedAtMS                  int64
+	endConfirmed, effectsSucceeded, completed bool
+}
+
+// completePendingHangup requires both successful controls and observed native
+// termination. Synchronous callbacks during Hangup cannot finish it prematurely.
+// The caller holds the controller lock.
+func (c *RunController) completePendingHangup(r *run) bool {
+	p := r.pendingHangup
+	if p == nil || p.completed || !p.effectsSucceeded || !p.endConfirmed || r.state.Phase != Completed || r.observer.ended != 1 || len(r.failures) != 0 || !exactBinding(p.binding, r.state.Binding) {
+		return false
+	}
+	p.completed = true
+	r.actions = append(r.actions, ActionOutcome{ID: p.id, Result: "completed", AtMS: p.endedAtMS, Reason: "gateway ended confirmation after scripted hangup"})
+	c.record(r, "action_completed", p.id)
+	return true
+}
+
 func (c *RunController) schedule(r *run, d time.Duration, f func()) {
 	r.timers = append(r.timers, c.clock.AfterFunc(d, f))
 }
@@ -93,7 +114,7 @@ func (c *RunController) performAction(id string, a Action) {
 			actionContextErr = deadline.Err()
 			cancel()
 		case "hangup":
-			err = c.Handle(context.Background(), Event{Kind: "stop", Binding: b, AtMS: c.RelativeMS(), Reason: "scripted hangup"})
+			err = c.handle(context.Background(), Event{Kind: "stop", Binding: b, AtMS: c.RelativeMS(), Reason: "scripted hangup"}, a.ID)
 		}
 	}
 	c.mu.Lock()
