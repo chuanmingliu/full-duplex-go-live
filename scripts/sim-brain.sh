@@ -28,6 +28,11 @@
 #                                        SRC_DIR, rebuilds the receiver's image and
 #                                        restarts it with the overrides; `status` what
 #                                        runs and from which commit; `logs` its lines
+#   scripts/sim-brain.sh retro <call id> [build]
+#                                        the retrospective of a simulated call in
+#                                        numbers (scripts/sim-retro.py): golive's
+#                                        stages per turn, the customer's report;
+#                                        written to journal/retros/<call id>.md
 #   scripts/sim-brain.sh suite <manifest> [output dir]
 #                                        the sequential suite runner: reserves one
 #                                        call at a time and waits for the caller
@@ -268,6 +273,13 @@ print("phase:       ", d.get("phase"))'
         ;;
       *) die "package update | status | logs [n] [since]" ;;
     esac
+    ;;
+
+  retro)
+    [ -n "${1:-}" ] || die "retro <call id> [build]"
+    here=$(cd "$(dirname "$0")/.." && pwd)
+    tele=${TELEPHONY_DIR:-$HOME/golive-telephony}
+    python3 -I "$tele/scripts/sim-retro.py" "$1" --log "$tele/golive-telephony.log" --sim-dir "$SIM_DIR" --sim-url "$BASE" ${2:+--build "$2"} --md "$tele/journal/retros/$1.md"
     ;;
 
   suite)

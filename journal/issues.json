@@ -656,6 +656,34 @@
       "cause": "The 1.3 s enrolment window was a poor sample (the caller's later utterances 0.07–0.25 against it, 0.54–0.59 against the previous call's), and the tracker's own enrolment rule then took the 'not the caller' label as the primary.",
       "fix": "The caller is whoever picked up, learned from the call: up to six caller-alone utterances are offered and the enrolment is the largest mutually agreeing group (one alone tentative, outvotable; later ones join only if they agree). The caller is pinned as the primary on the channel; an enrolment the next 8 s contradict is distrusted and the channel observes only. focus_profile (a kept embedding) is optional, for a line that always reaches one person; empty on the test line.",
       "verified_on": ""
+    },
+    {
+      "id": "ISS-039",
+      "title": "The simulated customer's gateway ends every call at about 145 s",
+      "area": "simulator",
+      "status": "open",
+      "commit": "",
+      "found": "2026-10-16",
+      "found_on": "the first two multi-turn simulated calls",
+      "found_call": "out-mvb3zqbe-4e4l",
+      "symptom": "Both conversations ended at 144.15 s and 145.05 s, mid-utterance, with the receiver reporting 'Active Call control disconnected' and RustPBX 'Callee initiated hangup (UasBye)' from 172.20.0.2: the BYE came from the simulator's gateway. No scenario limit was near (290 s, 40 turns, 20 s idle).",
+      "cause": "Not known; inside Codex's package (an Active Call limit or the control link between its gateway and receiver). Asked on the desk (n12).",
+      "fix": "",
+      "verified_on": ""
+    },
+    {
+      "id": "ISS-040",
+      "title": "A SIP peer with silence suppression starved both recognizers: one-turn conversations",
+      "area": "line",
+      "status": "fixed",
+      "commit": "d0bb53d",
+      "found": "2026-10-16",
+      "found_on": "the first simulated calls on real providers",
+      "found_call": "out-mvb1gig2-sd4z",
+      "symptom": "Every call: one greeting each way, then nothing; Tencent gave up after 15 s of no audio on both sides (the customer's at exactly 8.62 + 15.0 s, 'voice engine failed').",
+      "cause": "Neither gateway sends RTP while nobody speaks (a GSM line sends a frame every 20 ms). The gate and the recognizer count pauses in the audio that arrives, so the pause that closes an utterance never arrived.",
+      "fix": "vad.line_fill_ms (100): when no client frame has come for that long, 20 ms of silence is pushed per 20 ms on the wall clock until audio returns; the recording gets the same. The receiver got the same from Codex (a4f77d5).",
+      "verified_on": "out-mvb3zqbe-4e4l: 144 s, 30 assistant / 61 customer utterances, 96.9 s filled"
     }
   ]
 }

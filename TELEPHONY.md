@@ -252,6 +252,15 @@ noise is not an effect the simulator can script (its actions are speech
 and hangup only; it refuses silence and keeps no audio) — the subway and
 the show stay on the real line for now.
 
+**After every simulated call, a retrospective**, as for a real one:
+`sim-brain.sh retro <call id> [build]` runs `scripts/sim-retro.py`, which
+reads golive's log and the customer's report and writes
+`journal/retros/<call id>.md` — the stages of every turn, the chat model's
+and synthesizer's distributions, guesses held and abandoned, answers cut
+by the customer, silence filled, the receiver's checks and failures — with
+an *Open* section to fill in by hand: what the slow turns were laid to and
+what to try. Numbers only; the journal shows it on the call.
+
 `start providers` runs the customer on real speech: Tencent, DeepSeek and
 MiniMax with **its own** accounts, written by the owner into
 `~/golive-sim/providers.env` (the phone line's keys are the phone line's;

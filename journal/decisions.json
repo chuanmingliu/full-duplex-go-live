@@ -4,7 +4,7 @@
       "rank": 1,
       "title": "A faster or second chat-model vendor in the race",
       "gain": "About 300 to 400 ms on every turn in that hour, which is the difference between missing the target on most turns and meeting it; 100 to 200 ms at the median at other busy times",
-      "basis": "measured: the chat model's first token (fastest of eight copies) is about 700 ms at the median between roughly 23:00 and midnight, against 160 to 320 at other hours, on two nights running; a call at 23:14 on 10-12 had 12 of 13 turns over 1200 for that reason alone",
+      "basis": "measured: the chat model's first token (fastest of eight copies) is about 700 ms at the median between roughly 23:00 and midnight, against 160 to 320 at other hours, on two nights running; a call at 23:14 on 10-12 had 12 of 13 turns over 1200 for that reason alone; on the simulated customer, same build and persona 14 minutes apart (10-16 23:15 and 23:29): first audio p50 655 → 1214 ms, every other stage unchanged, the chat model's first token 656 → 775 at the median and up to 1341",
       "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
       "guard": "What the assistant says",
       "undo": "yes",
@@ -130,7 +130,7 @@
       "guard": "Nothing merged into telephony-realtime; separate binaries, tokens and data under ~/golive-sim; the phone line's keys are not reused; the reservation binds by run id so a late call cannot take the next one",
       "undo": "sim-brain.sh stop and remove ~/golive-sim; the route and callee allowance are the owner's to take back",
       "needs": "The owner: start the Docker package, set the route and the callee allowance, fill ~/golive-sim/providers.env; then a first cooperative call with the mock profile to prove transport, then one on real speech",
-      "status": "prepared 10-16; waiting on the route"
+      "status": "running since 10-16 23:14: two conversations of 144 s; ISS-039 ends them at ~145 s"
     }
   ]
 }
