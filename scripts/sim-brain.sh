@@ -247,7 +247,9 @@ print("phase:       ", d.get("phase"))'
     case "${1:-status}" in
       update)
         before=$(git -C "$SRC_DIR" rev-parse --short HEAD)
-        git -C "$SRC_DIR" pull -q --ff-only || die "git pull failed in $SRC_DIR"
+        # GitHub is reached through the box's tunnel and sometimes resets;
+        # the clone as it stands is still worth building.
+        git -C "$SRC_DIR" pull -q --ff-only 2>&1 | tail -1 || echo "git pull failed; building what the clone holds"
         after=$(git -C "$SRC_DIR" rev-parse --short HEAD)
         echo "source: $before -> $after ($SIM_REF)"
         if p=$(pid); then die "the host receiver is running (pid $p); stop it: the package takes its port"; fi
