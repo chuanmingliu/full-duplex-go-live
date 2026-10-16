@@ -461,11 +461,14 @@ made on one build.
   utterances scored 0.07–0.25 against that call's 1.3 s enrolment and
   0.54–0.59 against the previous call's; the tracker, free to enrol by its
   own rule, took "not the caller" as the primary and three of the caller's
-  answers were vetoed. Now: the caller is pinned as the primary on this
-  channel; the enrolment is a kept profile (`focus_profile: owner`, an
-  embedding under `~/edge/tsv/profiles/`) the call starts from, made by the
-  first good utterance when there is none; an enrolment the next eight
+  answers were vetoed. Now: whoever picked up is the caller — the
+  general case, the owner said so — learned by agreement: up to six of
+  their utterances made alone are offered and the enrolment is the largest
+  mutually agreeing group (one alone is tentative, outvotable); the caller
+  is pinned as the primary on this channel; an enrolment the next eight
   seconds contradict is distrusted and the channel observes only.
+  `focus_profile` (a kept embedding under `~/edge/tsv/profiles/`) is for a
+  line that always reaches one person; empty on the test line.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer

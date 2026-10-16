@@ -112,14 +112,14 @@
     },
     {
       "rank": 11,
-      "title": "Only the primary voice counts: target-speaker verification on the focus channel, the diarizer off the decision path",
+      "title": "Only the primary voice counts: whoever picked up, learned from the call by agreement; the diarizer off the decision path",
       "gain": "A show, a bystander or the assistant's own echo cannot cut the answer, open a turn or be answered: every window of the caller's audio is scored against the caller's own voice within ~200 ms, however much the background talks",
       "basis": "The owner's rule (10-15 22:35): target my voice; a second voice is ignored. The 22:29 call: 38 sounds over the answer judged, 1 in time, the diarizer 1–1.2 s behind under continuous speech. Measured on this line's archive: CAM++ cosine similarity of the caller's later utterances to a 2 s enrolment 0.45–0.68, the assistant 0.14–0.21, the show under 0.25; 10 ms a window on the CPU",
       "cost": "The first utterance is unjudged (nothing to compare with until the caller has spoken ~600 ms alone); a second legitimate speaker on the call (a spouse taking over) is ignored until a handover rule exists; a wrong enrolment (the show speaking first) would ignore the caller — the enrolment extends only with utterances the labels call the caller's; a show playing under the caller's voice makes every window a mixture that scores like a stranger (the 23:20 call: four of the caller's answers dropped), so no verdict may act on a mixture: only a span with zero caller voice is another voice's",
-      "guard": "veto mode acts, observe mode logs; the caller's own voice joining an ignored utterance takes it up at once; the threshold is a flag (--threshold, 0.35) and the per-window similarity is in the frames for the journal to read",
+      "guard": "veto mode acts, observe mode logs; the caller's own voice joining an ignored utterance takes it up at once; the threshold is a flag (--threshold, 0.35) and the per-window similarity is in the frames for the journal to read; the caller is whoever picked up — learned from up to six of their own utterances by mutual agreement, one bad window outvoted — never a stored voice unless the line names one (focus_profile); the caller is pinned as the primary and an enrolment the next seconds contradict is distrusted",
       "undo": "Set focus_url back to the diarizer (ws://127.0.0.1:8030/v1/audio/diarize?model=nemotron-diar) and focus to observe; the engine is unchanged.",
       "needs": "A call with the show on (the test), then one with a second person in the room; the threshold read off the journal's similarities.",
-      "status": "on the box; retuned 10-15 23:45 after the 23:20 call (zero-primary rule, one enrolment, threshold 0.28); next: target-speaker extraction"
+      "status": "on the box 10-16 10:45 as the general setup (no profile on the line); first call pending"
     }
   ]
 }

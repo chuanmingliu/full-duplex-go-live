@@ -50,6 +50,7 @@ type focusState struct {
 	// the caller's voice (see enrolFocus); ignored counts utterances let go
 	// by as not the caller's, with no turn made of them.
 	enrolments int
+	offered    int
 	ignored    int
 	// distrust says the enrolment did not match what followed (see
 	// checkEnrolment): verdicts are logged and not acted on.
@@ -395,20 +396,20 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 	return bargeInYield
 }
 
-// focusEnrolments is how many utterances the caller's voice is taken from.
-// One: the first the caller made alone. Extending it with later ones the
-// labels called the caller's was tried (10-15 23:20) and, with a show in
-// the background, mixed the show into the enrolment — the show then scored
-// as the caller.
-const focusEnrolments = 1
+// focusCandidates is how many of the caller's utterances are offered to the
+// service as their voice. The service enrols the largest group of them that
+// agree with each other (edge/tsv_server.py): whoever picked up is learned
+// from the call, and one bad window — the 09:41 call on 10-16 — is outvoted
+// rather than ruling the call. A kept profile, when one was loaded, is only
+// extended.
+const focusCandidates = 6
 
-// enrolFocus tells a target-speaker service whose voice the caller's is:
-// an utterance the caller made alone — long enough to carry a voice, not
-// over the assistant, nothing of the assistant's in it — and, once the
-// service is scoring, only ones its own labels called the caller's.
+// enrolFocus offers a target-speaker service an utterance as the caller's
+// voice: one the caller made alone — long enough to carry a voice, not
+// over the assistant, nothing of the assistant's in it.
 func (e *Engine) enrolFocus(startMS, endMS int64, activeMS float64, bargeIn bool) {
 	fs := e.focus
-	if fs == nil || fs.enrolments >= focusEnrolments {
+	if fs == nil || fs.offered >= focusCandidates {
 		return
 	}
 	en, ok := fs.scorer.(focus.Enroller)
@@ -418,18 +419,15 @@ func (e *Engine) enrolFocus(startMS, endMS int64, activeMS float64, bargeIn bool
 	if bargeIn || activeMS < 600 || fs.tracker.MaskedWithin(startMS, endMS+focusEchoTailMS) {
 		return
 	}
-	if fs.enrolments > 0 && e.uttVerdict != uttCaller {
-		return
+	if e.uttVerdict == uttIgnored || e.uttVerdict == uttNoted {
+		return // the labels already said this one was not the caller's
 	}
 	if err := en.Enrol(startMS, endMS, e.opts.Cfg.Duplex.FocusProfile); err != nil {
-		e.log.Warn("focus: the caller's voice could not be enrolled", "err", err)
+		e.log.Warn("focus: the caller's voice could not be offered", "err", err)
 		return
 	}
-	fs.enrolments++
-	fs.enrolledAtMS = endMS
-	// The service's speaker 0 is the caller by definition.
-	fs.tracker.Pin(0)
-	e.log.Info("focus: enrolling the caller's voice", "from_ms", startMS, "to_ms", endMS, "voiced_ms", int(activeMS), "enrolment", fs.enrolments)
+	fs.offered++
+	e.log.Info("focus: offering the caller's voice", "from_ms", startMS, "to_ms", endMS, "voiced_ms", int(activeMS), "offered", fs.offered)
 }
 
 // readEnrolments takes the service's answers: a profile found means the
@@ -443,15 +441,27 @@ func (e *Engine) readEnrolments() {
 	for {
 		select {
 		case a := <-en.Enrolled():
-			if a.Profile != "" {
-				if a.Found && fs.enrolments == 0 {
+			switch {
+			case a.Profile != "" && a.Found:
+				if fs.enrolments == 0 {
 					fs.enrolments = 1
 					fs.enrolledAtMS = e.inputMS.Load()
 					fs.tracker.Pin(0)
 					e.log.Info("focus: the caller's voice is enrolled from the kept profile", "profile", a.Profile)
-				} else if !a.Found {
-					e.log.Info("focus: no kept profile yet; the first utterance will make one", "profile", a.Profile)
 				}
+			case a.Profile != "":
+				e.log.Info("focus: no kept profile; the caller's voice is learned on this call", "profile", a.Profile)
+			case a.Rejected:
+				e.log.Info("focus: an offered utterance disagreed with the enrolment; not taken", "candidates", a.Candidates)
+			default:
+				first := fs.enrolments == 0
+				fs.enrolments++
+				if first {
+					fs.enrolledAtMS = e.inputMS.Load()
+					fs.tracker.Pin(0)
+				}
+				e.log.Info("focus: the caller's voice is enrolled", "candidates", a.Candidates, "agreeing", a.Agreeing,
+					"tentative", a.Tentative, "voiced_ms", a.VoicedMS, "saved", a.Saved)
 			}
 		default:
 			return

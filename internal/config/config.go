@@ -475,9 +475,10 @@ type DuplexConfig struct {
 	// default, -1 to decide on the words alone as before.
 	FocusBargeInWaitMS int `json:"focus_barge_in_wait_ms"`
 	// FocusProfile names a voice profile the target-speaker service keeps
-	// across calls (one locked line, one caller): the call starts enrolled
-	// from it, and a call that finds none saves the first enrolment under
-	// it. Empty: every call enrols afresh from the caller's first utterance.
+	// across calls, for a line that always reaches the same person (a test
+	// line), or a known contact. Empty — the general case — and the caller
+	// is whoever picked up, learned from the call itself: the largest
+	// group of their utterances that agree with each other.
 	FocusProfile string `json:"focus_profile"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.

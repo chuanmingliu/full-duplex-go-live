@@ -58,6 +58,11 @@ type Enrolment struct {
 	Found    bool
 	VoicedMS int
 	Saved    bool
+	// Candidates offered so far, how many agree, whether one alone stands.
+	Candidates int
+	Agreeing   int
+	Tentative  bool
+	Rejected   bool
 }
 
 // Scorer is a speaker-activity model fed the caller's audio as it arrives.

@@ -23,10 +23,13 @@ caller became "another voice".
 ## What I changed
 
 - The caller is pinned as the primary on this channel (`Tracker.Pin`).
-- The enrolment is a kept profile (`focus_profile: owner`), the call starts
-  enrolled from it, the first good utterance makes it when there is none.
+- The caller is whoever picked up, learned from the call by agreement: up
+  to six of their utterances made alone are offered, the enrolment is the
+  largest group that agree with each other, one alone is tentative and can
+  be outvoted (the owner's rule, stated on this call: a general setup, not
+  one voice). A kept profile (`focus_profile`) is optional, for a line that
+  always reaches one person.
 - An enrolment that the next eight seconds of voice contradict (under 30%
   "the caller") is distrusted: the channel observes only for that call.
 
-ISS-038. The first call on this build makes the profile; the second is the
-test.
+ISS-038.

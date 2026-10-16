@@ -55,6 +55,7 @@ ap.add_argument("--threshold", type=float, default=0.28, help="cosine similarity
 ap.add_argument("--enrol-max-s", type=float, default=8.0, help="how much of the caller's voice the enrolment keeps; later enrolments extend it")
 ap.add_argument("--voiced-db", type=float, default=-50.0, help="RMS dBFS under which a window is not voiced")
 ap.add_argument("--keep-s", type=float, default=20.0, help="seconds of audio kept for a late enrolment")
+ap.add_argument("--agree", type=float, default=0.4, help="similarity two enrolment candidates need to count as the same voice (see Session.do_enrol)")
 ap.add_argument("--profiles", default=os.path.expanduser("~/edge/tsv/profiles"), help="where named voice profiles (embeddings, one .npy each) are kept across calls")
 args = ap.parse_args()
 
@@ -153,6 +154,8 @@ class Session:
         self.scored_to = None  # session ms up to which frames were reported
         self.enrol = None      # the caller's embedding
         self.enrol_audio = np.zeros(0, dtype=np.float32)  # the voice it was taken from
+        self.candidates = []   # (embedding, voiced audio) of each utterance offered
+        self.from_profile = False
         self.keep = int(args.keep_s * SR)
 
     def push(self, pcm: bytes, at_ms: int):
@@ -180,37 +183,66 @@ class Session:
             return {"type": "enrolled", "profile": name, "found": False}
         e = np.load(path).astype(np.float32)
         self.enrol = e / (np.linalg.norm(e) + 1e-8)
+        self.from_profile = True
         stats["enrolments"] += 1
         return {"type": "enrolled", "profile": name, "found": True, "voiced_ms": 0}
 
     def do_enrol(self, from_ms, to_ms, save_as=None):
+        """Offer an utterance as the caller's voice. Whoever picked up is the
+        caller, learned from the call itself; one window is not a reliable
+        sample of a voice (on a quiet call the caller's later utterances
+        scored 0.07–0.25 against a 1.3 s first window), so the enrolment is
+        the largest group of offered utterances that agree with each other
+        (pairwise similarity >= --agree). One alone enrols tentatively; the
+        next can confirm, extend or outvote it. Once a group of two or more
+        stands, a further utterance joins only if it agrees with it, so a
+        voice in the background cannot creep in. A kept profile, when one
+        was loaded, is extended the same way and never outvoted."""
         x = self.slice(from_ms, to_ms)
-        # Keep the voiced part: a 600 ms utterance is mostly voice, but the
-        # pre-roll and the pause are not, and they dilute the embedding.
         hop = SR // 10
         parts = [x[i:i + hop] for i in range(0, len(x) - hop + 1, hop) if dbfs(x[i:i + hop]) > args.voiced_db]
         voiced = np.concatenate(parts) if parts else x
         if len(voiced) < SR * 0.4:
             return None
-        # Each enrolment extends the last: a 600 ms first utterance is enough
-        # to start on, and the embedding of several seconds is much steadier
-        # (on a phone line: 0.9 s gave the caller's own later utterances 0.20,
-        # 2 s gave them 0.45–0.68).
-        pool = np.concatenate([self.enrol_audio, voiced])
-        if len(pool) > int(args.enrol_max_s * SR):
-            pool = pool[-int(args.enrol_max_s * SR):]
-        e = embed(pool)
+        e = embed(voiced)
         if e is None:
             return None
-        self.enrol, self.enrol_audio = e, pool
+        if self.from_profile:
+            if float(np.dot(e, self.enrol)) < args.agree:
+                return {"type": "enrolled", "from_ms": int(from_ms), "to_ms": int(to_ms), "voiced_ms": int(len(voiced) * 1000 // SR),
+                        "candidates": len(self.candidates), "agreeing": 0, "tentative": False, "rejected": True}
+            self.candidates.append((e, voiced))
+            group = list(range(len(self.candidates)))
+        else:
+            self.candidates.append((e, voiced))
+            n = len(self.candidates)
+            # The largest group of mutually agreeing candidates; ties go to
+            # the one holding the latest utterance.
+            best = []
+            for i in range(n):
+                group = [i] + [j for j in range(n) if j != i and float(np.dot(self.candidates[i][0], self.candidates[j][0])) >= args.agree]
+                if len(group) > len(best) or (len(group) == len(best) and n - 1 in group):
+                    best = group
+            group = sorted(best)
+        pool = np.concatenate([self.candidates[i][1] for i in group])
+        if len(pool) > int(args.enrol_max_s * SR):
+            pool = pool[-int(args.enrol_max_s * SR):]
+        if self.from_profile:
+            pool = np.concatenate([self.enrol_audio, pool])[-int(args.enrol_max_s * SR):]
+        pe = embed(pool)
+        if pe is None:
+            return None
+        self.enrol, self.enrol_audio = pe, pool
         stats["enrolments"] += 1
+        tentative = len(group) < 2 and not self.from_profile
         saved = False
-        if save_as and profile_path(save_as):
+        if save_as and profile_path(save_as) and not tentative:
             os.makedirs(args.profiles, exist_ok=True)
-            np.save(profile_path(save_as), e)
+            np.save(profile_path(save_as), pe)
             saved = True
         return {"type": "enrolled", "from_ms": int(from_ms), "to_ms": int(to_ms),
-                "voiced_ms": int(len(voiced) * 1000 // SR), "total_ms": int(len(pool) * 1000 // SR), "saved": saved}
+                "voiced_ms": int(len(voiced) * 1000 // SR), "total_ms": int(len(pool) * 1000 // SR),
+                "candidates": len(self.candidates), "agreeing": len(group), "tentative": tentative, "saved": saved}
 
     def score(self):
         """Report every frame_ms up to the end of the buffer."""

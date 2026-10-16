@@ -93,8 +93,10 @@ func (c *Client) read() {
 			continue
 		}
 		if msg.Type == "enrolled" {
-			en := Enrolment{Profile: msg.Profile, Found: msg.Found == nil || *msg.Found, VoicedMS: msg.VoicedMS, Saved: msg.Saved}
-			c.log.Info("focus: the service answered an enrolment", "profile", msg.Profile, "found", en.Found, "voiced_ms", msg.VoicedMS, "saved", msg.Saved)
+			en := Enrolment{Profile: msg.Profile, Found: msg.Found == nil || *msg.Found, VoicedMS: msg.VoicedMS, Saved: msg.Saved,
+				Candidates: msg.Candidates, Agreeing: msg.Agreeing, Tentative: msg.Tentative, Rejected: msg.Rejected}
+			c.log.Info("focus: the service answered an enrolment", "profile", msg.Profile, "found", en.Found, "voiced_ms", msg.VoicedMS,
+				"candidates", msg.Candidates, "agreeing", msg.Agreeing, "tentative", msg.Tentative, "rejected", msg.Rejected, "saved", msg.Saved)
 			select {
 			case c.enrolled <- en:
 			default:

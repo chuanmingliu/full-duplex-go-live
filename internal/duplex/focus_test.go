@@ -83,6 +83,12 @@ func (f *fakeScorer) Enrol(fromMS, toMS int64, saveAs string) error {
 	defer f.mu.Unlock()
 	f.enrolled = append(f.enrolled, [2]int64{fromMS, toMS})
 	f.saveAs = saveAs
+	// Every offered utterance agrees, as a real caller's would.
+	n := len(f.enrolled)
+	select {
+	case f.answers <- focus.Enrolment{Candidates: n, Agreeing: n, Tentative: n < 2, VoicedMS: int(toMS - fromMS), Saved: saveAs != "" && n >= 2}:
+	default:
+	}
 	return nil
 }
 
@@ -370,7 +376,7 @@ func TestABackgroundVoicesUtteranceIsLetGoBy(t *testing.T) {
 	pause(e, rate, 700)
 	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 100 })
 	if en := scorer.enrolments(); len(en) != 1 || en[0][0] != 0 || en[0][1] < 600 {
-		t.Fatalf("enrolments %v; wanted the first utterance", en)
+		t.Fatalf("offered %v; wanted the first utterance", en)
 	}
 	listenThrough(t, e, rate)
 	delegated := len(c.delegationReasons())
@@ -392,7 +398,7 @@ func TestABackgroundVoicesUtteranceIsLetGoBy(t *testing.T) {
 		t.Fatalf("delegations went from %d to %d on the television's words", delegated, n)
 	}
 	if en := scorer.enrolments(); len(en) != 1 {
-		t.Fatalf("enrolled on the television's utterance: %v", en)
+		t.Fatalf("offered the television's utterance: %v", en)
 	}
 	// The caller again: answered.
 	heard := c.audioMS()
@@ -481,11 +487,8 @@ func TestAKeptProfileEnrolsTheCallerAtOnce(t *testing.T) {
 			if asked != "owner" {
 				t.Fatalf("the profile was not asked for: %q", asked)
 			}
-			if kept && n != 0 {
-				t.Fatalf("enrolled %d time(s) though the profile was kept", n)
-			}
-			if !kept && (n != 1 || saveAs != "owner") {
-				t.Fatalf("enrolments %d save_as %q; wanted one saved as owner", n, saveAs)
+			if n != 1 || saveAs != "owner" {
+				t.Fatalf("offered %d utterance(s) save_as %q; wanted the first, under the profile's name", n, saveAs)
 			}
 			if e.focus.tracker.Primary() != 0 {
 				t.Fatalf("primary %d", e.focus.tracker.Primary())

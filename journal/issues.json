@@ -640,7 +640,7 @@
       "found_call": "out-mvaaww9l-jyt9",
       "symptom": "Three of the owner's answers vetoed as another voice's, three utterances let go by, five answers cut, on a call that was the owner's voice alone.",
       "cause": "The enrolment taken from the first utterance scored the owner's own later utterances at 0.07–0.25, so the service labelled them 'not the caller'; the tracker's first-voice rule then enrolled that label as the primary and every verdict came out inverted.",
-      "fix": "Tracker.Pin(0) on enrolment (the service's speaker 0 is the caller by definition); an enrolment sanity check (under 30% caller in the first 8 s of voice → observe only); a kept profile (focus_profile) made from 28 s of the owner's voice, from which every call starts enrolled: all 19 of this call's utterances score 0.33–0.61 against it.",
+      "fix": "The caller is whoever picked up, learned from the call: up to six caller-alone utterances are offered and the enrolment is the largest mutually agreeing group (one alone tentative, outvotable; later ones join only if they agree). The caller is pinned as the primary on the channel; an enrolment the next 8 s contradict is distrusted and the channel observes only. focus_profile (a kept embedding) is optional, for a line that always reaches one person; empty on the test line.",
       "verified_on": ""
     },
     {
@@ -654,7 +654,7 @@
       "found_call": "out-mvaaww9l-jyt9",
       "symptom": "On a quiet call with the caller alone, 3 answers vetoed as another voice's, 3 utterances let go by; primary_speaker=1.",
       "cause": "The 1.3 s enrolment window was a poor sample (the caller's later utterances 0.07–0.25 against it, 0.54–0.59 against the previous call's), and the tracker's own enrolment rule then took the 'not the caller' label as the primary.",
-      "fix": "The caller is pinned as the primary on the target-speaker channel; the enrolment is a kept profile (focus_profile) the call starts from, made by the first good utterance when none exists; an enrolment contradicted by the next 8 s of voice is distrusted and the channel observes only. Tests: TestAPinnedPrimaryIsNotHandedOver, TestAnEnrolmentContradictedByWhatFollowsIsNotActedOn, TestAKeptProfileEnrolsTheCallerAtOnce.",
+      "fix": "The caller is whoever picked up, learned from the call: up to six caller-alone utterances are offered and the enrolment is the largest mutually agreeing group (one alone tentative, outvotable; later ones join only if they agree). The caller is pinned as the primary on the channel; an enrolment the next 8 s contradict is distrusted and the channel observes only. focus_profile (a kept embedding) is optional, for a line that always reaches one person; empty on the test line.",
       "verified_on": ""
     }
   ]

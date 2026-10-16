@@ -40,6 +40,13 @@ type FramesMsg struct {
 	Profile  string `json:"profile,omitempty"`
 	Found    *bool  `json:"found,omitempty"`
 	Saved    bool   `json:"saved,omitempty"`
+	// For an enrolment by agreement: how many utterances were offered, how
+	// many agree, whether one alone stands (tentative), whether this one
+	// was rejected as disagreeing with a kept profile.
+	Candidates int  `json:"candidates,omitempty"`
+	Agreeing   int  `json:"agreeing,omitempty"`
+	Tentative  bool `json:"tentative,omitempty"`
+	Rejected   bool `json:"rejected,omitempty"`
 }
 
 // EnrolMsg tells a target-speaker service whose voice the caller's is: the
