@@ -1,5 +1,7 @@
 # Inbound simulated customer, v1
 
+Start with the **[project README](../../README.simulator.md)** for the purpose, architecture and first-run workflow. This document is the deployment and API runbook.
+
 Claude's voice service calls this receiver. The receiver plays a synthetic human customer; its conversation with the assistant passes through audio only. A separate authenticated API prepares scenarios, returns run IDs and retrieves reports.
 
 This package runs on branch `codex/inbound-user-simulator`. It does not modify an existing service, deployment, gateway route or provider account. The ordinary `golive` binary does not enable simulator capabilities.

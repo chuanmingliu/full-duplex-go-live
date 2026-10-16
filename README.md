@@ -2,6 +2,8 @@
 
 A full-duplex realtime audio service in Go.
 
+For the inbound simulated-customer project, see **[Inbound Voice User Simulator](README.simulator.md)**: a receiving voice agent, configuration workbench, scenario suites and independent post-call evaluation.
+
 It speaks the **gpt-live-1 event protocol** over a WebSocket, and simulates
 full duplex with a concurrent ASR → LLM → TTS cascade. We do not have a genuine
 full-duplex speech model, so golive builds the *behaviour* out of ordinary
