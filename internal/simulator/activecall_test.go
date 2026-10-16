@@ -424,7 +424,9 @@ func TestActiveCallControllerCancellationAndStaleRun(t *testing.T) {
 	ctx := context.Background()
 	h.controller.onIncoming = func(in IncomingCall) error { return controller.Incoming(ctx, in) }
 	h.controller.onEvent = func(event Event) error { return controller.Handle(ctx, event) }
-	first, err := controller.Prepare(ctx, sampleScenario())
+	cancelScenario := sampleScenario()
+	cancelScenario.ExpectedOutcome = OutcomeCancelBeforeAnswer
+	first, err := controller.Prepare(ctx, cancelScenario)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,6 +450,15 @@ func TestActiveCallControllerCancellationAndStaleRun(t *testing.T) {
 	snapshot, _ := controller.Get(ctx, first.RunID)
 	if !snapshot.Phase.Terminal() {
 		t.Fatalf("cancel left phase %s", snapshot.Phase)
+	}
+	report, err := controller.Report(ctx, first.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range report.Checks {
+		if check.Result != "pass" {
+			t.Fatalf("actual native CANCEL did not pass expected cancellation: %+v", check)
+		}
 	}
 	next, err := controller.Prepare(ctx, sampleScenario())
 	if err != nil {

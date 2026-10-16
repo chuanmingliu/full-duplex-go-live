@@ -27,7 +27,14 @@ func (c *RunController) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Method == http.MethodPost && (path == "runs" || path == "incoming") {
+		if path == "runs" && r.Method == http.MethodGet {
+			runs, err := c.List(r.Context())
+			respond(w, struct {
+				Runs []Snapshot `json:"runs"`
+			}{Runs: runs}, err)
+			return
+		}
+		if r.Method == http.MethodPost && (path == "runs" || path == "incoming" || path == "validate") {
 			raw, err := io.ReadAll(io.LimitReader(r.Body, MaxScenarioBytes+1))
 			if err != nil {
 				http.Error(w, "invalid body", 400)
@@ -35,6 +42,19 @@ func (c *RunController) Handler() http.Handler {
 			}
 			if len(raw) > MaxScenarioBytes {
 				http.Error(w, "body exceeds 64 KiB", 413)
+				return
+			}
+			if path == "validate" {
+				s, err := DecodeScenario(strings.NewReader(string(raw)))
+				if err != nil {
+					respond(w, nil, err)
+					return
+				}
+				respond(w, struct {
+					Scenario     Scenario `json:"scenario"`
+					ScenarioHash string   `json:"scenario_hash"`
+					PromptHash   string   `json:"prompt_hash"`
+				}{s, ScenarioHash(s), PromptHash(s)}, nil)
 				return
 			}
 			if path == "runs" {
@@ -110,6 +130,12 @@ func (c *RunController) Handler() http.Handler {
 				if r.Method == http.MethodGet {
 					rep, err := c.Report(r.Context(), id)
 					respond(w, rep, err)
+					return
+				}
+			case "transcript":
+				if r.Method == http.MethodGet {
+					artifact, err := c.Transcript(r.Context(), id)
+					respond(w, artifact, err)
 					return
 				}
 			}

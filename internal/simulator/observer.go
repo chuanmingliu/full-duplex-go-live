@@ -64,6 +64,8 @@ type observer struct {
 	overlapActive                       bool
 	customerStartMS                     int64
 	retainTranscript                    bool
+	transcriptTruncated                 bool
+	speechObserved                      bool
 	invalid                             int
 	answered, greetings, ended          int
 	transcript                          []TranscriptEntry
@@ -93,6 +95,9 @@ func (o *observer) observe(v Observation) error {
 		}
 	}
 	o.lastMS = v.AtMS
+	if (v.Kind == "assistant_audio" || v.Kind == "customer_audio") && v.NonSilent {
+		o.speechObserved = true
+	}
 	kind := v.Kind
 	switch kind {
 	case "assistant_audio":
@@ -128,6 +133,7 @@ func (o *observer) observe(v Observation) error {
 	}
 	switch kind {
 	case "remote_speech_started":
+		o.speechObserved = true
 		if o.assistantSpeaking {
 			return nil
 		}
@@ -157,6 +163,7 @@ func (o *observer) observe(v Observation) error {
 	case "remote_speech_ended":
 		o.endRemote(v.AtMS)
 	case "customer_speech_started":
+		o.speechObserved = true
 		if o.customerSpeaking {
 			return nil
 		}
@@ -184,8 +191,12 @@ func (o *observer) observe(v Observation) error {
 		if v.Role != "assistant" && v.Role != "customer" {
 			return errors.New("transcript requires normalized assistant or customer role")
 		}
-		if o.retainTranscript && len(o.transcript) < 256 {
-			o.transcript = append(o.transcript, TranscriptEntry{Role: v.Role, AtMS: v.AtMS, Text: v.Text})
+		if o.retainTranscript {
+			if len(o.transcript) < 256 {
+				o.transcript = append(o.transcript, TranscriptEntry{Role: v.Role, AtMS: v.AtMS, Text: v.Text})
+			} else {
+				o.transcriptTruncated = true
+			}
 		}
 	case "answered":
 		o.answered = 1

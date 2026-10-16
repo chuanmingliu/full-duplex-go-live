@@ -146,7 +146,7 @@ func TestScenarioFixtures(t *testing.T) {
 		}
 		count++
 	}
-	if count != 3 {
-		t.Fatal("expected three synthetic fixtures")
+	if count != 5 {
+		t.Fatal("expected five synthetic fixtures")
 	}
 }

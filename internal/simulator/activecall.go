@@ -309,7 +309,7 @@ func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCa
 		case "hangup":
 			reason := "Active Call ended"
 			if event.Reason == "Canceled" && event.Initiator == "caller" {
-				reason = "caller cancelled before answer"
+				reason = NativeCancelBeforeAnswerReason
 			}
 			a.terminal(controller, call, "ended", reason, true)
 			return

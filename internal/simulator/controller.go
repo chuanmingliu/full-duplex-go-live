@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,6 +62,8 @@ type Controller interface {
 	Prepare(context.Context, Scenario) (Snapshot, error)
 	Handle(context.Context, Event) error
 	Get(context.Context, string) (Snapshot, error)
+	List(context.Context) ([]Snapshot, error)
+	Transcript(context.Context, string) (TranscriptArtifact, error)
 	Stop(context.Context, string) error
 }
 type IncomingCall struct {
@@ -96,6 +100,7 @@ type run struct {
 	idleGeneration                                uint64
 	customerAudioGeneration                       uint64
 	voiceClosed, hangupSent                       bool
+	nativeCancelledBeforeAnswer                   bool
 	events                                        []RecordedEvent
 	seq                                           uint64
 	eventsTruncated                               bool
@@ -175,7 +180,7 @@ func (c *RunController) prepare(ctx context.Context, key string, s Scenario) (Sn
 		return Snapshot{}, err
 	}
 	s = cloneScenario(s)
-	hash := hashJSON(s)
+	hash := ScenarioHash(s)
 	for _, a := range s.Actions {
 		if a.Kind == "silence" {
 			if _, ok := c.opts.Voice.(VoiceSilencer); !ok {
@@ -212,7 +217,7 @@ func (c *RunController) prepare(ctx context.Context, key string, s Scenario) (Sn
 	id := "sim-" + hex.EncodeToString(random)
 	now := c.clock.Now()
 	runctx, cancel := context.WithCancel(context.Background())
-	r := &run{state: State{Phase: Prepared, Binding: Binding{RunID: id}}, scenario: s, scenarioHash: hash, idempotencyKeyHash: key, provenance: reportProvenance{SourceCommit: redact(c.opts.SourceCommit), ProviderModel: redact(c.opts.ProviderModel), VoiceID: redact(c.opts.VoiceID)}, promptHash: hashJSON(s.Prompt()), createdAt: now, expiresAt: now.Add(c.opts.ReservationTTL), ctx: runctx, cancel: cancel, observer: newObserver(), actionScheduled: map[string]bool{}, occurrences: map[string]int{}}
+	r := &run{state: State{Phase: Prepared, Binding: Binding{RunID: id}}, scenario: s, scenarioHash: hash, idempotencyKeyHash: key, provenance: reportProvenance{SourceCommit: redact(c.opts.SourceCommit), ProviderModel: redact(c.opts.ProviderModel), VoiceID: redact(c.opts.VoiceID)}, promptHash: PromptHash(s), createdAt: now, expiresAt: now.Add(c.opts.ReservationTTL), ctx: runctx, cancel: cancel, observer: newObserver(), actionScheduled: map[string]bool{}, occurrences: map[string]int{}}
 	r.observer.retainTranscript = s.RetainTranscript
 	r.state, _, _ = Advance(r.state, Event{Kind: "reserve", Binding: r.state.Binding})
 	c.runs[id] = r
@@ -234,7 +239,10 @@ func (c *RunController) prepare(ctx context.Context, key string, s Scenario) (Sn
 	return c.snapshot(r), nil
 }
 func (c *RunController) snapshot(r *run) Snapshot {
-	return Snapshot{RunID: r.state.Binding.RunID, Phase: r.state.Phase, Reason: redact(r.reason), Binding: r.state.Binding, ReservationExpiresAt: r.expiresAt, DialTargetReference: redact(c.opts.DialTargetReference)}
+	// Redact configured text before substitution so number redaction cannot
+	// damage a legitimate generated run ID and change the called SIP target.
+	target := strings.ReplaceAll(redact(c.opts.DialTargetReference), "<run_id>", r.state.Binding.RunID)
+	return Snapshot{RunID: r.state.Binding.RunID, Phase: r.state.Phase, Reason: redact(r.reason), Binding: r.state.Binding, ReservationExpiresAt: r.expiresAt, DialTargetReference: target}
 }
 func (c *RunController) Get(ctx context.Context, id string) (Snapshot, error) {
 	c.mu.Lock()
@@ -244,6 +252,30 @@ func (c *RunController) Get(ctx context.Context, id string) (Snapshot, error) {
 		return Snapshot{}, ErrNotFound
 	}
 	return c.snapshot(r), ctx.Err()
+}
+
+// List returns bounded public snapshots, newest first, breaking ties by run ID.
+func (c *RunController) List(ctx context.Context) ([]Snapshot, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	runs := make([]*run, 0, len(c.runs))
+	for _, r := range c.runs {
+		runs = append(runs, r)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if runs[i].createdAt.Equal(runs[j].createdAt) {
+			return runs[i].state.Binding.RunID < runs[j].state.Binding.RunID
+		}
+		return runs[i].createdAt.After(runs[j].createdAt)
+	})
+	snapshots := make([]Snapshot, 0, len(runs))
+	for _, r := range runs {
+		snapshots = append(snapshots, c.snapshot(r))
+	}
+	return snapshots, nil
 }
 func (c *RunController) ScenarioForBinding(ctx context.Context, b Binding) (Scenario, error) {
 	c.mu.Lock()
@@ -346,6 +378,7 @@ func (c *RunController) Handle(ctx context.Context, e Event) error {
 	}
 	if e.Kind == "ended" && next.Phase == Completed {
 		r.observer.ended = 1
+		r.nativeCancelledBeforeAnswer = e.Reason == NativeCancelBeforeAnswerReason && (before.Phase == Ringing || before.Phase == Answering) && !before.AnswerSeen
 	}
 	if (next.Phase == Ending || next.Phase.Terminal()) && next != before {
 		r.cancel()

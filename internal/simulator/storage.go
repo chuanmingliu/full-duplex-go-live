@@ -8,13 +8,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func (c *RunController) persistSnapshot(r *run) error {
 	if c.opts.DataDir == "" {
 		return nil
 	}
-	return writeJSONAtomic(filepath.Join(c.opts.DataDir, r.state.Binding.RunID), "state.json", persistedRun{Snapshot: c.snapshot(r), PrepareKeyHash: r.idempotencyKeyHash, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, Provenance: r.provenance})
+	return writeJSONAtomic(filepath.Join(c.opts.DataDir, r.state.Binding.RunID), "state.json", persistedRun{Snapshot: c.snapshot(r), CreatedAt: r.createdAt, ScenarioID: r.scenario.ID, ExpectedOutcome: r.scenario.ExpectedOutcome, RetainTranscript: r.scenario.RetainTranscript, PrepareKeyHash: r.idempotencyKeyHash, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, Provenance: r.provenance})
 }
 func (c *RunController) persistReport(r *run) error {
 	if c.opts.DataDir == "" {
@@ -62,6 +63,14 @@ func (c *RunController) restore() error {
 		runctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		r := &run{state: State{Phase: snap.Phase, Binding: snap.Binding}, reason: snap.Reason, idempotencyKeyHash: metadata.PrepareKeyHash, scenarioHash: metadata.ScenarioHash, promptHash: metadata.PromptHash, provenance: metadata.Provenance, expiresAt: snap.ReservationExpiresAt, observer: newObserver(), ctx: runctx, cancel: cancel}
+		r.createdAt = metadata.CreatedAt
+		// Older metadata lacks creation time; expiry is a deterministic fallback.
+		if r.createdAt.IsZero() {
+			r.createdAt = snap.ReservationExpiresAt
+		}
+		r.scenario.ID = metadata.ScenarioID
+		r.scenario.ExpectedOutcome = metadata.ExpectedOutcome
+		r.scenario.RetainTranscript = metadata.RetainTranscript
 		if !snap.Phase.Terminal() {
 			r.state.Phase = Aborted
 			r.reason = "process restart"
@@ -87,6 +96,13 @@ func (c *RunController) restore() error {
 func (c *RunController) Report(ctx context.Context, id string) (Report, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Report{}, err
+	}
+	return c.reportLocked(id)
+}
+
+func (c *RunController) reportLocked(id string) (Report, error) {
 	r, ok := c.runs[id]
 	if !ok {
 		return Report{}, ErrNotFound
@@ -104,17 +120,84 @@ func (c *RunController) Report(ctx context.Context, id string) (Report, error) {
 		}
 		var rep Report
 		err = json.Unmarshal(raw, &rep)
+		if err == nil && (rep.RunID != id || rep.ScenarioHash != r.scenarioHash || rep.PromptHash != r.promptHash) {
+			return Report{}, errors.New("report artifact identity mismatch")
+		}
 		return rep, err
 	}
-	return buildReport(r, c.opts), ctx.Err()
+	return buildReport(r, c.opts), nil
+}
+
+type TranscriptArtifact struct {
+	SchemaVersion int               `json:"schema_version"`
+	RunID         string            `json:"run_id"`
+	ScenarioHash  string            `json:"scenario_hash"`
+	PromptHash    string            `json:"prompt_hash"`
+	Truncated     bool              `json:"truncated"`
+	Entries       []TranscriptEntry `json:"entries"`
+}
+
+// Transcript returns an independent copy only after the retained terminal report
+// authorizes access. Restored paths always derive from the known run's safe ID.
+func (c *RunController) Transcript(ctx context.Context, id string) (TranscriptArtifact, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return TranscriptArtifact{}, err
+	}
+	rep, err := c.reportLocked(id)
+	if err != nil {
+		return TranscriptArtifact{}, err
+	}
+	if !rep.TranscriptRetained {
+		return TranscriptArtifact{}, fmt.Errorf("%w: transcript retention disabled", ErrConflict)
+	}
+	r := c.runs[id]
+	entries := r.observer.transcript
+	if r.scenario.SchemaVersion == 0 {
+		root, err := os.OpenRoot(filepath.Join(c.opts.DataDir, r.state.Binding.RunID))
+		if err != nil {
+			return TranscriptArtifact{}, err
+		}
+		defer root.Close()
+		// Root.Open prevents a transcript symlink from escaping this run's directory.
+		file, err := root.Open("transcript.json")
+		if err != nil {
+			return TranscriptArtifact{}, err
+		}
+		defer file.Close()
+		raw, err := readBounded(file, 1<<20)
+		if err != nil {
+			return TranscriptArtifact{}, err
+		}
+		if err = json.Unmarshal(raw, &entries); err != nil {
+			return TranscriptArtifact{}, err
+		}
+		if len(entries) > 256 {
+			return TranscriptArtifact{}, errors.New("transcript entry limit exceeded")
+		}
+	}
+	copyEntries := make([]TranscriptEntry, len(entries))
+	for i, entry := range entries {
+		if (entry.Role != "assistant" && entry.Role != "customer") || entry.AtMS < 0 {
+			return TranscriptArtifact{}, errors.New("invalid transcript entry")
+		}
+		entry.Text = redact(entry.Text)
+		copyEntries[i] = entry
+	}
+	return TranscriptArtifact{SchemaVersion: 1, RunID: id, ScenarioHash: rep.ScenarioHash, PromptHash: rep.PromptHash, Truncated: rep.TranscriptTruncated, Entries: copyEntries}, nil
 }
 
 type persistedRun struct {
 	Snapshot
-	PrepareKeyHash string           `json:"prepare_key_hash,omitempty"`
-	ScenarioHash   string           `json:"scenario_hash,omitempty"`
-	PromptHash     string           `json:"prompt_hash,omitempty"`
-	Provenance     reportProvenance `json:"provenance"`
+	CreatedAt        time.Time        `json:"created_at,omitempty"`
+	ScenarioID       string           `json:"scenario_id,omitempty"`
+	ExpectedOutcome  string           `json:"expected_outcome,omitempty"`
+	RetainTranscript bool             `json:"retain_transcript,omitempty"`
+	PrepareKeyHash   string           `json:"prepare_key_hash,omitempty"`
+	ScenarioHash     string           `json:"scenario_hash,omitempty"`
+	PromptHash       string           `json:"prompt_hash,omitempty"`
+	Provenance       reportProvenance `json:"provenance"`
 }
 
 type reportProvenance struct {
@@ -129,7 +212,11 @@ func readBoundedFile(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
+	return readBounded(f, limit)
+}
+
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
 	}

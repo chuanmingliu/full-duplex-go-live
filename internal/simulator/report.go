@@ -20,6 +20,10 @@ type ActionOutcome struct {
 	Reason string `json:"reason,omitempty"`
 }
 type Report struct {
+	ScenarioID             string          `json:"scenario_id,omitempty"`
+	ExpectedOutcome        string          `json:"expected_outcome,omitempty"`
+	TerminationReason      string          `json:"termination_reason,omitempty"`
+	TranscriptTruncated    bool            `json:"transcript_truncated"`
 	OverlapDurationMS      int64           `json:"overlap_duration_ms"`
 	AssistantEndDebounceMS int64           `json:"assistant_end_debounce_ms"`
 	CustomerEndDebounceMS  int64           `json:"customer_end_debounce_ms"`
@@ -43,6 +47,10 @@ type Report struct {
 	TranscriptRetained     bool            `json:"transcript_retained"`
 	AudioRetained          bool            `json:"audio_retained"`
 }
+
+// NativeCancelBeforeAnswerReason is emitted only for the normalized native
+// caller CANCEL callback. A generic ended/stop callback is insufficient evidence.
+const NativeCancelBeforeAnswerReason = "caller cancelled before answer"
 
 var sensitiveNumbers = regexp.MustCompile(`\+?[0-9][0-9 ().-]{5,}[0-9]`)
 
@@ -69,6 +77,13 @@ func check(name string, pass bool, evidence string) Check {
 func buildReport(r *run, opts Options) Report {
 	o := r.observer
 	rep := Report{RunID: r.state.Binding.RunID, Phase: r.state.Phase, SourceCommit: r.provenance.SourceCommit, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, ProviderModel: r.provenance.ProviderModel, VoiceID: r.provenance.VoiceID, Evidence: AudioBoundaryEvidence, AssistantGaps: o.assistantGaps(), SimulatorGaps: o.customerGaps(), InvalidObservations: o.invalid, Actions: append([]ActionOutcome{}, r.actions...), Failures: append([]string{}, r.failures...), EventsTruncated: r.eventsTruncated, TranscriptRetained: r.scenario.RetainTranscript}
+	rep.ScenarioID = r.scenario.ID
+	rep.ExpectedOutcome = r.scenario.outcome()
+	rep.TerminationReason = redact(r.reason)
+	if rep.TerminationReason == "" {
+		rep.TerminationReason = string(r.state.Phase)
+	}
+	rep.TranscriptTruncated = o.transcriptTruncated
 	for _, action := range r.scenario.Actions {
 		found := false
 		for _, outcome := range rep.Actions {
@@ -96,8 +111,16 @@ func buildReport(r *run, opts Options) Report {
 	}
 	rep.AssistantSamples = len(rep.AssistantGaps)
 	rep.SimulatorSamples = len(rep.SimulatorGaps)
-	rep.Checks = append(rep.Checks, check("answered_once", o.answered == 1, "gateway answered confirmation"))
-	rep.Checks = append(rep.Checks, check("greeting_once", o.greetings == 1, "successful voice opening request; audio delivery measured separately"))
+	if r.scenario.outcome() == OutcomeCancelBeforeAnswer {
+		rep.Checks = append(rep.Checks,
+			check("native_cancel_before_answer", r.nativeCancelledBeforeAnswer && o.ended == 1 && r.state.Phase == Completed, "native caller CANCEL confirmation before answered confirmation"),
+			check("no_answer_or_greeting", !r.state.AnswerSeen && o.answered == 0 && o.greetings == 0, "gateway answered confirmation and successful voice opening count"),
+			check("no_speech", !o.speechObserved && len(o.transcript) == 0, "received and delivered nonsilent audio boundaries"),
+			check("no_run_failures", len(r.failures) == 0, "receiver control and observation failures"))
+	} else {
+		rep.Checks = append(rep.Checks, check("answered_once", o.answered == 1, "gateway answered confirmation"))
+		rep.Checks = append(rep.Checks, check("greeting_once", o.greetings == 1, "successful voice opening request; audio delivery measured separately"))
+	}
 	limitOK := r.connectedAt.IsZero() || r.terminalAt.IsZero() || r.terminalAt.Sub(r.connectedAt).Milliseconds() <= r.scenario.MaxDurationMS+1000
 	rep.Checks = append(rep.Checks, check("call_limits", limitOK && r.remoteTurns <= r.scenario.MaxRemoteTurns, "receiver controller deadlines and remote speech boundaries"))
 	clean := Check{Name: "clean_termination", Result: "indeterminate", Evidence: "missing gateway ended confirmation"}
@@ -118,8 +141,19 @@ func buildReport(r *run, opts Options) Report {
 		}
 		rep.Checks = append(rep.Checks, c)
 	}
-	for _, name := range []string{"identity_explanation", "clarification_response", "appointment_facts", "graceful_ending"} {
-		rep.Checks = append(rep.Checks, Check{Name: name, Result: "indeterminate", Evidence: "semantic evaluator absent"})
+	if r.scenario.outcome() == OutcomeConversation {
+		for _, name := range []string{"identity_explanation", "clarification_response", "appointment_facts", "graceful_ending"} {
+			rep.Checks = append(rep.Checks, Check{Name: name, Result: "indeterminate", Evidence: "semantic evaluator absent"})
+		}
+	}
+	for _, expectation := range r.scenario.Expectations {
+		rep.Checks = append(rep.Checks, Check{Name: "expectation_" + expectation.ID, Result: "indeterminate", Evidence: "semantic evaluator absent"})
+	}
+	if r.scenario.SchemaVersion == 0 || r.state.Phase == Aborted {
+		for i := range rep.Checks {
+			rep.Checks[i].Result = "indeterminate"
+			rep.Checks[i].Evidence = "run evidence unavailable after process restart or abort"
+		}
 	}
 	return rep
 }

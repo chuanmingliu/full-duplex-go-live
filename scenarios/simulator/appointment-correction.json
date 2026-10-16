@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "appointment-correction",
+  "language": "zh-CN",
+  "persona": "A fictional customer correcting an appointment date. Be polite and concise, but do not agree to an unavailable time.",
+  "facts": {
+    "appointment_kind": "fictional library consultation",
+    "incorrect_day": "Tuesday",
+    "available_day": "Thursday",
+    "available_period": "afternoon",
+    "preferred_time": "15:00"
+  },
+  "greeting": "喂，你好，哪位？",
+  "answer_delay_ms": 1500,
+  "max_duration_ms": 120000,
+  "max_remote_turns": 12,
+  "idle_timeout_ms": 15000,
+  "actions": [],
+  "retain_transcript": true,
+  "retain_audio": false,
+  "goal": "Correct the fictional appointment from Tuesday to Thursday afternoon, preferably 15:00, and obtain a clear confirmation.",
+  "behavior": [
+    "Ask who is calling before discussing the appointment.",
+    "When the appointment is discussed, explain that Tuesday is incorrect and you are available Thursday afternoon.",
+    "Ask for 15:00 if a specific time is needed, and ask the caller to confirm the corrected date and time.",
+    "End politely after a clear confirmation; do not invent additional personal information."
+  ],
+  "expectations": [
+    {"id": "caller_identity", "description": "The remote assistant identifies itself and the purpose of the call when asked."},
+    {"id": "corrected_day", "description": "The remote assistant acknowledges that Tuesday is incorrect and uses Thursday afternoon."},
+    {"id": "confirmed_time", "description": "The remote assistant explicitly confirms Thursday at 15:00 before ending."}
+  ],
+  "expected_outcome": "conversation"
+}

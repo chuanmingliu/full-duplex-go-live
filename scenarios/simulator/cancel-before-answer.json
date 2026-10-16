@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "cancel-before-answer",
+  "language": "zh-CN",
+  "persona": "A fictional customer reserved for a pre-answer cancellation example.",
+  "facts": {},
+  "greeting": "喂，你好？",
+  "answer_delay_ms": 30000,
+  "max_duration_ms": 60000,
+  "max_remote_turns": 4,
+  "idle_timeout_ms": 15000,
+  "actions": [],
+  "retain_transcript": false,
+  "retain_audio": false,
+  "expected_outcome": "cancel_before_answer"
+}
