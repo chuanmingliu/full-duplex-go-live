@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -27,6 +28,8 @@ const ActiveCallCommit = "eaf7ebc8f39193a289348989f6a09b0ace287da7"
 // ActiveCallOptions describes an isolated receiving gateway. SIPDomain is the
 // called URI's host (including its port, if present); Destination is the logical
 // destination configured on the controller. The SIP extension is the run ID.
+// Forwarded requests may also name the ControlURL host or one of its resolved
+// addresses, with an optional SIP port. Only that configured host is resolved.
 type ActiveCallOptions struct {
 	ControlURL, RealtimeURL                 string
 	WebhookToken, MediaToken                string
@@ -43,15 +46,16 @@ type ActiveCallController interface {
 // ActiveCall owns only inbound control attachments. It has no dialing API.
 // SetController breaks the constructor cycle with RunController's Telephony.
 type ActiveCall struct {
-	mu         sync.Mutex
-	opts       ActiveCallOptions
-	controlURL *url.URL
-	mediaURL   *url.URL
-	controller ActiveCallController
-	calls      map[string]*activeCallSession
-	closed     bool
-	dialer     websocket.Dialer
-	client     *http.Client
+	mu           sync.Mutex
+	opts         ActiveCallOptions
+	controlURL   *url.URL
+	mediaURL     *url.URL
+	controller   ActiveCallController
+	calls        map[string]*activeCallSession
+	closed       bool
+	dialer       websocket.Dialer
+	client       *http.Client
+	lookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
 }
 
 type activeCallSession struct {
@@ -116,7 +120,7 @@ func NewActiveCall(opts ActiveCallOptions) (*ActiveCall, error) {
 	if opts.DialTimeout <= 0 || opts.DialTimeout > 10*time.Second || opts.CommandTimeout <= 0 || opts.CommandTimeout > 10*time.Second {
 		return nil, errors.New("gateway deadlines must be positive and at most 10 seconds")
 	}
-	return &ActiveCall{opts: opts, controlURL: control, mediaURL: media, calls: make(map[string]*activeCallSession), dialer: websocket.Dialer{HandshakeTimeout: opts.DialTimeout}, client: &http.Client{Timeout: opts.CommandTimeout}}, nil
+	return &ActiveCall{opts: opts, controlURL: control, mediaURL: media, calls: make(map[string]*activeCallSession), dialer: websocket.Dialer{HandshakeTimeout: opts.DialTimeout}, client: &http.Client{Timeout: opts.CommandTimeout}, lookupIPAddr: net.DefaultResolver.LookupIPAddr}, nil
 }
 
 func activeCallURL(raw string, media bool) (*url.URL, error) {
@@ -167,7 +171,7 @@ func (a *ActiveCall) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid native invite", http.StatusBadRequest)
 		return
 	}
-	controller, call, duplicate, err := a.register(in)
+	controller, call, duplicate, err := a.register(r.Context(), in)
 	if err != nil {
 		http.Error(w, "gateway unavailable", http.StatusServiceUnavailable)
 		return
@@ -246,7 +250,10 @@ func validDialogID(id string) bool {
 	return true
 }
 
-func (a *ActiveCall) register(in activeCallInvite) (ActiveCallController, *activeCallSession, bool, error) {
+func (a *ActiveCall) register(ctx context.Context, in activeCallInvite) (ActiveCallController, *activeCallSession, bool, error) {
+	// DNS may be needed for a PBX-forwarded numeric Request-URI. Keep it off
+	// the adapter mutex so call termination/control remain independent of DNS.
+	runID := a.runFromCallee(ctx, in.Callee)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.closed || a.controller == nil {
@@ -262,20 +269,9 @@ func (a *ActiveCall) register(in activeCallInvite) (ActiveCallController, *activ
 	if len(a.calls) >= 4096 {
 		return nil, nil, false, ErrNotReady
 	}
-	call := &activeCallSession{dialogID: in.DialogID, callID: callID, runID: a.runFromCallee(in.Callee), callee: in.Callee, ready: make(chan struct{})}
+	call := &activeCallSession{dialogID: in.DialogID, callID: callID, runID: runID, callee: in.Callee, ready: make(chan struct{})}
 	a.calls[callID] = call
 	return a.controller, call, false, nil
-}
-
-func (a *ActiveCall) runFromCallee(callee string) string {
-	if !strings.HasPrefix(callee, "sip:") {
-		return ""
-	}
-	parts := strings.Split(strings.TrimPrefix(callee, "sip:"), "@")
-	if len(parts) != 2 || !activeCallRunID.MatchString(parts[0]) || !strings.EqualFold(parts[1], a.opts.SIPDomain) {
-		return ""
-	}
-	return parts[0]
 }
 
 func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCallSession) {

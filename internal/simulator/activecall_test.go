@@ -430,7 +430,9 @@ func TestActiveCallControllerCancellationAndStaleRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callee := "sip:" + first.RunID + "@simulator.invalid"
+	// A PBX rewrites the Request-URI host to the trunk address. It must still
+	// bind to this exact reservation, including when an old run arrives later.
+	callee := "sip:" + first.RunID + "@" + h.adapter.controlURL.Hostname() + ":25060"
 	if h.webhook("first-native", callee).Code != http.StatusNoContent {
 		t.Fatal("invite failed")
 	}
