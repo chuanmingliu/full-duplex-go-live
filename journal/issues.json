@@ -648,7 +648,7 @@
       "title": "A bad one-window enrolment inverted the focus labels: the caller became 'another voice' and three answers were vetoed",
       "area": "focus",
       "status": "fixed",
-      "commit": "(next)",
+      "commit": "94ab349",
       "found": "2026-10-16",
       "found_on": "the 09:41 call, caller alone",
       "found_call": "out-mvaaww9l-jyt9",
