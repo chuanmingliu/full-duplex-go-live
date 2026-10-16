@@ -131,6 +131,17 @@
       "undo": "sim-brain.sh stop and remove ~/golive-sim; the route and callee allowance are the owner's to take back",
       "needs": "The owner: start the Docker package, set the route and the callee allowance, fill ~/golive-sim/providers.env; then a first cooperative call with the mock profile to prove transport, then one on real speech",
       "status": "running since 10-16 23:14: two conversations of 144 s; ISS-039 ends them at ~145 s"
+    },
+    {
+      "rank": 13,
+      "title": "The headline latency is the caller's last sound → first audio; the console's turn-judged-over figure is secondary",
+      "gain": "The figure optimised is the one the caller waits through, and the end-of-turn pause (380 ms) stays visible as part of every turn's budget instead of disappearing from the measure",
+      "basis": "The goal was set on this definition; the console's leaves out the pause that ended the turn. Settled by the owner on 10-16 after the first simulated conversations were read under both",
+      "cost": "Every report carries the pause: the same build reads ~380 ms slower than under the console's definition",
+      "guard": "Both figures are printed, labelled; comparisons with the owner's console use its definition",
+      "undo": "Read the console column instead",
+      "needs": "Nothing; sim-retro and the journal headline the last-sound figure",
+      "status": "in force 10-16"
     }
   ]
 }

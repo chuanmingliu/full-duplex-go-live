@@ -20,7 +20,10 @@ Providers in use: Tencent realtime ASR, DeepSeek (`deepseek-chat`), MiniMax
 so in as many words: the figure is a p95, not a median. This is the thing to
 optimise; everything else is in service of it.
 
-Two definitions are in use. Quote both, and say which.
+Two definitions are in use. **The headline is always the first, caller's
+last sound → first audio** (the owner settled it on 10-16: it is what the
+caller waits through, and it keeps the pause an honest lever); the second
+is quoted beside it, labelled, for comparison with the owner's console.
 
 - **Last sound → first audio**: the caller's last sound to the first audio
   leaving golive. `+pause` in `scripts/call-latency.sh`; what the bench

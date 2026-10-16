@@ -116,17 +116,19 @@ out.append("The simulated customer (run `%s`, scenario `%s`) answered; %s." % (
 out.append("")
 out.append("## What golive measured")
 out.append("")
-out.append("Latency from the turn closing (add the %s ms pause for last sound → first audio):" % fmt(measured[0]["end_silence_ms"] if measured else 380))
+pause = measured[0]["end_silence_ms"] if measured else 380
+out.append("The target's definition, **caller's last sound → first audio**, is the headline; the stages are from the turn closing, %s ms after the last sound (the console's definition, 'first audio' column)." % fmt(pause))
 out.append("")
-out.append("| turn | at | begun before close | chat model first token | first clause | synth first audio | first audio |")
-out.append("| --- | --- | ---: | ---: | ---: | ---: | ---: |")
+out.append("| turn | at | begun before close | chat model first token | first clause | synth first audio | first audio | **last sound → first audio** |")
+out.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
 for t in measured:
-    out.append("| %s | %s | %s | %s | %s | %s | **%s** |" % (t["turn"], t["at"], fmt(-t["turn_start_ms"] if t["turn_start_ms"] else 0), fmt(t["llm_first_token_ms"]), fmt(t["first_segment_ms"]), fmt(t["tts_first_audio_ms"]), fmt(t["first_audio_out_ms"])))
-fa = [t["first_audio_out_ms"] for t in measured]
+    out.append("| %s | %s | %s | %s | %s | %s | %s | **%s** |" % (t["turn"], t["at"], fmt(-t["turn_start_ms"] if t["turn_start_ms"] else 0), fmt(t["llm_first_token_ms"]), fmt(t["first_segment_ms"]), fmt(t["tts_first_audio_ms"]), fmt(t["first_audio_out_ms"]), fmt(t["first_audio_out_ms"] + t["end_silence_ms"])))
+fa = [t["first_audio_out_ms"] + t["end_silence_ms"] for t in measured]
+over = sum(1 for x in fa if x > 1200)
 out.append("")
-out.append("- %d turns measured: p50 **%s**, p95 %s, max %s ms (+pause: %s / %s / %s). Fewer than 40 turns: the p95 is the worst turn or the one before it." % (
-    len(fa), fmt(pct(fa, .5)), fmt(pct(fa, .95)), fmt(max(fa) if fa else None),
-    fmt(pct(fa, .5) + 380 if fa else None), fmt(pct(fa, .95) + 380 if fa else None), fmt(max(fa) + 380 if fa else None)))
+out.append("- %d turns measured, last sound → first audio: p50 **%s**, p95 %s, max %s ms; **%d over 1200**. (Console's definition: p50 %s, max %s.) Fewer than 40 turns: the p95 is the worst turn or the one before it." % (
+    len(fa), fmt(pct(fa, .5)), fmt(pct(fa, .95)), fmt(max(fa) if fa else None), over,
+    fmt(pct([x - pause for x in fa], .5)), fmt(max(fa) - pause if fa else None)))
 out.append("- Chat model, fastest of the copies, %d answers: p50 %s, p90 %s, max %s ms. Synthesizer first audio, %d segments: p50 %s, p90 %s, max %s ms." % (
     len(llm), fmt(pct(llm, .5)), fmt(pct(llm, .9)), fmt(max(llm) if llm else None), len(tts), fmt(pct(tts, .5)), fmt(pct(tts, .9)), fmt(max(tts) if tts else None)))
 out.append("- Guesses: %d held, %d abandoned. Answers cut by the customer speaking: %d (%d after audio had played)." % (held, abandoned, cut, truncated))
