@@ -302,12 +302,24 @@
         body: raw,
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      await listRuns();
       selectRun(run);
       showView("runs");
-      message(
-        "Run prepared. Call the exact SIP target below from your separate caller.",
-      );
+      const preparedMessage =
+        "Run prepared. Call the exact SIP target below from your separate caller.";
+      message(preparedMessage);
+      try {
+        await listRuns();
+      } catch (err) {
+        // Reservation success must survive a subsequent list failure. Authentication
+        // failures still disconnect and clear sensitive state through api().
+        if (token && selected === run.run_id)
+          message(
+            preparedMessage +
+              " Recent runs could not be refreshed: " +
+              err.message,
+            true,
+          );
+      }
     });
   });
   function definitionList(id, pairs) {
@@ -344,7 +356,6 @@
       voice: "voice",
       language: "language",
       speed: "speed",
-      rate: "client_rate",
       query: "on_new_query",
     };
     for (const [id, key] of Object.entries(fields))
@@ -363,7 +374,7 @@
       voice: $("draft-voice").value,
       language: $("draft-language").value,
       speed: Number($("draft-speed").value),
-      client_rate: Number($("draft-rate").value),
+      client_rate: 16000,
       greeting: "",
       allow_provider_override: false,
       web_root: "",

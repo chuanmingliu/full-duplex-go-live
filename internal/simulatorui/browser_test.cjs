@@ -17,7 +17,9 @@ const calls = [],
   consoleErrors = [];
 let runs = [],
   stopped = "",
-  transcriptFetches = 0;
+  transcriptFetches = 0,
+  failNextRunList = false,
+  prepareCount = 0;
 const active = {
   asr: "mock",
   llm: "mock",
@@ -96,8 +98,18 @@ const server = http.createServer(async (req, res) => {
       return fail("invalid JSON");
     }
   }
-  if (req.url === "/sim/v1/runs" && req.method === "GET") return send({ runs });
+  if (req.url === "/sim/v1/runs" && req.method === "GET") {
+    if (failNextRunList) {
+      failNextRunList = false;
+      res.writeHead(503);
+      res.end("test recent-run list unavailable");
+      return;
+    }
+    return send({ runs });
+  }
   if (req.url === "/sim/v1/runs" && req.method === "POST") {
+    prepareCount++;
+    failNextRunList = true;
     assert(req.headers["idempotency-key"]);
     const s = JSON.parse(body);
     assert.equal(s.goal, "Confirm Thursday afternoon");
@@ -200,7 +212,8 @@ const server = http.createServer(async (req, res) => {
       if (
         msg.type() === "error" &&
         !msg.text().includes("400") &&
-        !msg.text().includes("401")
+        !msg.text().includes("401") &&
+        !msg.text().includes("503")
       )
         consoleErrors.push(msg.text());
     });
@@ -291,6 +304,12 @@ const server = http.createServer(async (req, res) => {
       "Keep this instruction\nacross two lines",
     );
     await page.click('[data-view="providers"]');
+    assert.equal(
+      await page.locator("#draft-rate").getAttribute("readonly"),
+      "",
+    );
+    assert.equal(await page.inputValue("#draft-rate"), "16000");
+    assert.equal(await page.locator("select#draft-rate").count(), 0);
     await page.selectOption("#draft-tts", "minimax");
     await page.fill("#draft-voice", "test-voice");
     const profileDownload = page.waitForEvent("download");
@@ -298,6 +317,7 @@ const server = http.createServer(async (req, res) => {
     const pd = await profileDownload;
     const profile = JSON.parse(fs.readFileSync(await pd.path(), "utf8"));
     assert.equal(profile.tts, "minimax");
+    assert.equal(profile.client_rate, 16000);
     assert.equal(profile.allow_provider_override, false);
     assert.equal(profile.realtime.store_calls, false);
     assert(!JSON.stringify(profile).includes("fake-test-token"));
@@ -309,7 +329,23 @@ const server = http.createServer(async (req, res) => {
         .getElementById("run-info")
         .textContent.includes("sip:run-exact-123@simulator.invalid"),
     );
+    await page.waitForFunction(() =>
+      document
+        .getElementById("message")
+        .textContent.includes("Recent runs could not be refreshed"),
+    );
+    assert.equal(prepareCount, 1);
     assert.match(await page.textContent("#run-info"), /run-exact-123/);
+    assert.equal(await page.inputValue("#run-select"), "run-exact-123");
+    assert.match(await page.textContent("#run-info"), /2026-10-16T12:00:00Z/);
+    await page.click("#refresh-runs");
+    await page.waitForFunction(() =>
+      document
+        .getElementById("message")
+        .textContent.includes("Recent runs refreshed"),
+    );
+    assert.equal(await page.inputValue("#run-select"), "run-exact-123");
+    assert.equal(prepareCount, 1);
     await page.waitForFunction(
       () => document.getElementById("events").children.length > 0,
     );

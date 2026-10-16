@@ -343,12 +343,11 @@
                     step="0.05"
                     required /></label
                 ><label
-                  >Client sample rate<select id="draft-rate">
-                    <option>8000</option>
-                    <option>16000</option>
-                    <option>24000</option>
-                    <option>48000</option>
-                  </select></label
+                  >Client sample rate · fixed by receiver<input
+                    id="draft-rate"
+                    value="16000"
+                    readonly
+                    aria-describedby="fixed-rate-help" /></label
                 ><label
                   >On new query<select id="draft-query">
                     <option value="cut">Cut</option>
@@ -357,6 +356,10 @@
                   </select></label
                 >
               </div>
+              <p id="fixed-rate-help" class="hint">
+                The receiving simulator always uses 16000 Hz. Profile exports
+                preserve that effective rate.
+              </p>
               <label class="check"
                 ><input id="draft-barge" type="checkbox" />Allow barge-in</label
               ><button type="submit">Export profile draft</button>

@@ -15,6 +15,7 @@ import (
 func TestSafeConfigAuthenticationAndReadiness(t *testing.T) {
 	const secret = "DO-NOT-SERIALIZE-SENTINEL"
 	cfg := config.Default()
+	cfg.ClientRate = 48000
 	cfg.AuthToken = secret
 	cfg.MetricsToken = secret
 	cfg.BackendBaseURL = "https://" + secret + ".invalid"
@@ -63,6 +64,13 @@ func TestSafeConfigAuthenticationAndReadiness(t *testing.T) {
 			}
 			if len(dto) != 2 || dto["active"] == nil || dto["constraints"] == nil {
 				t.Fatalf("unexpected safe DTO: %s", res.Body.String())
+			}
+			var active Settings
+			if err := json.Unmarshal(dto["active"], &active); err != nil {
+				t.Fatal(err)
+			}
+			if active.ClientRate != 16000 {
+				t.Fatalf("effective receiver rate must be 16000, got %d from 48000 startup setting", active.ClientRate)
 			}
 			if strings.Contains(res.Body.String(), "backend_base_url") || strings.Contains(res.Body.String(), "auth_token") {
 				t.Fatal("unsafe fields")

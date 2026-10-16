@@ -46,7 +46,8 @@ type ConfigResponse struct {
 // New captures only safe settings and delegates the existing management API.
 // The readiness callback must obey its context; it never runs on GET config.
 func New(cfg config.Config, token string, ready func(context.Context) error, control http.Handler) http.Handler {
-	dto := ConfigResponse{Active: Settings{cfg.ASR, cfg.LLM, cfg.TTS, cfg.BackendModel, cfg.Voice, cfg.Language, cfg.Speed, cfg.ClientRate, cfg.Duplex.AllowBargeIn, cfg.Duplex.OnNewQuery}, Constraints: Constraints{true, true, false, false, 1}}
+	// The simulator receiver pins media to 16 kHz regardless of the startup profile.
+	dto := ConfigResponse{Active: Settings{cfg.ASR, cfg.LLM, cfg.TTS, cfg.BackendModel, cfg.Voice, cfg.Language, cfg.Speed, 16000, cfg.Duplex.AllowBargeIn, cfg.Duplex.OnNewQuery}, Constraints: Constraints{true, true, false, false, 1}}
 	static, _ := fs.Sub(assets, "assets")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
