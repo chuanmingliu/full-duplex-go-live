@@ -309,7 +309,10 @@ kstart() {
   [ -x "$KBIN" ] || { say "no binary at $KBIN"; return 1; }
   kstop
   mkdir -p "$DESK_DIR" && chmod 700 "$DESK_DIR"
-  setsid nohup "$KBIN" -addr "$DESK_ADDR" -dir "$DESK_DIR" >> "$KLOG" 2>&1 < /dev/null &
+  # The journal listens on the home-network address, not loopback; the desk
+  # reads it there and tells the page which port to embed.
+  setsid nohup "$KBIN" -addr "$DESK_ADDR" -dir "$DESK_DIR" -journal "http://$JOURNAL_ADDR" -journal-port "${JOURNAL_ADDR##*:}" \
+    -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" -sim-tokens "${SIM_DIR:-$HOME/golive-sim}/tokens.env" >> "$KLOG" 2>&1 < /dev/null &
   echo $! > "$KPID"
   sleep 1
   if krunning; then say "the desk is up on $DESK_ADDR (pid $(cat "$KPID")); tokens in $DESK_DIR/{owner,claude,codex}.token"
