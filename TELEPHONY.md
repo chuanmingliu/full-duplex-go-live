@@ -231,6 +231,27 @@ model that heard the call in the first place and nowhere else; the draft
 comes back synthetic, marked with the call it came from, and is only a
 draft until it is saved.
 
+**A set from the journal, with the things callers do** (*Synthesize a
+set* on the same page): several real calls at once, each drafted and saved
+plain and with each *effect* ticked, plus a suite manifest
+(`~/golive-sim/scenarios/suites/<prefix>.json`) for `golive-simctl suite`.
+The effects are the simulator's scheduled actions built from lines the
+draft asked the model for in the caller's own voice:
+
+| effect | what the customer does | what it tests |
+| --- | --- | --- |
+| `barge_in` | cuts in over the 2nd and 5th answers, 700 and 500 ms in | the answer must stop quickly, and the cut-in be answered |
+| `backchannel` | a listening sound ("嗯", "对") over the 3rd and 6th answers | the answer must **not** stop |
+| `rapid` | cuts in over the 2nd, 3rd and 4th answers, 400 ms in | turn-taking under pressure; abandoned guesses |
+| `busy` | says it has a minute, short replies, hangs up at 85 s | short turns; a clean end |
+| `abrupt` | hangs up at 60 s without a word | teardown and the report |
+
+The same persona plain and with each effect makes the runs comparable: a
+figure that moves between them moved because of the effect. Background
+noise is not an effect the simulator can script (its actions are speech
+and hangup only; it refuses silence and keeps no audio) — the subway and
+the show stay on the real line for now.
+
 `start providers` runs the customer on real speech: Tencent, DeepSeek and
 MiniMax with **its own** accounts, written by the owner into
 `~/golive-sim/providers.env` (the phone line's keys are the phone line's;

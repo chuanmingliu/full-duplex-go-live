@@ -176,9 +176,10 @@
   };
   // Scenarios: written here, checked by the simulator, reserved from here;
   // `call sim` on the box then dials what was reserved.
+  let EFFECTS = {};
   const loadScenarios = async () => {
-    const [sc, rc] = await Promise.all([api('/api/scenarios'), api('/api/scenarios/calls').catch(() => ({ calls: [] }))]);
-    state.scenarios = sc.scenarios || []; state.realCalls = rc.calls || []; state.scenariosAt = Date.now();
+    const [sc, rc, ef] = await Promise.all([api('/api/scenarios'), api('/api/scenarios/calls').catch(() => ({ calls: [] })), api('/api/scenarios/effects').catch(() => ({ effects: {} }))]);
+    state.scenarios = sc.scenarios || []; state.realCalls = rc.calls || []; EFFECTS = ef.effects || {}; state.scenariosAt = Date.now();
     if (!state.scenario && state.scenarios.length) state.scenario = state.scenarios[0].name;
   };
   const openScenario = async (name) => {
@@ -205,15 +206,40 @@
         (() => {
           const sel = h('select', {}, ...state.realCalls.map(c => h('option', { value: c.id }, when(c.started_at) + ' · ' + c.turns + ' turns · ' + dur(c.duration_s))));
           const turns = h('input', { type: 'number', class: 'short', value: '40', min: '4', max: '100' });
+          const effect = h('select', {}, h('option', { value: '' }, 'plain'), ...Object.entries(EFFECTS).map(([k, v]) => h('option', { value: k, title: v }, k.replace('_', ' '))));
           const btn = h('button', { class: 'btn btn-primary', onclick: async () => {
             if (!sel.value) return tip('no real call to draft from', true);
             btn.disabled = true; btn.textContent = 'asking the chat model…';
             try {
-              const d = await api('/api/scenarios/draft', { method: 'POST', body: JSON.stringify({ call: sel.value, turns: Number(turns.value) || 40 }) });
+              const d = await api('/api/scenarios/draft', { method: 'POST', body: JSON.stringify({ call: sel.value, turns: Number(turns.value) || 40, effect: effect.value }) });
               state.scenario = ''; state.edit = d.scenario; state.editName = d.scenario.id; state.editSource = 'custom'; render(); tip('drafted; read it, then Validate and Save');
             } catch (e) { tip(e.message, true); btn.disabled = false; btn.textContent = 'Draft'; }
           } }, 'Draft');
-          return h('div', {}, h('label', {}, 'call'), sel, h('div', { class: 'row' }, 'turns ', turns, btn));
+          return h('div', {}, h('label', {}, 'call'), sel, h('div', { class: 'row' }, 'turns ', turns, 'effect ', effect, btn));
+        })()),
+      h('div', { class: 'card', style: 'margin-top:12px' },
+        h('h2', { style: 'margin-top:0' }, 'Synthesize a set'),
+        h('p', { class: 'sub' }, 'Several real calls at once, each drafted and saved plain and with each effect ticked — the practical things callers do: cutting in, listening sounds over the answer, being short of time, hanging up — and a suite manifest naming them all. Each scenario is checked by the simulator. Takes a minute per call.'),
+        (() => {
+          const boxes = state.realCalls.slice(0, 20).map(c => { const cb = h('input', { type: 'checkbox', value: c.id }); return { cb, el: h('label', { style: 'display:flex;gap:6px;align-items:center;margin:2px 0' }, cb, when(c.started_at) + ' · ' + c.turns + ' turns · ' + dur(c.duration_s)) }; });
+          const effs = Object.entries(EFFECTS).map(([k, v]) => { const cb = h('input', { type: 'checkbox', value: k, checked: (k === 'barge_in' || k === 'backchannel') ? '' : null }); return { cb, el: h('label', { style: 'display:flex;gap:6px;align-items:center;margin:2px 0', title: v }, cb, k.replace('_', ' ') + ' — ' + v) }; });
+          const prefix = h('input', { type: 'text', value: 'set-' + new Date().toISOString().slice(5, 10).replace('-', ''), placeholder: 'prefix' });
+          const turns = h('input', { type: 'number', class: 'short', value: '40', min: '4', max: '100' });
+          const repeat = h('input', { type: 'number', class: 'short', value: '1', min: '1', max: '10' });
+          const out = h('div', { class: 'muted', style: 'margin-top:6px;white-space:pre-wrap' });
+          const btn = h('button', { class: 'btn btn-primary', onclick: async () => {
+            const calls = boxes.filter(b => b.cb.checked).map(b => b.cb.value);
+            if (!calls.length) return tip('tick at least one call', true);
+            btn.disabled = true; btn.textContent = 'synthesizing…';
+            try {
+              const r = await api('/api/scenarios/synthesize', { method: 'POST', body: JSON.stringify({ calls, effects: effs.filter(e => e.cb.checked).map(e => e.cb.value), turns: Number(turns.value) || 40, prefix: prefix.value.trim(), repeat: Number(repeat.value) || 1 }) });
+              out.textContent = r.count + ' scenarios saved' + (r.suite ? ', suite ' + r.suite : '') + '\n' + r.made.map(m => (m.name || m.call) + (m.error ? ' — ' + m.error : '')).join('\n');
+              await loadScenarios(); render(); tip(r.count + ' scenarios saved');
+            } catch (e) { tip(e.message, true); }
+            btn.disabled = false; btn.textContent = 'Synthesize';
+          } }, 'Synthesize');
+          return h('div', {}, h('label', {}, 'calls'), h('div', { style: 'max-height:180px;overflow:auto' }, ...boxes.map(b => b.el)), h('label', {}, 'effects'), ...effs.map(e => e.el),
+            h('div', { class: 'row' }, 'prefix ', prefix, 'turns ', turns, 'repeat ', repeat, btn), out);
         })()));
 
     const right = h('div', {});
@@ -241,7 +267,7 @@
       const show = (r) => { status.textContent = typeof r === 'string' ? r : JSON.stringify(r); };
       right.append(h('div', { class: 'card' },
         h('h2', { style: 'margin-top:0' }, state.scenario ? 'Scenario ' + state.scenario : 'A new scenario'),
-        e._drafted_from ? h('p', { class: 'sub' }, 'drafted from call ', h('span', { class: 'mono' }, e._drafted_from.call), ', ' + e._drafted_from.caller_turns + ' caller turns, ' + dur(e._drafted_from.duration_s)) : null,
+        e._drafted_from ? h('p', { class: 'sub' }, 'drafted from call ', h('span', { class: 'mono' }, e._drafted_from.call), ', ' + e._drafted_from.caller_turns + ' caller turns, ' + dur(e._drafted_from.duration_s), e._effect ? ' · effect ' + e._effect.replace('_', ' ') : '') : null,
         h('div', { class: 'grid2' },
           h('div', {}, ...text('id', 'id', e.id), ...text('language', 'language', e.language || 'zh-CN'), ...text('greeting', 'greeting (the customer\u2019s first words)', e.greeting)),
           h('div', {}, h('div', { class: 'row' }, ...num('answer_delay_ms', 'answer delay ms', e.answer_delay_ms), ...num('max_duration_ms', 'max duration ms (≤ 300000)', e.max_duration_ms)),

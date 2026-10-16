@@ -587,7 +587,10 @@ simulator's run id; the journal marks those calls **sim** and the desk
 embeds the journal's player for them. `#/scenarios`
 (`internal/desk/scenarios.go`) writes, validates (by the simulator) and
 reserves scenarios, and drafts one from a real call's transcript through
-the chat model (the simulator's own key; the transcript stays on the box).
+the chat model (the simulator's own key; the transcript stays on the box);
+`synthesize` makes a set from several calls with *effects* (barge_in,
+backchannel, rapid, busy, abrupt: the simulator's scheduled actions in the
+caller's own words) and a suite manifest.
 **`call` is the real call, `call sim` the simulated one — the owner's
 words, 10-16.**
 

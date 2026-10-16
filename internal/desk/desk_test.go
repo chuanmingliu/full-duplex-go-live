@@ -314,7 +314,7 @@ func TestAScenarioIsCheckedByTheSimulatorSavedAndReservedAndDraftedFromARealCall
 		if !strings.Contains(string(body), "客户：b") {
 			t.Errorf("the caller's words were not sent: %s", body)
 		}
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"persona\":\"P\",\"goal\":\"G\",\"behavior\":[\"b1\",\"b2\"],\"facts\":{\"plate\":\"沪X00000\"},\"greeting\":\"喂\",\"expectations\":[{\"id\":\"e1\",\"description\":\"D\"}]}"}}]}`)
+		io.WriteString(w, `{"choices":[{"message":{"content":"{\"persona\":\"P\",\"goal\":\"G\",\"behavior\":[\"b1\",\"b2\"],\"facts\":{\"plate\":\"沪X00000\"},\"greeting\":\"喂\",\"expectations\":[{\"id\":\"e1\",\"description\":\"D\"}],\"interruptions\":[\"等一下\",\"多少钱\"],\"backchannels\":[\"嗯\"]}"}}]}`)
 	}))
 	defer chat.Close()
 
@@ -386,5 +386,36 @@ func TestAScenarioIsCheckedByTheSimulatorSavedAndReservedAndDraftedFromARealCall
 	}
 	if code, _ := do("POST", "/api/scenarios/draft", `{"call":"out-sim1"}`); code != http.StatusNotFound && code != http.StatusBadRequest {
 		t.Fatalf("a simulated call was drafted from: %d", code)
+	}
+	// An effect is actions in the caller's own words on top of the draft.
+	code, m = do("POST", "/api/scenarios/draft", `{"call":"out-real1","effect":"barge_in"}`)
+	d = m["scenario"].(map[string]any)
+	acts, _ := d["actions"].([]any)
+	if code != 200 || len(acts) != 2 || d["id"] != "from-call-real1-barge-in" {
+		t.Fatalf("barge_in draft: %d %v", code, d)
+	}
+	if a := acts[0].(map[string]any); a["text"] != "等一下" || a["trigger"] != "remote_speech_started" || a["occurrence"].(float64) != 2 {
+		t.Fatalf("first cut-in: %v", a)
+	}
+	if code, _ := do("POST", "/api/scenarios/draft", `{"call":"out-real1","effect":"earthquake"}`); code != http.StatusBadRequest {
+		t.Fatalf("unknown effect: %d", code)
+	}
+	// A set: one call, plain and with two effects, and a suite that names them.
+	code, m = do("POST", "/api/scenarios/synthesize", `{"calls":["out-real1"],"effects":["barge_in","busy"],"turns":30,"prefix":"set-t","repeat":2}`)
+	if code != 200 || m["count"].(float64) != 3 {
+		t.Fatalf("synthesize: %d %v", code, m)
+	}
+	for _, n := range []string{"set-t-01", "set-t-01-barge-in", "set-t-01-busy"} {
+		if !fileExists(filepath.Join(dir, "scenarios", "custom", n+".json")) {
+			t.Fatalf("%s not saved", n)
+		}
+	}
+	busy, _ := os.ReadFile(filepath.Join(dir, "scenarios", "custom", "set-t-01-busy.json"))
+	if !strings.Contains(string(busy), `"max_duration_ms": 90000`) || !strings.Contains(string(busy), `"kind": "hangup"`) || strings.Contains(string(busy), "_interruptions") {
+		t.Fatalf("busy variant: %s", busy)
+	}
+	manifest, _ := os.ReadFile(filepath.Join(dir, "scenarios", "suites", "set-t.json"))
+	if !strings.Contains(string(manifest), `"../custom/set-t-01-busy.json"`) || !strings.Contains(string(manifest), `"repeat": 2`) {
+		t.Fatalf("suite: %s", manifest)
 	}
 }

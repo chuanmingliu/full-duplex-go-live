@@ -160,6 +160,11 @@ type Draft struct {
 		ID          string `json:"id"`
 		Description string `json:"description"`
 	} `json:"expectations"`
+	// Interruptions are short lines in the caller's voice fit for cutting
+	// in over the assistant; Backchannels the sounds they make while
+	// listening. Effects are built from them.
+	Interruptions []string `json:"interruptions"`
+	Backchannels  []string `json:"backchannels"`
 }
 
 // draftFromCall reads a real call's conversation from the journal and asks
@@ -212,7 +217,9 @@ func (sc *Scenarios) draftFromCall(ctx context.Context, call string, maxTurns in
 4. behavior：8 到 12 条，按对话推进的顺序写：开头怎么接、会问什么、会质疑什么、什么情况下会同意或拒绝、怎么结束。每条一句话，让合成客户能照着做很多轮。
 5. greeting：客户接起电话说的第一句话，像真人。
 6. expectations：4 到 8 条对助手的检查项，来自这通电话里助手做得好或不好的地方；每条有 id（小写英文和下划线）和 description（中文，一句话，可独立判断）。
-只输出一个 JSON 对象，键为 persona, goal, behavior, facts, greeting, expectations，不要任何别的文字。`
+7. interruptions：3 句这位客户会用来打断助手的话（短，像真人插话，例如追问价格、说"等一下"、反驳），每句不超过 15 个字。
+8. backchannels：3 个这位客户听人说话时会发出的应答（例如"嗯"、"对"、"好的"），每个不超过 4 个字。
+只输出一个 JSON 对象，键为 persona, goal, behavior, facts, greeting, expectations, interruptions, backchannels，不要任何别的文字。`
 	payload := map[string]any{
 		"model": sc.ChatModel,
 		"messages": []map[string]string{
@@ -288,7 +295,93 @@ func (sc *Scenarios) draftFromCall(ctx context.Context, call string, maxTurns in
 		"expectations":      d.Expectations,
 		"expected_outcome":  "conversation",
 		"_drafted_from":     map[string]any{"call": call, "caller_turns": callerTurns, "duration_s": jc.Call.DurationS},
+		"_interruptions":    d.Interruptions,
+		"_backchannels":     d.Backchannels,
 	}, nil
+}
+
+// Effects are the practical things a real caller does that a scenario can
+// script on top of a persona: cut in over the answer, make listening noises
+// over it, be short of time, hang up without warning. Each is a set of the
+// simulator's scheduled actions, with the lines the draft supplied in the
+// caller's own voice. They are what the turn-taking is measured against:
+// an interruption must cut the answer quickly, a backchannel must not.
+var effects = map[string]string{
+	"barge_in":    "cuts in over the 2nd and 5th answers (700 and 500 ms in)",
+	"backchannel": "says a listening sound over the 3rd and 6th answers; the answer should go on",
+	"rapid":       "cuts in over the 2nd, 3rd and 4th answers in a row, early",
+	"busy":        "has 90 s, says so, and hangs up at 85 s",
+	"abrupt":      "hangs up without warning at 60 s",
+}
+
+func pick(lines []string, i int, fallback string) string {
+	if len(lines) == 0 {
+		return fallback
+	}
+	return lines[i%len(lines)]
+}
+
+// applyEffect returns a copy of the scenario with one effect's actions and
+// id suffix. Nothing else about the customer changes, so the same persona
+// can be run plain and with each effect and the runs compared.
+func applyEffect(scenario map[string]any, effect string) (map[string]any, error) {
+	if _, ok := effects[effect]; !ok {
+		return nil, fail(http.StatusBadRequest, "no such effect %q; one of barge_in, backchannel, rapid, busy, abrupt", effect)
+	}
+	out := map[string]any{}
+	for k, v := range scenario {
+		out[k] = v
+	}
+	toStrings := func(v any) []string {
+		var r []string
+		switch t := v.(type) {
+		case []string:
+			r = t
+		case []any:
+			for _, x := range t {
+				if s, ok := x.(string); ok && strings.TrimSpace(s) != "" {
+					r = append(r, s)
+				}
+			}
+		}
+		return r
+	}
+	inter := toStrings(scenario["_interruptions"])
+	back := toStrings(scenario["_backchannels"])
+	speak := func(id string, occurrence int, afterMS int, text string, holdMS int) map[string]any {
+		return map[string]any{"id": id, "trigger": "remote_speech_started", "occurrence": occurrence, "after_ms": afterMS,
+			"require_remote_speaking": true, "kind": "speak", "text": text, "max_hold_ms": holdMS}
+	}
+	hangup := func(id string, afterMS int) map[string]any {
+		return map[string]any{"id": id, "trigger": "connected", "occurrence": 1, "after_ms": afterMS,
+			"require_remote_speaking": false, "kind": "hangup", "max_hold_ms": 0}
+	}
+	var actions []any
+	behavior := toStrings(scenario["behavior"])
+	switch effect {
+	case "barge_in":
+		actions = []any{speak("cut-in-2", 2, 700, pick(inter, 0, "等一下，你先说价格。"), 4000), speak("cut-in-5", 5, 500, pick(inter, 1, "不是，我问的不是这个。"), 4000)}
+	case "backchannel":
+		actions = []any{speak("listen-3", 3, 1500, pick(back, 0, "嗯。"), 1500), speak("listen-6", 6, 1200, pick(back, 1, "对。"), 1500)}
+	case "rapid":
+		actions = []any{speak("cut-in-2", 2, 400, pick(inter, 0, "等一下。"), 3000), speak("cut-in-3", 3, 400, pick(inter, 1, "你说多少钱？"), 3000), speak("cut-in-4", 4, 400, pick(inter, 2, "我没听清。"), 3000)}
+	case "busy":
+		out["max_duration_ms"] = 90000
+		behavior = append([]string{"开头就说自己只有一两分钟，让对方直接说重点；回答尽量短。"}, behavior...)
+		if len(behavior) > 16 {
+			behavior = behavior[:16]
+		}
+		actions = []any{hangup("time-to-leave", 85000)}
+	case "abrupt":
+		actions = []any{hangup("gone", 60000)}
+	}
+	out["actions"] = actions
+	out["behavior"] = behavior
+	if id, _ := scenario["id"].(string); id != "" {
+		out["id"] = id + "-" + strings.ReplaceAll(effect, "_", "-")
+	}
+	out["_effect"] = effect
+	return out, nil
 }
 
 func envValue(path, key string) (string, error) {
@@ -459,11 +552,12 @@ func (sc *Scenarios) Mount(mux *http.ServeMux, authed func(func(http.ResponseWri
 	}))
 	mux.HandleFunc("POST /api/scenarios/draft", authed(func(w http.ResponseWriter, r *http.Request, who string) error {
 		var in struct {
-			Call  string `json:"call"`
-			Turns int    `json:"turns"`
+			Call   string `json:"call"`
+			Turns  int    `json:"turns"`
+			Effect string `json:"effect"`
 		}
 		if err := readJSON(r, &in); err != nil || in.Call == "" {
-			return fail(http.StatusBadRequest, "say which call: {\"call\": \"out-…\", \"turns\": 40}")
+			return fail(http.StatusBadRequest, "say which call: {\"call\": \"out-…\", \"turns\": 40, \"effect\": \"\"}")
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 100*time.Second)
 		defer cancel()
@@ -471,7 +565,134 @@ func (sc *Scenarios) Mount(mux *http.ServeMux, authed func(func(http.ResponseWri
 		if err != nil {
 			return err
 		}
+		if in.Effect != "" {
+			if draft, err = applyEffect(draft, in.Effect); err != nil {
+				return err
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"scenario": draft})
+		return nil
+	}))
+	mux.HandleFunc("GET /api/scenarios/effects", authed(func(w http.ResponseWriter, r *http.Request, who string) error {
+		writeJSON(w, http.StatusOK, map[string]any{"effects": effects})
+		return nil
+	}))
+	// A set: several real calls, each drafted once and saved plain and with
+	// each effect asked for; a suite manifest names them all for
+	// golive-simctl suite. Every scenario is checked by the simulator.
+	mux.HandleFunc("POST /api/scenarios/synthesize", authed(func(w http.ResponseWriter, r *http.Request, who string) error {
+		var in struct {
+			Calls   []string `json:"calls"`
+			Effects []string `json:"effects"`
+			Turns   int      `json:"turns"`
+			Prefix  string   `json:"prefix"`
+			Repeat  int      `json:"repeat"`
+		}
+		if err := readJSON(r, &in); err != nil || len(in.Calls) == 0 {
+			return fail(http.StatusBadRequest, "{\"calls\": [\"out-…\"], \"effects\": [\"barge_in\"], \"turns\": 40, \"prefix\": \"set-1\"}")
+		}
+		if len(in.Calls) > 12 {
+			return fail(http.StatusBadRequest, "at most 12 calls in one set")
+		}
+		for _, e := range in.Effects {
+			if _, ok := effects[e]; !ok {
+				return fail(http.StatusBadRequest, "no such effect %q", e)
+			}
+		}
+		prefix := in.Prefix
+		if prefix == "" {
+			prefix = "set-" + time.Now().Format("0102-1504")
+		}
+		if !scenarioName.MatchString(prefix) {
+			return fail(http.StatusBadRequest, "a prefix is lower-case letters, digits and dashes")
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+		defer cancel()
+		type made struct {
+			Name   string `json:"name"`
+			Call   string `json:"call"`
+			Effect string `json:"effect,omitempty"`
+			Error  string `json:"error,omitempty"`
+		}
+		var results []made
+		var names []string
+		save := func(name string, scenario map[string]any) error {
+			body, _ := json.Marshal(scenario)
+			status, out, err := sc.validate(ctx, stripPrivate(body))
+			if err != nil {
+				return err
+			}
+			if status != http.StatusOK {
+				var e struct {
+					Error string `json:"error"`
+				}
+				_ = json.Unmarshal(out, &e)
+				return fmt.Errorf("the simulator refused it: %s", e.Error)
+			}
+			var pretty bytes.Buffer
+			_ = json.Indent(&pretty, stripPrivate(body), "", "  ")
+			pretty.WriteByte('\n')
+			p := filepath.Join(sc.Dir, "custom", name+".json")
+			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+				return err
+			}
+			return os.WriteFile(p, pretty.Bytes(), 0o600)
+		}
+		for i, call := range in.Calls {
+			draft, err := sc.draftFromCall(ctx, call, in.Turns)
+			if err != nil {
+				results = append(results, made{Call: call, Error: err.Error()})
+				continue
+			}
+			base := fmt.Sprintf("%s-%02d", prefix, i+1)
+			draft["id"] = base
+			variants := []struct {
+				effect string
+				sc     map[string]any
+			}{{"", draft}}
+			for _, e := range in.Effects {
+				v, _ := applyEffect(draft, e)
+				variants = append(variants, struct {
+					effect string
+					sc     map[string]any
+				}{e, v})
+			}
+			for _, v := range variants {
+				name := base
+				if v.effect != "" {
+					name += "-" + strings.ReplaceAll(v.effect, "_", "-")
+				}
+				v.sc["id"] = name
+				if err := save(name, v.sc); err != nil {
+					results = append(results, made{Name: name, Call: call, Effect: v.effect, Error: err.Error()})
+					continue
+				}
+				results = append(results, made{Name: name, Call: call, Effect: v.effect})
+				names = append(names, name)
+			}
+		}
+		repeat := in.Repeat
+		if repeat < 1 {
+			repeat = 1
+		}
+		if repeat > 10 {
+			repeat = 10
+		}
+		suite := map[string]any{"schema_version": 1, "id": prefix, "repeat": repeat, "scenarios": []string{}}
+		var rel []string
+		for _, n := range names {
+			rel = append(rel, "../custom/"+n+".json")
+		}
+		suite["scenarios"] = rel
+		suitePath := filepath.Join(sc.Dir, "suites", prefix+".json")
+		if len(rel) > 0 {
+			_ = os.MkdirAll(filepath.Dir(suitePath), 0o700)
+			b, _ := json.MarshalIndent(suite, "", "  ")
+			_ = os.WriteFile(suitePath, append(b, '\n'), 0o600)
+		} else {
+			suitePath = ""
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"made": results, "suite": suitePath, "count": len(names)})
 		return nil
 	}))
 }
