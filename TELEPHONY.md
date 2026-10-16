@@ -146,6 +146,91 @@ printed. Dial once from the page after changing the prompt, and that is what
 `call` places from then on. `instructions_sha` on the `realtime:
 session.update` log line says whether two calls were given the same prompt.
 
+## The simulated customer
+
+A second service that answers a call as a synthetic customer, so the
+assistant can be exercised without a person holding a phone. It is Codex's
+work on the branch `codex/inbound-user-simulator` (`README.simulator.md`
+there is the project's own README; `deploy/simulator/README.md` the runbook;
+`docs/simulator-carrier-acceptance.md` what is deliberately not done yet).
+Nothing from it is merged into this branch: it is two commands of its own,
+`golive-simulator` (the receiver: an HTTP control API, a workbench page at
+`/sim/`, and the customer's own ASR → LLM → TTS engine behind a media
+socket) and `golive-simctl` (a suite runner and an independent judge), and
+it never touches the phone line's golive.
+
+How a test goes: a *run* is reserved for a scenario (persona, synthetic
+facts, goal, scheduled actions such as an interruption or a hangup, what the
+assistant is expected to do); the reservation returns a run id and the SIP
+target `sip:<run id>@simulator.invalid`; the assistant side has 120 s to
+send its INVITE to the simulator's **own** gateway (a pinned Active Call in
+`deploy/simulator/compose.yml`, SIP on UDP 25060 inside a Docker network of
+its own); the gateway answers, the customer speaks and listens through the
+media socket, and when the call ends a report is written: answer time,
+greeting, each side's speech boundaries, interruption, who hung up, and the
+failures seen. Nothing dials from the simulator's side, and a reservation
+never attaches to "the current call" — the run id in the called extension is
+what binds them, so a late INVITE cannot consume the next reservation.
+Transcripts are kept only when a scenario asks; audio is never kept.
+
+On the box:
+
+```bash
+scripts/sim-bundle.sh                  # here: builds the two commands from the branch into dist/golive-sim.tar.gz
+tar -C ~ -xzf golive-sim.tar.gz        # on the box: ~/golive-sim/{bin,scenarios,configs,deploy,docs,scripts}
+S=~/golive-sim/scripts/sim-brain.sh
+$S init                                # three private tokens (tokens.env, mode 600), the data dir,
+                                       # a providers profile and an empty providers.env to fill in
+$S start mock                          # the receiver on 127.0.0.1:18865 with synthetic providers
+$S status                              # livez 204; readyz 503 until its gateway is up
+$S scenarios                           # what is shipped: cooperative, confused, busy, appointment-correction, cancel-before-answer
+$S prepare cooperative                 # reserve a call; prints the run id and the SIP target
+scripts/phone-brain.sh call sim        # dial it from the phone line's golive with the kept prompt
+$S run | events | report | stop-run    # the run as it goes; the report once it has ended
+$S suite synthetic.json                # one scenario after another, each waiting to be called
+```
+
+`start providers` runs the customer on real speech: Tencent, DeepSeek and
+MiniMax with **its own** accounts, written by the owner into
+`~/golive-sim/providers.env` (the phone line's keys are the phone line's;
+their quotas are already spoken for). With the mock profile the customer
+"speaks" tones — enough to prove the call reaches it and the report comes
+back, not for a conversation.
+
+What is in place as of 2026-10-16 and what is not:
+
+- The receiver runs on the box (source `6269dd2`, mock profile, loopback).
+  A run was reserved and stopped through it. Its tests, `go vet`, the
+  package's Python checks and `check_workbench.py` pass in the workspace.
+- **Its gateway is not up.** The Docker package needs `sudo docker compose`
+  on the box and builds a pinned Active Call image; the runner has no sudo.
+  When it is started, stop the host binary first (`sim-brain.sh stop`; the
+  package's controller container takes 127.0.0.1:18865 and the same tokens:
+  `set -a; . ~/golive-sim/tokens.env; set +a` before `docker compose`).
+- **No route carries the INVITE.** The phone line's Active Call dials
+  through RustPBX to the GSM gateway. `simulator.invalid` is a logical
+  name; RustPBX (or Active Call) needs a route for that domain to the
+  simulator gateway's address on its Docker network, port 25060, with RTP
+  24000–24019 reachable from the host. Both run as root in containers whose
+  configuration this account cannot read; the owner sets the route.
+- **The originator is locked to one callee.** `phone-brain.sh call sim`
+  posts the dial with `to: sip:<run id>@simulator.invalid`; the originator
+  will refuse it until that callee is allowed, and the refusal is what the
+  command prints. The alternative — dialling the gateway's own API,
+  bypassing the originator — would lose the kept prompt and the opening
+  posted at pickup.
+- The scenarios are zh-CN appointment tasks with fictional facts. One for
+  the owner's own business (synthetic facts only) is a short JSON file;
+  `sim-brain.sh validate` checks it without reserving a call.
+- The independent judge (`golive-simctl evaluate`) needs a chat-model
+  endpoint of its own in `SIM_EVAL_BASE_URL/MODEL/API_KEY`, set in the
+  invoking shell; a DeepSeek key not used by the phone line would do.
+
+The receiver's engine is the branch's: the duplex engine as of its
+merge-base (`6626293`), without the focus channel, the floor tracking or
+anything since. That is the customer's side and does not matter for what is
+being tested; it means the two services do not share a binary.
+
 ## A call on a rendered prompt: the lead service
 
 `scripts/phone-brain.sh crm start` runs a small service (`bin/crm`, port 8791

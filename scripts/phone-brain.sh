@@ -22,7 +22,9 @@
 #   scripts/phone-brain.sh call       place the last answered call again: the same
 #                                     instructions and opening line, to the one
 #                                     number the originator allows. `call show`
-#                                     says what is kept without dialling.
+#                                     says what is kept without dialling; `call
+#                                     sim [run id]` dials the simulated customer
+#                                     (scripts/sim-brain.sh) with the same prompt.
 #   scripts/phone-brain.sh record on|off   keep each call's audio — caller and assistant,
 #                                     two tracks — under CALLS_DIR for a day, or stop.
 #                                     Takes effect at the next `restart`. Off unless
@@ -733,24 +735,42 @@ call)
   # the originator with the one number it will dial. Neither the number nor the
   # instructions are printed.
   [ -s "$LAST_CALL" ] || { say "nothing kept yet at $LAST_CALL: place one call from the originator's page first"; exit 1; }
-  python3 - "$LAST_CALL" "${ARIA_ENV:-$HOME/aria/.env}" "${ARIA_URL:-http://127.0.0.1:3000}" "${2:-}" <<'PY'
-import json, re, sys, urllib.request
-kept_path, env_path, base, mode = sys.argv[1:5]
+  # `call sim [run id]` dials the simulated customer instead (scripts/sim-brain.sh
+  # prepare): the same prompt, to sip:<run id>@<its domain>. The originator must
+  # allow that callee and the PBX must route the domain to the simulator's
+  # gateway; until they do, this prints their refusal and nothing rings.
+  python3 - "$LAST_CALL" "${ARIA_ENV:-$HOME/aria/.env}" "${ARIA_URL:-http://127.0.0.1:3000}" "${2:-}" "${3:-}" "${SIM_DIR:-$HOME/golive-sim}" <<'PY'
+import json, os, re, sys, urllib.request
+kept_path, env_path, base, mode, run_id, sim_dir = sys.argv[1:7]
 kept = json.load(open(kept_path, encoding="utf-8"))
 print("kept at %s from call %s: instructions %d characters (sha %s), opening line %d characters" % (
     kept.get("saved_at", "?"), kept.get("call") or "?", len(kept.get("instructions", "")),
     kept.get("instructions_sha", "?"), len(kept.get("greeting", ""))))
 if mode == "show":
     sys.exit(0)
-to = ""
-try:
-    for line in open(env_path, encoding="utf-8"):
-        if line.startswith("ALLOWED_CALLEE="):
-            to = line.split("=", 1)[1].strip().strip("\"'")
-except OSError as err:
-    sys.exit("cannot read the originator's env file: %s" % err.strerror)
-if not to:
-    sys.exit("no ALLOWED_CALLEE in the originator's env file")
+def env_value(path, key):
+    try:
+        for line in open(path, encoding="utf-8"):
+            if line.startswith(key + "="):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError as err:
+        sys.exit("cannot read %s: %s" % (path, err.strerror))
+    return ""
+if mode == "sim":
+    if not run_id:
+        try:
+            run_id = open(os.path.join(sim_dir, "data", "last-run"), encoding="utf-8").read().strip()
+        except OSError:
+            sys.exit("no run prepared: scripts/sim-brain.sh prepare <scenario> first, or give the run id")
+    domain = env_value(os.path.join(sim_dir, "tokens.env"), "SIM_SIP_DOMAIN") or "simulator.invalid"
+    to = "sip:%s@%s" % (run_id, domain)
+    print("dialling the simulated customer at %s" % to)
+elif mode:
+    sys.exit("call [show | sim [run id]]")
+else:
+    to = env_value(env_path, "ALLOWED_CALLEE")
+    if not to:
+        sys.exit("no ALLOWED_CALLEE in the originator's env file")
 body = {"to": to, "instructions": kept.get("instructions", ""), "greeting": kept.get("greeting", "")}
 req = urllib.request.Request(base.rstrip("/") + "/api/outbound/dial", data=json.dumps(body).encode(),
                              headers={"Content-Type": "application/json"}, method="POST")

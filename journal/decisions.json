@@ -120,6 +120,17 @@
       "undo": "Set focus_url back to the diarizer (ws://127.0.0.1:8030/v1/audio/diarize?model=nemotron-diar) and focus to observe; the engine is unchanged.",
       "needs": "A call with the show on (the test), then one with a second person in the room; the threshold read off the journal's similarities.",
       "status": "on the box 10-16 10:45 as the general setup (no profile on the line); first call pending"
+    },
+    {
+      "rank": 12,
+      "title": "A simulated customer on the box, from Codex's branch, as a service of its own",
+      "gain": "Calls without a person holding a phone: a scenario reserved, the assistant dialled at it, a report on answer time, speech boundaries, interruption and hangup; the same scenario repeated to see variability. The latency figures it gives are at its own audio boundary, not a handset's",
+      "basis": "The branch codex/inbound-user-simulator (6269dd2) builds, vets and passes its own tests and workbench check in the workspace; the receiver runs on the box on loopback with the mock profile and reserved and stopped a run (10-16)",
+      "cost": "A Docker package for its gateway (sudo on the box), a PBX route for the simulator.invalid domain to that gateway, the originator allowing sip:<run id>@simulator.invalid as a callee, and provider accounts of its own for recognizable speech",
+      "guard": "Nothing merged into telephony-realtime; separate binaries, tokens and data under ~/golive-sim; the phone line's keys are not reused; the reservation binds by run id so a late call cannot take the next one",
+      "undo": "sim-brain.sh stop and remove ~/golive-sim; the route and callee allowance are the owner's to take back",
+      "needs": "The owner: start the Docker package, set the route and the callee allowance, fill ~/golive-sim/providers.env; then a first cooperative call with the mock profile to prove transport, then one on real speech",
+      "status": "prepared 10-16; waiting on the route"
     }
   ]
 }

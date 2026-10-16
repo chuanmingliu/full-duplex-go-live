@@ -571,6 +571,19 @@ import/export, a scheduler. `internal/crm/model.go` already has those records' s
 - No module can be fetched in the cloud workspace (the Go proxy is refused),
   which is why storage is an event log and not SQLite.
 
+## The simulated customer
+
+Codex's branch `codex/inbound-user-simulator`: a receiver that answers a call
+as a synthetic customer and reports on it. Not merged; built from its branch
+by `scripts/sim-bundle.sh` into `dist/golive-sim.tar.gz`, run on the box
+from `~/golive-sim` with `scripts/sim-brain.sh` (tokens in `tokens.env`,
+mode 600, never printed), dialled with `phone-brain.sh call sim`. "The
+simulated customer" in `TELEPHONY.md` has the state: the receiver is up on
+loopback; its gateway (a Docker package needing sudo), the PBX route for
+`simulator.invalid`, the originator's callee lock and the customer's own
+provider keys are the owner's. The branch's engine is old (merge-base
+`6626293`); it is the customer's side, so that does not matter.
+
 ## The edge test group
 
 `cmd/edge`, `internal/edge`; on the box `phone-brain.sh edge …`, port 8030

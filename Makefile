@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist bundle clean tidy
+.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist bundle sim-bundle clean tidy
 
 all: vet test build
 
@@ -95,6 +95,11 @@ dist:
 		done; \
 	done
 	@ls -lh $(BIN)
+
+## sim-bundle: the simulated customer, built from its own branch (SIM_REF)
+## into dist/golive-sim.tar.gz. See "The simulated customer" in TELEPHONY.md.
+sim-bundle:
+	@scripts/sim-bundle.sh $(SIM_REF)
 
 ## bundle: everything a phone-line box with no Go needs, in one archive: linux
 ## binaries, the telephony profile, the scripts. Unpack it there and run
