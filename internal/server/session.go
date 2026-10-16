@@ -205,6 +205,11 @@ func (s *Session) Serve(ctx context.Context) {
 
 	s.readLoop(ctx, s.primary)
 	s.finish()
+	if s.sim != nil {
+		// Media loss can precede the controller's hangup callback. Join the
+		// receiver-only clock before closing its engine in either path.
+		s.sim.stop()
+	}
 
 	s.mu.Lock()
 	engine := s.engine
@@ -620,7 +625,8 @@ func (s *Session) pushAudio(p *peer, wire []byte, eventID string) {
 	}
 	pcm := codec.ToPCM16(wire)
 	if s.sim != nil {
-		s.sim.audio(false, pcm)
+		s.sim.input.receive(pcm, func() { s.sim.audio(false, pcm) })
+		return
 	}
 	if rec != nil {
 		rec.WriteInput(pcm)

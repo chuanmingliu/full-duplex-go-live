@@ -158,7 +158,10 @@ func (r *SimulatorReceiver) Open(ctx context.Context, b simulator.Binding, greet
 	if s.sim.closed {
 		return simulator.ErrNotReady
 	}
-	if !s.Open(greeting) {
+	s.mu.Lock()
+	engine := s.engine
+	s.mu.Unlock()
+	if engine == nil || !s.sim.input.open(s.sim.ctx, func() bool { return s.Open(greeting) }, engine.PushAudio) {
 		return simulator.ErrNotReady
 	}
 	return nil
@@ -202,14 +205,17 @@ type simulatorSession struct {
 	observeMu sync.Mutex
 	outputMu  sync.Mutex
 	closed    bool
+	input     simulatorInputLine
 }
 
 func (s *simulatorSession) stop() {
+	// Stop and join ingress before a socket writer or engine shutdown can
+	// block; no synthetic or real input can be queued after this returns.
+	s.input.stop()
 	s.outputMu.Lock()
 	s.closed = true
 	s.cancel()
 	s.outputMu.Unlock()
-
 }
 func (s *simulatorSession) fail(reason string) {
 	_ = s.receiver.controller.Handle(context.Background(), simulator.Event{Kind: "failed", Binding: s.binding, AtMS: s.receiver.controller.RelativeMS(), Reason: reason})
