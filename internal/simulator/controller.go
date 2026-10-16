@@ -243,7 +243,11 @@ func (c *RunController) snapshot(r *run) Snapshot {
 	// Redact configured text before substitution so number redaction cannot
 	// damage a legitimate generated run ID and change the called SIP target.
 	target := strings.ReplaceAll(redact(c.opts.DialTargetReference), "<run_id>", r.state.Binding.RunID)
-	return Snapshot{RunID: r.state.Binding.RunID, Phase: r.state.Phase, Reason: redact(r.reason), Binding: r.state.Binding, ReservationExpiresAt: r.expiresAt, DialTargetReference: target}
+	phase := r.state.Phase
+	if phase.Terminal() && !r.terminalReady() {
+		phase = Ending
+	}
+	return Snapshot{RunID: r.state.Binding.RunID, Phase: phase, Reason: redact(r.reason), Binding: r.state.Binding, ReservationExpiresAt: r.expiresAt, DialTargetReference: target}
 }
 func (c *RunController) Get(ctx context.Context, id string) (Snapshot, error) {
 	c.mu.Lock()
@@ -447,15 +451,23 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		}
 	}
 	c.mu.Lock()
+	scriptedEffectsSettled := false
 	if scriptedHangupID != "" && r.pendingHangup != nil && r.pendingHangup.id == scriptedHangupID {
+		r.pendingHangup.effectsSettled = true
 		r.pendingHangup.effectsSucceeded = len(effectErrors) == 0 && persistErr == nil
+		scriptedEffectsSettled = true
 	}
 	hangupCompleted = c.completePendingHangup(r) || hangupCompleted
-	if r.state.Phase.Terminal() && c.current == r.state.Binding.RunID {
-		c.current = ""
-	}
-	if r.state.Phase.Terminal() && (len(effectErrors) > 0 || hangupCompleted) {
+	if r.terminalReady() && (len(effectErrors) > 0 || hangupCompleted || scriptedEffectsSettled) {
 		effectErrors = append(effectErrors, c.persistReport(r))
+	}
+	if scriptedEffectsSettled {
+		// Store final evidence before publishing the terminal snapshot. A crash
+		// before this snapshot leaves Ending metadata and restores as aborted.
+		effectErrors = append(effectErrors, c.persistSnapshot(r))
+	}
+	if r.terminalReady() && c.current == r.state.Binding.RunID {
+		c.current = ""
 	}
 	c.mu.Unlock()
 	return errors.Join(append(effectErrors, persistErr)...)

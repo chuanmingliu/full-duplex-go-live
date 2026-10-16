@@ -18,7 +18,7 @@ func (c *RunController) persistSnapshot(r *run) error {
 	return writeJSONAtomic(filepath.Join(c.opts.DataDir, r.state.Binding.RunID), "state.json", persistedRun{Snapshot: c.snapshot(r), CreatedAt: r.createdAt, ScenarioID: r.scenario.ID, ExpectedOutcome: r.scenario.ExpectedOutcome, RetainTranscript: r.scenario.RetainTranscript, PrepareKeyHash: r.idempotencyKeyHash, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, Provenance: r.provenance})
 }
 func (c *RunController) persistReport(r *run) error {
-	if c.opts.DataDir == "" {
+	if c.opts.DataDir == "" || !r.terminalReady() {
 		return nil
 	}
 	dir := filepath.Join(c.opts.DataDir, r.state.Binding.RunID)
@@ -107,7 +107,7 @@ func (c *RunController) reportLocked(id string) (Report, error) {
 	if !ok {
 		return Report{}, ErrNotFound
 	}
-	if !r.state.Phase.Terminal() {
+	if !r.terminalReady() {
 		return Report{}, ErrNotReady
 	}
 	if c.opts.DataDir != "" && r.scenario.SchemaVersion == 0 {

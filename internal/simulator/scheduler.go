@@ -7,10 +7,17 @@ import (
 )
 
 type pendingHangup struct {
-	id                                        string
-	binding                                   Binding
-	requestedAtMS, endedAtMS                  int64
-	endConfirmed, effectsSucceeded, completed bool
+	id                                                        string
+	binding                                                   Binding
+	requestedAtMS, endedAtMS                                  int64
+	endConfirmed, effectsSettled, effectsSucceeded, completed bool
+}
+
+// terminalReady keeps observed termination private while its scripted stop is
+// still executing. Callbacks can record evidence without waiting on that stop.
+// The caller holds the controller lock.
+func (r *run) terminalReady() bool {
+	return r.state.Phase.Terminal() && (r.pendingHangup == nil || r.pendingHangup.effectsSettled)
 }
 
 // completePendingHangup requires both successful controls and observed native

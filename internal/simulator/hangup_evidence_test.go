@@ -2,10 +2,176 @@ package simulator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func assertHangupStillOccupied(t *testing.T, c *RunController, b Binding) []byte {
+	t.Helper()
+	ctx := context.Background()
+	snapshot, err := c.Get(ctx, b.RunID)
+	if err != nil || snapshot.Phase != Ending {
+		t.Errorf("unsettled hangup exposed terminal snapshot: %+v %v", snapshot, err)
+	}
+	runs, err := c.List(ctx)
+	if err != nil || len(runs) != 1 || runs[0].Phase != Ending {
+		t.Errorf("unsettled hangup exposed terminal list: %+v %v", runs, err)
+	}
+	if _, err = c.Report(ctx, b.RunID); !errors.Is(err, ErrNotReady) {
+		t.Errorf("unsettled hangup exposed report: %v", err)
+	}
+	if _, err = c.Transcript(ctx, b.RunID); !errors.Is(err, ErrNotReady) {
+		t.Errorf("unsettled hangup exposed transcript: %v", err)
+	}
+	if w := apiRequest(c, "GET", "/sim/v1/runs/"+b.RunID+"/report", "test-token", nil); w.Code != 409 {
+		t.Errorf("unsettled HTTP report status=%d", w.Code)
+	}
+	if _, err = os.Stat(filepath.Join(c.opts.DataDir, b.RunID, "report.json")); !os.IsNotExist(err) {
+		t.Errorf("premature terminal report persisted: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(c.opts.DataDir, b.RunID, "state.json"))
+	if err != nil {
+		t.Error(err)
+	} else {
+		var saved persistedRun
+		if err = json.Unmarshal(raw, &saved); err != nil || saved.Phase != Ending {
+			t.Errorf("unsettled snapshot persisted terminal phase: %+v %v", saved, err)
+		}
+	}
+	if next, err := c.Prepare(ctx, sampleScenario()); !errors.Is(err, ErrConflict) {
+		t.Errorf("unsettled hangup released reservation: %+v %v", next, err)
+		if err == nil {
+			_ = c.Stop(ctx, next.RunID)
+		}
+	}
+	return raw
+}
+
+func assertPendingHangupRestoresIndeterminate(t *testing.T, c *RunController, id string, pendingState, finalReport []byte) {
+	t.Helper()
+	opts := c.opts
+	opts.DataDir = t.TempDir()
+	dir := filepath.Join(opts.DataDir, id)
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), pendingState, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// This also simulates interruption after a final report write but before
+	// the final snapshot publication. Pending metadata must dominate the report.
+	if finalReport != nil {
+		if err := os.WriteFile(filepath.Join(dir, "report.json"), finalReport, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restored, err := NewController(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := restored.Get(context.Background(), id)
+	if err != nil || snap.Phase != Aborted {
+		t.Fatal("pending stop restored terminal success", snap, err)
+	}
+	rep, err := restored.Report(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range rep.Checks {
+		if check.Result != "indeterminate" {
+			t.Fatal("pending stop restored conclusive evidence", check)
+		}
+	}
+	for _, action := range rep.Actions {
+		if action.Result == "completed" {
+			t.Fatal("pending stop restored completed action", action)
+		}
+	}
+}
+
+func TestScriptedHangupDefersTerminalPublicationUntilControlsSettle(t *testing.T) {
+	for _, concurrent := range []bool{false, true} {
+		for _, commandFails := range []bool{false, true} {
+			name := map[bool]string{false: "synchronous", true: "concurrent"}[concurrent] + "/" + map[bool]string{false: "success", true: "command-error"}[commandFails]
+			t.Run(name, func(t *testing.T) {
+				ctx := context.Background()
+				c, f, base := testController(t)
+				c.opts.DataDir = t.TempDir()
+				p := &actionReturnPorts{fakePorts: base}
+				c.opts.Telephony = p
+				if commandFails {
+					base.hangupErr = ErrNotReady
+				}
+				s := hangupScenario()
+				s.RetainTranscript = true
+				snap, err := c.Prepare(ctx, s)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b := connect(t, c, f, snap)
+				confirmed, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+				var pendingState []byte
+				p.hangupHook = func() {
+					if err := c.Handle(ctx, Event{Kind: "ended", Binding: b, AtMS: c.RelativeMS()}); err != nil {
+						t.Error(err)
+					}
+					// This point must be reachable without waiting on Hangup's own return.
+					if concurrent {
+						close(confirmed)
+						<-release
+					} else {
+						pendingState = assertHangupStillOccupied(t, c, b)
+						assertPendingHangupRestoresIndeterminate(t, c, b.RunID, pendingState, nil)
+					}
+				}
+				go func() { c.performAction(b.RunID, s.Actions[0]); close(done) }()
+				if concurrent {
+					select {
+					case <-confirmed:
+					case <-time.After(time.Second):
+						t.Fatal("native end callback blocked on Hangup return")
+					}
+					pendingState = assertHangupStillOccupied(t, c, b)
+					assertPendingHangupRestoresIndeterminate(t, c, b.RunID, pendingState, nil)
+					close(release)
+				}
+				select {
+				case <-done:
+				case <-time.After(time.Second):
+					t.Fatal("scripted stop did not settle")
+				}
+				state, err := c.Get(ctx, b.RunID)
+				if err != nil || !state.Phase.Terminal() {
+					t.Fatal("settled hangup remained nonterminal", state, err)
+				}
+				rep, err := c.Report(ctx, b.RunID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if commandFails {
+					if len(rep.Failures) == 0 || actionCount(rep.Actions, s.Actions[0].ID, "completed") != 0 {
+						t.Fatal("command error published successful evidence", rep)
+					}
+				} else if len(rep.Failures) != 0 || actionCount(rep.Actions, s.Actions[0].ID, "completed") != 1 {
+					t.Fatal("settled success lacked completion", rep)
+				}
+				assertArtifactMatches(t, c, b.RunID)
+				finalReport, err := os.ReadFile(filepath.Join(c.opts.DataDir, b.RunID, "report.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertPendingHangupRestoresIndeterminate(t, c, b.RunID, pendingState, finalReport)
+				if _, err := c.Prepare(ctx, sampleScenario()); err != nil {
+					t.Fatal("settled controls kept reservation occupied", err)
+				}
+			})
+		}
+	}
+}
 
 func hangupScenario() Scenario {
 	s := sampleScenario()
