@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,17 +18,21 @@ import (
 // fakeScorer labels audio by a schedule: who is speaking at each moment of
 // the session's audio clock, voiced or not. Labels come out after lag.
 type fakeScorer struct {
-	who      func(atMS int64) int // speaker index, or -1 for nobody
-	lag      time.Duration
-	frames   chan focus.Frame
-	mu       sync.Mutex
-	pushed   int64
-	closed   bool
-	enrolled [][2]int64
+	who        func(atMS int64) int // speaker index, or -1 for nobody
+	lag        time.Duration
+	frames     chan focus.Frame
+	mu         sync.Mutex
+	pushed     int64
+	closed     bool
+	enrolled   [][2]int64
+	saveAs     string
+	asked      string
+	hasProfile bool
+	answers    chan focus.Enrolment
 }
 
 func newFakeScorer(who func(int64) int, lag time.Duration) *fakeScorer {
-	return &fakeScorer{who: who, lag: lag, frames: make(chan focus.Frame, 4096)}
+	return &fakeScorer{who: who, lag: lag, frames: make(chan focus.Frame, 4096), answers: make(chan focus.Enrolment, 4)}
 }
 
 func (f *fakeScorer) Push(pcm []byte, atMS int64) error {
@@ -73,12 +78,28 @@ func (f *fakeScorer) Push(pcm []byte, atMS int64) error {
 func (f *fakeScorer) Frames() <-chan focus.Frame { return f.frames }
 
 // Enrol records what the engine would tell a target-speaker service.
-func (f *fakeScorer) Enrol(fromMS, toMS int64) error {
+func (f *fakeScorer) Enrol(fromMS, toMS int64, saveAs string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.enrolled = append(f.enrolled, [2]int64{fromMS, toMS})
+	f.saveAs = saveAs
 	return nil
 }
+
+// EnrolProfile answers at once: found when the test said the profile
+// exists.
+func (f *fakeScorer) EnrolProfile(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = name
+	select {
+	case f.answers <- focus.Enrolment{Profile: name, Found: f.hasProfile}:
+	default:
+	}
+	return nil
+}
+
+func (f *fakeScorer) Enrolled() <-chan focus.Enrolment { return f.answers }
 
 func (f *fakeScorer) enrolments() [][2]int64 {
 	f.mu.Lock()
@@ -378,4 +399,97 @@ func TestABackgroundVoicesUtteranceIsLetGoBy(t *testing.T) {
 	speak(e, rate, 800)
 	pause(e, rate, 700)
 	waitFor(t, "the caller's next utterance to be answered", 6*time.Second, func() bool { return c.audioMS() > heard+100 })
+}
+
+// An enrolment the labels then contradict — everything after it "not the
+// caller" — is the wrong voice, and acting on it would ignore the caller.
+// After eight seconds of such voice the channel only observes, and the
+// caller's next utterance is answered.
+func TestAnEnrolmentContradictedByWhatFollowsIsNotActedOn(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊" + strings.Repeat("今天天气怎么样", 12) + "明天有空吗")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	var after atomic.Int64
+	after.Store(1 << 40)
+	scorer := newFakeScorer(func(atMS int64) int {
+		if atMS >= after.Load() {
+			return 1 // the service calls everyone "not the caller" from here on
+		}
+		return 0
+	}, 150*time.Millisecond)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, Log: logger}, scorer)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+
+	speak(e, rate, 700)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	listenThrough(t, e, rate)
+	after.Store(e.inputMS.Load())
+	// Nine seconds of "another voice" that is in fact the caller: let go by
+	// at first, then the check trips and the channel stands down.
+	for i := 0; i < 6; i++ {
+		speak(e, rate, 1500)
+		pause(e, rate, 300)
+	}
+	pause(e, rate, 1500)
+	if !strings.Contains(logs.String(), "the enrolment does not match what followed") {
+		t.Fatalf("the enrolment was never found wanting")
+	}
+	heard := c.audioMS()
+	speak(e, rate, 800)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered though the labels say otherwise", 6*time.Second, func() bool { return c.audioMS() > heard+100 })
+}
+
+// A kept profile enrols the caller before they have spoken, and the first
+// utterance is not enrolled again; without one, the first utterance is
+// saved under the profile's name for next time.
+func TestAKeptProfileEnrolsTheCallerAtOnce(t *testing.T) {
+	for _, kept := range []bool{true, false} {
+		t.Run(map[bool]string{true: "kept", false: "none yet"}[kept], func(t *testing.T) {
+			cfg := earlyFinalConfig(120)
+			cfg.opts.Cfg.Duplex.Focus = "veto"
+			cfg.opts.Cfg.Duplex.FocusProfile = "owner"
+			rate := cfg.opts.Cfg.ClientRate
+			c := newCollector(rate)
+			asr := newTrailingASR("多少钱啊今天天气怎么样")
+			asr.msPerRune = 150
+			llm := mock.NewLLM()
+			llm.DelayPerRune = 2 * time.Millisecond
+			scorer := newFakeScorer(func(int64) int { return 0 }, 150*time.Millisecond)
+			scorer.hasProfile = kept
+			e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, scorer)
+			speak(e, rate, 700)
+			pause(e, rate, 700)
+			waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 100 })
+			listenThrough(t, e, rate)
+			scorer.mu.Lock()
+			asked, saveAs, n := scorer.asked, scorer.saveAs, len(scorer.enrolled)
+			scorer.mu.Unlock()
+			if asked != "owner" {
+				t.Fatalf("the profile was not asked for: %q", asked)
+			}
+			if kept && n != 0 {
+				t.Fatalf("enrolled %d time(s) though the profile was kept", n)
+			}
+			if !kept && (n != 1 || saveAs != "owner") {
+				t.Fatalf("enrolments %d save_as %q; wanted one saved as owner", n, saveAs)
+			}
+			if e.focus.tracker.Primary() != 0 {
+				t.Fatalf("primary %d", e.focus.tracker.Primary())
+			}
+		})
+	}
 }

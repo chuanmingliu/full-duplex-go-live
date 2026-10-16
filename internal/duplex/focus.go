@@ -51,6 +51,11 @@ type focusState struct {
 	// by as not the caller's, with no turn made of them.
 	enrolments int
 	ignored    int
+	// distrust says the enrolment did not match what followed (see
+	// checkEnrolment): verdicts are logged and not acted on.
+	distrust     bool
+	checked      bool
+	enrolledAtMS int64
 	// lag is the model's own: its input buffer. Compute is on top.
 	lag time.Duration
 }
@@ -94,7 +99,12 @@ func (e *Engine) startFocus(ctx context.Context) {
 	fs := &focusState{scorer: client, tracker: focus.NewTracker(focus.Config{}), speakFrom: -1,
 		pending: map[string]*focusPending{}, lag: client.Lag()}
 	e.focus = fs
-	e.log.Info("focus: on", "mode", d.Focus, "lag_ms", fs.lag.Milliseconds(), "veto_share", e.focusVetoShare(), "min_voiced_ms", e.focusMinVoicedMS())
+	e.log.Info("focus: on", "mode", d.Focus, "lag_ms", fs.lag.Milliseconds(), "veto_share", e.focusVetoShare(), "min_voiced_ms", e.focusMinVoicedMS(), "profile", d.FocusProfile)
+	if en, ok := client.(focus.Enroller); ok && d.FocusProfile != "" {
+		if err := en.EnrolProfile(d.FocusProfile); err != nil {
+			e.log.Warn("focus: the kept profile could not be asked for", "err", err)
+		}
+	}
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
@@ -222,11 +232,11 @@ func (e *Engine) judgeFocus() {
 			"labelled_lag_ms", now-labelledTo, "another_voice", others, "heard", heard)
 		e.deps.Emit(live.FocusEvent{Envelope: live.Envelope{Type: live.ExtFocus}, TurnID: p.turn.ID,
 			PrimaryShare: round2(a.Primary), OthersShare: round2(a.Others), VoicedMS: a.VoicedMS, Coverage: round2(a.Coverage),
-			Primary: fs.tracker.Primary(), AnotherVoice: others, Vetoed: others && !heard && e.opts.Cfg.Duplex.Focus == "veto"})
+			Primary: fs.tracker.Primary(), AnotherVoice: others, Vetoed: others && !heard && e.focusActs()})
 		if !others {
 			continue
 		}
-		if e.opts.Cfg.Duplex.Focus != "veto" {
+		if !e.focusActs() {
 			e.log.Info("focus: an utterance was mostly another voice (observing only)", "turn", p.turn.ID, "others_share", round2(a.Others))
 			continue
 		}
@@ -369,9 +379,9 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 		"mode", e.opts.Cfg.Duplex.Focus)
 	e.deps.Emit(live.FocusEvent{Envelope: live.Envelope{Type: live.ExtFocus}, TurnID: "", BargeIn: true,
 		PrimaryShare: round2(a.Primary), OthersShare: round2(a.Others), VoicedMS: a.VoicedMS, Coverage: round2(a.Coverage),
-		Primary: fs.tracker.Primary(), AnotherVoice: verdict == bargeInKeep, Vetoed: verdict == bargeInKeep && e.opts.Cfg.Duplex.Focus == "veto"})
+		Primary: fs.tracker.Primary(), AnotherVoice: verdict == bargeInKeep, Vetoed: verdict == bargeInKeep && e.focusActs()})
 	if verdict == bargeInKeep {
-		if e.opts.Cfg.Duplex.Focus != "veto" {
+		if !e.focusActs() {
 			// Observing: say what would have happened and cut as before.
 			return bargeInYield
 		}
@@ -411,12 +421,73 @@ func (e *Engine) enrolFocus(startMS, endMS int64, activeMS float64, bargeIn bool
 	if fs.enrolments > 0 && e.uttVerdict != uttCaller {
 		return
 	}
-	if err := en.Enrol(startMS, endMS); err != nil {
+	if err := en.Enrol(startMS, endMS, e.opts.Cfg.Duplex.FocusProfile); err != nil {
 		e.log.Warn("focus: the caller's voice could not be enrolled", "err", err)
 		return
 	}
 	fs.enrolments++
+	fs.enrolledAtMS = endMS
+	// The service's speaker 0 is the caller by definition.
+	fs.tracker.Pin(0)
 	e.log.Info("focus: enrolling the caller's voice", "from_ms", startMS, "to_ms", endMS, "voiced_ms", int(activeMS), "enrolment", fs.enrolments)
+}
+
+// readEnrolments takes the service's answers: a profile found means the
+// call is enrolled before the caller has spoken.
+func (e *Engine) readEnrolments() {
+	fs := e.focus
+	en, ok := fs.scorer.(focus.Enroller)
+	if !ok {
+		return
+	}
+	for {
+		select {
+		case a := <-en.Enrolled():
+			if a.Profile != "" {
+				if a.Found && fs.enrolments == 0 {
+					fs.enrolments = 1
+					fs.enrolledAtMS = e.inputMS.Load()
+					fs.tracker.Pin(0)
+					e.log.Info("focus: the caller's voice is enrolled from the kept profile", "profile", a.Profile)
+				} else if !a.Found {
+					e.log.Info("focus: no kept profile yet; the first utterance will make one", "profile", a.Profile)
+				}
+			}
+		default:
+			return
+		}
+	}
+}
+
+// focusActs reports whether verdicts are acted on: veto mode, and an
+// enrolment that has not been found wanting.
+func (e *Engine) focusActs() bool {
+	return e.opts.Cfg.Duplex.Focus == "veto" && (e.focus == nil || !e.focus.distrust)
+}
+
+// checkEnrolment is a sanity check on the enrolment, once: when the first
+// seconds of voice after it are mostly "not the caller", the enrolment is
+// the wrong voice (a television speaking first, a bad window), and acting
+// on its labels would ignore the caller. The channel then observes only.
+func (e *Engine) checkEnrolment() {
+	fs := e.focus
+	if fs == nil {
+		return
+	}
+	e.readEnrolments()
+	if fs.enrolments == 0 || fs.distrust || fs.checked {
+		return
+	}
+	caller, others := fs.tracker.SpokenSince(fs.enrolledAtMS)
+	if caller+others < 8000 {
+		return
+	}
+	fs.checked = true
+	if float64(caller)/float64(caller+others) < 0.3 {
+		fs.distrust = true
+		e.log.Warn("focus: the enrolment does not match what followed; observing only",
+			"caller_ms", caller, "others_ms", others)
+	}
 }
 
 // judgeUtteranceFocus is called on each tick while an utterance is open: is
@@ -428,7 +499,11 @@ func (e *Engine) enrolFocus(startMS, endMS int64, activeMS float64, bargeIn bool
 // verdict is logged either way; only veto mode acts on it.
 func (e *Engine) judgeUtteranceFocus() {
 	fs := e.focus
-	if fs == nil || !e.userOpen || e.uttVerdict == uttCaller {
+	if fs == nil {
+		return
+	}
+	e.checkEnrolment()
+	if !e.userOpen || e.uttVerdict == uttCaller {
 		return
 	}
 	now := e.inputMS.Load()
@@ -452,7 +527,7 @@ func (e *Engine) judgeUtteranceFocus() {
 			e.stopIgnoring()
 		}
 		e.uttVerdict = uttCaller
-	case e.uttVerdict == uttIgnored:
+	case e.uttVerdict == uttIgnored || e.uttVerdict == uttNoted:
 		// Still not the caller's.
 	case a.VoicedMS >= e.focusMinVoicedMS() && a.Others >= e.focusVetoShare() && primaryMS == 0:
 		e.ignoreUtterance("another voice", a, span)
@@ -467,6 +542,9 @@ const (
 	uttUnjudged uttVerdict = iota
 	uttCaller
 	uttIgnored
+	// uttNoted: judged not the caller's and logged, with nothing acted on
+	// (observe mode, or a distrusted enrolment).
+	uttNoted
 )
 
 func (e *Engine) ignoreUtterance(why string, a focus.Attribution, span int64) {
@@ -475,11 +553,12 @@ func (e *Engine) ignoreUtterance(why string, a focus.Attribution, span int64) {
 	mode := e.opts.Cfg.Duplex.Focus
 	e.log.Info("focus: the open utterance is not the caller's", "why", why, "others_share", round2(a.Others),
 		"voiced_ms", a.VoicedMS, "span_ms", span, "coverage", round2(a.Coverage), "mode", mode,
-		"acting", mode == "veto")
+		"acting", e.focusActs())
 	e.deps.Emit(live.FocusEvent{Envelope: live.Envelope{Type: live.ExtFocus}, Utterance: true,
 		PrimaryShare: round2(a.Primary), OthersShare: round2(a.Others), VoicedMS: a.VoicedMS, Coverage: round2(a.Coverage),
-		Primary: fs.tracker.Primary(), AnotherVoice: true, Vetoed: mode == "veto"})
-	if mode != "veto" {
+		Primary: fs.tracker.Primary(), AnotherVoice: true, Vetoed: e.focusActs()})
+	if !e.focusActs() {
+		e.uttVerdict = uttNoted
 		return
 	}
 	e.uttVerdict = uttIgnored

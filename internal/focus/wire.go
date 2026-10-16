@@ -34,8 +34,12 @@ type FramesMsg struct {
 	FrameMS int         `json:"frame_ms"`
 	P       [][]float32 `json:"p"`
 	Message string      `json:"message,omitempty"`
-	// For an "enrolled" reply: how much voice the enrolment had.
-	VoicedMS int `json:"voiced_ms,omitempty"`
+	// For an "enrolled" reply: how much voice the enrolment had, and for a
+	// profile, whether it was found.
+	VoicedMS int    `json:"voiced_ms,omitempty"`
+	Profile  string `json:"profile,omitempty"`
+	Found    *bool  `json:"found,omitempty"`
+	Saved    bool   `json:"saved,omitempty"`
 }
 
 // EnrolMsg tells a target-speaker service whose voice the caller's is: the
@@ -43,8 +47,12 @@ type FramesMsg struct {
 // diarizer ignores it.
 type EnrolMsg struct {
 	Type   string `json:"type"`
-	FromMS int64  `json:"from_ms"`
-	ToMS   int64  `json:"to_ms"`
+	FromMS int64  `json:"from_ms,omitempty"`
+	ToMS   int64  `json:"to_ms,omitempty"`
+	// SaveAs keeps the enrolment under this name for the next call;
+	// Profile enrols from a kept one instead of a span.
+	SaveAs  string `json:"save_as,omitempty"`
+	Profile string `json:"profile,omitempty"`
 }
 
 // EncodeAudio frames a chunk for the wire.

@@ -45,7 +45,19 @@ type Frame struct {
 // target-speaker service (edge/tsv_server.py). The engine tells it the
 // first utterance the caller alone made.
 type Enroller interface {
-	Enrol(fromMS, toMS int64) error
+	Enrol(fromMS, toMS int64, saveAs string) error
+	EnrolProfile(name string) error
+	Enrolled() <-chan Enrolment
+}
+
+// Enrolment is the service's answer to an enrolment.
+type Enrolment struct {
+	// Profile names the kept profile asked for, when one was; Found says
+	// it was there.
+	Profile  string
+	Found    bool
+	VoicedMS int
+	Saved    bool
 }
 
 // Scorer is a speaker-activity model fed the caller's audio as it arrives.
@@ -90,6 +102,10 @@ type Tracker struct {
 	frames  []Frame // in time order
 	masked  []span  // when the assistant was speaking: its echo is not a speaker
 	primary int     // -1 until enrolled
+	// pinned says the primary was set from outside (a target-speaker
+	// service, whose speaker 0 is the caller by definition) and neither
+	// enrols nor hands over on its own rule.
+	pinned bool
 	// spoken is how many ms each speaker has been active, unmasked; masked
 	// how many inside the assistant's own speech, where its echo lives.
 	spoken   []int64
@@ -198,6 +214,9 @@ func (t *Tracker) Observe(f Frame) {
 			}
 		}
 	}
+	if t.pinned {
+		return
+	}
 	if t.primary < 0 {
 		// The first voice to say EnrollMS of speech is the one who answered.
 		for s, ms := range t.spoken {
@@ -220,6 +239,48 @@ func (t *Tracker) Observe(f Frame) {
 		t.otherSince = 0
 		t.handovers++
 	}
+}
+
+// SpokenSince is how much voice, unmasked, the primary and everyone else
+// have had since sinceMS: the enrolment's sanity check.
+func (t *Tracker) SpokenSince(sinceMS int64) (primaryMS, othersMS int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, f := range t.frames {
+		if f.StartMS < sinceMS || t.isMasked(f.StartMS, f.EndMS) {
+			continue
+		}
+		d := f.EndMS - f.StartMS
+		anyone, prim := false, false
+		for s, p := range f.P {
+			if p >= t.cfg.Active {
+				anyone = true
+				if s == t.primary {
+					prim = true
+				}
+			}
+		}
+		if !anyone {
+			continue
+		}
+		if prim {
+			primaryMS += d
+		} else {
+			othersMS += d
+		}
+	}
+	return
+}
+
+// Pin sets the primary from outside and stops the tracker's own enrolment
+// and handover: a target-speaker service labels the caller speaker 0 by
+// definition, and on a call where the caller's windows scored low after
+// the enrolment the tracker enrolled "not the caller" as the primary and
+// every verdict came out inverted (10-16 09:41).
+func (t *Tracker) Pin(speaker int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.primary, t.pinned = speaker, true
 }
 
 // Echo is the speaker the model hears mostly while the assistant speaks —

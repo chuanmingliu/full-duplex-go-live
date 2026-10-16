@@ -21,11 +21,12 @@ import (
 // use to anyone. The connection failing closes Frames: the engine carries on
 // without focus, as it would without the service at all.
 type Client struct {
-	url    string
-	token  string
-	log    *slog.Logger
-	lag    time.Duration
-	frames chan Frame
+	url      string
+	token    string
+	log      *slog.Logger
+	lag      time.Duration
+	frames   chan Frame
+	enrolled chan Enrolment
 
 	mu     sync.Mutex
 	conn   *websocket.Conn
@@ -65,7 +66,7 @@ func Dial(ctx context.Context, url, token string, log *slog.Logger) (*Client, er
 	}
 	conn.SetReadDeadline(time.Time{})
 	c := &Client{url: url, token: token, log: log, lag: time.Duration(ready.LagMS) * time.Millisecond,
-		frames: make(chan Frame, 1024), conn: conn}
+		frames: make(chan Frame, 1024), enrolled: make(chan Enrolment, 8), conn: conn}
 	go c.read()
 	return c, nil
 }
@@ -92,7 +93,12 @@ func (c *Client) read() {
 			continue
 		}
 		if msg.Type == "enrolled" {
-			c.log.Info("focus: the caller's voice is enrolled", "from_ms", msg.StartMS, "voiced_ms", msg.VoicedMS)
+			en := Enrolment{Profile: msg.Profile, Found: msg.Found == nil || *msg.Found, VoicedMS: msg.VoicedMS, Saved: msg.Saved}
+			c.log.Info("focus: the service answered an enrolment", "profile", msg.Profile, "found", en.Found, "voiced_ms", msg.VoicedMS, "saved", msg.Saved)
+			select {
+			case c.enrolled <- en:
+			default:
+			}
 			continue
 		}
 		for _, f := range msg.Expand() {
@@ -126,14 +132,28 @@ func (c *Client) Push(pcm []byte, atMS int64) error {
 func (c *Client) Frames() <-chan Frame { return c.frames }
 
 // Enrol tells the service the caller spoke from fromMS to toMS: a
-// target-speaker service takes the caller's voice from it (see EnrolMsg).
-func (c *Client) Enrol(fromMS, toMS int64) error {
+// target-speaker service takes the caller's voice from it (see EnrolMsg),
+// and keeps it under saveAs for the next call when that is not empty.
+func (c *Client) Enrol(fromMS, toMS int64, saveAs string) error {
+	return c.send(EnrolMsg{Type: "enrol", FromMS: fromMS, ToMS: toMS, SaveAs: saveAs})
+}
+
+// EnrolProfile asks the service to enrol the caller from a kept profile.
+// Whether one was found comes back on Enrolled.
+func (c *Client) EnrolProfile(name string) error {
+	return c.send(EnrolMsg{Type: "enrol", Profile: name})
+}
+
+// Enrolled is where the service's answers to enrolments come out.
+func (c *Client) Enrolled() <-chan Enrolment { return c.enrolled }
+
+func (c *Client) send(m EnrolMsg) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return errors.New("focus: closed")
 	}
-	data, _ := json.Marshal(EnrolMsg{Type: "enrol", FromMS: fromMS, ToMS: toMS})
+	data, _ := json.Marshal(m)
 	c.conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
 	return c.conn.WriteMessage(websocket.TextMessage, data)
 }

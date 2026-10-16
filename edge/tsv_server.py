@@ -16,9 +16,13 @@ client, the tracker and every judgment stay the same:
 
   client → server   binary: 8-byte little-endian session ms, then 16 kHz
                     PCM16 mono
-  client → server   text {"type":"enrol","from_ms":..,"to_ms":..}: the caller
-                    spoke in that span of session time; take their voice from
-                    it (the client keeps the last keep_s seconds)
+  client → server   text {"type":"enrol","from_ms":..,"to_ms":..,"save_as":"name"}:
+                    the caller spoke in that span of session time; take their
+                    voice from it (the server keeps the last keep_s seconds of
+                    audio); with save_as, keep the embedding under that name
+                    for the next call. {"type":"enrol","profile":"name"} enrols
+                    from a kept profile at once, before the caller has spoken;
+                    the reply says "found" or not.
   server → client   {"type":"ready","lag_ms":..,"frame_ms":100,"model":..}
   server → client   {"type":"enrolled","from_ms":..,"to_ms":..,"voiced_ms":..}
   server → client   {"type":"frames","start_ms":..,"frame_ms":100,
@@ -51,6 +55,7 @@ ap.add_argument("--threshold", type=float, default=0.28, help="cosine similarity
 ap.add_argument("--enrol-max-s", type=float, default=8.0, help="how much of the caller's voice the enrolment keeps; later enrolments extend it")
 ap.add_argument("--voiced-db", type=float, default=-50.0, help="RMS dBFS under which a window is not voiced")
 ap.add_argument("--keep-s", type=float, default=20.0, help="seconds of audio kept for a late enrolment")
+ap.add_argument("--profiles", default=os.path.expanduser("~/edge/tsv/profiles"), help="where named voice profiles (embeddings, one .npy each) are kept across calls")
 args = ap.parse_args()
 
 SR = 16000
@@ -128,6 +133,14 @@ def embed(x: np.ndarray) -> np.ndarray | None:
     return e / (np.linalg.norm(e) + 1e-8)
 
 
+def profile_path(name):
+    """The file a named profile lives in; None for a name that is not a
+    plain token (nothing from the wire may name a path)."""
+    if not name or not all(c.isalnum() or c in "-_" for c in name) or len(name) > 64:
+        return None
+    return os.path.join(args.profiles, name + ".npy")
+
+
 def dbfs(x: np.ndarray) -> float:
     r = float(np.sqrt(np.mean(x * x) + 1e-12))
     return 20 * np.log10(r + 1e-12)
@@ -161,7 +174,16 @@ class Session:
         b = min(len(self.buf), (to_ms - self.t0_ms) * SR // 1000)
         return self.buf[a:b] if b > a else self.buf[:0]
 
-    def do_enrol(self, from_ms, to_ms):
+    def enrol_profile(self, name):
+        path = profile_path(name)
+        if path is None or not os.path.exists(path):
+            return {"type": "enrolled", "profile": name, "found": False}
+        e = np.load(path).astype(np.float32)
+        self.enrol = e / (np.linalg.norm(e) + 1e-8)
+        stats["enrolments"] += 1
+        return {"type": "enrolled", "profile": name, "found": True, "voiced_ms": 0}
+
+    def do_enrol(self, from_ms, to_ms, save_as=None):
         x = self.slice(from_ms, to_ms)
         # Keep the voiced part: a 600 ms utterance is mostly voice, but the
         # pre-roll and the pause are not, and they dilute the embedding.
@@ -182,8 +204,13 @@ class Session:
             return None
         self.enrol, self.enrol_audio = e, pool
         stats["enrolments"] += 1
+        saved = False
+        if save_as and profile_path(save_as):
+            os.makedirs(args.profiles, exist_ok=True)
+            np.save(profile_path(save_as), e)
+            saved = True
         return {"type": "enrolled", "from_ms": int(from_ms), "to_ms": int(to_ms),
-                "voiced_ms": int(len(voiced) * 1000 // SR), "total_ms": int(len(pool) * 1000 // SR)}
+                "voiced_ms": int(len(voiced) * 1000 // SR), "total_ms": int(len(pool) * 1000 // SR), "saved": saved}
 
     def score(self):
         """Report every frame_ms up to the end of the buffer."""
@@ -238,7 +265,10 @@ async def verify(request):
             if item is None:
                 return
             if isinstance(item, dict):
-                msg = await loop.run_in_executor(None, s.do_enrol, item["from_ms"], item["to_ms"])
+                if item.get("profile"):
+                    msg = await loop.run_in_executor(None, s.enrol_profile, item["profile"])
+                else:
+                    msg = await loop.run_in_executor(None, s.do_enrol, item["from_ms"], item["to_ms"], item.get("save_as"))
                 if msg is None:
                     msg = {"type": "error", "message": "enrolment span had too little voice"}
                 if not ws.closed:
@@ -261,7 +291,8 @@ async def verify(request):
                 except ValueError:
                     continue
                 if m.get("type") == "enrol":
-                    q.put_nowait({"from_ms": int(m.get("from_ms", 0)), "to_ms": int(m.get("to_ms", 0))})
+                    q.put_nowait({"from_ms": int(m.get("from_ms", 0)), "to_ms": int(m.get("to_ms", 0)),
+                                  "save_as": m.get("save_as"), "profile": m.get("profile")})
             elif msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
                 break
     finally:

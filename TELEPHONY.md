@@ -907,6 +907,19 @@ focus: the open utterance is not the caller's  why="another voice" others_share=
 focus: the utterance went by; no turn made of it
 ```
 
+**A kept profile.** One utterance does not represent a voice on a phone
+line (the 09:41 call on 10-16: the owner's own later utterances scored
+0.07–0.25 against an enrolment from their first one, and the channel
+inverted — ISS-038). With `focus_profile: owner` the service keeps the
+caller's embedding across calls (`~/edge/tsv/profiles/owner.npy`; 192
+numbers, not audio) and every call starts enrolled from it before the
+caller has spoken; a line with no profile yet saves its first enrolment as
+one. The profile on the box was made from 28 s of the owner's voice over 14
+utterances of two quiet calls (`.runner` job 267), and recognises every
+utterance of the 09:41 call at 0.33–0.61. The tracker is pinned to speaker
+0 on enrolment, and an enrolment that the next eight seconds of voice
+contradict (under 30% caller) puts the channel in observe for the call.
+
 **What a mixture is.** With a show playing *under* the caller's voice every
 window is a mixture, and the mixture scores like a stranger (the 23:20
 call: 1,130 voiced windows, 83 over 0.35, none over 0.5; four of the

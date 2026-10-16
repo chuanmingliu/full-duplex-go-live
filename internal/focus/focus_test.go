@@ -157,3 +157,19 @@ func TestASoundOverTheAnswerIsReadWithTheEchoTakenOut(t *testing.T) {
 		t.Fatalf("the primary changed to %d", tr.Primary())
 	}
 }
+
+// A pinned primary is not re-enrolled or handed over by the tracker's own
+// rules: a target-speaker service's speaker 0 is the caller by definition,
+// however the first seconds after the enrolment are labelled.
+func TestAPinnedPrimaryIsNotHandedOver(t *testing.T) {
+	tr := NewTracker(Config{})
+	tr.Pin(0)
+	feed(tr, frames(0, 100, 1)) // 8 s of "not the caller" alone
+	if tr.Primary() != 0 {
+		t.Fatalf("primary %d; the pin must hold", tr.Primary())
+	}
+	p, o := tr.SpokenSince(0)
+	if p != 0 || o != 8000 {
+		t.Fatalf("spoken since: primary %d others %d", p, o)
+	}
+}
