@@ -61,7 +61,7 @@ func LoadEvidence(scenarioPath, reportPath, transcriptPath string) (simulator.Sc
 	if simclient.StrictJSON(raw, &r) != nil {
 		return s, r, t, errors.New("invalid report artifact")
 	}
-	if !explicitFields(raw, "transcript_truncated", "events_truncated") {
+	if !explicitFields(raw, "transcript_truncated", "events_truncated", "failures") {
 		return s, r, t, errors.New("report lacks explicit completeness evidence")
 	}
 	raw, err = simclient.ReadFile(transcriptPath)

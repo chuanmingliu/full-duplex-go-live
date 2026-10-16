@@ -95,7 +95,7 @@ func TestEvaluateProducesIndependentArtifactAndPreservesReport(t *testing.T) {
 	s := inputScenario(t)
 	s.RetainTranscript = true
 	s.Expectations = []simulator.Expectation{{ID: "identity", Description: "Identify yourself."}}
-	r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true}
+	r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true, Failures: []string{}}
 	tr := simulator.TranscriptArtifact{SchemaVersion: 1, RunID: r.RunID, ScenarioHash: r.ScenarioHash, PromptHash: r.PromptHash, Entries: []simulator.TranscriptEntry{{Role: "customer", AtMS: 0, Text: "Who is calling?"}, {Role: "assistant", AtMS: 1, Text: "I am the appointment assistant."}}}
 	sp, rp, tp, ep := filepath.Join(dir, "s.json"), filepath.Join(dir, "r.json"), filepath.Join(dir, "t.json"), filepath.Join(dir, "e.json")
 	simclient.WritePrivate(sp, s)
@@ -155,7 +155,7 @@ func TestEvaluateNoConfigurationIsIndeterminate(t *testing.T) {
 	s := inputScenario(t)
 	s.RetainTranscript = true
 	s.Expectations = []simulator.Expectation{{ID: "identity", Description: "Identify yourself."}}
-	r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true}
+	r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true, Failures: []string{}}
 	tr := simulator.TranscriptArtifact{SchemaVersion: 1, RunID: r.RunID, ScenarioHash: r.ScenarioHash, PromptHash: r.PromptHash, Entries: []simulator.TranscriptEntry{{Role: "customer", Text: "Hello"}, {Role: "assistant", AtMS: 1, Text: "Hello"}}}
 	sp, rp, tp, ep := filepath.Join(dir, "s.json"), filepath.Join(dir, "r.json"), filepath.Join(dir, "t.json"), filepath.Join(dir, "e.json")
 	simclient.WritePrivate(sp, s)
@@ -191,14 +191,14 @@ func TestEvaluateRequiresExplicitCompletenessAndTimestamps(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": `{"grades":[{"id":"identity","result":"pass","reason":"Identified itself","evidence_turns":[2]}]}`}}}})
 	}))
 	defer server.Close()
-	for _, field := range []string{"report.transcript_truncated", "report.events_truncated", "transcript.truncated", "entry.at_ms"} {
+	for _, field := range []string{"report.transcript_truncated", "report.events_truncated", "report.failures", "transcript.truncated", "entry.at_ms"} {
 		for _, mode := range []string{"omitted", "null"} {
 			t.Run(field+"/"+mode, func(t *testing.T) {
 				dir := t.TempDir()
 				s := inputScenario(t)
 				s.RetainTranscript = true
 				s.Expectations = []simulator.Expectation{{ID: "identity", Description: "Identify yourself."}}
-				r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true}
+				r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true, Failures: []string{}}
 				tr := simulator.TranscriptArtifact{SchemaVersion: 1, RunID: r.RunID, ScenarioHash: r.ScenarioHash, PromptHash: r.PromptHash, Entries: []simulator.TranscriptEntry{{Role: "customer", AtMS: 0, Text: "Who is calling?"}, {Role: "assistant", AtMS: 1, Text: "I am the appointment assistant."}}}
 				sp, rp, tp, ep := filepath.Join(dir, "s.json"), filepath.Join(dir, "r.json"), filepath.Join(dir, "t.json"), filepath.Join(dir, "e.json")
 				simclient.WritePrivate(sp, s)

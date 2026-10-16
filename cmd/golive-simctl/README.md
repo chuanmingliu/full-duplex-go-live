@@ -60,7 +60,8 @@ go run ./cmd/golive-simctl evaluate \
 The evaluator verifies matching run/scenario/prompt identities, completed phase,
 retention, no truncation or reported failure, two-sided normalized transcript,
 monotonic timestamps and expectations before making a provider request. Report
-`transcript_truncated` / `events_truncated`, transcript `truncated`, and every
+`transcript_truncated` / `events_truncated` and `failures` array, transcript
+`truncated`, and every
 entry's `at_ms` must be explicitly present and non-null. Legacy artifacts missing
 these observations remain indeterminate; omitted fields are never assumed false
 or zero. Each
