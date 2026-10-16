@@ -4,9 +4,11 @@ Claude's voice service calls this receiver. The receiver plays a synthetic human
 
 This package runs on branch `codex/inbound-user-simulator`. It does not modify an existing service, deployment, gateway route or provider account. The ordinary `golive` binary does not enable simulator capabilities.
 
+The simulator includes an embedded configuration workbench at `/sim/`, task-oriented scenarios, a sequential inbound suite runner and an independent post-call evaluator. See [Workbench and regression testing](WORKBENCH.md) for the end-to-end workflow and [CLI reference](../../cmd/golive-simctl/README.md) for command options and exit codes.
+
 ## Evidence and limits
 
-The default profile uses synthetic ASR/LLM/TTS. It proves control and audio transport, not recognizable speech or conversational quality. Real provider accounts and carrier/handset tests are separate acceptance steps. Reports label timings `application_audio_boundary`; they are not handset playout or carrier latency. Both directions use a 200 ms speech-end debounce and one receiver-local clock. Failed, missing and overlapping responses remain marked invalid. Semantic checks return `indeterminate` until a separate evaluator exists.
+The default profile uses synthetic ASR/LLM/TTS. It proves control and audio transport, not recognizable speech or conversational quality. Real provider accounts and carrier/handset tests are separate acceptance steps. Reports label timings `application_audio_boundary`; they are not handset playout or carrier latency. Both directions use a 200 ms speech-end debounce and one receiver-local clock. Failed, missing and overlapping responses remain marked invalid. Base run reports keep semantic checks `indeterminate`; the opt-in independent evaluator produces a separate artifact from retained transcript evidence.
 
 One reservation/call is allowed at a time. Run reservations expire after 120s; setup is bounded at 25s, calls at 300s, script holds at 5s, and retained history at 128 runs. Restart aborts unfinished runs without replaying answer/speech. IDs and default reports omit telephone numbers, credentials and raw transcripts/audio. Transcript retention requires explicit scenario opt-in; audio retention and scripted silence actions are rejected in v1. Use only synthetic personas/facts.
 
@@ -68,6 +70,10 @@ curl --fail -sS -X POST "http://127.0.0.1:18865/sim/v1/runs/$RUN_ID/stop" -H "Au
 
 `report` is available after termination; private state/report files are written atomically with 0600 permissions. Prepare is idempotent for the same key/body; reusing a key with different content conflicts. There is no outbound dialing endpoint or old `/v1/opening` broadcast route.
 
+Authenticated `GET /sim/v1/runs` lists retained snapshots. `POST /sim/v1/validate` validates scenario JSON without reserving a call. Terminal `GET /sim/v1/runs/$RUN_ID/transcript` returns an identity-bound envelope only when transcript retention was enabled for that run. The workbench uses these APIs and keeps the control token only in page memory.
+
+Optional scenario `goal` and `behavior` fields guide the simulated customer; `expectations` define independent assistant-task checks and are excluded from the live persona prompt. `expected_outcome: "cancel_before_answer"` selects explicit cancellation checks; it does not make the receiver cancel or dial a call. The independent caller must produce that event. Existing schema-version-1 scenarios and default conversation checks remain supported.
+
 ## Validation
 
 ```sh
@@ -75,7 +81,11 @@ go test -race ./internal/simulator ./internal/server -run 'Simulator|ActiveCall|
 go test -race ./internal/duplex -run Simulator
 go vet ./...
 python3 -m unittest discover -s deploy/simulator -p 'test_*.py'
+go build -o /tmp/golive-simulator ./cmd/golive-simulator
+python3 deploy/simulator/check_workbench.py --binary /tmp/golive-simulator
 ```
+
+The workbench check starts only a temporary loopback receiver with mock providers and a fake readiness gateway. It checks authentication, metadata, non-mutating validation, reservation identity, reports and cleanup without a call or provider request.
 
 After starting the local Compose project, run `python3 deploy/simulator/run_sip_checks.py --allow-isolated-sip --output /tmp/simulator-sip-results` for cooperative, interruption and pre-answer cancellation checks. This places calls only inside the dedicated Docker network and never retries a call.
 
