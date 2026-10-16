@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 )
@@ -77,6 +78,9 @@ func DecodeScenario(r io.Reader) (Scenario, error) {
 	if err = dec.Decode(&s); err != nil {
 		return s, fmt.Errorf("%w: %v", ErrInvalidScenario, err)
 	}
+	if err = rejectNoncanonicalFields(raw, reflect.TypeOf(s)); err != nil {
+		return s, fmt.Errorf("%w: %v", ErrInvalidScenario, err)
+	}
 	// A missing optional goal is valid, but a supplied empty/null goal is not.
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
@@ -87,6 +91,48 @@ func DecodeScenario(r io.Reader) (Scenario, error) {
 		return s, err
 	}
 	return s, nil
+}
+
+// Typed scenario keys must match their JSON tags exactly. encoding/json's
+// case-insensitive aliases would otherwise bypass presence and duplicate checks.
+// Map keys (synthetic facts) remain arbitrary and case-sensitive.
+func rejectNoncanonicalFields(raw json.RawMessage, typ reflect.Type) error {
+	switch typ.Kind() {
+	case reflect.Struct:
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return err
+		}
+		canonical := make(map[string]reflect.Type, typ.NumField())
+		for i := 0; i < typ.NumField(); i++ {
+			field := typ.Field(i)
+			name := strings.Split(field.Tag.Get("json"), ",")[0]
+			canonical[name] = field.Type
+		}
+		for name, value := range fields {
+			fieldType, ok := canonical[name]
+			if !ok {
+				return fmt.Errorf("noncanonical scenario field %q", name)
+			}
+			if err := rejectNoncanonicalFields(value, fieldType); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice:
+		if typ.Elem().Kind() != reflect.Struct {
+			return nil
+		}
+		var values []json.RawMessage
+		if err := json.Unmarshal(raw, &values); err != nil {
+			return err
+		}
+		for _, value := range values {
+			if err := rejectNoncanonicalFields(value, typ.Elem()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Token walking detects duplicates inside facts and every nested object too.

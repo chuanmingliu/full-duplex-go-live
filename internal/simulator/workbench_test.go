@@ -118,6 +118,51 @@ func TestTaskScenarioValidation(t *testing.T) {
 	}
 }
 
+func TestScenarioRejectsTypedFieldAliases(t *testing.T) {
+	raw, err := json.Marshal(sampleScenario())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := strings.TrimSuffix(string(raw), "}")
+	for _, fields := range []string{
+		`"Goal":""`, `"GOAL":null`, `"gOaL":"  "`,
+		`"Goal":"otherwise valid"`,
+		`"goal":"valid","Goal":""`,
+		`"Goal":null,"goal":"valid"`,
+		`"goal":"valid","GOAL":"another"`,
+		`"behavior":[],"Behavior":["another"]`,
+		`"expectations":[{"id":"judge","ID":"shadow","description":"judge"}]`,
+		`"expectations":[{"id":"judge","description":"judge","Description":"shadow"}]`,
+	} {
+		t.Run(fields, func(t *testing.T) {
+			if _, err := DecodeScenario(strings.NewReader(base + "," + fields + "}")); !errors.Is(err, ErrInvalidScenario) {
+				t.Fatal("noncanonical or duplicate typed alias accepted", err)
+			}
+		})
+	}
+	s := sampleScenario()
+	s.Facts = map[string]string{"goal": "first", "Goal": "second", "GOAL": "third", "arbitrary field ☃": "allowed"}
+	s.Goal = "canonical customer goal"
+	raw, err = json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecodeScenario(bytes.NewReader(raw))
+	if err != nil || !reflect.DeepEqual(got.Facts, s.Facts) || got.Goal != s.Goal {
+		t.Fatal("arbitrary facts keys changed", err)
+	}
+	validAction := sampleScenario()
+	validAction.Actions = []Action{{ID: "leave", Trigger: "connected", Occurrence: 1, Kind: "hangup"}}
+	raw, err = json.Marshal(validAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliasedAction := strings.Replace(string(raw), `"id":"leave"`, `"id":"leave","ID":"shadow"`, 1)
+	if _, err := DecodeScenario(strings.NewReader(aliasedAction)); !errors.Is(err, ErrInvalidScenario) {
+		t.Fatal("action duplicate alias accepted", err)
+	}
+}
+
 func apiRequest(c *RunController, method, path, token string, body []byte) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, bytes.NewReader(body))
 	r.Header.Set("Authorization", "Bearer "+token)
