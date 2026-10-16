@@ -2,5 +2,5 @@
   "schema_version": 1,
   "id": "synthetic-inbound",
   "repeat": 1,
-  "scenarios": ["../simulator/cooperative.json", "../simulator/busy.json"]
+  "scenarios": ["../simulator/cooperative.json", "busy-hangup.json"]
 }

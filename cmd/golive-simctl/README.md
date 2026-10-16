@@ -9,6 +9,13 @@ go run ./cmd/golive-simctl suite \
   --url http://127.0.0.1:18865 --token-env SIM_CONTROL_TOKEN --output ./suite-output
 ```
 
+The example uses the unchanged cooperative preset and a suite-local busy fixture
+with a 10-second hangup and 20-second idle timeout. This avoids the legacy busy
+preset's tie between its 60-second hangup and maximum duration; that legacy
+preset and its hash remain unchanged. The external caller must speak long enough
+for the 500-ms interruption and remain connected until the scheduled hangup to
+supply completed action evidence.
+
 All scenarios are validated before any HTTP request. Paths are relative to the
 manifest. Each scenario runs `repeat` times (1–10), sequentially; at most 100 runs.
 Each fresh reservation produces one flushed JSONL record on stdout:
@@ -52,7 +59,11 @@ go run ./cmd/golive-simctl evaluate \
 
 The evaluator verifies matching run/scenario/prompt identities, completed phase,
 retention, no truncation or reported failure, two-sided normalized transcript,
-monotonic timestamps and expectations before making a provider request. Each
+monotonic timestamps and expectations before making a provider request. Report
+`transcript_truncated` / `events_truncated`, transcript `truncated`, and every
+entry's `at_ms` must be explicitly present and non-null. Legacy artifacts missing
+these observations remain indeterminate; omitted fields are never assumed false
+or zero. Each
 input is at most 1 MiB, with at most 256 turns and 8192 bytes per utterance.
 Judge calls use a 30-second bound, 1 MiB response limit, no redirects or tools.
 Task/facts/expectations are sent separately from role-labeled untrusted utterances.

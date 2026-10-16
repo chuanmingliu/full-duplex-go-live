@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/chuanmingliu/golive/internal/simclient"
@@ -180,5 +181,72 @@ func TestEvaluateMissingInputWritesIndeterminateWithoutConfiguration(t *testing.
 	var artifact simeval.Artifact
 	if code != 1 || reads != 0 || simclient.StrictJSON(raw, &artifact) != nil || artifact.Verdict != "indeterminate" || artifact.Reason != "invalid_input_artifacts" || artifact.RunID != "" {
 		t.Fatalf("code=%d reads=%d artifact=%+v", code, reads, artifact)
+	}
+}
+
+func TestEvaluateRequiresExplicitCompletenessAndTimestamps(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": `{"grades":[{"id":"identity","result":"pass","reason":"Identified itself","evidence_turns":[2]}]}`}}}})
+	}))
+	defer server.Close()
+	for _, field := range []string{"report.transcript_truncated", "report.events_truncated", "transcript.truncated", "entry.at_ms"} {
+		for _, mode := range []string{"omitted", "null"} {
+			t.Run(field+"/"+mode, func(t *testing.T) {
+				dir := t.TempDir()
+				s := inputScenario(t)
+				s.RetainTranscript = true
+				s.Expectations = []simulator.Expectation{{ID: "identity", Description: "Identify yourself."}}
+				r := simulator.Report{RunID: "owned", ScenarioID: s.ID, ScenarioHash: simulator.ScenarioHash(s), PromptHash: simulator.PromptHash(s), ExpectedOutcome: simulator.OutcomeConversation, Phase: simulator.Completed, TranscriptRetained: true}
+				tr := simulator.TranscriptArtifact{SchemaVersion: 1, RunID: r.RunID, ScenarioHash: r.ScenarioHash, PromptHash: r.PromptHash, Entries: []simulator.TranscriptEntry{{Role: "customer", AtMS: 0, Text: "Who is calling?"}, {Role: "assistant", AtMS: 1, Text: "I am the appointment assistant."}}}
+				sp, rp, tp, ep := filepath.Join(dir, "s.json"), filepath.Join(dir, "r.json"), filepath.Join(dir, "t.json"), filepath.Join(dir, "e.json")
+				simclient.WritePrivate(sp, s)
+				simclient.WritePrivate(rp, r)
+				simclient.WritePrivate(tp, tr)
+				parts := strings.Split(field, ".")
+				path := tp
+				if parts[0] == "report" {
+					path = rp
+				}
+				raw, _ := os.ReadFile(path)
+				var object map[string]any
+				json.Unmarshal(raw, &object)
+				target := object
+				if parts[0] == "entry" {
+					target = object["entries"].([]any)[0].(map[string]any)
+				}
+				if mode == "omitted" {
+					delete(target, parts[1])
+				} else {
+					target[parts[1]] = nil
+				}
+				if err := simclient.WritePrivate(path, object); err != nil {
+					t.Fatal(err)
+				}
+				before := requests.Load()
+				envReads := 0
+				env := func(name string) string {
+					envReads++
+					switch name {
+					case "SIM_EVAL_BASE_URL":
+						return server.URL + "/v1"
+					case "SIM_EVAL_MODEL":
+						return "fake-judge"
+					case "SIM_EVAL_API_KEY":
+						return "independent-key"
+					}
+					return ""
+				}
+				var stdout, stderr bytes.Buffer
+				code := run(context.Background(), []string{"evaluate", "--scenario", sp, "--report", rp, "--transcript", tp, "--output", ep}, &stdout, &stderr, env)
+				raw, _ = os.ReadFile(ep)
+				var artifact simeval.Artifact
+				simclient.StrictJSON(raw, &artifact)
+				if code != 1 || requests.Load() != before || envReads != 0 || artifact.Verdict != "indeterminate" || artifact.Reason != "invalid_input_artifacts" {
+					t.Fatalf("code=%d requests=%d envReads=%d artifact=%+v stderr=%s", code, requests.Load()-before, envReads, artifact, stderr.String())
+				}
+			})
+		}
 	}
 }

@@ -3,6 +3,7 @@
 package simeval
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -60,6 +61,9 @@ func LoadEvidence(scenarioPath, reportPath, transcriptPath string) (simulator.Sc
 	if simclient.StrictJSON(raw, &r) != nil {
 		return s, r, t, errors.New("invalid report artifact")
 	}
+	if !explicitFields(raw, "transcript_truncated", "events_truncated") {
+		return s, r, t, errors.New("report lacks explicit completeness evidence")
+	}
 	raw, err = simclient.ReadFile(transcriptPath)
 	if err != nil {
 		return s, r, t, err
@@ -67,8 +71,37 @@ func LoadEvidence(scenarioPath, reportPath, transcriptPath string) (simulator.Sc
 	if simclient.StrictJSON(raw, &t) != nil {
 		return s, r, t, errors.New("invalid transcript artifact")
 	}
+	if !explicitFields(raw, "truncated") {
+		return s, r, t, errors.New("transcript lacks explicit completeness evidence")
+	}
+	var envelope struct {
+		Entries []json.RawMessage `json:"entries"`
+	}
+	_ = json.Unmarshal(raw, &envelope)
+	for _, entry := range envelope.Entries {
+		if !explicitFields(entry, "at_ms") {
+			return s, r, t, errors.New("transcript lacks explicit timestamp evidence")
+		}
+	}
 	return s, r, t, nil
 }
+
+// A zero Go value is not proof that a flag or timestamp was observed. Older
+// envelopes without explicit fields remain indeterminate at this input boundary.
+func explicitFields(raw []byte, names ...string) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
+	}
+	for _, name := range names {
+		value, ok := fields[name]
+		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return false
+		}
+	}
+	return true
+}
+
 func baseArtifact(s simulator.Scenario, r simulator.Report, t simulator.TranscriptArtifact) Artifact {
 	raw, _ := json.Marshal(t)
 	hash := sha256.Sum256(raw)

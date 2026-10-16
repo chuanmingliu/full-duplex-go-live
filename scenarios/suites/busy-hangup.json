@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "appointment-busy-suite",
+  "language": "zh-CN",
+  "persona": "A busy synthetic customer with one minute to discuss a fictional appointment. Keep replies short and stay polite.",
+  "facts": {
+    "available_day": "Thursday",
+    "available_period": "afternoon"
+  },
+  "greeting": "喂？我现在有点忙，请简单说。",
+  "answer_delay_ms": 1500,
+  "max_duration_ms": 60000,
+  "max_remote_turns": 12,
+  "idle_timeout_ms": 20000,
+  "actions": [
+    {
+      "id": "interrupt-once",
+      "trigger": "remote_speech_started",
+      "occurrence": 1,
+      "after_ms": 500,
+      "require_remote_speaking": true,
+      "kind": "speak",
+      "text": "不好意思，我只有一分钟，你能直接说时间吗？",
+      "max_hold_ms": 4000
+    },
+    {
+      "id": "time-to-leave",
+      "trigger": "connected",
+      "occurrence": 1,
+      "after_ms": 10000,
+      "require_remote_speaking": false,
+      "kind": "hangup",
+      "max_hold_ms": 0
+    }
+  ],
+  "retain_transcript": false,
+  "retain_audio": false
+}

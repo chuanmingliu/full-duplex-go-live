@@ -415,3 +415,42 @@ func TestSanitizedActionLifecyclePreservesRequested(t *testing.T) {
 		t.Fatalf("sanitization changed passing lifecycle to %s", verdict)
 	}
 }
+
+func TestSyntheticSuiteUsesReachableBusyHangup(t *testing.T) {
+	suite, err := LoadSuite("../../scenarios/suites/synthetic.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(suite.Scenarios) != 2 {
+		t.Fatalf("scenario count=%d", len(suite.Scenarios))
+	}
+	legacyRaw, err := os.ReadFile("../../scenarios/simulator/busy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := simulator.DecodeScenario(bytes.NewReader(legacyRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := suite.Scenarios[1]
+	if busy.ID == legacy.ID || busy.MaxDurationMS != 60000 || busy.IdleTimeoutMS < 20000 || busy.RetainTranscript || busy.RetainAudio {
+		t.Fatalf("invalid suite busy fixture: %+v", busy)
+	}
+	foundHangup, foundOverlap := false, false
+	for _, action := range busy.Actions {
+		if action.Kind == "hangup" {
+			foundHangup = action.Trigger == "connected" && action.AfterMS == 10000 && action.AfterMS < busy.IdleTimeoutMS && action.AfterMS < busy.MaxDurationMS
+		}
+		if action.Kind == "speak" {
+			foundOverlap = action.RequireRemoteSpeaking && action.Trigger == "remote_speech_started" && action.Occurrence == 1 && action.AfterMS == 500
+		}
+	}
+	if !foundHangup || !foundOverlap {
+		t.Fatalf("missing reachable hangup or interruption: %+v", busy.Actions)
+	}
+	for _, action := range legacy.Actions {
+		if action.Kind == "hangup" && action.AfterMS != legacy.MaxDurationMS {
+			t.Fatal("legacy busy fixture changed")
+		}
+	}
+}
