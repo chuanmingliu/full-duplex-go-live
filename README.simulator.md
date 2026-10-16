@@ -4,7 +4,7 @@ A simulated human customer that **answers calls from an AI voice assistant**. Th
 
 The intended pairing is an assistant service built by Claude and a customer simulator built by Codex. Those coding agents configure and operate the services; the live conversations use independently configured speech and language providers. The simulator is built on the [golive voice engine](README.md) and lives on branch `codex/inbound-user-simulator`.
 
-**Current status:** implemented and tested with local mocks and isolated SIP fixtures. Real speech conversations with the Claude service, carrier routing and physical gateway capacity still require acceptance testing. See the [validation record](deploy/simulator/VALIDATION.md).
+**Current status:** implemented and tested with local mocks and isolated SIP fixtures. The first real-provider calls on 2026-10-16 exposed a pause-handling failure; the receiver fixes below still need a real-provider retest. Carrier routing and physical gateway capacity also require acceptance testing. See the [validation record](deploy/simulator/VALIDATION.md).
 
 ## How it works
 
@@ -93,6 +93,12 @@ For recognizable speech, start from [providers.example.json](configs/simulator/p
 
 Prepare a run through the workbench or API, then give the returned `dial_target_reference` to the caller. The hostname in that URI identifies the configured SIP domain; the caller also needs the actual gateway destination and routing. `simulator.invalid` is a logical domain, not a publicly reachable address.
 
+A PBX may rewrite the Request-URI host to the receiving gateway. Authenticated incoming callbacks also accept the hostname from `SIM_ACTIVECALL_URL` and its resolved IP addresses, with or without a SIP port. The user part must still be the exact reserved `sim-<24 hex digits>` ID. Unrelated hosts and stale reservations are rejected; no per-container `SIM_SIP_DOMAIN` override is needed for this forwarding pattern.
+
+Silence-suppressing gateways send no RTP between utterances. Once the call is answered and the voice session is open, the receiver fills inbound gaps of at least **100 ms** with **20 ms of zero PCM16 every 20 ms** on the wall clock. This lets VAD finish an utterance and keeps ASR receiving frames. Real audio suspends filling, and call closure stops it. These frames go only into the voice engine; they are not outgoing comfort noise or received-wire evidence. The simulator applies this automatically, including to older profiles and workbench exports.
+
+The pinned Active Call gateway enables **symmetric RTP latching**: an eligible RTP packet from a different source IP/port than SDP can establish the outgoing media destination. This supports a PBX advertising `192.168.71.9` while media arrives through `172.20.0.1`. A supplied SDP SSRC must match, and outgoing RTP uses SDP until the first eligible inbound packet arrives. See the [gateway source audit and limits](deploy/simulator/activecall/README.md#rtp-source-address-and-latching).
+
 The independent caller is responsible for dialing, its assistant prompt, provider configuration and call termination. There is no built-in Claude connector or outbound dial endpoint in this simulator. No text channel is used to pass conversational replies between the two services.
 
 For repeated tests, run the CLI from another terminal with the same `SIM_CONTROL_TOKEN`:
@@ -131,7 +137,7 @@ See the [CLI reference](cmd/golive-simctl/README.md) for exact input bounds, out
 - Audio recording and scripted silence are unsupported. Transcript retention is opt-in and bounded; use synthetic identities and facts.
 - Reports measure the receiver's application audio boundary, not handset playout or carrier latency.
 - Gateway readiness probes its control API. They do not prove a working SIP route, cellular channel or available hardware capacity.
-- Local race, browser and integration checks pass. Isolated SIP tests exercised answer, interruption and pre-answer cancellation with mock tones. Real-provider conversation and carrier acceptance remain pending; full-suite baseline failures are documented in the validation record.
+- Local race, browser and integration checks cover the simulator. Isolated SIP tests exercised answer, interruption and pre-answer cancellation with mock tones. The reported real-provider calls reached audio in both directions but stalled after one turn; acceptance requires a successful retest of the receiver fixes. Full-suite baseline failures are documented in the validation record.
 
 To check binary wiring without a call, build the receiver as above and run with Python 3:
 

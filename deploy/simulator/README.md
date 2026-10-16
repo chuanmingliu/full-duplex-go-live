@@ -61,6 +61,14 @@ curl --fail -sS http://127.0.0.1:18865/sim/v1/runs \
 
 Use the returned `run_id` as the **called SIP extension**, e.g. `sip:<run_id>@simulator.invalid`. The assistant-side caller sends the INVITE to the dedicated gateway at UDP25060. Never substitute “the current run”: that would let a late call consume the next reservation. V1 directly supports this per-run SIP routing. A fixed carrier telephone number needs a verified route that preserves the reservation identity; the existing household gateway is not assumed to support it.
 
+PBX forwarding may replace the Request-URI host with the gateway hostname or an
+IP resolved from `SIM_ACTIVECALL_URL`, optionally with a SIP port. The receiver
+accepts those gateway addresses as well as `SIM_SIP_DOMAIN`, while requiring the
+exact reservation user part. Its inbound media path fills quiet gaps after
+100 ms with 20 ms PCM16 silence frames on the wall clock; existing profiles need
+no override. See the [project README](../../README.simulator.md#connect-the-assistant-side-caller)
+and [RTP latching notes](activecall/README.md#rtp-source-address-and-latching).
+
 Native webhook: `POST /active-call/incoming` with `Authorization: Bearer $SIM_WEBHOOK_TOKEN`, using Active Call's `event:"invite"`, `dialogId` and `callee`. The adapter attaches its control WebSocket before scheduling acceptance, observes `answer`/`hangup`, and supplies an exact authenticated media binding. The generic `/sim/v1/incoming` API is only a normalized trusted-adapter interface; do not point a native webhook there.
 
 ```sh

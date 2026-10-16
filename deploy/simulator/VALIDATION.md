@@ -55,3 +55,55 @@ The checks below concern the configuration workbench, task scenarios, control AP
 - Independent task reviews and the final integrated review approved the extension through `6d16c4c`. The final fixes were re-reviewed with no remaining actionable P0/P1/P2 findings. Approval covers the isolated feature-branch push, not deployment or live conversation acceptance.
 
 Real speech, end-to-end conversation with Claude, carrier routing and gateway capacity remain unverified. Profile export requires a deliberate restart of the isolated simulator; it does not apply settings to any running service. Semantic grades remain separate from protocol evidence and from the suite summary.
+
+## First real-provider findings and receiver corrections — 2026-10-16
+
+The following live observations were supplied by Claude/the operator on desk
+`n10`, with related routing/source notes `n8` and `n7`. Codex did not originate
+these calls or independently measure their audio:
+
+| Evidence | Reported result |
+| --- | --- |
+| Runs `sim-3e5c23b5…`, `sim-6448e4f2…`, `sim-6b7d9745…` | Answer at 1.71 s; customer audio at 1.8–2.6 s; assistant audio at 2.4–8.6 s |
+| Suppressed RTP after greeting | Voice failure at 23.66 s, about 15 s after last audio; Tencent ASR code 4008 |
+| PBX forwarding | Request-URI `sip:sim-<id>@172.20.0.2:25060` rejected before a temporary `SIM_SIP_DOMAIN` override |
+| SDP/source mismatch | SDP `192.168.71.9`, possible bridge source `172.20.0.1`; bridge counts 163 / 60 packets |
+
+These calls establish reported bidirectional transport with real providers,
+but not a successful multi-turn conversation. The corrections port the quiet
+line behavior from `telephony-realtime` commit `d0bb53d` into the isolated
+receiver and accept gateway-address Request-URIs while preserving exact
+reservation binding. The simulator uses a fixed 100 ms gap and 20 ms PCM16
+frames; ordinary service settings and existing simulator profiles are unchanged.
+
+The RTP audit verified the exact Active Call pin `eaf7ebc8` and the locked
+`rustrtc 0.4.7` crate checksum. Default source latching supports the reported
+address difference; no gateway patch was needed. See the
+[source references and qualifications](activecall/README.md#rtp-source-address-and-latching).
+This audit did not run the Rust transport tests or verify the deployed image.
+
+Local verification of code commits `c55896c` (forwarded URI) and `dbacec4`
+(quiet input), performed with mocks and temporary loopback sockets:
+
+- Both reported failures were reproduced before their fixes. The receiver
+  regression sends 400 ms of voiced PCM and then no more packets; it now
+  observes zero PCM at ASR, VAD speech-stop, completed transcription and a second
+  customer response. Wire speech evidence still contains one remote turn.
+- Six additional line-input tests cover the 100 ms threshold, 20 ms / 640-byte
+  frames, fresh and continuous audio, empty appends, no catch-up burst after a
+  15-second gap, admission, cancellation, stop/join and evidence-before-enqueue.
+- A fresh combined race run passed **117 top-level tests**: 89 across simulator,
+  client, evaluator, workbench and CLI packages; 28 server tests covering the
+  simulator plus ordinary Session, Realtime and binary-audio paths. The server
+  subset took 21.942 s. No data races or test failures were reported.
+- `go vet ./...`, `go build -buildvcs=false ./...`, the five Python isolation
+  tests and `git diff --check` passed. The rebuilt receiver passed
+  `check_workbench.py`; only readiness probes reached its fake gateway.
+- Independent review of both fixes and documentation found no remaining
+  actionable correctness or security issue. The full repository test suite
+  was not rerun; its previously recorded baseline failures remain unchanged.
+
+The corrections require a new real-provider call after deployment of the
+dedicated receiver. Successful local tests do not establish that Tencent 4008
+is absent on a live connection. This work does not deploy, restart, reroute or
+place calls through an existing service.
