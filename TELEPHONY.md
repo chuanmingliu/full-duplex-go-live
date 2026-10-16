@@ -190,6 +190,26 @@ $S run | events | report | stop-run    # the run as it goes; the report once it 
 $S suite synthetic.json                # one scenario after another, each waiting to be called
 ```
 
+**Two words, two kinds of call.** `phone-brain.sh call` places the real
+call — the one number the originator allows, a person on a phone — and
+`phone-brain.sh call sim` places the simulated one. Nothing else tells them
+apart: to golive both are a session from Active Call. So `call sim` writes
+one line per dial to `~/golive-sim/data/dials.jsonl` (`{"at","call","run"}`:
+the originator's call id and the simulator's run id), and that file is what
+the journal reads (`-sim-dials`) to mark a call **sim** in its list and head
+it "Simulated call of …", and what the desk reads to pair the two.
+
+**Following a simulated call** (the desk, `#/calls`): every dial, newest
+first, with the simulator's side (phase, scenario, how it ended, its checks
+and failures, its measure of the assistant's response gaps) beside golive's
+(turns, p50, worst or p95, turns over 1200) and, embedded, the journal's
+view of the same call — the recording with the customer on the left and the
+assistant on the right, the turns, the gate — so what the customer said and
+what the assistant answered can be played back together. The report in full
+is a click away; the desk fetches it from the simulator with the control
+token server side, and the page never sees that token. Recording must be
+on for the audio (`phone-brain.sh record on`, then a restart of golive).
+
 `start providers` runs the customer on real speech: Tencent, DeepSeek and
 MiniMax with **its own** accounts, written by the owner into
 `~/golive-sim/providers.env` (the phone line's keys are the phone line's;
@@ -261,6 +281,10 @@ What it is:
 - **The page** at `/`: who was last heard from and when, what is open for
   whom, the switches, threads on the left, the thread on the right, a
   compose box, live over the event stream (`/api/events`, server-sent).
+- **Simulated calls** at `#/calls`: the calls placed to the simulated
+  customer, each paired with its run's report and the journal's call, the
+  recording playable in place ("Following a simulated call" under "The
+  simulated customer"). `GET /api/calls`, `GET /api/calls/{run}/report`.
 
 ```bash
 scripts/phone-brain.sh desk start                  # on the box; tokens are made

@@ -104,6 +104,9 @@ type Config struct {
 	Dir string // the log and the tokens; the owner's alone
 	Log *slog.Logger
 	Now func() time.Time
+	// Calls, when set, adds the page over the calls placed to the simulated
+	// customer (calls.go).
+	Calls *Calls
 }
 
 // Service is the desk.
@@ -551,6 +554,7 @@ func (s *Service) Handler() http.Handler {
 			}
 		}
 	}))
+	s.cfg.Calls.Mount(mux, s.authed)
 	if sub, err := fs.Sub(uiFiles, "ui"); err == nil {
 		mux.Handle("GET /", http.FileServer(http.FS(sub)))
 	}

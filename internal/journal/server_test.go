@@ -321,3 +321,38 @@ func TestOneSideOfARecordingIsServedAloneFromTracksAndFromTheArchive(t *testing.
 		t.Errorf("the whole recording: status %d, %d bytes, named %q", code, len(whole), h.Get("Content-Disposition"))
 	}
 }
+
+// A call placed to the simulated customer looks like any other to golive;
+// the dials file is what tells the journal, and the page, which it was.
+func TestACallToTheSimulatedCustomerIsMarkedAsSuch(t *testing.T) {
+	dir := t.TempDir()
+	dials := filepath.Join(dir, "dials.jsonl")
+	os.WriteFile(dials, []byte(`{"at":"2026-10-12T09:34:00+08:00","call":"`+fixtureCall+`","run":"sim-0123456789abcdef01234567"}`+"\n"), 0o600)
+	cfg := Config{LogPath: "testdata/call.log", DataDir: filepath.Join(dir, "data"), NotesDir: filepath.Join(dir, "notes"), SimDials: dials}
+	ts := httptest.NewServer(NewServer(cfg).Handler())
+	defer ts.Close()
+	var o struct {
+		Calls []CallRow `json:"calls"`
+	}
+	if code := getJSON(t, ts.URL+"/api/overview", &o); code != 200 || len(o.Calls) != 1 {
+		t.Fatalf("status %d, %d calls", code, len(o.Calls))
+	}
+	if o.Calls[0].Kind != "simulated" || o.Calls[0].RunID != "sim-0123456789abcdef01234567" {
+		t.Fatalf("row %+v", o.Calls[0])
+	}
+	var d struct {
+		SimRun string `json:"sim_run"`
+	}
+	if code := getJSON(t, ts.URL+"/api/calls/"+fixtureCall, &d); code != 200 || d.SimRun != "sim-0123456789abcdef01234567" {
+		t.Fatalf("detail: %d %+v", code, d)
+	}
+	// And without the file, the same call is a real one.
+	ts2 := httptest.NewServer(NewServer(Config{LogPath: "testdata/call.log", DataDir: filepath.Join(dir, "data2"), NotesDir: filepath.Join(dir, "notes")}).Handler())
+	defer ts2.Close()
+	var o2 struct {
+		Calls []CallRow `json:"calls"`
+	}
+	if getJSON(t, ts2.URL+"/api/overview", &o2); o2.Calls[0].Kind != "" {
+		t.Fatalf("a real call marked: %+v", o2.Calls[0])
+	}
+}

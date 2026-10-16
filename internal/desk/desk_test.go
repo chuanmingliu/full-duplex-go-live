@@ -195,3 +195,74 @@ func TestTheStreamCarriesEachNoteAsItIsWritten(t *testing.T) {
 	}
 	t.Fatal("the note did not arrive on the stream")
 }
+
+func TestASimulatedCallIsPairedWithItsRunAndItsJournalEntry(t *testing.T) {
+	// The simulator knows the run; the journal knows the call; the dials
+	// file is the only place the two ids meet. A real call is not listed.
+	sim := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("s", 64) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/sim/v1/runs/sim-aaaaaaaaaaaaaaaaaaaaaaaa":
+			io.WriteString(w, `{"run_id":"sim-aaaaaaaaaaaaaaaaaaaaaaaa","phase":"failed"}`)
+		case "/sim/v1/runs/sim-aaaaaaaaaaaaaaaaaaaaaaaa/report":
+			io.WriteString(w, `{"scenario_id":"appointment-cooperative","termination_reason":"Active Call control disconnected","failures":["Active Call control disconnected"],"checks":[{"name":"answered_once","result":"pass"},{"name":"clean_termination","result":"indeterminate"}],"assistant_response_gaps":[{"value_ms":0,"valid":false},{"value_ms":910,"valid":true}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer sim.Close()
+	journal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/calls/out-sim1" {
+			io.WriteString(w, `{"call":{"id":"out-sim1","duration_s":19.1,"build":"abc1234","summary":{"turns":1,"p50":0,"p95":0,"over":0}},"audio":{"available":true,"duration_s":19.1}}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer journal.Close()
+	dir := t.TempDir()
+	dials := filepath.Join(dir, "dials.jsonl")
+	os.WriteFile(dials, []byte(`{"at":"2026-10-16T21:38:40+08:00","call":"out-sim1","run":"sim-aaaaaaaaaaaaaaaaaaaaaaaa"}`+"\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "tokens.env"), []byte("# tokens\nSIM_CONTROL_TOKEN="+strings.Repeat("s", 64)+"\nSIM_SIP_DOMAIN=simulator.invalid\n"), 0o600)
+	c := &Calls{Dials: dials, Simulator: sim.URL, SimTokens: filepath.Join(dir, "tokens.env"), Journal: journal.URL, JournalPort: 8790}
+
+	s := openTest(t, filepath.Join(dir, "desk"))
+	s.cfg.Calls = c
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/calls", nil)
+	req.Header.Set("Authorization", "Bearer "+s.tokens["owner"])
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got struct {
+		Calls       []CallRow `json:"calls"`
+		JournalPort int       `json:"journal_port"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/calls: %d %v", resp.StatusCode, err)
+	}
+	if len(got.Calls) != 1 || got.JournalPort != 8790 {
+		t.Fatalf("rows: %+v port %d", got.Calls, got.JournalPort)
+	}
+	r := got.Calls[0]
+	if r.Call != "out-sim1" || r.Phase != "failed" || r.Scenario != "appointment-cooperative" || r.Checks["answered_once"] != "pass" || len(r.Failures) != 1 {
+		t.Fatalf("simulator side: %+v", r)
+	}
+	if !r.Journal || r.Build != "abc1234" || r.Turns != 1 || !r.HasAudio || r.DurationS != 19.1 {
+		t.Fatalf("journal side: %+v", r)
+	}
+	if len(r.GapsMS) != 1 || r.GapsMS[0] != 910 {
+		t.Fatalf("only the valid gap counts: %v", r.GapsMS)
+	}
+	// Without a token the page gets nothing, like everything else here.
+	resp2, _ := http.Get(srv.URL + "/api/calls")
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated: %d", resp2.StatusCode)
+	}
+	resp2.Body.Close()
+}

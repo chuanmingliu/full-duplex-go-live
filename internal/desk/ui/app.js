@@ -16,7 +16,8 @@
   };
   let token = '';
   try { token = localStorage.getItem('desk.token') || ''; } catch (e) {}
-  const state = { me: '', control: {}, notes: [], seq: 0, seen: {}, open: {}, thread: '', filter: 'all', es: null };
+  const state = { me: '', control: {}, notes: [], seq: 0, seen: {}, open: {}, thread: '', filter: 'all', es: null,
+    view: 'notes', calls: [], journalPort: 8790, call: '', callsAt: 0 };
 
   const api = async (path, opts = {}) => {
     const r = await fetch(path, { ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -107,7 +108,75 @@
     return t.notes.some(n => n.from === state.filter);
   };
 
+  // The page: notes, or the calls placed to the simulated customer.
+  const route = () => {
+    const p = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean);
+    state.view = p[0] === 'calls' ? 'calls' : 'notes';
+    if (state.view === 'calls' && p[1]) state.call = decodeURIComponent(p[1]);
+    if (state.me) render();
+  };
+  window.addEventListener('hashchange', route);
+  route();
+
+  const loadCalls = async () => {
+    const d = await api('/api/calls');
+    state.calls = d.calls || []; state.journalPort = d.journal_port || 8790; state.callsAt = Date.now();
+    if (!state.call && state.calls.length) state.call = state.calls[0].call;
+  };
+  const dur = (s) => !s ? '–' : s < 60 ? Math.round(s) + ' s' : Math.floor(s / 60) + ' min ' + String(Math.round(s % 60)).padStart(2, '0') + ' s';
+  const phaseChip = (r) => {
+    const bad = (r.failures && r.failures.length) || r.phase === 'failed' || r.phase === 'expired';
+    const live = ['prepared', 'waiting', 'ringing', 'answering', 'connected', 'ending'].includes(r.phase);
+    return h('span', { class: 'chip' + (bad ? ' warn' : live ? '' : ' good') }, r.phase || '?');
+  };
+  const renderCalls = () => {
+    const rows = state.calls;
+    const r = rows.find(x => x.call === state.call) || rows[0];
+    if (r && r.call !== state.call) state.call = r.call;
+    const left = h('div', {},
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { try { await loadCalls(); render(); } catch (e) { tip(e.message, true); } } }, 'Refresh'),
+        h('span', { class: 'muted' }, rows.length + (rows.length === 1 ? ' simulated call' : ' simulated calls'))),
+      h('div', { class: 'threads' }, rows.length ? rows.map(x =>
+        h('button', { 'aria-current': String(state.call === x.call), onclick: () => { state.call = x.call; location.hash = '#/calls/' + encodeURIComponent(x.call); render(); } },
+          h('span', { class: 't-subject' }, when(x.at), ' ', phaseChip(x), x.has_audio ? h('span', { class: 'muted' }, ' ▶ recording') : null),
+          h('span', { class: 't-meta' }, (x.scenario || 'scenario ?') + ' · run ' + x.run.slice(0, 10) + '… · ' + (x.journal ? x.turns + ' turns, p50 ' + (x.p50 || '–') + ' ms' : 'not in the journal'))))
+        : h('div', { class: 'empty' }, 'no simulated call yet: scripts/sim-brain.sh prepare <scenario>, then scripts/phone-brain.sh call sim')));
+    const right = h('div', {});
+    if (r) {
+      const checks = r.checks ? Object.entries(r.checks) : [];
+      const gaps = (r.gaps_ms || []).slice().sort((a, b) => a - b);
+      const q = (p) => gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] : null;
+      right.append(
+        h('div', { class: 'card' },
+          h('h2', { style: 'margin-top:0' }, 'Simulated call of ', when(r.at), ' ', h('span', { class: 'sim-badge' }, 'sim'), ' ', phaseChip(r)),
+          h('dl', { class: 'facts' },
+            h('dt', {}, 'Run'), h('dd', {}, h('span', { class: 'mono' }, r.run)),
+            h('dt', {}, 'Call'), h('dd', {}, h('span', { class: 'mono' }, r.call), r.build ? [' on ', h('span', { class: 'mono' }, r.build)] : null),
+            h('dt', {}, 'Scenario'), h('dd', {}, r.scenario || '–'),
+            h('dt', {}, 'Ended'), h('dd', {}, r.ended || (r.phase === 'completed' ? 'cleanly' : '–')),
+            h('dt', {}, 'golive'), h('dd', {}, r.journal ? [dur(r.duration_s), ', ', r.turns, ' turns, p50 ', r.p50 || '–', ' ms, ', (r.turns >= 40 ? 'p95 ' : 'worst '), r.p95 || '–', ' ms, ', r.over, ' over 1200'] : 'the journal has no call of this id'),
+            h('dt', {}, 'Customer\u2019s view'), h('dd', {}, gaps.length ? ['assistant response gaps (its audio boundary): ', gaps.length, ' valid, p50 ', q(0.5), ' ms, worst ', gaps[gaps.length - 1], ' ms'] : 'no valid response gap measured'),
+            h('dt', {}, 'Checks'), h('dd', {}, checks.length ? checks.map(([k, v]) => h('span', { class: 'chip ' + (v === 'pass' ? 'good' : v === 'fail' ? 'warn' : ''), title: v }, k + ' · ' + v)) : '–'),
+            h('dt', {}, 'Failures'), h('dd', {}, r.failures && r.failures.length ? r.failures.join('; ') : 'none')),
+          h('div', { class: 'row' },
+            h('a', { class: 'btn', href: '/api/calls/' + encodeURIComponent(r.run) + '/report', target: '_blank', rel: 'noopener', onclick: (e) => {
+              e.preventDefault();
+              api('/api/calls/' + encodeURIComponent(r.run) + '/report').then(d => { const w = window.open('', '_blank'); w.document.write('<pre>' + JSON.stringify(d, null, 2).replace(/</g, '&lt;') + '</pre>'); }).catch(err => tip(err.message, true));
+            } }, 'Full report'),
+            r.journal ? h('a', { class: 'btn', href: journalURL(r.call), target: '_blank', rel: 'noopener' }, 'Open in the journal') : null)),
+        r.journal ? h('div', { class: 'card embed' },
+          h('p', { class: 'sub' }, 'The journal\u2019s view of the same call: the recording (customer left, assistant right), the turns, the gate.'),
+          h('iframe', { src: journalURL(r.call), title: 'The call journal', loading: 'lazy' })) : null);
+    } else {
+      right.append(h('div', { class: 'empty' }, 'nothing to show yet'));
+    }
+    $('#main').replaceChildren(h('div', { class: 'desk' }, left, right));
+  };
+  const journalURL = (call) => location.protocol + '//' + location.hostname + ':' + state.journalPort + '/#/call/' + encodeURIComponent(call);
+
   const render = () => {
+    $('#nav-notes').setAttribute('aria-current', state.view === 'notes' ? 'page' : 'false');
+    $('#nav-calls').setAttribute('aria-current', state.view === 'calls' ? 'page' : 'false');
     $('#who').replaceChildren(h('span', { class: 'me' }, state.me));
     $('#seen').replaceChildren(...['owner', 'claude', 'codex'].map(p =>
       h('span', {}, h('b', {}, p), ' ' + ago(state.seen[p]) + (state.open[p] ? ' · ' + state.open[p] + ' open' : ''))));
@@ -125,6 +194,11 @@
         catch (err) { tip(err.message, true); }
       } }, ...['manual', 'auto'].map(m => h('option', { value: m, selected: c.mode === m ? '' : null }, m))) : null);
 
+    if (state.view === 'calls') {
+      if (Date.now() - state.callsAt > 10000) loadCalls().then(renderCalls).catch(e => tip(e.message, true));
+      renderCalls();
+      return;
+    }
     const ts = threads().filter(matches);
     if (!state.thread && ts.length) state.thread = ts[0].id;
     const left = h('div', {},

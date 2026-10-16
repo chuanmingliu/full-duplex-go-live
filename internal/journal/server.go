@@ -51,7 +51,12 @@ type Config struct {
 	// UIDir serves the page from a directory instead of the copy built into
 	// the binary, for working on it.
 	UIDir string
-	Log   *slog.Logger
+	// SimDials is where `phone-brain.sh call sim` writes one line per call it
+	// placed to the simulated customer ({"at","call","run"}): the only way to
+	// tell such a call from a real one, since the line looks the same to
+	// golive. Empty means every call is taken to be real.
+	SimDials string
+	Log      *slog.Logger
 }
 
 // Server serves the journal.
@@ -72,6 +77,10 @@ type Server struct {
 	// archiveDue whether there is anything the archive has not been given.
 	ranges     map[string][2]int64
 	archiveDue bool
+	// simRuns is call id → simulator run id from SimDials, and simMod when
+	// the file was last read.
+	simRuns map[string]string
+	simMod  time.Time
 	// settled is each call as it stood when the archive last had all of it,
 	// so that a pass costs nothing for the calls that have not changed.
 	settled map[string]callSig
@@ -158,10 +167,45 @@ func (s *Server) refresh() {
 	if s.calls == nil {
 		s.loadKept()
 	}
+	s.readDials()
 	s.readLog()
 	if s.archiveDue {
 		s.archiveDue = s.archivePass()
 	}
+}
+
+// readDials reads the record of calls placed to the simulated customer, when
+// the file has changed. Held under s.mu.
+func (s *Server) readDials() {
+	if s.cfg.SimDials == "" {
+		return
+	}
+	st, err := os.Stat(s.cfg.SimDials)
+	if err != nil || st.ModTime().Equal(s.simMod) {
+		return
+	}
+	data, err := os.ReadFile(s.cfg.SimDials)
+	if err != nil {
+		return
+	}
+	runs := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		var d struct {
+			Call string `json:"call"`
+			Run  string `json:"run"`
+		}
+		if json.Unmarshal([]byte(line), &d) == nil && d.Call != "" {
+			runs[d.Call] = d.Run
+		}
+	}
+	s.simRuns, s.simMod = runs, st.ModTime()
+}
+
+// simRunOf is the simulator run a call was placed to, or "" for a real call.
+func (s *Server) simRunOf(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.simRuns[id]
 }
 
 // archivePass gives the archive every finished call, and reports whether any
@@ -535,6 +579,10 @@ type CallRow struct {
 	// Worst is what the slowest turn over target was laid to, so that the list
 	// says something about a bad call without opening it.
 	Worst string `json:"worst,omitempty"`
+	// Kind is "simulated" for a call placed to the simulated customer (the
+	// run id in RunID), and empty for a real one.
+	Kind  string `json:"kind,omitempty"`
+	RunID string `json:"run_id,omitempty"`
 }
 
 // BuildRow pools the calls made on one build, which is the only pooling the
@@ -569,6 +617,9 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 		row.Archived = s.archive.Entry(c.ID) != nil
 		row.HasRetro = s.retro(c.ID) != nil
+		if run := s.simRunOf(c.ID); run != "" {
+			row.Kind, row.RunID = "simulated", run
+		}
 		if f := s.feedback(c.ID); f != nil {
 			row.Rating = f.Rating
 		}
@@ -659,6 +710,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 			"archive":       s.archiveOf(c),
 			"retrospective": s.retro(c.ID),
 			"feedback":      s.feedback(c.ID),
+			"sim_run":       s.simRunOf(c.ID),
 		})
 	case "audio.wav":
 		rec, err := s.recording(c)

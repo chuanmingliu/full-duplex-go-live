@@ -659,7 +659,7 @@
       // is the link, and a click anywhere else on the row follows it.
       var row = h('div', { class: 'call-row' + (st.over ? ' has-over' : ''), role: 'listitem' },
         h('a', { class: 'c-when num', href: '#/call/' + c.id }, when(c.started_at)),
-        h('span', { class: 'c-build num' }, c.build || '–'),
+        h('span', { class: 'c-build num' }, c.build || '–', c.kind === 'simulated' ? h('span', { class: 'sim-badge', title: 'Placed to the simulated customer, run ' + (c.run_id || '?') }, 'sim') : null),
         h('span', { class: 'c-dur num r', 'data-l': 'length' }, dur(c.duration_s)),
         h('span', { class: 'c-turns num r', 'data-l': 'turns' }, st.turns),
         h('span', { class: 'c-p50 num r', 'data-l': 'p50' }, num(st.p50)),
@@ -1633,10 +1633,11 @@
     m('Prompt', [h('span', { class: 'num' }, num(call.prompt_chars)), ' characters', call.prompt_sha ? [' ', h('code', { class: 'hash', title: 'Hash of the instructions' }, call.prompt_sha)] : null]);
     if (call.llm_copies || call.keys || call.lanes) m('Chat model', [call.llm_copies ? plural(call.llm_copies, 'copy', 'copies') : null, call.keys ? (call.llm_copies ? ', ' : '') + plural(call.keys, 'key') : null, call.lanes ? ', ' + plural(call.lanes, 'lane') : null]);
     m('Call', h('code', { class: 'hash' }, call.id));
+    if (d.sim_run) m('Simulated', ['the simulated customer answered; run ', h('code', { class: 'hash' }, d.sim_run)]);
 
     view.appendChild(h('div', { class: 'call-head' },
       pager('top'),
-      h('div', { class: 'call-title' }, h('h1', null, 'Call of ', h('span', { class: 'num' }, when(call.started_at))), verdictChip(st), intervalGauge(st)),
+      h('div', { class: 'call-title' }, h('h1', null, (d.sim_run ? 'Simulated call of ' : 'Call of '), h('span', { class: 'num' }, when(call.started_at))), d.sim_run ? h('span', { class: 'sim-badge' }, 'sim') : null, verdictChip(st), intervalGauge(st)),
       h('nav', { class: 'jump', 'aria-label': 'On this page' },
         [['Read the conversation', 'sec-conversation', 'jump-main'], ['Turn by turn', 'sec-turns'], ['Where the time goes', 'sec-stages'], ['Retrospective', 'sec-retro'], ['Your notes', 'sec-notes']].map(function (j) {
           var b = h('button', { type: 'button', class: 'linkbtn' + (j[2] ? ' ' + j[2] : '') }, j[0]);

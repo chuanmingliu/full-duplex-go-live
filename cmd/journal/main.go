@@ -32,6 +32,7 @@ func main() {
 		ui    = flag.String("ui", "", "serve the page from this directory instead of the one built in (for working on it)")
 		arch  = flag.String("archive", "", "where finished calls are kept for good: recording, conversation, measurements, log; empty archives nothing")
 		last  = flag.String("last-call", "", "golive's last_call_file; the archive keeps a copy of each distinct set of instructions")
+		dials = flag.String("sim-dials", "", "the record of calls placed to the simulated customer (phone-brain.sh call sim writes it); such calls are marked, the rest are real")
 		check = flag.Bool("verify", false, "read every archived file again, compare it with its manifest, print what is wrong, and exit")
 		list  = flag.Bool("archive-status", false, "print what the archive holds, in numbers, and exit")
 	)
@@ -42,7 +43,7 @@ func main() {
 	}
 	srv := journal.NewServer(journal.Config{
 		LogPath: *logp, StoreDir: *store, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
-		ArchiveDir: *arch, LastCallFile: *last, Log: log,
+		ArchiveDir: *arch, LastCallFile: *last, SimDials: *dials, Log: log,
 	})
 	// The archive is fed on a clock, not by whoever opens the page.
 	go srv.Watch(context.Background(), 20*time.Second)

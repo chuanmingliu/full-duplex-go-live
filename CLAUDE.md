@@ -580,7 +580,12 @@ page on the home network (`phone-brain.sh desk`, port 8792). "The desk" in
 `TELEPHONY.md`. Claude writes to it with `scripts/desk.sh` from a runner
 job (`DESK_AS=claude`, the token read from the file). Check `inbox` at the
 start of a session; close tasks when done; write numbers and ids, never
-transcripts. Mode `auto` is written down and acted on by nothing yet.
+transcripts. Mode `auto` is written down and acted on by nothing yet. Its
+`#/calls` page lists the simulated calls (`internal/desk/calls.go`): the
+dials file `call sim` writes pairs the originator's call id with the
+simulator's run id; the journal marks those calls **sim** and the desk
+embeds the journal's player for them. **`call` is the real call, `call
+sim` the simulated one — the owner's words, 10-16.**
 
 ## The simulated customer
 

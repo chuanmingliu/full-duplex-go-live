@@ -261,7 +261,7 @@ jstart() {
   mkdir -p "$JOURNAL_DATA" "$ARCHIVE_DIR" && chmod 700 "$JOURNAL_DATA" "$ARCHIVE_DIR"
   local store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
   setsid nohup "$JBIN" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
-    -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" \
+    -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" \
     -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" >> "$JLOG" 2>&1 < /dev/null &
   echo $! > "$JPID"
   sleep 1
@@ -817,6 +817,20 @@ except urllib.error.HTTPError as err:
 except OSError as err:
     sys.exit("the originator did not answer at %s: %s" % (base, err))
 print("originator answered %d: %s" % (status, hide(text)[:400]))
+if mode == "sim" and status == 200:
+    # Written down so the journal can tell a simulated call from a real one
+    # (it reads this file) and the desk can pair the run with the call.
+    try:
+        call_id = json.loads(text).get("call_id", "")
+    except ValueError:
+        call_id = ""
+    if call_id:
+        import datetime
+        os.makedirs(os.path.join(sim_dir, "data"), exist_ok=True)
+        with open(os.path.join(sim_dir, "data", "dials.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                                "call": call_id, "run": run_id}) + "\n")
+        print("paired: call %s <-> run %s (dials.jsonl)" % (call_id, run_id))
 sys.exit(0 if status == 200 else 1)
 PY
   ;;

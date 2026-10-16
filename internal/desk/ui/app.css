@@ -105,3 +105,15 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .filters button { font-size: 12.5px; padding: 3px 9px; }
 .filters button[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); }
 .empty { color: var(--ink-3); padding: 30px 0; text-align: center; }
+
+/* Pages, and the simulated calls page. */
+.nav { display: flex; gap: 2px; }
+.nav a { padding: 4px 10px; border-radius: 5px; text-decoration: none; color: var(--ink-2); }
+.nav a:hover { background: var(--wash); }
+.nav a[aria-current="page"] { background: var(--accent-wash); color: var(--ink); }
+.sim-badge { display: inline-block; padding: 0 5px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font: 600 10.5px/16px var(--sans); letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 2px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0; }
+.facts dt { color: var(--ink-3); font-size: 12px; }
+.facts dd { margin: 0; }
+.facts .chip { margin: 0 4px 4px 0; }
+.embed iframe { width: 100%; height: 1100px; border: 1px solid var(--line); border-radius: 6px; background: var(--page); }
