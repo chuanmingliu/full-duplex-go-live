@@ -100,6 +100,13 @@ type Session struct {
 	audioEvents atomic.Int64
 	audioOut    atomic.Int64
 	lastActive  atomic.Int64
+	// The line filler (vad.line_fill_ms): when the last client frame came
+	// in, and how much silence has been put on the line in its place.
+	lastAudio atomic.Int64
+	fillMS    atomic.Int64
+	fillRuns  atomic.Int64
+	fillStop  chan struct{}
+	fillOnce  sync.Once
 }
 
 // peer is one WebSocket attached to a session.
@@ -224,6 +231,10 @@ func (s *Session) Serve(ctx context.Context) {
 		}
 		u := engine.Usage()
 		usage = &u
+		s.stopFill()
+		if runs := s.fillRuns.Load(); runs > 0 {
+			s.log.Info("listen: the line went quiet and was filled with silence", "times", runs, "filled_ms", s.fillMS.Load())
+		}
 		engine.Close()
 		if rec != nil {
 			gate = engine.GateTrace()
@@ -385,6 +396,48 @@ func (s *Session) logOutbound(data []byte) {
 
 // finish ends the read loop. The writers keep running until Serve has queued
 // session.closed.
+// fillLine keeps time passing for the gate and the recognizer when the
+// client stops sending audio: every frame period with nothing from the line,
+// a frame of silence is pushed in its place, until audio returns. A phone
+// line that sends every 20 ms never trips it; a SIP peer with silence
+// suppression does, between every two things it says.
+func (s *Session) fillLine(ctx context.Context, engine *duplex.Engine, rec *store.Recording, rate int, gap time.Duration) {
+	frame := 20 * time.Millisecond
+	silence := make([]byte, rate/50*2) // 20 ms of PCM16
+	t := time.NewTicker(frame)
+	defer t.Stop()
+	filling := false
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.fillStop:
+			return
+		case <-t.C:
+		}
+		idle := time.Since(time.Unix(0, s.lastAudio.Load()))
+		if idle < gap {
+			filling = false
+			continue
+		}
+		if !filling {
+			filling = true
+			s.fillRuns.Add(1)
+		}
+		s.fillMS.Add(20)
+		if rec != nil {
+			rec.WriteInput(silence)
+		}
+		engine.PushAudio(silence)
+	}
+}
+
+func (s *Session) stopFill() {
+	if s.fillStop != nil {
+		s.fillOnce.Do(func() { close(s.fillStop) })
+	}
+}
+
 func (s *Session) finish() {
 	s.stopReadOnce.Do(func() {
 		close(s.stopRead)
@@ -599,6 +652,7 @@ func (s *Session) pushAudio(p *peer, wire []byte, eventID string) {
 		return
 	}
 	pcm := codec.ToPCM16(wire)
+	s.lastAudio.Store(time.Now().UnixNano())
 	if rec != nil {
 		rec.WriteInput(pcm)
 	}
@@ -947,6 +1001,11 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 	s.mu.Unlock()
 
 	engine.Start(ctx)
+	if gap := s.cfg.VAD.LineFillMS; gap > 0 {
+		s.fillStop = make(chan struct{})
+		s.lastAudio.Store(time.Now().UnixNano())
+		go s.fillLine(ctx, engine, rec, resolved.Audio.Format.Rate, time.Duration(gap)*time.Millisecond)
+	}
 
 	s.log.Info("session started",
 		"model", resolved.Model,

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/chuanmingliu/golive/internal/audio"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,5 +125,46 @@ func TestRealtimeCallsAreNotStoredByDefault(t *testing.T) {
 	await(t, "the assistant to answer", 5*time.Second, func() bool { return c.audioMS(16000) > 0 })
 	if sessions, _ := os.ReadDir(dir); len(sessions) != 0 {
 		t.Errorf("a call was stored without being asked for: %d session(s)", len(sessions))
+	}
+}
+
+// A peer with silence suppression sends nothing between words. The gate and
+// the recognizer count pauses in audio, so with vad.line_fill_ms the service
+// puts silence on the line itself, on the clock, until the peer speaks again.
+func TestAQuietLineIsFilledWithSilenceOnTheClock(t *testing.T) {
+	for _, fill := range []int{0, 60} {
+		dir := t.TempDir()
+		ts, _, _ := gatewayServer(t, func(c *config.Config) {
+			c.StoreDir = dir
+			c.Realtime.StoreCalls = true
+			c.VAD.LineFillMS = fill
+		})
+		c := dialRealtime(t, ts, "/v1/realtime?call=out-aaaa-0002")
+		sendRaw(t, c.conn, activeCallSessionUpdate)
+		c.first("session.updated", 2*time.Second)
+		// One 20 ms frame, then nothing for 600 ms.
+		c.say(make([]byte, audio.PCM16(16000).BytesForMS(20)), 16000)
+		time.Sleep(600 * time.Millisecond)
+		c.conn.Close()
+		sessions, _ := os.ReadDir(dir)
+		if len(sessions) != 1 {
+			t.Fatalf("fill %d: %d stored sessions", fill, len(sessions))
+		}
+		var size int64
+		await(t, "the recording to settle", 3*time.Second, func() bool {
+			info, err := os.Stat(filepath.Join(dir, sessions[0].Name(), "input.pcm"))
+			if err != nil {
+				return false
+			}
+			size = info.Size()
+			return size > 0
+		})
+		ms := size / int64(audio.PCM16(16000).BytesForMS(1))
+		if fill == 0 && ms > 60 {
+			t.Errorf("without line_fill_ms the line held %d ms; only the 20 ms sent should be there", ms)
+		}
+		if fill > 0 && ms < 300 {
+			t.Errorf("with line_fill_ms %d the line held only %d ms; the 600 ms of quiet should have been filled", fill, ms)
+		}
 	}
 }

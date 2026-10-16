@@ -600,6 +600,12 @@ type VADProfile struct {
 	// session's record (the journal draws it). 0 for the default, -1 for
 	// none.
 	GateTraceMS int `json:"gate_trace_ms"`
+	// LineFillMS fills the line with silence, on the wall clock, when the
+	// client has sent no audio for this long: a peer with silence
+	// suppression sends nothing between words, and the gate and the
+	// recognizer both need the pause to arrive as audio to close a turn on
+	// it. A phone line that never goes quiet never triggers it. 0 is off.
+	LineFillMS int `json:"line_fill_ms"`
 }
 
 // Default returns a configuration that runs end to end with the mock providers
