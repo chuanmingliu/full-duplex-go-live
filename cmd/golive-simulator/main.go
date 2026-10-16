@@ -21,6 +21,7 @@ import (
 	_ "github.com/chuanmingliu/golive/internal/provider/tencent"
 	"github.com/chuanmingliu/golive/internal/server"
 	"github.com/chuanmingliu/golive/internal/simulator"
+	"github.com/chuanmingliu/golive/internal/simulatorui"
 )
 
 var commit = "dev"
@@ -98,7 +99,9 @@ func run() error {
 	receiver.SetController(controller)
 	gateway.SetController(controller)
 	mux := http.NewServeMux()
-	mux.Handle("/sim/v1/", controller.Handler())
+	workbench := simulatorui.New(cfg, os.Getenv("SIM_CONTROL_TOKEN"), gateway.Ready, controller.Handler())
+	mux.Handle("/sim/", workbench)
+	mux.Handle("/", workbench)
 	mux.Handle("/active-call/incoming", gateway)
 	mux.Handle("/v1/realtime", receiver)
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })

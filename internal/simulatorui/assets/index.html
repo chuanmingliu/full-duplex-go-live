@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Inbound simulator · Workbench</title>
+    <link rel="stylesheet" href="/sim/style.css" />
+    <script src="/sim/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="mark" aria-hidden="true">↙</span>
+        <div>
+          <strong>Inbound simulator</strong
+          ><span class="sub">CUSTOMER WORKBENCH</span>
+        </div>
+      </div>
+      <div class="connection">
+        <span class="dot" id="connection-dot"></span
+        ><span id="connection-status">Disconnected</span>
+      </div>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">ISOLATED TEST ENVIRONMENT</p>
+          <h1>Prepare an inbound customer.</h1>
+          <p>
+            Shape the receiving customer. Prepare a destination. Inspect what
+            happened.
+          </p>
+        </div>
+        <span class="tag">RECEIVING ONLY</span>
+      </section>
+      <section class="auth card" aria-labelledby="auth-title">
+        <div>
+          <h2 id="auth-title">Control connection</h2>
+          <p>
+            Use this simulator’s SIM_CONTROL_TOKEN. Kept in memory until
+            disconnect.
+          </p>
+        </div>
+        <form id="connect-form">
+          <label for="token">Control token</label>
+          <div class="inline">
+            <input
+              id="token"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            /><button id="connect" type="submit">Connect</button
+            ><button id="disconnect" type="button" class="secondary" disabled>
+              Disconnect
+            </button>
+          </div>
+        </form>
+        <p id="gateway-status" class="hint">
+          Gateway readiness has not been checked.
+        </p>
+      </section>
+      <div id="message" role="status" aria-live="polite" hidden></div>
+      <nav aria-label="Workbench panels">
+        <button type="button" data-view="scenario" aria-pressed="true">
+          01 <span>Scenario & behavior</span></button
+        ><button type="button" data-view="providers" aria-pressed="false">
+          02 <span>Voice & providers</span></button
+        ><button type="button" data-view="runs" aria-pressed="false">
+          03 <span>Runs & results</span>
+        </button>
+      </nav>
+      <fieldset id="workspace" disabled>
+        <legend class="sr-only">Authenticated simulator controls</legend>
+        <section id="scenario-view" class="view">
+          <div class="section-heading">
+            <div>
+              <h2>Customer scenario</h2>
+              <p>
+                Use synthetic facts only. Changes affect the next prepared run.
+              </p>
+            </div>
+            <label class="preset-label" for="preset"
+              >Start from a preset<select id="preset">
+                <option value="">Select a preset…</option>
+              </select></label
+            >
+          </div>
+          <form id="scenario-form">
+            <div class="grid">
+              <section class="card">
+                <h3><span class="number">A</span>Identity & intent</h3>
+                <div class="fields two">
+                  <label
+                    >Scenario ID<input
+                      id="scenario-id"
+                      required
+                      maxlength="128" /></label
+                  ><label>Language<input id="language" required /></label>
+                </div>
+                <label
+                  >Persona<textarea
+                    id="persona"
+                    rows="3"
+                    required
+                  ></textarea></label
+                ><label
+                  >Customer goal <span class="optional">optional</span
+                  ><textarea id="goal" rows="2"></textarea></label
+                ><label
+                  >Synthetic facts
+                  <span class="optional">JSON object of string values</span
+                  ><textarea
+                    id="facts"
+                    class="code"
+                    rows="4"
+                    spellcheck="false"
+                  >
+{}</textarea>
+                </label>
+                <details open>
+                  <summary>Greeting & behavior</summary>
+                  <label
+                    >First words<textarea
+                      id="greeting"
+                      rows="2"
+                      required
+                    ></textarea></label
+                  ><label
+                    >Behavior instructions
+                    <span class="optional"
+                      >JSON array of instructions; up to 16</span
+                    ><textarea
+                      id="behavior"
+                      rows="4"
+                      class="code"
+                      spellcheck="false"
+                    >
+[]</textarea>
+                  </label>
+                </details>
+              </section>
+              <section class="card">
+                <h3><span class="number">B</span>Call behavior</h3>
+                <div class="fields two">
+                  <label
+                    >Answer delay · ms<input
+                      id="answer-delay"
+                      type="number"
+                      min="0"
+                      max="120000"
+                      required /></label
+                  ><label
+                    >Duration limit · ms<input
+                      id="duration"
+                      type="number"
+                      min="1000"
+                      max="300000"
+                      required /></label
+                  ><label
+                    >Idle timeout · ms<input
+                      id="idle"
+                      type="number"
+                      min="0"
+                      max="300000"
+                      required /></label
+                  ><label
+                    >Remote turn limit<input
+                      id="turns"
+                      type="number"
+                      min="1"
+                      max="100"
+                      required
+                  /></label>
+                </div>
+                <label
+                  >Expected outcome<select id="outcome">
+                    <option value="conversation">Conversation</option>
+                    <option value="cancel_before_answer">
+                      Caller cancels before answer
+                    </option>
+                  </select></label
+                >
+                <details open>
+                  <summary>Scheduled actions</summary>
+                  <p class="hint">
+                    Triggers: connected, remote_speech_started,
+                    remote_speech_ended. Occurrence counts from 1. after_ms
+                    offsets the trigger; max_hold_ms bounds speech (1–5000 ms).
+                    Supported action kinds are speak and hangup; silence is
+                    unsupported by this receiver. require_remote_speaking skips
+                    an interruption if that turn has ended.
+                  </p>
+                  <label
+                    >Actions <span class="optional">JSON array; up to 64</span
+                    ><textarea
+                      id="actions"
+                      class="code"
+                      rows="7"
+                      spellcheck="false"
+                    >
+[]</textarea>
+                  </label>
+                </details>
+                <details>
+                  <summary>Semantic expectations</summary>
+                  <p class="hint">
+                    Checks stay indeterminate until an independent semantic
+                    evaluator reviews the transcript.
+                  </p>
+                  <label
+                    >Expectations
+                    <span class="optional">[{"id":"…","description":"…"}]</span
+                    ><textarea
+                      id="expectations"
+                      class="code"
+                      rows="4"
+                      spellcheck="false"
+                    >
+[]</textarea>
+                  </label>
+                </details>
+                <label class="check"
+                  ><input id="retain" type="checkbox" />Retain this run’s
+                  transcript for explicit export</label
+                >
+                <p class="hint">
+                  Audio is never retained. Preset selection leaves transcript
+                  retention off; explicitly enable it to evaluate conversation
+                  semantics.
+                </p>
+              </section>
+            </div>
+            <div class="card action-bar">
+              <div>
+                <strong>Ready for a receiving test?</strong>
+                <p>
+                  Preparing reserves one run. Place the call separately using
+                  its exact SIP target.
+                </p>
+              </div>
+              <div class="buttons">
+                <button type="button" id="validate" class="secondary">
+                  Validate</button
+                ><button type="submit" id="prepare">Prepare run ↗</button>
+              </div>
+            </div>
+          </form>
+          <details class="card">
+            <summary>Import & export scenario JSON</summary>
+            <p class="hint">
+              Imports are strictly validated before loading. Unknown fields and
+              duplicate keys are errors.
+            </p>
+            <label
+              >Scenario JSON<textarea
+                id="import-json"
+                rows="6"
+                class="code"
+                spellcheck="false"
+              ></textarea></label
+            ><label
+              >Or choose a JSON file<input
+                id="import-file"
+                type="file"
+                accept="application/json,.json"
+            /></label>
+            <div class="buttons">
+              <button id="import" type="button" class="secondary">
+                Validate & import</button
+              ><button id="export-scenario" type="button" class="secondary">
+                Export current scenario
+              </button>
+            </div>
+          </details>
+        </section>
+        <section id="providers-view" class="view" hidden>
+          <div class="section-heading">
+            <div>
+              <h2>Voice & providers</h2>
+              <p>
+                The running service stays pinned to its startup configuration.
+              </p>
+            </div>
+            <span class="tag">RESTART REQUIRED</span>
+          </div>
+          <div class="grid">
+            <section class="card">
+              <h3><span class="number">●</span>Active configuration</h3>
+              <dl id="active-settings"></dl>
+              <div class="note">
+                <strong>Simulator guards enabled</strong>
+                <p>
+                  Receiving only · one concurrent run · no provider overrides ·
+                  no audio retention
+                </p>
+                <p>
+                  Private gateway deployment required; network isolation is
+                  configured outside this workbench.
+                </p>
+              </div>
+            </section>
+            <form id="profile-form" class="card">
+              <h3><span class="number">↗</span>Next-start profile draft</h3>
+              <p class="hint">
+                Export a credential-free profile. Restart of this isolated
+                simulator required. Supply provider credentials in the process
+                environment.
+              </p>
+              <div class="fields two">
+                <label
+                  >ASR<select id="draft-asr">
+                    <option>mock</option>
+                    <option>tencent</option>
+                  </select></label
+                ><label
+                  >LLM<select id="draft-llm">
+                    <option>mock</option>
+                    <option>deepseek</option>
+                  </select></label
+                ><label
+                  >TTS<select id="draft-tts">
+                    <option>mock</option>
+                    <option>minimax</option>
+                  </select></label
+                ><label
+                  >Backend model<input
+                    id="draft-model"
+                    required
+                    maxlength="200" /></label
+                ><label>Voice<input id="draft-voice" maxlength="200" /></label
+                ><label
+                  >Language<input
+                    id="draft-language"
+                    required
+                    maxlength="100" /></label
+                ><label
+                  >Speech speed<input
+                    id="draft-speed"
+                    type="number"
+                    min="0.5"
+                    max="2"
+                    step="0.05"
+                    required /></label
+                ><label
+                  >Client sample rate<select id="draft-rate">
+                    <option>8000</option>
+                    <option>16000</option>
+                    <option>24000</option>
+                    <option>48000</option>
+                  </select></label
+                ><label
+                  >On new query<select id="draft-query">
+                    <option value="cut">Cut</option>
+                    <option value="finish_sentence">Finish sentence</option>
+                    <option value="queue">Queue</option>
+                  </select></label
+                >
+              </div>
+              <label class="check"
+                ><input id="draft-barge" type="checkbox" />Allow barge-in</label
+              ><button type="submit">Export profile draft</button>
+            </form>
+          </div>
+        </section>
+        <section id="runs-view" class="view" hidden>
+          <div class="section-heading">
+            <div>
+              <h2>Runs & results</h2>
+              <p>
+                Select one run to inspect or stop. The browser never places a
+                call.
+              </p>
+            </div>
+            <button id="refresh-runs" type="button" class="secondary">
+              Refresh runs
+            </button>
+          </div>
+          <div class="run-layout">
+            <aside class="card">
+              <h3>Recent runs</h3>
+              <label
+                >Run<select id="run-select">
+                  <option value="">Select a run…</option>
+                </select></label
+              ><button id="resume" type="button" class="secondary">
+                Refresh & monitor
+              </button>
+              <p class="hint">
+                Polling pauses after 5 minutes, on panel change, disconnect, or
+                completion.
+              </p>
+            </aside>
+            <div class="run-detail">
+              <section class="card">
+                <div class="section-heading">
+                  <h3>Selected run</h3>
+                  <span class="tag" id="phase">NO RUN SELECTED</span>
+                </div>
+                <dl id="run-info"></dl>
+                <div class="buttons">
+                  <button id="stop" type="button" class="danger" disabled>
+                    Stop selected run</button
+                  ><button
+                    id="load-report"
+                    type="button"
+                    class="secondary"
+                    disabled
+                  >
+                    Load report
+                  </button>
+                </div>
+                <p id="monitor-status" class="hint">No monitoring active.</p>
+                <h4>Event timeline</h4>
+                <p id="event-warning" class="hint"></p>
+                <ol id="events" class="timeline"></ol>
+              </section>
+              <section class="card">
+                <div class="section-heading">
+                  <h3>Results</h3>
+                  <button
+                    id="download-report"
+                    type="button"
+                    class="secondary"
+                    disabled
+                  >
+                    Download report
+                  </button>
+                </div>
+                <p class="hint">
+                  Timing is measured at application audio boundaries. Mock tones
+                  do not prove conversation success.
+                </p>
+                <div id="report">
+                  <p class="empty">
+                    Load a terminal run’s report to inspect checks, actions,
+                    latency samples and failures.
+                  </p>
+                </div>
+                <div class="transcript">
+                  <label class="check"
+                    ><input
+                      id="transcript-consent"
+                      type="checkbox"
+                      disabled
+                    />Export retained transcript for independent
+                    evaluation</label
+                  ><button
+                    id="download-transcript"
+                    type="button"
+                    class="secondary"
+                    disabled
+                  >
+                    Download transcript envelope
+                  </button>
+                  <p class="hint">
+                    Explicit opt-in only; no transcript is fetched
+                    automatically.
+                  </p>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </fieldset>
+      <footer>
+        Inbound customer simulation
+        <span>Scoped control. Explicit evidence.</span>
+      </footer>
+    </main>
+  </body>
+</html>
