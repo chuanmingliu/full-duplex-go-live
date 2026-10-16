@@ -105,8 +105,10 @@ type Config struct {
 	Log *slog.Logger
 	Now func() time.Time
 	// Calls, when set, adds the page over the calls placed to the simulated
-	// customer (calls.go).
-	Calls *Calls
+	// customer (calls.go); Scenarios the page where they are written
+	// (scenarios.go).
+	Calls     *Calls
+	Scenarios *Scenarios
 }
 
 // Service is the desk.
@@ -555,6 +557,9 @@ func (s *Service) Handler() http.Handler {
 		}
 	}))
 	s.cfg.Calls.Mount(mux, s.authed)
+	if s.cfg.Calls != nil {
+		s.cfg.Scenarios.Mount(mux, s.authed, s.cfg.Calls)
+	}
 	if sub, err := fs.Sub(uiFiles, "ui"); err == nil {
 		mux.Handle("GET /", http.FileServer(http.FS(sub)))
 	}

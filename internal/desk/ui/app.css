@@ -117,3 +117,6 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .facts dd { margin: 0; }
 .facts .chip { margin: 0 4px 4px 0; }
 .embed iframe { width: 100%; height: 1100px; border: 1px solid var(--line); border-radius: 6px; background: var(--page); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+input.short { width: 130px; }

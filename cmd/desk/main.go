@@ -46,6 +46,7 @@ func run() error {
 		simTok  = flag.String("sim-tokens", filepath.Join(home, "golive-sim", "tokens.env"), "its tokens file, read for SIM_CONTROL_TOKEN; never sent to the page")
 		journal = flag.String("journal", "http://127.0.0.1:8790", "the call journal, as this process reaches it")
 		jport   = flag.Int("journal-port", 8790, "the journal's port as a browser on the home network reaches it, on this host; the page embeds its call view")
+		simDir  = flag.String("sim-dir", filepath.Join(home, "golive-sim"), "the simulated customer's directory: scenarios/, data/last-run, providers.env")
 		verify  = flag.Bool("verify", false, "check the log and exit")
 		showVer = flag.Bool("version", false, "print the version and exit")
 	)
@@ -75,10 +76,13 @@ func run() error {
 	defer lf.Close()
 	log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, lf), nil))
 	var calls *desk.Calls
+	var scenarios *desk.Scenarios
 	if *dials != "" {
 		calls = &desk.Calls{Dials: *dials, Simulator: *simURL, SimTokens: *simTok, Journal: *journal, JournalPort: *jport}
+		scenarios = &desk.Scenarios{Dir: filepath.Join(*simDir, "scenarios"), LastRun: filepath.Join(*simDir, "data", "last-run"),
+			ProvidersEnv: filepath.Join(*simDir, "providers.env")}
 	}
-	s, err := desk.Open(desk.Config{Dir: *dir, Log: log, Calls: calls})
+	s, err := desk.Open(desk.Config{Dir: *dir, Log: log, Calls: calls, Scenarios: scenarios})
 	if err != nil {
 		return err
 	}

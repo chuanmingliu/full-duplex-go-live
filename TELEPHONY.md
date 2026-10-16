@@ -210,6 +210,27 @@ is a click away; the desk fetches it from the simulator with the control
 token server side, and the page never sees that token. Recording must be
 on for the audio (`phone-brain.sh record on`, then a restart of golive).
 
+**Writing a scenario** (the desk, `#/scenarios`): the shipped scenarios
+(read-only) and the owner's own (`~/golive-sim/scenarios/custom/`), each
+as a form — persona, goal, behaviour line by line in the order of the
+conversation, invented facts, the customer's first words, how many
+assistant turns and how long (the simulator caps a call at 300 s and 100
+turns), what to expect of the assistant, scripted actions as JSON — with
+*Validate* (the simulator's own check), *Save* (refused if the simulator
+would refuse it) and *Prepare a run* (reserves the call and writes
+`data/last-run`, so `phone-brain.sh call sim` on the box dials it).
+
+**A customer in the image of a real one**: *Draft from a real call* takes
+a real call from the journal (never a simulated one), reads the caller's
+side on the box, and asks the chat model — with the simulator's own key —
+for a synthetic customer who talks like that over a long conversation:
+persona, goal, eight to twelve behaviour lines, facts with every
+particular invented, a greeting, and expectations of the assistant drawn
+from what it did well or badly on that call. The transcript goes to the
+model that heard the call in the first place and nowhere else; the draft
+comes back synthetic, marked with the call it came from, and is only a
+draft until it is saved.
+
 `start providers` runs the customer on real speech: Tencent, DeepSeek and
 MiniMax with **its own** accounts, written by the owner into
 `~/golive-sim/providers.env` (the phone line's keys are the phone line's;
@@ -281,6 +302,12 @@ What it is:
 - **The page** at `/`: who was last heard from and when, what is open for
   whom, the switches, threads on the left, the thread on the right, a
   compose box, live over the event stream (`/api/events`, server-sent).
+- **Scenarios** at `#/scenarios`: the simulated customer's scenarios
+  written, checked and reserved from here, or drafted from a real call
+  ("Writing a scenario" under "The simulated customer"). `GET/PUT
+  /api/scenarios/{name}`, `POST /api/scenarios/validate`, `POST
+  /api/scenarios/{name}/prepare`, `POST /api/scenarios/draft {call, turns}`,
+  `GET /api/scenarios/calls`.
 - **Simulated calls** at `#/calls`: the calls placed to the simulated
   customer, each paired with its run's report and the journal's call, the
   recording playable in place ("Following a simulated call" under "The

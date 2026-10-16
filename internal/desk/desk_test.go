@@ -266,3 +266,125 @@ func TestASimulatedCallIsPairedWithItsRunAndItsJournalEntry(t *testing.T) {
 	}
 	resp2.Body.Close()
 }
+
+func TestAScenarioIsCheckedByTheSimulatorSavedAndReservedAndDraftedFromARealCall(t *testing.T) {
+	var reserved []byte
+	sim := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		switch r.URL.Path {
+		case "/sim/v1/validate":
+			if strings.Contains(string(body), `"_drafted_from"`) {
+				http.Error(w, `{"error":"unknown field"}`, http.StatusBadRequest)
+				return
+			}
+			if strings.Contains(string(body), `"max_remote_turns":1000`) {
+				http.Error(w, `{"error":"max_remote_turns out of range"}`, http.StatusBadRequest)
+				return
+			}
+			io.WriteString(w, `{"scenario":{"id":"ok"}}`)
+		case "/sim/v1/runs":
+			reserved = body
+			if r.Header.Get("Idempotency-Key") == "" {
+				http.Error(w, "no key", http.StatusBadRequest)
+				return
+			}
+			io.WriteString(w, `{"run_id":"sim-feedfacefeedfacefeedface","phase":"waiting","dial_target_reference":"sip:sim-feedfacefeedfacefeedface@simulator.invalid"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer sim.Close()
+	journal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/overview":
+			io.WriteString(w, `{"calls":[{"id":"out-real1","started_at":"2026-10-16T09:16:00+08:00","duration_s":200,"summary":{"turns":12}},{"id":"out-sim1","kind":"simulated","summary":{"turns":3}}]}`)
+		case "/api/calls/out-real1":
+			io.WriteString(w, `{"call":{"id":"out-real1","duration_s":200,"transcript":[{"who":"assistant","text":"a"},{"who":"caller","text":"b"},{"who":"assistant","text":"c"},{"who":"caller","text":"d"}]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer journal.Close()
+	chat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer sk-test-only" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "客户：b") {
+			t.Errorf("the caller's words were not sent: %s", body)
+		}
+		io.WriteString(w, `{"choices":[{"message":{"content":"{\"persona\":\"P\",\"goal\":\"G\",\"behavior\":[\"b1\",\"b2\"],\"facts\":{\"plate\":\"沪X00000\"},\"greeting\":\"喂\",\"expectations\":[{\"id\":\"e1\",\"description\":\"D\"}]}"}}]}`)
+	}))
+	defer chat.Close()
+
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "scenarios", "simulator"), 0o700)
+	os.WriteFile(filepath.Join(dir, "scenarios", "simulator", "cooperative.json"), []byte(`{"id":"appointment-cooperative","language":"zh-CN","max_remote_turns":12,"max_duration_ms":120000}`), 0o600)
+	os.WriteFile(filepath.Join(dir, "providers.env"), []byte("DEEPSEEK_API_KEY=sk-test-only\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "tokens.env"), []byte("SIM_CONTROL_TOKEN="+strings.Repeat("s", 64)+"\n"), 0o600)
+	calls := &Calls{Dials: filepath.Join(dir, "dials.jsonl"), Simulator: sim.URL, SimTokens: filepath.Join(dir, "tokens.env"), Journal: journal.URL, JournalPort: 8790}
+	sc := &Scenarios{Dir: filepath.Join(dir, "scenarios"), LastRun: filepath.Join(dir, "data", "last-run"), ProvidersEnv: filepath.Join(dir, "providers.env"), ChatURL: chat.URL, ChatModel: "test"}
+	s := openTest(t, filepath.Join(dir, "desk"))
+	s.cfg.Calls, s.cfg.Scenarios = calls, sc
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	do := func(method, path, body string) (int, map[string]any) {
+		req, _ := http.NewRequest(method, srv.URL+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+s.tokens["owner"])
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var m map[string]any
+		json.NewDecoder(resp.Body).Decode(&m)
+		return resp.StatusCode, m
+	}
+	// The list: shipped ones are there, read-only.
+	if code, m := do("GET", "/api/scenarios", ""); code != 200 || len(m["scenarios"].([]any)) != 1 {
+		t.Fatalf("list: %d %v", code, m)
+	}
+	if code, _ := do("PUT", "/api/scenarios/cooperative", `{"id":"x"}`); code != http.StatusForbidden {
+		t.Fatalf("a shipped scenario was overwritten: %d", code)
+	}
+	// A scenario the simulator refuses is not saved.
+	if code, _ := do("PUT", "/api/scenarios/long-one", `{"id":"long-one","max_remote_turns":1000}`); code != http.StatusBadRequest {
+		t.Fatalf("refused scenario: %d", code)
+	}
+	if fileExists(filepath.Join(dir, "scenarios", "custom", "long-one.json")) {
+		t.Fatal("a refused scenario was saved")
+	}
+	// A good one is saved, pretty, without the desk's private keys, and can be reserved.
+	if code, m := do("PUT", "/api/scenarios/long-one", `{"id":"long-one","max_remote_turns":60,"_drafted_from":{"call":"out-real1"}}`); code != 200 || m["saved"] != "long-one" {
+		t.Fatalf("save: %d %v", code, m)
+	}
+	saved, _ := os.ReadFile(filepath.Join(dir, "scenarios", "custom", "long-one.json"))
+	if strings.Contains(string(saved), "_drafted_from") || !strings.Contains(string(saved), "\n  \"id\"") {
+		t.Fatalf("saved file: %s", saved)
+	}
+	if code, m := do("POST", "/api/scenarios/long-one/prepare", "{}"); code != 200 || m["run_id"] != "sim-feedfacefeedfacefeedface" {
+		t.Fatalf("prepare: %d %v", code, m)
+	}
+	if last, _ := os.ReadFile(filepath.Join(dir, "data", "last-run")); strings.TrimSpace(string(last)) != "sim-feedfacefeedfacefeedface" {
+		t.Fatalf("last-run not written for call sim: %q", last)
+	}
+	if !strings.Contains(string(reserved), `"max_remote_turns": 60`) {
+		t.Fatalf("the reservation did not carry the scenario: %s", reserved)
+	}
+	// Real calls only are offered to draft from, and a draft is synthetic and marked.
+	if code, m := do("GET", "/api/scenarios/calls", ""); code != 200 || len(m["calls"].([]any)) != 1 {
+		t.Fatalf("real calls: %d %v", code, m)
+	}
+	code, m := do("POST", "/api/scenarios/draft", `{"call":"out-real1","turns":50}`)
+	if code != 200 {
+		t.Fatalf("draft: %d %v", code, m)
+	}
+	d := m["scenario"].(map[string]any)
+	if d["persona"] != "P" || d["max_remote_turns"].(float64) != 50 || d["id"] != "from-call-real1" || d["_drafted_from"] == nil || d["retain_transcript"] != true {
+		t.Fatalf("draft: %v", d)
+	}
+	if code, _ := do("POST", "/api/scenarios/draft", `{"call":"out-sim1"}`); code != http.StatusNotFound && code != http.StatusBadRequest {
+		t.Fatalf("a simulated call was drafted from: %d", code)
+	}
+}

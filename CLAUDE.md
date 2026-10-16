@@ -584,8 +584,12 @@ transcripts. Mode `auto` is written down and acted on by nothing yet. Its
 `#/calls` page lists the simulated calls (`internal/desk/calls.go`): the
 dials file `call sim` writes pairs the originator's call id with the
 simulator's run id; the journal marks those calls **sim** and the desk
-embeds the journal's player for them. **`call` is the real call, `call
-sim` the simulated one — the owner's words, 10-16.**
+embeds the journal's player for them. `#/scenarios`
+(`internal/desk/scenarios.go`) writes, validates (by the simulator) and
+reserves scenarios, and drafts one from a real call's transcript through
+the chat model (the simulator's own key; the transcript stays on the box).
+**`call` is the real call, `call sim` the simulated one — the owner's
+words, 10-16.**
 
 ## The simulated customer
 

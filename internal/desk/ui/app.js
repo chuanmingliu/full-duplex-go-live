@@ -17,7 +17,8 @@
   let token = '';
   try { token = localStorage.getItem('desk.token') || ''; } catch (e) {}
   const state = { me: '', control: {}, notes: [], seq: 0, seen: {}, open: {}, thread: '', filter: 'all', es: null,
-    view: 'notes', calls: [], journalPort: 8790, call: '', callsAt: 0 };
+    view: 'notes', calls: [], journalPort: 8790, call: '', callsAt: 0,
+    scenarios: [], scenario: '', edit: null, editName: '', realCalls: [], scenariosAt: 0 };
 
   const api = async (path, opts = {}) => {
     const r = await fetch(path, { ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -111,8 +112,9 @@
   // The page: notes, or the calls placed to the simulated customer.
   const route = () => {
     const p = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean);
-    state.view = p[0] === 'calls' ? 'calls' : 'notes';
+    state.view = p[0] === 'calls' ? 'calls' : p[0] === 'scenarios' ? 'scenarios' : 'notes';
     if (state.view === 'calls' && p[1]) state.call = decodeURIComponent(p[1]);
+    if (state.view === 'scenarios' && p[1]) state.scenario = decodeURIComponent(p[1]);
     if (state.me) render();
   };
   window.addEventListener('hashchange', route);
@@ -172,11 +174,103 @@
     }
     $('#main').replaceChildren(h('div', { class: 'desk' }, left, right));
   };
+  // Scenarios: written here, checked by the simulator, reserved from here;
+  // `call sim` on the box then dials what was reserved.
+  const loadScenarios = async () => {
+    const [sc, rc] = await Promise.all([api('/api/scenarios'), api('/api/scenarios/calls').catch(() => ({ calls: [] }))]);
+    state.scenarios = sc.scenarios || []; state.realCalls = rc.calls || []; state.scenariosAt = Date.now();
+    if (!state.scenario && state.scenarios.length) state.scenario = state.scenarios[0].name;
+  };
+  const openScenario = async (name) => {
+    const d = await api('/api/scenarios/' + encodeURIComponent(name));
+    state.scenario = name; state.edit = d.scenario; state.editName = d.source === 'shipped' ? name + '-copy' : name; state.editSource = d.source;
+    render();
+  };
+  const lines = (arr) => (arr || []).join('\n');
+  const kv = (obj) => Object.entries(obj || {}).map(([k, v]) => k + ' = ' + v).join('\n');
+  const renderScenarios = () => {
+    const rows = state.scenarios;
+    const left = h('div', {},
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { try { await loadScenarios(); render(); } catch (e) { tip(e.message, true); } } }, 'Refresh'),
+        h('button', { class: 'btn btn-primary', onclick: () => { state.scenario = ''; state.editSource = 'custom'; state.editName = 'my-scenario';
+          state.edit = { schema_version: 1, id: 'my-scenario', language: 'zh-CN', persona: '', facts: {}, greeting: '喂，你好，哪位？', answer_delay_ms: 1500, max_duration_ms: 290000, max_remote_turns: 40, idle_timeout_ms: 20000, actions: [], retain_transcript: true, retain_audio: false, goal: '', behavior: [], expectations: [], expected_outcome: 'conversation' }; render(); } }, 'New')),
+      h('div', { class: 'threads' }, rows.length ? rows.map(x =>
+        h('button', { 'aria-current': String(state.scenario === x.name), onclick: () => openScenario(x.name).catch(e => tip(e.message, true)) },
+          h('span', { class: 't-subject' }, x.name, ' ', h('span', { class: 'chip' + (x.source === 'shipped' ? '' : ' good') }, x.source)),
+          h('span', { class: 't-meta' }, (x.language || '?') + ' · ' + x.max_remote_turns + ' turns · ' + Math.round(x.max_duration_ms / 1000) + ' s' + (x.goal ? ' · ' + x.goal.slice(0, 70) : ''))))
+        : h('div', { class: 'empty' }, 'no scenarios found under the simulator\u2019s directory')),
+      h('div', { class: 'card', style: 'margin-top:12px' },
+        h('h2', { style: 'margin-top:0' }, 'Draft from a real call'),
+        h('p', { class: 'sub' }, 'The caller\u2019s side of a real call, read on the box, becomes a synthetic customer: persona, goal, how they behave over many turns, what to expect of the assistant. Every particular is replaced by an invented one. A draft until you save it.'),
+        (() => {
+          const sel = h('select', {}, ...state.realCalls.map(c => h('option', { value: c.id }, when(c.started_at) + ' · ' + c.turns + ' turns · ' + dur(c.duration_s))));
+          const turns = h('input', { type: 'number', class: 'short', value: '40', min: '4', max: '100' });
+          const btn = h('button', { class: 'btn btn-primary', onclick: async () => {
+            if (!sel.value) return tip('no real call to draft from', true);
+            btn.disabled = true; btn.textContent = 'asking the chat model…';
+            try {
+              const d = await api('/api/scenarios/draft', { method: 'POST', body: JSON.stringify({ call: sel.value, turns: Number(turns.value) || 40 }) });
+              state.scenario = ''; state.edit = d.scenario; state.editName = d.scenario.id; state.editSource = 'custom'; render(); tip('drafted; read it, then Validate and Save');
+            } catch (e) { tip(e.message, true); btn.disabled = false; btn.textContent = 'Draft'; }
+          } }, 'Draft');
+          return h('div', {}, h('label', {}, 'call'), sel, h('div', { class: 'row' }, 'turns ', turns, btn));
+        })()));
+
+    const right = h('div', {});
+    const e = state.edit;
+    if (e) {
+      const f = {};
+      const field = (key, label, el) => { f[key] = el; return [h('label', {}, label), el]; };
+      const text = (key, label, val, attrs = {}) => field(key, label, h('input', { type: 'text', value: val == null ? '' : String(val), ...attrs }));
+      const num = (key, label, val) => field(key, label, h('input', { type: 'number', class: 'short', value: String(val == null ? '' : val) }));
+      const area = (key, label, val, rows = 4) => field(key, label, h('textarea', { rows: String(rows), style: 'white-space:pre-wrap;min-height:' + (rows * 22) + 'px' }, val || ''));
+      const gather = () => {
+        const facts = {};
+        for (const line of f.facts.value.split('\n')) { const i = line.indexOf('='); if (i > 0) facts[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
+        const expectations = f.expectations.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf(':'); return i > 0 ? { id: l.slice(0, i).trim(), description: l.slice(i + 1).trim() } : { id: l.replace(/\W+/g, '_').toLowerCase().slice(0, 32), description: l }; });
+        let actions = [];
+        try { actions = JSON.parse(f.actions.value || '[]'); } catch (err) { throw new Error('actions is not JSON: ' + err.message); }
+        const out = { schema_version: 1, id: f.id.value.trim(), language: f.language.value.trim(), persona: f.persona.value.trim(), facts, greeting: f.greeting.value,
+          answer_delay_ms: Number(f.answer_delay_ms.value), max_duration_ms: Number(f.max_duration_ms.value), max_remote_turns: Number(f.max_remote_turns.value), idle_timeout_ms: Number(f.idle_timeout_ms.value),
+          actions, retain_transcript: f.retain_transcript.checked, retain_audio: false, goal: f.goal.value.trim(), behavior: f.behavior.value.split('\n').map(l => l.trim()).filter(Boolean), expectations, expected_outcome: f.expected_outcome.value };
+        if (!out.goal) delete out.goal; if (!out.behavior.length) delete out.behavior; if (!out.expectations.length) delete out.expectations;
+        return out;
+      };
+      const nameIn = h('input', { type: 'text', value: state.editName, placeholder: 'file name: lower-case, digits, dashes' });
+      const status = h('div', { class: 'muted', style: 'margin:8px 0' }, state.editSource === 'shipped' ? 'a shipped scenario: read-only, saved under another name' : '');
+      const show = (r) => { status.textContent = typeof r === 'string' ? r : JSON.stringify(r); };
+      right.append(h('div', { class: 'card' },
+        h('h2', { style: 'margin-top:0' }, state.scenario ? 'Scenario ' + state.scenario : 'A new scenario'),
+        e._drafted_from ? h('p', { class: 'sub' }, 'drafted from call ', h('span', { class: 'mono' }, e._drafted_from.call), ', ' + e._drafted_from.caller_turns + ' caller turns, ' + dur(e._drafted_from.duration_s)) : null,
+        h('div', { class: 'grid2' },
+          h('div', {}, ...text('id', 'id', e.id), ...text('language', 'language', e.language || 'zh-CN'), ...text('greeting', 'greeting (the customer\u2019s first words)', e.greeting)),
+          h('div', {}, h('div', { class: 'row' }, ...num('answer_delay_ms', 'answer delay ms', e.answer_delay_ms), ...num('max_duration_ms', 'max duration ms (≤ 300000)', e.max_duration_ms)),
+            h('div', { class: 'row' }, ...num('max_remote_turns', 'max assistant turns (≤ 100)', e.max_remote_turns), ...num('idle_timeout_ms', 'idle timeout ms', e.idle_timeout_ms)),
+            h('div', { class: 'row' }, h('label', {}, 'keep transcript'), f.retain_transcript = h('input', { type: 'checkbox', checked: e.retain_transcript ? '' : null }),
+              h('label', {}, 'expected outcome'), f.expected_outcome = h('select', {}, ...['conversation', 'cancel_before_answer'].map(v => h('option', { value: v, selected: e.expected_outcome === v ? '' : null }, v)))))),
+        ...area('persona', 'persona', e.persona, 3),
+        ...area('goal', 'goal', e.goal, 2),
+        ...area('behavior', 'behavior, one per line, in the order of the conversation (up to 16)', lines(e.behavior), 8),
+        ...area('facts', 'facts, key = value per line (all invented)', kv(e.facts), 4),
+        ...area('expectations', 'expectations of the assistant, id: description per line (up to 16)', (e.expectations || []).map(x => x.id + ': ' + x.description).join('\n'), 5),
+        ...area('actions', 'actions, JSON (scripted interruptions or a hangup; [] for none)', JSON.stringify(e.actions || [], null, 1), 3),
+        h('label', {}, 'save as'), nameIn, status,
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', onclick: async () => { try { const r = await api('/api/scenarios/validate', { method: 'POST', body: JSON.stringify(gather()) }); show(r.scenario ? 'valid: the simulator accepts it' : r); tip('valid'); } catch (err) { show(err.message); tip(err.message, true); } } }, 'Validate'),
+          h('button', { class: 'btn btn-primary', onclick: async () => { try { const r = await api('/api/scenarios/' + encodeURIComponent(nameIn.value.trim()), { method: 'PUT', body: JSON.stringify(gather()) }); show('saved as ' + r.saved); await loadScenarios(); state.scenario = r.saved; state.editSource = 'custom'; state.editName = r.saved; render(); tip('saved'); } catch (err) { show(err.message); tip(err.message, true); } } }, 'Save'),
+          state.scenario && state.editSource === 'custom' ? h('button', { class: 'btn', onclick: async () => { try { const r = await api('/api/scenarios/' + encodeURIComponent(state.scenario) + '/prepare', { method: 'POST', body: '{}' }); show('reserved run ' + r.run_id + ' → ' + r.dial_target_reference + ' (120 s): now `call sim` on the box'); tip('run reserved'); } catch (err) { show(err.message); tip(err.message, true); } } }, 'Prepare a run') : null)));
+    } else {
+      right.append(h('div', { class: 'empty' }, 'choose a scenario, draft one from a real call, or start a new one'));
+    }
+    $('#main').replaceChildren(h('div', { class: 'desk' }, left, right));
+  };
+
   const journalURL = (call) => location.protocol + '//' + location.hostname + ':' + state.journalPort + '/#/call/' + encodeURIComponent(call);
 
   const render = () => {
     $('#nav-notes').setAttribute('aria-current', state.view === 'notes' ? 'page' : 'false');
     $('#nav-calls').setAttribute('aria-current', state.view === 'calls' ? 'page' : 'false');
+    $('#nav-scenarios').setAttribute('aria-current', state.view === 'scenarios' ? 'page' : 'false');
     $('#who').replaceChildren(h('span', { class: 'me' }, state.me));
     $('#seen').replaceChildren(...['owner', 'claude', 'codex'].map(p =>
       h('span', {}, h('b', {}, p), ' ' + ago(state.seen[p]) + (state.open[p] ? ' · ' + state.open[p] + ' open' : ''))));
@@ -194,6 +288,11 @@
         catch (err) { tip(err.message, true); }
       } }, ...['manual', 'auto'].map(m => h('option', { value: m, selected: c.mode === m ? '' : null }, m))) : null);
 
+    if (state.view === 'scenarios') {
+      if (!state.scenariosAt) loadScenarios().then(() => { if (state.scenario && !state.edit) openScenario(state.scenario).catch(() => render()); else render(); }).catch(e => tip(e.message, true));
+      renderScenarios();
+      return;
+    }
     if (state.view === 'calls') {
       if (Date.now() - state.callsAt > 10000) loadCalls().then(renderCalls).catch(e => tip(e.message, true));
       renderCalls();
