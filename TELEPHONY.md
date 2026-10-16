@@ -920,6 +920,20 @@ utterance of the 09:41 call at 0.33–0.61. The tracker is pinned to speaker
 0 on enrolment, and an enrolment that the next eight seconds of voice
 contradict (under 30% caller) puts the channel in observe for the call.
 
+**The enrolment is kept, and pinned.** One 1.3 s window at the start of a
+call is not a reliable sample of a voice: on the 09:41 call on 10-16 the
+caller's own later utterances scored 0.07–0.25 against that call's enrolment
+and 0.54–0.59 against the previous call's, and with the tracker free to pick
+the primary by its own rule it picked "not the caller" and three of the
+caller's answers were vetoed. So: the service keeps a named profile
+(`focus_profile`, `owner` on the locked line; `~/edge/tsv/profiles/<name>.npy`,
+an embedding, not audio), the call starts enrolled from it, and the first
+good utterance makes one when there is none. The caller is pinned as the
+primary on this channel (`Tracker.Pin`): no re-enrolment, no handover. And
+when the first eight seconds of voice after an enrolment are under 30%
+"the caller", the enrolment is distrusted and the channel observes only
+(`focus: the enrolment does not match what followed; observing only`).
+
 **What a mixture is.** With a show playing *under* the caller's voice every
 window is a mixture, and the mixture scores like a stranger (the 23:20
 call: 1,130 voiced windows, 83 over 0.35, none over 0.5; four of the

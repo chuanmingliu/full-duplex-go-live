@@ -456,6 +456,16 @@ made on one build.
   by with no turn ("Only the primary voice" in `TELEPHONY.md`). Measured on
   the archive: caller 0.45–0.68, assistant 0.14–0.21, the show under 0.25
   against a 2 s enrolment. Not yet verified on a call.
+- **One window at the start of a call is not a sample of a voice.** The
+  09:41 call on 10-16 (the caller alone, quiet): the caller's own later
+  utterances scored 0.07–0.25 against that call's 1.3 s enrolment and
+  0.54–0.59 against the previous call's; the tracker, free to enrol by its
+  own rule, took "not the caller" as the primary and three of the caller's
+  answers were vetoed. Now: the caller is pinned as the primary on this
+  channel; the enrolment is a kept profile (`focus_profile: owner`, an
+  embedding under `~/edge/tsv/profiles/`) the call starts from, made by the
+  first good utterance when there is none; an enrolment the next eight
+  seconds contradict is distrusted and the channel observes only.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
