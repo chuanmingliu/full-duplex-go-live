@@ -22,6 +22,12 @@
 #   scripts/sim-brain.sh run [id]        the run's state (the last prepared one by
 #                                        default); `events`, `report`, `transcript`
 #                                        and `stop-run` likewise
+#   scripts/sim-brain.sh package [update|status|logs [n]]
+#                                        the Docker package (its gateway + the receiver
+#                                        wired to it): `update` pulls the branch into
+#                                        SRC_DIR, rebuilds the receiver's image and
+#                                        restarts it with the overrides; `status` what
+#                                        runs and from which commit; `logs` its lines
 #   scripts/sim-brain.sh suite <manifest> [output dir]
 #                                        the sequential suite runner: reserves one
 #                                        call at a time and waits for the caller
@@ -36,6 +42,11 @@
 #                                        MINIMAX_TTS_*); never the phone line's
 #   PROFILE_FILE=$SIM_DIR/profile.json   the providers profile, copied from
 #                                        configs/simulator/providers.example.json
+#   SRC_DIR=$SIM_DIR/src                 a clone of the branch, which the Docker package
+#                                        builds from; SIM_REF its branch
+#   OVERRIDES=$SIM_DIR/compose.*.yml     compose overrides applied after the package's
+#                                        own file, in name order (the receiver's SIP
+#                                        domain, the providers profile)
 #
 # The receiver reserves a run and waits to be CALLED: nothing here dials. The
 # assistant side (Active Call, through a route the owner sets up) must send its
@@ -53,6 +64,9 @@ TOKENS_ENV=${TOKENS_ENV:-$SIM_DIR/tokens.env}
 PROVIDERS_ENV=${PROVIDERS_ENV:-$SIM_DIR/providers.env}
 PROFILE_FILE=${PROFILE_FILE:-$SIM_DIR/profile.json}
 DATA_DIR=${DATA_DIR:-$SIM_DIR/data}
+SRC_DIR=${SRC_DIR:-$SIM_DIR/src}
+SIM_REF=${SIM_REF:-codex/inbound-user-simulator}
+PROJECT=golive-user-simulator
 LOG=${LOG:-$SIM_DIR/log/simulator.log}
 PIDFILE=$SIM_DIR/simulator.pid
 LAST_RUN=$SIM_DIR/data/last-run
@@ -217,6 +231,40 @@ print("phase:       ", d.get("phase"))'
       report)     api GET "/sim/v1/runs/$id/report" | pretty ;;
       transcript) api GET "/sim/v1/runs/$id/transcript" | pretty ;;
       stop-run)   api POST "/sim/v1/runs/$id/stop" | pretty ;;
+    esac
+    ;;
+
+  package)
+    # The package needs docker without sudo (the docker group) and the tokens
+    # in its environment; they are exported here from the file, never printed.
+    have_tokens || die "no tokens yet; run: sim-brain.sh init"
+    [ -d "$SRC_DIR/deploy/simulator" ] || die "no clone at $SRC_DIR: git clone -b $SIM_REF <repo> $SRC_DIR"
+    compose() {
+      local files=(-f "$SRC_DIR/deploy/simulator/compose.yml")
+      for o in "$SIM_DIR"/compose.*.yml; do [ -f "$o" ] && files+=(-f "$o"); done
+      ( set -a; . "$TOKENS_ENV"; set +a; SIM_SOURCE_COMMIT=$(git -C "$SRC_DIR" rev-parse --short HEAD) docker compose -p "$PROJECT" "${files[@]}" "$@" )
+    }
+    case "${1:-status}" in
+      update)
+        before=$(git -C "$SRC_DIR" rev-parse --short HEAD)
+        git -C "$SRC_DIR" pull -q --ff-only || die "git pull failed in $SRC_DIR"
+        after=$(git -C "$SRC_DIR" rev-parse --short HEAD)
+        echo "source: $before -> $after ($SIM_REF)"
+        if p=$(pid); then die "the host receiver is running (pid $p); stop it: the package takes its port"; fi
+        compose up -d --build simulator 2>&1 | grep -E "Built|Started|Created|Recreated|Running|rror" | sed 's/^ *//' | tail -6
+        sleep 3
+        "$0" package status
+        ;;
+      status)
+        docker ps --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}  {{.Status}}' | sed 's/^/  /'
+        echo "  gateway: $(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROJECT-activecall-1" 2>/dev/null || echo '?') (SIP 25060)"
+        echo "  receiver source: $(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$PROJECT-simulator-1" 2>/dev/null || true) clone: $(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null)"
+        "$0" status | sed -n 2,3p
+        ;;
+      logs)
+        docker logs --since "${3:-10m}" "$PROJECT-simulator-1" 2>&1 | sed -E 's/[0-9]{7,}/<num>/g' | tail -"${2:-40}"
+        ;;
+      *) die "package update | status | logs [n] [since]" ;;
     esac
     ;;
 
