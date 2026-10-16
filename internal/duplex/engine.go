@@ -2328,10 +2328,14 @@ func sameWords(a, b string) bool {
 	if na == "" || !strings.HasPrefix(nb, na) {
 		return false
 	}
-	for _, r := range nb[len(na):] {
-		if !strings.ContainsRune("啊呀哦噢哈嗯呃额唔诶欸哎", r) {
-			return false
-		}
+	// One trailing sound — "啊", "嗯" — is the caller finishing, not
+	// adding. More than one is words: on a real call (10-16 09:17) an
+	// answer begun on the words before a pause was kept while two more
+	// characters followed, and it answered a shorter question than was
+	// asked.
+	rest := []rune(nb[len(na):])
+	if len(rest) != 1 || !strings.ContainsRune("啊呀哦噢哈嗯呃额唔诶欸哎", rest[0]) {
+		return false
 	}
 	return true
 }

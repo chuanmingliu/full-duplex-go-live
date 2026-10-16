@@ -614,6 +614,20 @@
       "cause": "A speaker-embedding score on overlapped speech is the score of the mixture; a 70% 'other' share is routine for the caller talking over a television. Extending the enrolment with such utterances put the show into the enrolment.",
       "fix": "Mitigation: every verdict requires zero primary voice (a mixture is the caller), focus_veto_share 0.95, enrolment from the first utterance only, threshold 0.28. Real fix, to evaluate: target-speaker extraction (removing everything but the enrolled voice from the audio before the gate and the recognizer), if a model runs in real time on the box's CPU.",
       "verified_on": ""
+    },
+    {
+      "id": "ISS-037",
+      "title": "A guess was kept though two more characters followed it: any number of trailing sounds counted as none",
+      "area": "turn-taking",
+      "status": "fixed",
+      "commit": "(next)",
+      "found": "2026-10-16",
+      "found_on": "the 09:16 call, two turns",
+      "found_call": "out-mvaa10f1-cc6b",
+      "symptom": "An answer begun on the words before a 200 ms pause was kept while two more characters arrived, and answered a shorter question than was asked.",
+      "cause": "sameWords read any run of trailing particles (啊呀哦…) as the caller finishing, so two real characters that happened to be in the set passed.",
+      "fix": "One trailing sound, not more; a second character is words and the guess is remade.",
+      "verified_on": ""
     }
   ]
 }

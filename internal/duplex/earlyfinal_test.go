@@ -690,7 +690,9 @@ func TestSameWords(t *testing.T) {
 		{"可以", "可以吗", false}, // a particle that makes it a question is not a trailing sound
 		{"你直接说多少钱？", "你直接说多少钱？行吗？", false},
 		{"", "啊", false},
-		{"好的", "好的呃嗯", true},
+		{"好的", "好的呃", true},
+		{"好的", "好的呃嗯", false}, // two more characters are words until the final says otherwise
+		{"那个保费", "那个保费呢多少", false},
 	} {
 		if got := sameWords(tc.a, tc.b); got != tc.want {
 			t.Errorf("sameWords(%q, %q) = %v; want %v", tc.a, tc.b, got, tc.want)
