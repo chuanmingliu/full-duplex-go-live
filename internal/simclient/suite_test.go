@@ -388,3 +388,30 @@ func TestAmbiguousReservationBodyIsNotReplayed(t *testing.T) {
 		t.Fatalf("ambiguous preparation replayed: count=%d err=%v", creates.Load(), err)
 	}
 }
+
+func TestSanitizedActionLifecyclePreservesRequested(t *testing.T) {
+	s := scenario(t)
+	s.Actions = []simulator.Action{{ID: "speak-once", Trigger: "connected", Occurrence: 1, Kind: "speak", Text: "Synthetic reminder", MaxHoldMS: 1000}}
+	report := validReport(s, "owned")
+	report.Actions = []simulator.ActionOutcome{
+		{ID: "speak-once", Result: "requested", AtMS: 10, Reason: "private scheduler detail"},
+		{ID: "speak-once", Result: "started", AtMS: 20, Reason: "private engine detail"},
+		{ID: "speak-once", Result: "completed", AtMS: 30, Reason: "private completion detail"},
+	}
+	if verdict := ProtocolVerdict(s, report); verdict != "pass" {
+		t.Fatalf("completed raw action verdict=%s", verdict)
+	}
+	sanitized := sanitizeReport(s, report)
+	if len(sanitized.Actions) != 3 {
+		t.Fatalf("lost action lifecycle: %+v", sanitized.Actions)
+	}
+	for i, want := range []string{"requested", "started", "completed"} {
+		got := sanitized.Actions[i]
+		if got.ID != "speak-once" || got.Result != want || got.AtMS != int64((i+1)*10) || got.Reason != "" {
+			t.Fatalf("action %d=%+v; expected preserved %s state/time with private reason removed", i, got, want)
+		}
+	}
+	if verdict := ProtocolVerdict(s, sanitized); verdict != "pass" {
+		t.Fatalf("sanitization changed passing lifecycle to %s", verdict)
+	}
+}

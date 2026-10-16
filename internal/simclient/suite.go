@@ -388,7 +388,7 @@ func sanitizeReport(s simulator.Scenario, report simulator.Report) simulator.Rep
 		if knownActions[a.ID] {
 			a.Reason = ""
 			switch a.Result {
-			case "started", "completed", "cancelled", "timed_out", "failed", "skipped", "not_triggered":
+			case "requested", "started", "completed", "cancelled", "timed_out", "failed", "skipped", "not_triggered":
 			default:
 				a.Result = "failed"
 			}
