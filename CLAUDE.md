@@ -82,6 +82,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | | **both calls on eight copies** | **25** | | 1396 | **2** |
 | 10-13 21:15 | b1e3c88 (two synthesis accounts), `call`, 5.5 minutes | 47 | 884 | 1072 (**p95 1045**, p90 1020) | 0 |
 | 10-17 10:45 | d0bb53d, **simulated customer** (`kb-coverage-nerd`, receiver ae89b93), 200 s | 42 | 915 | 1276 (**p95 1162**) | 1 |
+| 10-17 12:00 | 1e35e09 (`end_call` on, not asked for), `call`, 107 s | 8 | 1003 | 1322 | 1 |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
