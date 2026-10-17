@@ -115,11 +115,11 @@ type Config struct {
 	Tools []ToolConfig `json:"tools,omitempty"`
 	// ToolsBaseURL is where tools whose URL is a path live: the lead service,
 	// on this machine or on the intranet (GOLIVE_TOOLS_BASE_URL).
-	ToolsBaseURL       string `json:"tools_base_url"`
-	ToolsMemory        bool   `json:"tools_memory"`
+	ToolsBaseURL string `json:"tools_base_url"`
+	ToolsMemory  bool   `json:"tools_memory"`
 	// ToolsEndCall gives the model end_call: a way to hang up once the
 	// conversation is over, instead of talking until the line drops.
-	ToolsEndCall bool `json:"tools_end_call"`
+	ToolsEndCall       bool   `json:"tools_end_call"`
 	ToolsTokenFile     string `json:"tools_token_file"`
 	ToolsWorkers       int    `json:"tools_workers"`
 	ToolsDeliverWaitMS int    `json:"tools_deliver_wait_ms"`
