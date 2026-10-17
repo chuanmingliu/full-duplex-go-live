@@ -1183,6 +1183,27 @@ utterances 0.13–0.24): hence the extension. Phone audio of the same voice on
 different days scores lower than on one call; the threshold is 0.35 and the
 journal's similarities are what to set it from.
 
+## Hanging up
+
+On a phone call somebody has to hang up. Left to themselves two models say
+goodbye to each other for as long as the line stays up — the simulated
+customer showed it on the first long conversations, which ran to their
+limits on pleasantries. So the assistant can end the call: `tools_end_call`
+(on in the telephony profile) gives the model `end_call`, to be called when
+the conversation is over — after its own farewell, when the customer has
+said goodbye, or when the business rules say to end politely (a second
+refusal). The engine then waits for whatever is being said to finish
+playing (the farewell usually arrives in the same response as the call),
+gives the last audio 700 ms to reach the line, and closes the session; the
+gateway sends BYE when its agent goes away, and that is the hangup. The
+journal records the close reason `assistant_hangup`.
+
+Guards: `end_call` in the first ten seconds of a call is refused and the
+model told to carry on; a farewell that never begins does not keep the
+call up (20 s bound); the request is honoured once. The tool is described
+to the model in Chinese with the rules it must respect; the owner's prompt
+already says when to hang up, and the tool is how.
+
 ## Working memory, and work that takes longer than a turn
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",

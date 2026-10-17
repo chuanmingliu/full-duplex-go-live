@@ -290,6 +290,14 @@ func (s *Session) reply(to *peer, event any) { s.deliver(to, event) }
 
 func (s *Session) deliver(only *peer, event any) {
 	switch ev := event.(type) {
+	case live.HangupEvent:
+		// The assistant ended the call. Closing the connection is the
+		// hangup: the gateway on the other end sends BYE when its agent
+		// goes away. Nothing is sent to the client.
+		s.log.Info("session: the assistant hung up", "reason", ev.Reason)
+		s.setCloseReason(live.CloseAssistantHangup)
+		s.finish()
+		return
 	case live.ErrorEvent:
 		metrics.Default().Error(ev.Error.Code)
 	case live.OutputAudioDelta:
@@ -479,7 +487,7 @@ func (s *Session) setCloseReason(reason string) {
 func (s *Session) writeClose(p *peer, reason string) {
 	code := websocket.CloseGoingAway
 	switch reason {
-	case live.CloseRequested, live.CloseRemoteHangup:
+	case live.CloseRequested, live.CloseRemoteHangup, live.CloseAssistantHangup:
 		code = websocket.CloseNormalClosure
 	case live.CloseFlooded:
 		code = websocket.CloseTryAgainLater

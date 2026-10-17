@@ -311,6 +311,19 @@ func (m *Memory) Empty() bool {
 }
 
 // UpdateMemoryTool is the builtin the model edits the memory with.
+// EndCallTool is how the assistant hangs up. On a phone call somebody has
+// to: left to themselves two models will say goodbye to each other for as
+// long as the line stays up. The model calls this once the conversation is
+// over — after its own farewell, or when the rules say to end politely —
+// and the engine ends the call once the words it is saying have played.
+var EndCallTool = Tool{
+	Name: "end_call",
+	Description: "挂断电话。仅在通话确实结束时调用：你已经说完告别语，或客户明确表示再见、不需要且已按规则挽留过一次，或按规则应当礼貌结束通话。" +
+		"调用后系统会在你当前这句话播放完后挂断，不要在对话还没结束、客户还有问题时调用。",
+	Parameters: json.RawMessage(`{"type":"object","properties":{"reason":{"type":"string","description":"结束原因，几个字即可，如“客户道别”“客户拒绝两次”“流程完成”"}}}`),
+	Builtin:    "end_call",
+}
+
 var UpdateMemoryTool = Tool{
 	Name: "update_memory",
 	Description: "记录或修改本次通话已经确定的信息（工作记忆）。每当用户确认、新增或更改了投保方案、车辆信息、联系方式等事实时调用；" +

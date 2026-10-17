@@ -43,6 +43,10 @@ type toolState struct {
 	// newest per tool, which supersedes older ones of the same tool.
 	tasks  map[string]*tools.Task
 	latest map[string]string
+	// started is when the tools came up (the call's start, near enough);
+	// endCall is the model's request to hang up, once made.
+	started time.Time
+	endCall *endCallRequest
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
 	// stats
@@ -52,13 +56,16 @@ type toolState struct {
 // setupTools reads the profile.
 func (e *Engine) setupTools() {
 	cfg := e.opts.Cfg
-	if len(cfg.Tools) == 0 && !cfg.ToolsMemory {
+	if len(cfg.Tools) == 0 && !cfg.ToolsMemory && !cfg.ToolsEndCall {
 		return
 	}
-	ts := &toolState{byName: map[string]tools.Tool{}, tasks: map[string]*tools.Task{}, latest: map[string]string{}}
+	ts := &toolState{byName: map[string]tools.Tool{}, tasks: map[string]*tools.Task{}, latest: map[string]string{}, started: time.Now()}
 	if cfg.ToolsMemory {
 		ts.memory = tools.NewMemory(nil)
 		ts.defs = append(ts.defs, tools.UpdateMemoryTool)
+	}
+	if cfg.ToolsEndCall {
+		ts.defs = append(ts.defs, tools.EndCallTool)
 	}
 	for _, c := range cfg.Tools {
 		if c.Name == "" || c.Name == tools.UpdateMemoryTool.Name {
@@ -186,6 +193,8 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		switch {
 		case t.Builtin == "update_memory":
 			p.outputs[c.ID] = e.applyMemoryCall(c)
+		case t.Builtin == "end_call":
+			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
 			p.outputs[c.ID] = e.submitTask(job, c, t)
 		default:
@@ -233,6 +242,63 @@ func (e *Engine) continueWith(p *pendingResponse) {
 	e.continuations = append(e.continuations, p)
 	e.drainDeferred()
 }
+
+// requestEndCall is the model saying the conversation is over. The call is
+// ended once whatever is being said has played, and not before: the
+// farewell usually arrives in the same response as the tool call. A call
+// that has barely begun is not ended on the model's say-so.
+func (e *Engine) requestEndCall(c provider.ToolCall) string {
+	var args struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal([]byte(c.Arguments), &args)
+	if since := time.Since(e.tools.started); since < minCallForEndCall {
+		e.log.Warn("tools: end_call refused this early in the call", "after_ms", since.Milliseconds(), "reason", args.Reason)
+		return `{"status":"refused","note":"通话刚开始，不能挂断；请继续对话"}`
+	}
+	if e.tools.endCall == nil {
+		e.tools.endCall = &endCallRequest{reason: args.Reason, at: time.Now()}
+		e.log.Info("tools: end_call: the call will end when the answer has played", "reason", args.Reason)
+		go e.endCallWhenQuiet(args.Reason)
+	}
+	return `{"status":"ok","note":"这句话播完后电话会挂断"}`
+}
+
+// minCallForEndCall is how old a call must be before the model may end it.
+var minCallForEndCall = 10 * time.Second
+
+type endCallRequest struct {
+	reason string
+	at     time.Time
+}
+
+// endCallWhenQuiet waits for the player to finish what it has (the farewell
+// in the same response, typically), gives the last of it time to reach the
+// line, and asks the session to hang up. A bounded wait: a farewell that
+// never starts does not keep the call up either.
+func (e *Engine) endCallWhenQuiet(reason string) {
+	deadline := time.Now().Add(20 * time.Second)
+	// Give the response that carried the tool call a moment to begin.
+	time.Sleep(600 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if e.ctx.Err() != nil {
+			return
+		}
+		if !e.player.Speaking() && e.player.PendingMS() == 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	time.Sleep(hangupGrace)
+	if e.ctx.Err() != nil {
+		return
+	}
+	e.log.Info("tools: end_call: hanging up", "reason", reason)
+	e.deps.Emit(live.HangupEvent{Envelope: live.Envelope{Type: "session.hangup"}, Reason: reason})
+}
+
+// hangupGrace is how long the last audio is given to reach the far end.
+var hangupGrace = 700 * time.Millisecond
 
 func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 	var args struct {
@@ -399,6 +465,8 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		switch {
 		case t.Builtin == "update_memory":
 			p.outputs[c.ID] = e.applyMemoryCall(c)
+		case t.Builtin == "end_call":
+			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
 			p.outputs[c.ID] = e.submitTask(job, c, t)
 		default:

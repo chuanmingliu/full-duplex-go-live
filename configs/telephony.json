@@ -36,6 +36,7 @@
   "tools_memory": true,
   "tools_workers": 4,
   "tools_deliver_wait_ms": 1500,
+  "tools_end_call": true,
   "tools": [
     {
       "name": "quote_total",

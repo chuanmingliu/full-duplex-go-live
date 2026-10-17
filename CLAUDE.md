@@ -657,6 +657,16 @@ chunk), then `veto`; the journal does not draw the focus lane yet; the
 Tier-1 cheap features (level distance, F0) that could keep a background
 voice from opening a turn in the first place are not built.
 
+## Hanging up
+
+`tools_end_call` (telephony profile) gives the model `end_call`
+(`internal/tools.EndCallTool`, `Engine.requestEndCall`, `endCallWhenQuiet`
+in `internal/duplex/tools.go`); the engine emits `live.HangupEvent` once the
+farewell has played and the session closes the socket
+(`CloseAssistantHangup`), which makes Active Call send BYE. Refused in the
+first 10 s. "Hanging up" in `TELEPHONY.md`. The simulated customer needs
+the same on its side (Codex, desk).
+
 ## Working memory and background tools
 
 `internal/tools` (definitions, the pool, the HTTP executor, the memory),

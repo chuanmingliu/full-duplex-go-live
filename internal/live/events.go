@@ -730,6 +730,17 @@ type MemoryEvent struct {
 	Patch   json.RawMessage `json:"patch"`
 }
 
+// HangupEvent is the engine telling the session to end the call: the model
+// called end_call and its last words have played. It is not sent to the
+// client; the session closes the connection instead, which is the hangup.
+type HangupEvent struct {
+	Envelope
+	Reason string `json:"reason"`
+}
+
+// CloseAssistantHangup is the close reason when the assistant ended the call.
+const CloseAssistantHangup = "assistant_hangup"
+
 // TaskEvent is golive.task: Status is "running", "done" or "delivered".
 type TaskEvent struct {
 	Envelope
