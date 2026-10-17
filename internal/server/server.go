@@ -44,6 +44,13 @@ type Server struct {
 	store     *store.Store
 	lastSweep atomic.Int64
 
+	// openings are opening lines being synthesized ahead of the calls they
+	// are for. See handleOpening.
+	openMu   sync.Mutex
+	openings map[string]*openingState
+	// tel posts turn boundaries to a latency console, when one is configured.
+	tel *telPoster
+
 	// Factory lets tests inject a stub engine.
 	Factory EngineFactory
 	// Version is shown on /livez. Optional.
@@ -60,6 +67,7 @@ func NewServer(cfg config.Config, log *slog.Logger) *Server {
 		log:      log,
 		sessions: map[string]*Session{},
 		ipCounts: map[string]int{},
+		openings: map[string]*openingState{},
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:    32 << 10,
 			WriteBufferSize:   32 << 10,
@@ -69,6 +77,10 @@ func NewServer(cfg config.Config, log *slog.Logger) *Server {
 		authGate: newFailGate(cfg.AuthFailBurst, cfg.AuthFailWindowSeconds),
 	}
 	s.upgrader.CheckOrigin = s.checkOrigin
+	if cfg.TelemetryURL != "" {
+		s.tel = newTelPoster(cfg.TelemetryURL, cfg.TelemetryFormat, log)
+		log.Info("turn telemetry enabled", "url", cfg.TelemetryURL, "format", cfg.TelemetryFormat)
+	}
 	if cfg.StoreDir != "" {
 		st, err := store.Open(cfg.StoreDir, time.Duration(cfg.StoreTTLHours)*time.Hour)
 		if err != nil {
@@ -114,6 +126,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/live/sessions/{id}/attach", s.handleAttach)
 	mux.HandleFunc("/v1/live/sessions/{id}/fork", s.handleFork)
 	mux.HandleFunc("/v1/live/sessions/{id}/content", s.handleContent)
+	if s.cfg.Realtime.Enabled {
+		// The same service in the OpenAI Realtime protocol, for clients that
+		// cannot speak gpt-live-1 — and the two endpoints a phone call needs
+		// around it.
+		mux.HandleFunc("/v1/realtime", s.handleRealtime)
+		mux.HandleFunc("/v1/opening", s.protect(s.handleOpening))
+		mux.HandleFunc("/v1/pool", s.protect(s.handlePool))
+	}
+	// Whatever else is asked for under /v1/ is said out loud. Putting golive
+	// where another agent used to be means inheriting that agent's callers,
+	// and the quickest way to learn what they expect is to see what they ask
+	// for and do not get.
+	mux.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {
+		s.log.Info("request for an endpoint this server does not have",
+			"method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery != "")
+		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "not_found", "path": r.URL.Path})
+	})
 	mux.HandleFunc("/livez", s.handleLivez)
 	mux.HandleFunc("/healthz", s.handleLivez)
 	mux.HandleFunc("/readyz", s.handleReadyz)
@@ -214,7 +243,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
-	s.serveSession(w, r, nil)
+	s.serveSession(w, r, nil, nil)
 }
 
 // handleFork starts a new session from a stored one: same model, same
@@ -235,7 +264,7 @@ func (s *Server) handleFork(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.serveSession(w, r, &meta)
+	s.serveSession(w, r, &meta, nil)
 }
 
 // sourceForFork finds the record to fork from: a session still running, or one
@@ -343,7 +372,7 @@ func (s *Server) handleContent(w http.ResponseWriter, r *http.Request) {
 
 // serveSession upgrades a request and runs a session on it. seed is the stored
 // session it forks from, or nil for a new one.
-func (s *Server) serveSession(w http.ResponseWriter, r *http.Request, seed *store.Meta) {
+func (s *Server) serveSession(w http.ResponseWriter, r *http.Request, seed *store.Meta, rt *RealtimeOptions) {
 	if s.draining.Load() {
 		metrics.Default().Rejected("draining")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "draining"})
@@ -383,14 +412,29 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request, seed *stor
 	id := "sess_" + randomID()
 	s.sweepStore()
 	session := NewSession(SessionOptions{
-		Conn:    conn,
-		Cfg:     s.cfg,
-		Log:     s.log,
-		ID:      id,
-		Factory: s.Factory,
-		Store:   s.store,
-		Seed:    seed,
+		Conn:      conn,
+		Cfg:       s.cfg,
+		Log:       s.log,
+		ID:        id,
+		Factory:   s.Factory,
+		Store:     s.store,
+		Seed:      seed,
+		Realtime:  rt,
+		Telemetry: s.tel,
 	})
+	if rt != nil {
+		// A Realtime server speaks first.
+		session.rt.mu.Lock()
+		session.queueRealtime(map[string]any{
+			"type": "session.created",
+			"session": realtimeSession(live.SessionConfig{
+				ID:    id,
+				Model: s.cfg.Model,
+				Audio: &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: rt.Rate}},
+			}),
+		})
+		session.rt.mu.Unlock()
+	}
 	if rid := requestIDFrom(r.Context()); rid != "" {
 		session.log = session.log.With("request_id", rid)
 	}

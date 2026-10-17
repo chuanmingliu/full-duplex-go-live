@@ -22,6 +22,7 @@ import (
 	// Provider adapters register themselves. Each factory is lazy, so an
 	// unconfigured vendor costs nothing until a session asks for it.
 	_ "github.com/chuanmingliu/golive/internal/provider/deepseek"
+	_ "github.com/chuanmingliu/golive/internal/provider/fish"
 	_ "github.com/chuanmingliu/golive/internal/provider/minimax"
 	_ "github.com/chuanmingliu/golive/internal/provider/mock"
 	_ "github.com/chuanmingliu/golive/internal/provider/tencent"

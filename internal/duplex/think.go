@@ -163,7 +163,7 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	// wrong zero. A speculative turn is stamped when speech actually ends, and
 	// a turn nobody spoke has no origin at all.
 	if spoken && !e.userOpen && !e.speechEndAt.IsZero() {
-		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
+		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS, e.speechEndSilenceMS)
 	}
 	// Something the caller said earlier and was never answered — they carried
 	// on after a pause that closed the turn, or asked again before the answer
@@ -176,6 +176,13 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	e.delegatedTurn = turn
 	e.filled = false
 	e.cancelBackend()
+	if spoken {
+		end := e.speechEndMS
+		if e.userOpen {
+			end = e.inputMS.Load()
+		}
+		e.focusNote(turn, e.utterStartMS, end, e.userOpen)
+	}
 
 	e.log.Debug("think: delegating",
 		"turn", turn.ID,
@@ -292,6 +299,7 @@ func (e *Engine) backendRequest(msgs []provider.Message, front bool) provider.LL
 		req.MaxTokens = e.backend.MaxOutputTokens
 	}
 	req.Tools = append([]json.RawMessage(nil), e.backend.Tools...)
+	req.Tools = append(req.Tools, e.toolDefinitions()...)
 	req.ToolChoice = e.backend.ToolChoice
 	req.ParallelToolCalls = e.backend.ParallelToolCalls
 	return req
@@ -312,6 +320,11 @@ func (e *Engine) systemPrompt(front bool) string {
 	}
 	if front {
 		parts = append(parts, delegationPolicy)
+	}
+	// The working memory last: everything before it is the same from one
+	// turn to the next and stays in the provider's prefix cache.
+	if !front {
+		parts = append(parts, e.memoryBlock())
 	}
 	var kept []string
 	for _, p := range parts {
@@ -476,8 +489,18 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		// result for a call the engine has not yet recorded would be refused.
 		if job.front {
 			e.post(func() { e.onDelegateCalls(job, calls) })
+		} else if mine, theirs := e.splitCalls(calls); len(theirs) == 0 {
+			e.post(func() { e.onServerCalls(job, mine) })
 		} else {
-			e.post(func() { e.onToolCalls(job, calls) })
+			if len(mine) > 0 {
+				// Both kinds in one response: the engine's are run and their
+				// outputs wait with the application's; the backend resumes
+				// when all are in.
+				e.post(func() { e.onServerCallsAmong(job, mine, theirs) })
+			} else {
+				e.post(func() { e.onToolCalls(job, calls) })
+			}
+			calls = theirs
 			for i, call := range calls {
 				report(map[string]any{
 					"type":         "response.output_item.done",
@@ -948,7 +971,24 @@ func (e *Engine) SetBackend(b BackendOptions) {
 // provider without such a cache can use, which is why it is off unless asked
 // for. See duplex.backend_prefix_warm.
 func (e *Engine) maybeWarmPrefix() {
-	if !e.opts.Cfg.Duplex.BackendPrefixWarm || e.deps.LLM == nil {
+	if !e.opts.Cfg.Duplex.BackendPrefixWarm {
+		return
+	}
+	e.warmPrefix("utterance opened")
+}
+
+// warmAtOpening is the same request at the two moments of a call when nobody
+// can be waiting on the backend: when the session opens, and when the opening
+// line starts to play. See duplex.backend_prefix_warm_start.
+func (e *Engine) warmAtOpening(reason string) {
+	if !e.opts.Cfg.Duplex.BackendPrefixWarmStart {
+		return
+	}
+	e.warmPrefix(reason)
+}
+
+func (e *Engine) warmPrefix(reason string) {
+	if e.deps.LLM == nil {
 		return
 	}
 	if e.clientMode() && !e.clientAuto() {
@@ -962,7 +1002,10 @@ func (e *Engine) maybeWarmPrefix() {
 	req := e.backendRequest(e.snapshotMessages(nil, front), front)
 	req.MaxTokens = 1
 	go func() {
-		ctx, cancel := context.WithTimeout(e.ctx, 5*time.Second)
+		// Every copy, to its end: with a pool of keys behind the backend each
+		// copy goes to a different account, and each account keeps its own
+		// cache. Racing them would warm one.
+		ctx, cancel := context.WithTimeout(provider.WithEveryCopy(e.ctx), 5*time.Second)
 		defer cancel()
 		started := time.Now()
 		deltas, err := e.deps.LLM.Stream(ctx, req)
@@ -977,6 +1020,6 @@ func (e *Engine) maybeWarmPrefix() {
 				e.cachedTok.Add(int64(d.Usage.CachedInputTokens))
 			}
 		}
-		e.log.Debug("think: prefix warmed", "ms", time.Since(started).Milliseconds())
+		e.log.Debug("think: prefix warmed", "reason", reason, "ms", time.Since(started).Milliseconds())
 	}()
 }

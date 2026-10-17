@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist clean tidy
+.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist bundle sim-bundle clean tidy
 
 all: vet test build
 
@@ -20,6 +20,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivectl ./cmd/golivectl
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivebench ./cmd/golivebench
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/ttsprobe ./cmd/ttsprobe
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/echoprobe ./cmd/echoprobe
 
 ## test: the Go suite, plus the demo page's transcript bookkeeping. The page is
 ## where a session is read, so a defect there is indistinguishable from one in
@@ -88,12 +89,38 @@ dist:
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "  building $$os/$$arch"; \
-		for c in golive golivectl golivebench ttsprobe; do \
+		for c in golive golivectl golivebench ttsprobe echoprobe; do \
 			GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" \
 				-o $(BIN)/$$c-$$os-$$arch ./cmd/$$c; \
 		done; \
 	done
 	@ls -lh $(BIN)
 
+## sim-bundle: the simulated customer, built from its own branch (SIM_REF)
+## into dist/golive-sim.tar.gz. See "The simulated customer" in TELEPHONY.md.
+sim-bundle:
+	@scripts/sim-bundle.sh $(SIM_REF)
+
+## bundle: everything a phone-line box with no Go needs, in one archive: linux
+## binaries, the telephony profile, the scripts. Unpack it there and run
+## scripts/phone-brain.sh golive. See TELEPHONY.md.
+BUNDLE := dist/golive-telephony
+bundle:
+	@rm -rf $(BUNDLE) && mkdir -p $(BUNDLE)/bin $(BUNDLE)/configs $(BUNDLE)/scripts
+	@for c in golive golivebench golivectl llmprobe ttsprobe echoprobe journal crm edge desk; do \
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" \
+			-o $(BUNDLE)/bin/$$c-linux-amd64 ./cmd/$$c || exit 1; \
+	done
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" \
+		-o $(BUNDLE)/bin/golive-linux-arm64 ./cmd/golive
+	@cp configs/*.json configs/sim.env $(BUNDLE)/configs/
+	@cp scripts/*.sh $(BUNDLE)/scripts/
+	@cp start.sh TELEPHONY.md .env.example $(BUNDLE)/
+	@cp -r journal $(BUNDLE)/journal
+	@mkdir -p $(BUNDLE)/web && cp web/index.html $(BUNDLE)/web/
+	@echo "$(COMMIT) $$(date -u +%FT%TZ) $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" > $(BUNDLE)/VERSION
+	@tar -C dist -czf dist/golive-telephony.tar.gz golive-telephony
+	@echo "dist/golive-telephony.tar.gz  $$(cat $(BUNDLE)/VERSION)"
+
 clean:
-	rm -rf $(BIN) *.wav golive.log bench.md bench.json bench-sim.md bench-sim.json
+	rm -rf $(BIN) dist *.wav golive.log bench.md bench.json bench-sim.md bench-sim.json

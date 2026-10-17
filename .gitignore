@@ -5,3 +5,4 @@
 .zshrc
 .DS_Store
 golive.log
+dist/

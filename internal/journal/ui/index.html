@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Call journal</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/">
+    <svg class="brand-mark" viewBox="0 0 22 14" width="22" height="14" aria-hidden="true">
+      <rect x="0" y="1" width="9" height="4" rx="1"/>
+      <rect x="14" y="9" width="8" height="4" rx="1"/>
+      <path d="M9.5 0v14M13.5 0v14" fill="none" stroke-width="1"/>
+    </svg>
+    <span>Call journal</span>
+  </a>
+  <nav class="nav" aria-label="Sections">
+    <a href="#/" data-nav="overview">Overview</a>
+    <a href="#/issues" data-nav="issues">Issues</a>
+    <a href="#/decisions" data-nav="decisions">Decisions</a>
+  </nav>
+  <div class="top-status">
+    <span class="top-item" id="top-build"></span>
+    <span class="top-item rec" id="top-rec"></span>
+    <span class="top-item" id="top-updated" aria-live="polite"></span>
+    <button type="button" class="btn btn-quiet" id="refresh" title="Read the journal again">Refresh</button>
+  </div>
+</header>
+<main id="view" tabindex="-1"></main>
+<noscript><p style="padding:24px">The call journal needs JavaScript to read its API.</p></noscript>
+<script src="app.js"></script>
+</body>
+</html>
