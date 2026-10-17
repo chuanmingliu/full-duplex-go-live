@@ -248,7 +248,15 @@ func TestScriptedHangupRequiresMatchingObservedEnd(t *testing.T) {
 
 type closeCallbackPorts struct {
 	*actionReturnPorts
-	closeHook func()
+	closeHook   func()
+	quiesceHook func()
+}
+
+func (p *closeCallbackPorts) Quiesce(context.Context, Binding) error {
+	if p.quiesceHook != nil {
+		p.quiesceHook()
+	}
+	return nil
 }
 
 func (p *closeCallbackPorts) Close(ctx context.Context, b Binding) error {
@@ -274,7 +282,7 @@ func TestScriptedHangupLifecycleEvidence(t *testing.T) {
 			}
 			b := connect(t, c, f, snap)
 			confirm := func() {
-				if err := c.Handle(ctx, Event{Kind: "ended", Binding: b, AtMS: c.RelativeMS()}); err != nil {
+				if err := c.Handle(ctx, Event{Kind: "ended", Binding: b, AtMS: c.RelativeMS()}); err != nil && !(variant == "close-error" && errors.Is(err, ErrNotReady)) {
 					t.Error(err)
 				}
 			}
@@ -290,7 +298,7 @@ func TestScriptedHangupLifecycleEvidence(t *testing.T) {
 				p.hangupHook = confirm
 				base.hangupErr = ErrNotReady
 			case "end-before-hangup-dispatched":
-				p.closeHook = confirm
+				p.quiesceHook = confirm
 			case "premature-end":
 				confirm()
 			case "unrelated-stop":

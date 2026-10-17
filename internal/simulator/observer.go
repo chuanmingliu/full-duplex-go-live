@@ -8,6 +8,7 @@ import (
 const AudioBoundaryEvidence = "application_audio_boundary"
 
 type BoundaryTurn struct {
+	responseIDs       []string
 	CustomerEndMS     int64 `json:"customer_end_ms"`
 	AssistantStartMS  int64 `json:"assistant_start_ms"`
 	HasCustomerEnd    bool  `json:"has_customer_end"`
@@ -45,17 +46,19 @@ func AssistantGap(t BoundaryTurn) Gap {
 // Observations must use one receiver-local monotonic clock, at actual successful
 // audio writes and received frames. Generation/enqueue events are not delivery.
 type Observation struct {
-	ID        string `json:"id,omitempty"`
-	Kind      string `json:"kind"`
-	Role      string `json:"role,omitempty"`
-	AtMS      int64  `json:"at_ms"`
-	NonSilent bool   `json:"non_silent,omitempty"`
-	End       bool   `json:"end,omitempty"`
-	Text      string `json:"text,omitempty"`
+	ID         string `json:"id,omitempty"`
+	ResponseID string `json:"response_id,omitempty"`
+	Kind       string `json:"kind"`
+	Role       string `json:"role,omitempty"`
+	AtMS       int64  `json:"at_ms"`
+	NonSilent  bool   `json:"non_silent,omitempty"`
+	End        bool   `json:"end,omitempty"`
+	Text       string `json:"text,omitempty"`
 }
 type observer struct {
 	lastMS                              int64
 	seen                                map[string]bool
+	failedResponses                     map[string]bool
 	assistantSpeaking, customerSpeaking bool
 	assistantTurns, customerTurns       []BoundaryTurn
 	activeRemoteTurn                    int
@@ -77,9 +80,13 @@ type TranscriptEntry struct {
 }
 
 func newObserver() *observer {
-	return &observer{lastMS: -1, activeRemoteTurn: -1, seen: map[string]bool{}}
+	return &observer{lastMS: -1, activeRemoteTurn: -1, seen: map[string]bool{}, failedResponses: map[string]bool{}}
 }
 func (o *observer) observe(v Observation) error {
+	if v.ResponseID != "" && !responseIdentity.MatchString(v.ResponseID) {
+		o.invalid++
+		return errors.New("invalid audio response identity")
+	}
 	if v.ID != "" && o.seen[v.ID] {
 		return nil
 	}
@@ -126,6 +133,7 @@ func (o *observer) observe(v Observation) error {
 			kind = "customer_speech_ended"
 		} else {
 			if o.customerSpeaking {
+				o.associateResponse(v.ResponseID)
 				return nil
 			}
 			kind = "customer_speech_started"
@@ -206,6 +214,9 @@ func (o *observer) observe(v Observation) error {
 		o.ended = 1
 	default:
 		return fmt.Errorf("unsupported observation kind %q", kind)
+	}
+	if kind == "customer_speech_started" {
+		o.associateResponse(v.ResponseID)
 	}
 	return nil
 }

@@ -15,7 +15,15 @@ func (c *RunController) persistSnapshot(r *run) error {
 	if c.opts.DataDir == "" {
 		return nil
 	}
-	return writeJSONAtomic(filepath.Join(c.opts.DataDir, r.state.Binding.RunID), "state.json", persistedRun{Snapshot: c.snapshot(r), CreatedAt: r.createdAt, ScenarioID: r.scenario.ID, ExpectedOutcome: r.scenario.ExpectedOutcome, RetainTranscript: r.scenario.RetainTranscript, PrepareKeyHash: r.idempotencyKeyHash, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, Provenance: r.provenance})
+	return writeJSONAtomic(filepath.Join(c.opts.DataDir, r.state.Binding.RunID), "state.json", persistedRun{
+		Snapshot: c.snapshot(r), CreatedAt: r.createdAt,
+		ScenarioID: r.scenario.ID, ExpectedOutcome: r.scenario.ExpectedOutcome,
+		RetainTranscript: r.scenario.RetainTranscript, PrepareKeyHash: r.idempotencyKeyHash,
+		ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, Provenance: r.provenance,
+		Warnings: r.warnings, Termination: r.termination,
+		MaxRemoteTurns: r.scenario.MaxRemoteTurns, RemoteSpeechStarts: r.remoteTurns,
+		MaxDurationMS: r.scenario.MaxDurationMS,
+	})
 }
 func (c *RunController) persistReport(r *run) error {
 	if c.opts.DataDir == "" || !r.terminalReady() {
@@ -63,6 +71,11 @@ func (c *RunController) restore() error {
 		runctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		r := &run{state: State{Phase: snap.Phase, Binding: snap.Binding}, reason: snap.Reason, idempotencyKeyHash: metadata.PrepareKeyHash, scenarioHash: metadata.ScenarioHash, promptHash: metadata.PromptHash, provenance: metadata.Provenance, expiresAt: snap.ReservationExpiresAt, observer: newObserver(), ctx: runctx, cancel: cancel}
+		r.warnings = append([]Warning(nil), metadata.Warnings...)
+		r.termination = metadata.Termination
+		r.scenario.MaxRemoteTurns = metadata.MaxRemoteTurns
+		r.scenario.MaxDurationMS = metadata.MaxDurationMS
+		r.remoteTurns = metadata.RemoteSpeechStarts
 		r.createdAt = metadata.CreatedAt
 		// Older metadata lacks creation time; expiry is a deterministic fallback.
 		if r.createdAt.IsZero() {
@@ -190,14 +203,19 @@ func (c *RunController) Transcript(ctx context.Context, id string) (TranscriptAr
 
 type persistedRun struct {
 	Snapshot
-	CreatedAt        time.Time        `json:"created_at,omitempty"`
-	ScenarioID       string           `json:"scenario_id,omitempty"`
-	ExpectedOutcome  string           `json:"expected_outcome,omitempty"`
-	RetainTranscript bool             `json:"retain_transcript,omitempty"`
-	PrepareKeyHash   string           `json:"prepare_key_hash,omitempty"`
-	ScenarioHash     string           `json:"scenario_hash,omitempty"`
-	PromptHash       string           `json:"prompt_hash,omitempty"`
-	Provenance       reportProvenance `json:"provenance"`
+	CreatedAt          time.Time        `json:"created_at,omitempty"`
+	ScenarioID         string           `json:"scenario_id,omitempty"`
+	ExpectedOutcome    string           `json:"expected_outcome,omitempty"`
+	RetainTranscript   bool             `json:"retain_transcript,omitempty"`
+	PrepareKeyHash     string           `json:"prepare_key_hash,omitempty"`
+	ScenarioHash       string           `json:"scenario_hash,omitempty"`
+	PromptHash         string           `json:"prompt_hash,omitempty"`
+	Provenance         reportProvenance `json:"provenance"`
+	Warnings           []Warning        `json:"warnings,omitempty"`
+	Termination        Termination      `json:"termination"`
+	MaxRemoteTurns     int              `json:"max_remote_turns"`
+	RemoteSpeechStarts int              `json:"remote_speech_start_count"`
+	MaxDurationMS      int64            `json:"max_duration_ms"`
 }
 
 type reportProvenance struct {

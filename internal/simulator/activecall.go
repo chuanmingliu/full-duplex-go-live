@@ -307,7 +307,7 @@ func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCa
 			if event.Reason == "Canceled" && event.Initiator == "caller" {
 				reason = NativeCancelBeforeAnswerReason
 			}
-			a.terminal(controller, call, "ended", reason, true)
+			a.terminal(controller, call, "ended", reason, true, event)
 			return
 		case "reject", "error":
 			a.terminal(controller, call, "failed", "Active Call rejected or failed", event.Event == "reject")
@@ -316,7 +316,7 @@ func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCa
 	}
 }
 
-func (a *ActiveCall) terminal(controller ActiveCallController, call *activeCallSession, kind, reason string, ended bool) {
+func (a *ActiveCall) terminal(controller ActiveCallController, call *activeCallSession, kind, reason string, ended bool, native ...activeCallEvent) {
 	call.mu.Lock()
 	first := !call.terminal
 	call.terminal = true
@@ -333,7 +333,12 @@ func (a *ActiveCall) terminal(controller ActiveCallController, call *activeCallS
 	admitted := call.admitted
 	call.mu.Unlock()
 	if admitted {
-		_ = controller.Handle(context.Background(), Event{Kind: kind, Binding: Binding{RunID: call.runID, CallID: call.callID}, Reason: reason})
+		event := Event{Kind: kind, Binding: Binding{RunID: call.runID, CallID: call.callID}, Reason: reason}
+		if len(native) > 0 {
+			termination := nativeTermination(native[0].Initiator, native[0].Reason)
+			event.Termination = &termination
+		}
+		_ = controller.Handle(context.Background(), event)
 	}
 }
 

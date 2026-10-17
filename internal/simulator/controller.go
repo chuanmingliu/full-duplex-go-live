@@ -43,6 +43,12 @@ type realClock struct{}
 func (realClock) Now() time.Time                            { return time.Now() }
 func (realClock) AfterFunc(d time.Duration, f func()) Timer { return time.AfterFunc(d, f) }
 
+// VoiceQuiescer stops simulator output while retaining the media transport until
+// the gateway acknowledges hangup. Voice implementations may omit it.
+type VoiceQuiescer interface {
+	Quiesce(context.Context, Binding) error
+}
+
 type Options struct {
 	Telephony                                                                                               Telephony
 	Voice                                                                                                   Voice
@@ -111,6 +117,8 @@ type run struct {
 	occurrences                                   map[string]int
 	remoteTurns                                   int
 	failures                                      []string
+	warnings                                      []Warning
+	termination                                   Termination
 }
 type idempotency struct{ hash, id string }
 type RunController struct {
@@ -378,10 +386,21 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		return err
 	}
 	if next == before && len(effects) == 0 {
+		// A media failure can precede its native SIP end callback. Keep the failed
+		// outcome, but retain later exact-call attribution instead of inventing BYE.
+		if before.Phase == Failed && r.scenario.SchemaVersion > 0 && e.Kind == "ended" && e.Termination != nil && !r.termination.GatewayEnded {
+			r.recordTermination(e)
+			r.observer.ended = 1
+			c.record(r, "native_end_after_failure", "")
+			persistErr := errors.Join(c.persistSnapshot(r), c.persistReport(r))
+			c.mu.Unlock()
+			return errors.Join(ctx.Err(), persistErr)
+		}
 		c.mu.Unlock()
 		return ctx.Err()
 	}
 	r.state = next
+	r.recordTermination(e)
 	if scriptedHangupID != "" {
 		r.pendingHangup = &pendingHangup{id: scriptedHangupID, binding: next.Binding, requestedAtMS: c.RelativeMS()}
 	}
@@ -504,10 +523,23 @@ func (c *RunController) execute(ctx context.Context, r *run, e Effect) error {
 			return nil
 		}
 		r.hangupSent = true
+		r.termination.LocalHangupRequested = true
+		if r.state.Phase == Ending && !r.termination.GatewayEnded {
+			r.termination.Side = "receiver_gateway"
+			r.termination.Evidence = "local_hangup_request"
+		}
+		persistErr := c.persistSnapshot(r)
 		c.mu.Unlock()
 		deadline, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.opts.SetupTimeout)
 		defer cancel()
-		return c.opts.Telephony.Hangup(deadline, e.Binding.CallID)
+		return errors.Join(persistErr, c.opts.Telephony.Hangup(deadline, e.Binding.CallID))
+	case "quiesce_voice":
+		if voice, ok := c.opts.Voice.(VoiceQuiescer); ok {
+			deadline, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.opts.SetupTimeout)
+			defer cancel()
+			return voice.Quiesce(deadline, e.Binding)
+		}
+		return nil
 	case "close_voice":
 		c.mu.Lock()
 		if r.voiceClosed {

@@ -41,10 +41,11 @@ type State struct {
 	GreetingReleased bool    `json:"greeting_released"`
 }
 type Event struct {
-	Kind    string  `json:"kind"`
-	Binding Binding `json:"binding"`
-	AtMS    int64   `json:"at_ms"`
-	Reason  string  `json:"reason,omitempty"`
+	Kind        string       `json:"kind"`
+	Binding     Binding      `json:"binding"`
+	AtMS        int64        `json:"at_ms"`
+	Reason      string       `json:"reason,omitempty"`
+	Termination *Termination `json:"termination,omitempty"`
 }
 type Effect struct {
 	Kind    string
@@ -145,7 +146,9 @@ func Advance(s State, e Event) (State, []Effect, error) {
 			effect("finalize")
 		} else {
 			next.Phase = Ending
-			effect("close_voice")
+			effect("quiesce_voice")
+			// Keep media alive until native hangup confirmation. Closing it first
+			// makes Active Call fail its realtime loop before reporting SIP end.
 			effect("hangup")
 		}
 	case "ended":

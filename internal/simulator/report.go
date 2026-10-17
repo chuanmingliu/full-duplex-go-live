@@ -23,6 +23,10 @@ type Report struct {
 	ScenarioID             string          `json:"scenario_id,omitempty"`
 	ExpectedOutcome        string          `json:"expected_outcome,omitempty"`
 	TerminationReason      string          `json:"termination_reason,omitempty"`
+	Termination            Termination     `json:"termination"`
+	MaxRemoteTurns         int             `json:"max_remote_turns"`
+	RemoteSpeechStarts     int             `json:"remote_speech_start_count"`
+	MaxDurationMS          int64           `json:"max_duration_ms"`
 	TranscriptTruncated    bool            `json:"transcript_truncated"`
 	OverlapDurationMS      int64           `json:"overlap_duration_ms"`
 	AssistantEndDebounceMS int64           `json:"assistant_end_debounce_ms"`
@@ -43,6 +47,7 @@ type Report struct {
 	Checks                 []Check         `json:"checks"`
 	Actions                []ActionOutcome `json:"action_outcomes"`
 	Failures               []string        `json:"failures"`
+	Warnings               []Warning       `json:"warnings,omitempty"`
 	EventsTruncated        bool            `json:"events_truncated"`
 	TranscriptRetained     bool            `json:"transcript_retained"`
 	AudioRetained          bool            `json:"audio_retained"`
@@ -77,6 +82,12 @@ func check(name string, pass bool, evidence string) Check {
 func buildReport(r *run, opts Options) Report {
 	o := r.observer
 	rep := Report{RunID: r.state.Binding.RunID, Phase: r.state.Phase, SourceCommit: r.provenance.SourceCommit, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, ProviderModel: r.provenance.ProviderModel, VoiceID: r.provenance.VoiceID, Evidence: AudioBoundaryEvidence, AssistantGaps: o.assistantGaps(), SimulatorGaps: o.customerGaps(), InvalidObservations: o.invalid, Actions: append([]ActionOutcome{}, r.actions...), Failures: append([]string{}, r.failures...), EventsTruncated: r.eventsTruncated, TranscriptRetained: r.scenario.RetainTranscript}
+	rep.Termination = defaultTermination(r.termination)
+	rep.MaxRemoteTurns = r.scenario.MaxRemoteTurns
+	rep.RemoteSpeechStarts = r.remoteTurns
+	rep.MaxDurationMS = r.scenario.MaxDurationMS
+	rep.Warnings = append([]Warning(nil), r.warnings...)
+	rep.Failures = append(rep.Failures, warningFailures(r.warnings)...)
 	rep.ScenarioID = r.scenario.ID
 	rep.ExpectedOutcome = r.scenario.outcome()
 	rep.TerminationReason = redact(r.reason)
