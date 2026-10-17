@@ -858,12 +858,13 @@ type speechPipe struct {
 	turn *Turn
 	// begun is set once the pipe has asked for its first synthesis. That one
 	// is the one a caller waits on in silence; see provider.WithUrgent.
-	begun  bool
-	in     chan string
-	done   chan struct{}
-	ctx    context.Context
-	cancel context.CancelFunc
-	once   sync.Once
+	begun     bool
+	segmentID int
+	in        chan string
+	done      chan struct{}
+	ctx       context.Context
+	cancel    context.CancelFunc
+	once      sync.Once
 	// soft asks the pipe to stop after the sentence it is currently
 	// synthesizing, rather than abandoning it mid-word.
 	soft atomic.Bool
@@ -1123,6 +1124,7 @@ func (p *speechPipe) speak(text string) bool {
 	if p.ctx.Err() != nil || !p.current() {
 		return false
 	}
+	p.segmentID++
 
 	// Words that have been said before, in this voice, do not need saying to
 	// the synthesizer again — and on a hit this path needs no synthesis
@@ -1143,6 +1145,9 @@ func (p *speechPipe) speak(text string) bool {
 			return false
 		}
 		p.e.log.Error("tts open failed", "err", err)
+		if p.e.simulator != nil {
+			return p.recoverSimulatorTTS("tts_open_failed", false)
+		}
 		p.e.deps.Emit(live.NewError("server_error", "tts_unavailable", err.Error(), ""))
 		return false
 	}
@@ -1172,6 +1177,11 @@ func (p *speechPipe) speak(text string) bool {
 	chunks, err := stream.Synthesize(synthCtx, text)
 	if err != nil {
 		p.e.log.Error("tts synthesize failed", "err", err)
+		if p.e.simulator != nil {
+			cancelSeg()
+			p.e.dropTTSSession(stream)
+			return p.recoverSimulatorTTS("tts_synthesis_failed", false)
+		}
 		p.e.deps.Emit(live.NewError("server_error", "tts_error", err.Error(), ""))
 		p.e.dropTTSSession(stream)
 		return false
@@ -1210,6 +1220,11 @@ func (p *speechPipe) speak(text string) bool {
 		}
 		if chunk.Err != nil {
 			p.e.log.Error("tts chunk error", "err", chunk.Err)
+			if p.e.simulator != nil {
+				cancelSeg()
+				p.e.dropTTSSession(stream)
+				return p.recoverSimulatorTTS("tts_chunk_failed", true)
+			}
 			p.e.dropTTSSession(stream)
 			return false
 		}
@@ -1280,6 +1295,9 @@ func (p *speechPipe) speak(text string) bool {
 			"text", text,
 			"ms", time.Since(segStarted).Milliseconds())
 		p.e.dropTTSSession(stream)
+		if p.e.simulator != nil {
+			return p.recoverSimulatorTTS("tts_empty_segment", false)
+		}
 		return true
 	}
 

@@ -19,8 +19,8 @@ const (
 	SegBegin
 	// SegMark closes the segment opened by SegBegin.
 	SegMark
-	// SegAbandon withdraws a SegBegin whose audio never arrived, so the
-	// announced text is not counted as spoken.
+	// SegAbandon withdraws a SegBegin whose audio never arrived or whose
+	// synthesis failed partway through. Uncertain text is not counted as spoken.
 	//
 	// It exists because the announcement has to come first. SegBegin is what
 	// claims the floor for an answer, and claiming it only once audio exists
@@ -451,7 +451,9 @@ func (p *Player) beginSegment(seg Segment) {
 	p.pendingAnnounced = false
 }
 
-// abandonSegment drops the text announced by a SegBegin that produced no audio.
+// abandonSegment drops the text announced by an incomplete SegBegin.
+// Simulator provider failures can leave partial audio of unknown total duration;
+// it remains in audio accounting, without claiming the whole text was heard.
 //
 // fullSpokenLocked counts pendingText, because a segment cut off mid-flight did
 // reach the listener's ears in part. A segment that emitted nothing did not, and

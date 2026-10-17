@@ -14,12 +14,16 @@ import (
 	"github.com/chuanmingliu/golive/internal/provider/mock"
 )
 
-func simulatorEngine(t *testing.T, enabled bool) (*Engine, *collector) {
+func simulatorEngine(t *testing.T, enabled bool, configure ...func(*Options)) (*Engine, *collector) {
 	t.Helper()
 	cfg := testConfig()
 	cfg.Duplex.PlaybackPaced = false
 	c := newCollector(cfg.ClientRate)
-	e := New(Options{Cfg: cfg, ClientRate: cfg.ClientRate, SimulatorEnabled: enabled, Delegation: live.DelegationClient}, Deps{ASR: mock.NewASR("remote question"), TTS: mock.NewTTS(), Emit: c.emit})
+	opts := Options{Cfg: cfg, ClientRate: cfg.ClientRate, SimulatorEnabled: enabled, Delegation: live.DelegationClient}
+	for _, apply := range configure {
+		apply(&opts)
+	}
+	e := New(opts, Deps{ASR: mock.NewASR("remote question"), TTS: mock.NewTTS(), Emit: c.emit})
 	e.Start(context.Background())
 	t.Cleanup(e.Close)
 	return e, c
@@ -453,15 +457,16 @@ func TestSimulatorRecognitionFailureStopsScript(t *testing.T) {
 }
 
 func TestSimulatorEarlyFinalKeepsScriptOwnership(t *testing.T) {
-	e, c := simulatorEngine(t, true)
+	e, c := simulatorEngine(t, true, func(opts *Options) {
+		opts.Speculative = true
+		opts.Cfg.Duplex.EarlyFinalMS = 80
+	})
 	due := time.Now().Add(time.Hour)
 	req := simulatorReservation(t, e, "early-final", due)
 	if err := e.ScheduleSimulatorSpeech(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
 	simulatorLoop(t, e, func() {
-		e.opts.Speculative = true
-		e.opts.Cfg.Duplex.EarlyFinalMS = 80
 		e.advanceSimulator(due)
 		turn := e.tracker.Current()
 		generation := e.gen.Current()
