@@ -448,7 +448,18 @@ func (s *Session) writeClose(p *peer, reason string) {
 }
 
 func (s *Session) floodClose(p *peer, why string) {
-	s.log.Warn("session rate limit exceeded", "why", why, "sideband", p.side)
+	if why == "audio" {
+		// Only received, decoded wire audio reaches this budget. Simulator
+		// clock fill goes straight to its engine and cannot consume it. Keep
+		// enough numeric evidence to distinguish real bursts from bad limits
+		// without logging audio, transcripts or provider credentials.
+		s.log.Warn("session rate limit exceeded", "why", why, "sideband", p.side,
+			"wire_audio_bytes", p.rate.audio, "wire_audio_frames", p.rate.audioFrames,
+			"frame_bytes", p.rate.lastAudioBytes, "window_ms", time.Since(p.rate.start).Milliseconds(),
+			"max_audio_kbps", s.cfg.Duplex.MaxAudioKbps)
+	} else {
+		s.log.Warn("session rate limit exceeded", "why", why, "sideband", p.side)
+	}
 	s.reply(p, live.NewError("invalid_request_error", "rate_limited",
 		"client is sending too fast", ""))
 	if p.side {
@@ -461,9 +472,11 @@ func (s *Session) floodClose(p *peer, why string) {
 
 // byteRate is a one-second window counted on one read loop, so it needs no lock.
 type byteRate struct {
-	start  time.Time
-	events int
-	audio  int
+	start          time.Time
+	events         int
+	audio          int
+	audioFrames    int
+	lastAudioBytes int
 }
 
 func (b *byteRate) roll() {
@@ -471,6 +484,8 @@ func (b *byteRate) roll() {
 		b.start = time.Now()
 		b.events = 0
 		b.audio = 0
+		b.audioFrames = 0
+		b.lastAudioBytes = 0
 	}
 }
 
@@ -489,6 +504,8 @@ func (b *byteRate) allowAudio(n, maxKbps int) bool {
 	}
 	b.roll()
 	b.audio += n
+	b.audioFrames++
+	b.lastAudioBytes = n
 	return b.audio <= maxKbps*1000/8
 }
 
