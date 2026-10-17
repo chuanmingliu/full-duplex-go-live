@@ -185,6 +185,25 @@ func (r *SimulatorReceiver) Speak(ctx context.Context, b simulator.Binding, id, 
 	// may lag that boundary, so it must not veto the scheduled interruption.
 	return engine.ScheduleSimulatorSpeech(s.sim.ctx, duplex.SimulatorSpeechRequest{ActionID: id, Text: text, DueAt: now, ExpiresAt: now.Add(hold), MaxHold: hold})
 }
+
+// Quiesce stops the conversation while leaving the WebSocket available for the
+// gateway's SIP hangup. Cancelling sim.ctx here would close that same socket.
+func (r *SimulatorReceiver) Quiesce(ctx context.Context, b simulator.Binding) error {
+	s, err := r.session(b)
+	if err != nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.sim.input.stop()
+	s.sim.outputMu.Lock()
+	s.sim.closed = true
+	s.sim.outputMu.Unlock()
+	s.withEngine(func(e *duplex.Engine) { e.SetMuted(true, "") })
+	return nil
+}
+
 func (r *SimulatorReceiver) Close(ctx context.Context, b simulator.Binding) error {
 	s, err := r.session(b)
 	if err != nil {
@@ -236,6 +255,10 @@ func (s *simulatorSession) observe(v simulator.Observation) {
 // receiver-local clock. A 200 ms quiet gap closes a speech span; raw PCM is
 // never retained. These are application timings, not remote handset playout.
 func (s *simulatorSession) audio(out bool, pcm []byte) {
+	s.audioForResponse(out, pcm, "")
+}
+
+func (s *simulatorSession) audioForResponse(out bool, pcm []byte, responseID string) {
 	if len(pcm) < 2 {
 		return
 	}
@@ -252,7 +275,7 @@ func (s *simulatorSession) audio(out bool, pcm []byte) {
 	if out {
 		kind = "customer_audio"
 	}
-	s.observe(simulator.Observation{Kind: kind, NonSilent: true})
+	s.observe(simulator.Observation{Kind: kind, NonSilent: true, ResponseID: responseID})
 }
 func (s *Session) simulatorWrite(p *peer, data []byte) error {
 	sim := s.sim
@@ -266,12 +289,15 @@ func (s *Session) simulatorWrite(p *peer, data []byte) error {
 		return err
 	}
 	var ev struct {
-		Type  string `json:"type"`
-		Delta string `json:"delta"`
+		Type   string `json:"type"`
+		Delta  string `json:"delta"`
+		ItemID string `json:"item_id"`
 	}
 	if json.Unmarshal(data, &ev) == nil && (ev.Type == "response.audio.delta" || ev.Type == "response.output_audio.delta") {
 		if pcm, err := base64.StdEncoding.DecodeString(ev.Delta); err == nil {
-			sim.audio(true, pcm)
+			// item_id is the engine turn ID; response_id is only the Realtime
+			// wrapper. Keep warning attribution tied to successful audio writes.
+			sim.audioForResponse(true, pcm, ev.ItemID)
 		}
 	}
 	return nil
@@ -325,6 +351,8 @@ func (s *Session) startSimulator(ctx context.Context, p *peer, eventID string) e
 // controller. The audio observer itself runs only at transport boundaries.
 func (s *simulatorSession) observeEvent(event any) {
 	switch ev := event.(type) {
+	case duplex.SimulatorWarningEvent:
+		_ = s.receiver.controller.Warning(s.ctx, s.binding, ev.Code, ev.TurnID)
 	case live.ErrorEvent:
 		if ev.Error.Code == "simulator_overflow" || ev.Error.Code == "asr_error" {
 			s.fatalOnce.Do(func() { go s.fail("voice engine failed") })

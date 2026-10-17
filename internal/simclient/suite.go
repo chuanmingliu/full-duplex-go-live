@@ -293,7 +293,7 @@ func calledURI(s simulator.Snapshot) (string, error) {
 // ProtocolVerdict explicitly selects deterministic lifecycle/action evidence. The
 // receiver's legacy semantic placeholders never influence this protocol verdict.
 func ProtocolVerdict(s simulator.Scenario, report simulator.Report) string {
-	if report.Phase != simulator.Completed || len(report.Failures) > 0 {
+	if report.Phase != simulator.Completed || report.HasFatalFailures() {
 		return "fail"
 	}
 	required := []string{"answered_once", "greeting_once", "call_limits", "clean_termination"}
@@ -399,9 +399,7 @@ func sanitizeReport(s simulator.Scenario, report simulator.Report) simulator.Rep
 	for i := range report.Actions {
 		report.Actions[i].Reason = ""
 	}
-	for i := range report.Failures {
-		report.Failures[i] = "run failure"
-	}
+	sanitizeOperationalMetadata(&report)
 	for i := range report.AssistantGaps {
 		report.AssistantGaps[i].Reason = ""
 		report.AssistantGaps[i].Evidence = ""
