@@ -36,6 +36,7 @@
   "tools_memory": true,
   "tools_workers": 4,
   "tools_deliver_wait_ms": 1500,
+  "tools_deliver_quiet_ms": 1000,
   "tools_end_call": true,
   "tools": [
     {
@@ -71,6 +72,8 @@
     "speculative_stable_ms": 180,
     "speculative_min_chars": 4,
     "allow_barge_in": true,
+    "truncate_at_onset": true,
+    "heard_lag_ms": 0,
     "on_new_query": "cut",
     "reset_tts_on_interrupt": false,
     "playback_chunk_ms": 40,

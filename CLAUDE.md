@@ -475,6 +475,13 @@ made on one build.
   seconds contradict is distrusted and the channel observes only.
   `focus_profile` (a kept embedding under `~/edge/tsv/profiles/`) is for a
   line that always reaches one person; empty on the test line.
+- **A cut-off answer was recorded up to the cut, not up to the caller's
+  onset.** The detector's 320 ms, the hold and the labels put the cut 300 ms
+  to over a second after the caller started talking, and history kept the
+  sentences they talked over. `truncate_at_onset` (10-17, from tyger-s2s's
+  `onset_s`) records what had played when their sound began; the log's
+  `cut_ms` and `onset_lead_ms` show the difference. `heard_lag_ms` is the
+  phone leg's share, 0 until that leg is measured.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
@@ -683,7 +690,11 @@ Tests: `internal/duplex/tools_test.go` (a scripted chat model and a slow
 tool: the conversation goes on, the result is read out, a changed plan is
 flagged, a newer request supersedes). The telephony profile has
 `quote_total` on the lead service with `eta_s: 8`. Not verified on a call
-yet; the first one should show `tools: task submitted` → `delivering`.
+yet; the first one should show `tools: task submitted` → `delivering`. Since
+10-17 a result waits for a real gap — both sides quiet for
+`tools_deliver_quiet_ms` (1000), no acknowledgement playing — before the
+wait over a busy conversation applies ("Borrowed from tyger-s2s" in
+`TELEPHONY.md`).
 
 ## The call journal
 

@@ -1089,6 +1089,33 @@ focus: this call  ... barge_ins_judged=9 barge_ins_kept=7 echo_speaker=2
 In `observe` mode the verdict is logged and the words still decide. The
 telephony profile is in `veto` since 10-15. `-1` turns the wait off.
 
+### What the caller heard of a cut-off answer
+
+An interruption is decided some time after it begins: the detector holds
+`barge_in_min_speech_ms` (320) of voice before it reports a sound, the floor
+hold then waits for the recognizer and the labels (up to
+`user_backchannel_hold_ms` and `focus_barge_in_wait_ms`), and on a phone the
+caller hears every chunk a leg later than it left golive. The answer plays
+on through all of that. Until 10-17 history kept every word that had played
+when the cut was made — up to a second and a half of sentences the caller
+was talking over and did not take in — and the next answer referred back to
+them.
+
+Now (`truncate_at_onset`, on in the telephony profile) a cut-off answer is
+recorded as heard up to the moment the caller's sound began: the cut, less
+the time since the utterance opened, less the detector's minimum speech,
+less `heard_lag_ms` (the leg out to the phone; 0 until it is measured — the
+onset term is the larger). The log says both:
+
+```
+speak: turn truncated  turn=item_12 played_ms=1840 cut_ms=2620 onset_lead_ms=780 emitted_ms=4120 heard_text=...
+```
+
+`golive.audio.truncated` carries `cut_ms` beside `played_ms`. The idea is
+tyger-s2s's: its barge event carries `onset_s`, how long the user had been
+talking when the barge was decided, and its history keeps what had played
+at that onset (see "Borrowed from tyger-s2s" below).
+
 ### Only the primary voice: the target-speaker service
 
 The owner's rule (10-15): target my voice; a second voice is ignored. The
@@ -1236,9 +1263,13 @@ a pool (`tools_workers`) and the model is answered at once with
 `{"status":"running","task_id":…,"eta_s":…}` — so it tells the caller to
 hold on and goes on answering whatever else they ask. The tool's service
 is posted the call's memory and its version (`internal/tools.Request`). When
-the result comes, it is delivered as a turn of its own at the first gap —
-nobody speaking, no answer in flight — or, after `tools_deliver_wait_ms`
-with no gap, over whatever is going on. The note the model gets says what
+the result comes, it is delivered as a turn of its own at the first real gap
+— nobody speaking, no answer in flight, and both sides quiet for
+`tools_deliver_quiet_ms` (1000 in the telephony profile: the caller's last
+sound and the end of the assistant's last audio that long ago, no
+acknowledgement playing; the tick after the caller stops is where a
+mid-request pause lives) — or, after `tools_deliver_wait_ms` with no gap,
+over whatever is going on. The note the model gets says what
 the result was computed on and whether the memory has changed since, so it
 reports "按您刚才的方案…" or asks whether to recompute. A newer call of the
 same tool supersedes an older one still running; a result nobody wants any
@@ -1307,3 +1338,34 @@ what it did take.
 Not yet: seeding the memory from the lead's record (phone, plate, last
 year's plan) when the lead service places the call, writing the final
 memory back as the contact's summary, the task events in the journal.
+
+## Borrowed from tyger-s2s
+
+[tyger-s2s](https://github.com/nineninesix-ai/tyger-s2s) (NineNineSix,
+2026-10-16, Apache-2.0) is a browser voice agent on one GPU: Nemotron ASR
+with a 14M-parameter GRU on its layer-15 features deciding, per 80 ms
+frame, *respond* / *yield* / *backchannel*; Gemma 4 E4B for replies;
+VoxCPM2 for speech. English only. Its model is not usable here — it needs a
+GPU and English — and golive's decisions stay on the energy gate, the
+recognizer's words and the speaker labels. What is worth having is what its
+controller does *around* the model, read on 10-17 against this engine:
+
+| tyger-s2s does | golive | Taken |
+| --- | --- | --- |
+| A barge event carries `onset_s`; history keeps what had played at the onset, not at the decision | Kept everything that had played at the cut | **Yes**: `truncate_at_onset`, `heard_lag_ms`, `cut_ms` in the log and event |
+| A finished background task takes the floor only when both sides have been quiet for `announce_after_silence_ms` (1200), no backchannel is playing, and a user endpoint always wins | Delivered at the first tick nobody was busy | **Yes**: `tools_deliver_quiet_ms` |
+| The *2nd ear*: the page tags every 20 ms mic block with the reply sample the user was hearing, corrected by the browser's reported latencies; the yield head reads mic and playback as an aligned pair; `played` is reported by the client | The player paces output and guesses `played_ms` server-side; the phone leg is unmeasured | Not possible on the phone path: Active Call and the gateway report nothing. The browser demo could tag frames the same way and measure its own `heard_lag_ms`; not built |
+| Backchannel audio has its own reply id (0), is never tagged into the 2nd ear and never enters history | `bc_` turns are kept out of history; the VAD's barge-in bar is raised for any playback | Already so |
+| Barge-in keeps the last 2 s of the user's audio and seeds the new turn with it | The detector's padding and the recognizer opened at `start_ms` do the same | Already so |
+| An endpoint that lands during the halt after a barge is held and sent when the halt ends | The generation counter and the tracker order these | Already so |
+| A tool round cut in on before any of its answer was heard goes on as a background task and is announced at the next pause | A superseded task is dropped; an interrupted quick tool's result is lost with its turn | Worth doing when `quote_total` is seen on a call: keep an interrupted tool's result and deliver it as a `task_result` |
+| Contextual backchannels from the ASR partial, with the last three acks shown to the model so it does not repeat one; a hum when the partial is under `bc_min_words` | Phrases from a list, never the same twice running | Not now: a model call per acknowledgement is a synthesis request against the rate limit and a round trip the phone cannot spare |
+| Per-reply echo figure: mic level minus playback level on the frames where the agent is audible, with p10/p90, and the mic's floor while it is silent | `echo_floor_db` and `noise_floor_db` on every utterance; the gate lane in the journal | Already so, in a different shape |
+| Thresholds as typed `Threshold`/`Slider` declarations the page builds its tuning panel from | Profile keys, edited by hand and redeployed | Not now; the desk could carry a tuning page later |
+| Every engine request has its own id and a barge aborts by id; a decision waits 6 frames after a reset | Generation counter; `barge_in_min_speech_ms` | Already so |
+
+Its measured response gap is 0.7–0.8 s on an RTX 5090 (end of speech →
+first audio, 0.5 s of it confirming the user has finished), which is the
+same shape as golive's 870 at the median: the model does not remove the
+pause, it decides it with more than energy. The published evaluation is
+offline, not a live benchmark.
