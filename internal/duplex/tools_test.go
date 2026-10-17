@@ -392,3 +392,83 @@ func TestEndCallIsRefusedInTheFirstSecondsOfACall(t *testing.T) {
 		t.Fatal("an early end_call was accepted")
 	}
 }
+
+// A result that arrives as the assistant finishes a sentence is not read out
+// into the next tick: both sides must have been quiet for a while. The tick
+// after an answer ends, or the tick after the caller stops, is where a
+// mid-request pause lives, and a price announced there lands on the rest of
+// the request.
+func TestAResultWaitsForARealGap(t *testing.T) {
+	const quiet = 900
+	opts := quoteConfig()
+	opts.Cfg.ToolsDeliverQuietMS = quiet
+	opts.Cfg.ToolsDeliverWaitMS = 6000 // never the reason it is read out here
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	llm := &quoteLLM{}
+	// Done well before the "please wait" reply has finished playing, so the
+	// result is waiting the moment that reply ends.
+	quote := &slowQuote{delay: 400 * time.Millisecond}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, quote)
+
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	waitFor(t, "the assistant to say it is calculating", 5*time.Second, func() bool { return strings.Contains(c.saidAll(), "稍等") })
+
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(c.saidAll(), "报价出来了") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	if !strings.Contains(c.saidAll(), "报价出来了") {
+		t.Fatalf("the result was not read out; said: %q", c.saidAll())
+	}
+
+	// On the session clock: the last audio of the "please wait" answer and
+	// the first audio of the result.
+	var resultItem string
+	for _, ev := range c.taskEvents() {
+		if ev.Status == "delivered" {
+			resultItem = "delivered"
+		}
+	}
+	if resultItem == "" {
+		t.Fatal("no delivery event")
+	}
+	c.mu.Lock()
+	var waitEnd, resultStart int64 = -1, -1
+	var waitItem string
+	for _, ev := range c.events {
+		d, ok := ev.(live.TranscriptDelta)
+		if ok && strings.Contains(d.Delta, "稍等") {
+			waitItem = d.ItemID
+		}
+	}
+	for _, ev := range c.events {
+		a, ok := ev.(live.OutputAudioDelta)
+		if !ok {
+			continue
+		}
+		if a.ItemID == waitItem && a.EndMS > waitEnd {
+			waitEnd = a.EndMS
+		}
+	}
+	for _, ev := range c.events {
+		d, ok := ev.(live.TranscriptDelta)
+		if ok && strings.Contains(d.Delta, "报价出来了") {
+			for _, ev := range c.events {
+				if a, ok := ev.(live.OutputAudioDelta); ok && a.ItemID == d.ItemID && (resultStart < 0 || a.StartMS < resultStart) {
+					resultStart = a.StartMS
+				}
+			}
+		}
+	}
+	c.mu.Unlock()
+	if waitEnd < 0 || resultStart < 0 {
+		t.Fatalf("could not place the two answers on the clock: wait ends %d, result starts %d", waitEnd, resultStart)
+	}
+	if gap := resultStart - waitEnd; gap < quiet {
+		t.Fatalf("the result began %dms after the answer before it; tools_deliver_quiet_ms is %d", gap, quiet)
+	}
+}

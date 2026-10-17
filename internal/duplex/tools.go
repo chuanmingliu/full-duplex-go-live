@@ -383,6 +383,29 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 		MemoryVersion: task.Request.MemoryVersion, TookMS: task.Result.Took.Milliseconds(), Error: errString(task.Result.Err)})
 }
 
+// quietFor reports whether neither side has made a sound for at least d:
+// the caller's last sound, the end of the assistant's last audio, and any
+// backchannel or filler still playing all count. Zero d is always quiet.
+func (e *Engine) quietFor(d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	if e.player.Speaking() {
+		return false
+	}
+	now := time.Now()
+	if !e.speechEndAt.IsZero() {
+		lastSound := e.speechEndAt.Add(-time.Duration(e.speechEndSilenceMS) * time.Millisecond)
+		if now.Sub(lastSound) < d {
+			return false
+		}
+	}
+	if at := e.lastAudioAt.Load(); at != nil && now.Sub(*at) < d {
+		return false
+	}
+	return true
+}
+
 // maybeDeliver, on each tick, announces a finished task at the first gap
 // in the conversation, or after the wait over whatever is going on.
 func (e *Engine) maybeDeliver() {
@@ -397,6 +420,17 @@ func (e *Engine) maybeDeliver() {
 		wait = 1500 * time.Millisecond
 	}
 	busy := e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.liveSpeculation() != nil
+	if !busy && !e.quietFor(time.Duration(e.opts.Cfg.ToolsDeliverQuietMS)*time.Millisecond) {
+		// Free, but only just: the caller stopped a moment ago, or the
+		// answer's last chunk is still on its way, or an acknowledgement is
+		// playing. Read out into that and the result lands on the rest of a
+		// request, or on top of the assistant's own "嗯". A real gap is one
+		// both sides have left alone for a while; the wait over the busy
+		// case bounds this one too, so a result is never held for good.
+		if waited < wait {
+			return
+		}
+	}
 	if busy && waited < wait {
 		return
 	}
