@@ -690,7 +690,7 @@
    "title": "After end_call the model was resumed with the tool's output and said goodbye a second time, cut off by the hangup",
    "area": "engine",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "30c7c6c",
    "found": "2026-10-17",
    "found_on": "the first call on which the assistant hung up (simulated)",
    "found_call": "out-mvc8lypr-bnxc",
