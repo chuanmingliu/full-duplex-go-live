@@ -123,6 +123,13 @@ type Config struct {
 	ToolsTokenFile     string `json:"tools_token_file"`
 	ToolsWorkers       int    `json:"tools_workers"`
 	ToolsDeliverWaitMS int    `json:"tools_deliver_wait_ms"`
+	// ToolsDeliverQuietMS is how long both sides must have been quiet before
+	// a finished task's result is read out: the caller's last sound and the
+	// assistant's last audio this long ago, and no acknowledgement playing.
+	// A gap of no length — the tick after the caller stops — is where a
+	// mid-request pause lives, and a result announced into it talks over
+	// the rest of the request. Zero means the first free tick, as before.
+	ToolsDeliverQuietMS int `json:"tools_deliver_quiet_ms"`
 
 	// Providers, by registry name.
 	ASR string `json:"asr"`
@@ -486,6 +493,21 @@ type DuplexConfig struct {
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
+	// TruncateAtOnset records a cut-off answer as heard up to the moment the
+	// caller started talking, not up to the moment the engine decided they
+	// had. The detector's minimum speech, the floor hold and the speaker
+	// labels put that decision 300 ms to over a second after the first
+	// sound, and the answer plays on throughout; nobody listens to what is
+	// said while they are speaking. Off, history keeps every word that had
+	// played at the cut.
+	TruncateAtOnset bool `json:"truncate_at_onset"`
+	// HeardLagMS is how much later than it left here the caller hears the
+	// assistant's audio: the leg out to the phone. Added to the onset lead
+	// when a cut-off answer is recorded. Zero for a browser on the same
+	// machine; on a phone line it is the downlink half of the round trip,
+	// which has not been measured on the test line — leave it at 0 until it
+	// is, since the onset correction is the larger term.
+	HeardLagMS int `json:"heard_lag_ms"`
 	// ResetTTSOnInterrupt closes the synthesis connection whenever an answer is
 	// cut short, so the next turn starts on a fresh one.
 	//
@@ -744,6 +766,7 @@ func Default() Config {
 			TTSNativeRate:              true,
 			PhraseCache:                true,
 			AllowBargeIn:               true,
+			TruncateAtOnset:            true,
 			OnNewQuery:                 "cut",
 			ResetTTSOnInterrupt:        false,
 			PlaybackChunkMS:            40,

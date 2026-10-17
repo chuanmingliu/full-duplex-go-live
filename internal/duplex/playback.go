@@ -45,9 +45,14 @@ type Segment struct {
 
 // TruncationReport describes how a turn was cut short.
 type TruncationReport struct {
-	TurnID   string
+	TurnID string
+	// PlayedMS is how much of the turn the listener had heard when they
+	// started talking: the cut, less the lead the engine asked for.
 	PlayedMS int64
-	TotalMS  int64
+	// CutMS is how much had played when the cut was made. It is PlayedMS plus
+	// the time the engine took to decide the sound was an interruption.
+	CutMS   int64
+	TotalMS int64
 	// SpokenText is the prefix of the turn the user actually heard. This, not
 	// the full generated text, is what belongs in conversation history.
 	SpokenText string
@@ -335,7 +340,29 @@ func (p *Player) realTurnHoldsFloorLocked() bool {
 // Interrupt cuts the current turn. The caller must bump the generation first so
 // upstream producers stop; this clears the queue and reports, through
 // OnTruncate, exactly how much the listener heard.
-func (p *Player) Interrupt() {
+func (p *Player) Interrupt() { p.InterruptBefore(0) }
+
+// InterruptBefore stops the turn and reports what the listener had heard
+// `lead` before the cut, rather than at the cut itself.
+//
+// A barge-in is decided well after it begins. The detector wants a few
+// hundred milliseconds of voice before it calls a sound speech, the floor
+// hold then waits for the recognizer and the speaker labels to say whether
+// it was a word at all, and on a phone the listener heard every chunk a leg
+// later than it left here. By the time the player is told to stop, the
+// caller has been talking over the answer for anything from 300 ms to over a
+// second — and the answer kept playing throughout. None of that audio was
+// listened to: a person who has started talking has stopped attending to
+// what the other side is saying. History that keeps it has the model
+// reasoning from sentences the caller talked over and never took in, and
+// then the next answer refers back to them.
+//
+// So the engine passes the lead: how long ago the caller's sound began, plus
+// the leg's delay. What was heard is what had played at that moment; what
+// had played at the cut is reported beside it, so the log still shows the
+// detection delay. The lead is clamped to the turn: an onset before the turn
+// began means nothing of it was heard.
+func (p *Player) InterruptBefore(lead time.Duration) {
 	p.mu.Lock()
 	p.queue = nil
 	p.graceTurn = ""
@@ -345,7 +372,11 @@ func (p *Player) Interrupt() {
 		p.mu.Unlock()
 		return
 	}
-	playedMS := p.heardMSLocked()
+	cutMS := p.heardMSLocked()
+	playedMS := cutMS - float64(lead.Milliseconds())
+	if playedMS < 0 {
+		playedMS = 0
+	}
 	totalMS := p.emittedMS
 	text := p.spokenPrefixLocked(playedMS)
 	p.resetTurnLocked()
@@ -355,6 +386,7 @@ func (p *Player) Interrupt() {
 	p.reportTruncation(TruncationReport{
 		TurnID:     turnID,
 		PlayedMS:   int64(playedMS),
+		CutMS:      int64(cutMS),
 		TotalMS:    int64(totalMS),
 		SpokenText: text,
 	})

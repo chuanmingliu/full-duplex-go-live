@@ -629,8 +629,12 @@ type AudioTruncatedEvent struct {
 	Envelope
 	ItemID   string `json:"item_id,omitempty"`
 	PlayedMS int64  `json:"played_ms"`
-	TotalMS  int64  `json:"total_ms"`
-	Text     string `json:"text,omitempty"`
+	// CutMS is how much had played when the answer was stopped; PlayedMS is
+	// how much the caller had heard when they started talking, which is
+	// earlier by the time the interruption took to decide.
+	CutMS   int64  `json:"cut_ms,omitempty"`
+	TotalMS int64  `json:"total_ms"`
+	Text    string `json:"text,omitempty"`
 }
 
 // TurnMetricsEvent is golive.turn.metrics: per-stage latency for one turn.

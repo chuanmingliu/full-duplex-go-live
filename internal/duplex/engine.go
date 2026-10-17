@@ -244,6 +244,15 @@ type Engine struct {
 	// where the current utterance began, on the audio clock.
 	focus        *focusState
 	utterStartMS int64
+	// utterOnsetAt is when the open utterance's first sound reached the
+	// detector, on the wall clock: the detector reports an utterance only
+	// once it holds barge_in_min_speech_ms of voice, so this is that much
+	// before it did. It is what a cut-off answer is measured against.
+	utterOnsetAt time.Time
+	// lastAudioAt is when the last chunk of the assistant's audio reaches
+	// the listener. A task's result is read out only once that, and the
+	// caller's last sound, are both a while ago.
+	lastAudioAt atomic.Pointer[time.Time]
 	// focusDial, when set, replaces the WebSocket dial (tests).
 	focusDial func(ctx context.Context) (focus.Scorer, error)
 	// tools is what the engine can do besides talk, nil when the profile
@@ -733,6 +742,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// whatever was already being said when it began.
 		e.turnBeforeUtterance = e.tracker.Current()
 		e.utterStartMS = d.StartMS
+		e.utterOnsetAt = e.userSince.Add(-time.Duration(d.ActiveMS) * time.Millisecond)
 		e.uttVerdict = uttUnjudged
 		e.log.Debug("listen: utterance opened",
 			"start_ms", d.StartMS,
@@ -1414,7 +1424,23 @@ func (e *Engine) abortSpeech() {
 	if pipe := e.speech.Load(); pipe != nil {
 		pipe.Abort()
 	}
-	e.player.Interrupt()
+	e.player.InterruptBefore(e.heardLead())
+}
+
+// heardLead is how far before this moment the caller stopped listening: the
+// time since their open utterance began, plus the leg's delay. Zero when no
+// utterance is open — a cut made for any other reason (a new final, a
+// superseded guess) is a cut at the cut.
+func (e *Engine) heardLead() time.Duration {
+	d := e.opts.Cfg.Duplex
+	if !d.TruncateAtOnset || !e.userOpen || e.utterOnsetAt.IsZero() {
+		return 0
+	}
+	lead := time.Since(e.utterOnsetAt)
+	if lead < 0 {
+		lead = 0
+	}
+	return lead + time.Duration(d.HeardLagMS)*time.Millisecond
 }
 
 // policy is the configured response to a new query arriving mid-answer.
@@ -1775,6 +1801,8 @@ func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
 	if start < 0 {
 		start = 0
 	}
+	ends := playAt.Add(time.Duration(ms) * time.Millisecond)
+	e.lastAudioAt.Store(&ends)
 	e.deps.Emit(live.OutputAudioDelta{
 		Envelope: live.Envelope{Type: live.ServerOutputAudioDelta},
 		ItemID:   itemID,
@@ -1812,12 +1840,15 @@ func (e *Engine) onTruncated(r TruncationReport) {
 	e.log.Info("speak: turn truncated",
 		"turn", r.TurnID,
 		"played_ms", r.PlayedMS,
+		"cut_ms", r.CutMS,
+		"onset_lead_ms", r.CutMS-r.PlayedMS,
 		"emitted_ms", r.TotalMS,
 		"heard_text", r.SpokenText)
 	e.deps.Emit(live.AudioTruncatedEvent{
 		Envelope: live.Envelope{Type: live.ExtAudioTruncated},
 		ItemID:   r.TurnID,
 		PlayedMS: r.PlayedMS,
+		CutMS:    r.CutMS,
 		TotalMS:  r.TotalMS,
 		Text:     r.SpokenText,
 	})
