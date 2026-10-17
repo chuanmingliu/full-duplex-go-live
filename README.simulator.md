@@ -4,7 +4,7 @@ A simulated human customer that **answers calls from an AI voice assistant**. Th
 
 The intended pairing is an assistant service built by Claude and a customer simulator built by Codex. Those coding agents configure and operate the services; the live conversations use independently configured speech and language providers. The simulator is built on the [golive voice engine](README.md) and lives on branch `codex/inbound-user-simulator`.
 
-**Current status:** implemented and tested with local mocks and isolated SIP fixtures. The first real-provider calls on 2026-10-16 exposed a pause-handling failure; the receiver fixes below still need a real-provider retest. Carrier routing and physical gateway capacity also require acceptance testing. See the [validation record](deploy/simulator/VALIDATION.md).
+**Current status:** implemented and tested with local mocks and isolated SIP fixtures. Real-provider calls now reach multiple turns; investigation on 2026-10-17 identified premature media closure when a scenario limit requests hangup, plus incomplete TTS segment recovery. These corrections require a real-provider retest. Carrier routing and physical gateway capacity also require acceptance testing. See the [validation record](deploy/simulator/VALIDATION.md).
 
 ## How it works
 
@@ -113,6 +113,18 @@ For repeated tests, run the CLI from another terminal with the same `SIM_CONTROL
 
 For each reservation, stdout emits one JSON-lines `ready` record with `run_id`, `scenario_id`, `trial` and `called_sip_uri`. The caller consumes that record and places the call. The runner waits for its terminal report before preparing the next trial. It never dials, executes shell hooks or automatically retries a call. Output includes `summary.json` and sanitized per-run reports.
 
+## Recoverable failures and call endings
+
+In simulator mode, a TTS open, synthesis, chunk or empty-segment failure drops that segment and allows later segments and turns to continue. Partially played speech is not retried or added as completed speech to the engine's conversation history. A transcript entry emitted before the error can remain, so semantic evaluation excludes these runs. Reports retain sanitized counts in `warnings` and entries such as `warning: tts_chunk_failed (count=2)` under `failures`; provider error text is excluded. Other voice-engine and transport failures remain fatal.
+
+A completed run can retain valid `assistant_response_gaps` for unaffected responses. A response with a TTS warning remains in the sample array with `valid=false` and must be excluded from timing comparisons; a genuinely failed run still invalidates its samples. The suite's protocol verdict distinguishes these known warnings from fatal failures. Semantic evaluation remains `indeterminate` when warnings leave speech incomplete.
+
+At a scenario limit or requested hangup, the receiver stops audio input and delivery, requests gateway hangup, and keeps the media socket alive until native termination evidence arrives or a bounded deadline expires. `termination` records the side and evidence when known, the local hangup request/reason, and sanitized native initiator/reason. A control disconnect alone, or the gateway's generic `system` / `BySystem` event, does not establish which endpoint sent BYE; those remain `unknown`. Explicit gateway autohangup and inactivity-timeout reasons identify the receiver gateway.
+
+`max_remote_turns` counts received speech bursts separated by at least 200 ms of silence, not semantic assistant turns. A long utterance can consume several counts. Reports expose `max_remote_turns`, `remote_speech_start_count` and `max_duration_ms` so the effective limit and its consumption can be compared with the caller's conversation count.
+
+The audio flood guard meters decoded PCM received over the wire. Synthetic silence already bypasses this guard. At 16 kHz PCM16, normal input is 32,000 bytes/s; `max_audio_kbps: 512` admits 64,000 bytes per one-second window. Flood logs now include `wire_audio_bytes`, `wire_audio_frames`, `frame_bytes`, `window_ms` and `max_audio_kbps`. The historical n15 rejection has no such counters, so its cause is unconfirmed; this change does not raise the configured limit.
+
 ## Evaluate task performance
 
 Protocol evidence answers questions such as whether the call was answered and a scripted action completed. Task evaluation asks whether the assistant achieved the scenario's expectations. A protocol pass does not imply a task pass.
@@ -137,7 +149,7 @@ See the [CLI reference](cmd/golive-simctl/README.md) for exact input bounds, out
 - Audio recording and scripted silence are unsupported. Transcript retention is opt-in and bounded; use synthetic identities and facts.
 - Reports measure the receiver's application audio boundary, not handset playout or carrier latency.
 - Gateway readiness probes its control API. They do not prove a working SIP route, cellular channel or available hardware capacity.
-- Local race, browser and integration checks cover the simulator. Isolated SIP tests exercised answer, interruption and pre-answer cancellation with mock tones. The reported real-provider calls reached audio in both directions but stalled after one turn; acceptance requires a successful retest of the receiver fixes. Full-suite baseline failures are documented in the validation record.
+- Local race, browser and integration checks cover the simulator. Isolated SIP tests exercised answer, interruption and pre-answer cancellation with mock tones. Real-provider calls reached multiple turns; acceptance still requires a successful retest of TTS recovery and scenario-limit termination. Full-suite baseline failures are documented in the validation record.
 
 To check binary wiring without a call, build the receiver as above and run with Python 3:
 

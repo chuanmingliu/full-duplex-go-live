@@ -42,6 +42,15 @@ Scenarios with expectations remain semantically indeterminate until evaluated;
 scenarios without expectations record `not_requested`, never semantic pass.
 A protocol pass alone cannot pass requested semantic expectations.
 
+Known simulator TTS warnings do not by themselves fail protocol checks. The
+structured `warnings` counts must exactly match their entries under `failures`;
+unknown, malformed or inconsistent entries remain failures. Sanitized reports
+preserve these counts and allowlisted termination metadata, excluding free-form
+provider or gateway error text. Warning-affected responses have invalid timing
+samples; unaffected responses in a completed run can remain valid. Semantic
+evaluation still requires no reported failures, including these warnings, because
+dropped speech leaves incomplete evidence.
+
 To evaluate, explicitly retain transcripts in the scenario before preparing the
 run, obtain its terminal report and `/sim/v1/runs/<run-id>/transcript` envelope,
 and configure the independent judge with these environment variables:

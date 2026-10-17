@@ -107,3 +107,77 @@ The corrections require a new real-provider call after deployment of the
 dedicated receiver. Successful local tests do not establish that Tencent 4008
 is absent on a live connection. This work does not deploy, restart, reroute or
 place calls through an existing service.
+
+## TTS recovery, scenario limits and flood diagnostics — 2026-10-17
+
+Investigation of desk `n15`, `n16`, `n17` / `ISS-039` used read-only queries
+against the ThinkPad. The source checkout and retained reports identified
+`a4f77d5`. No credentials or conversation content were copied into this record.
+
+| Retained evidence | Observation |
+| --- | --- |
+| `sim-a92cd75ac88dab9e77970ca3` | 40 remote speech starts; `remote turn limit` stop at 162146 ms; control-disconnected failure at 162147 ms |
+| `sim-8d8e941772211aacb3beba3b` | 40 remote speech starts; `remote turn limit` stop at 1456526 ms; control-disconnected failure at 1456527 ms |
+| `sim-212aefbe…`, session `sess_3c3f396751786bde7a716e8e` | Audio rate rejection at `2026-10-17T01:38:17.08236553Z`; old log has no byte/frame counters |
+
+The event times above are the report's event offsets, not inferred call
+durations. Both sampled control disconnects followed a scenario-limit stop by
+1 ms. The old stop effects closed media before requesting hangup, allowing the
+gateway to tear down first. TTS chunk errors were also present, but source
+inspection does not establish them as the cause of these disconnects: the old
+chunk-error path abandoned the speech pipe without a segment-end event, and
+the pinned gateway logs Realtime `error` messages without directly hanging up.
+
+Corrections on the isolated feature branch:
+
+- `89565db`: simulator-only recovery for TTS open, synthesis, chunk and empty
+  segment failures. Drop the failed segment, abandon partial text in spoken
+  history, and continue later segments/turns. Emit only sanitized warning IDs.
+- `00bf6c4`: numeric wire-audio counters on rate-limit rejection and five
+  regressions proving silence fill is exempt, normal resume fits the 512 kbps
+  budget, and actual wire floods still close. The filler already bypassed the
+  guard at `a4f77d5`; the historical n15 cause remains unconfirmed. This does
+  not raise the configured threshold or claim the 2048 kbps workaround is needed.
+- `68a0de2`: warning counts, per-response timing invalidation, effective duration
+  and speech-burst limits, native termination attribution, and quiesce-before-
+  hangup ordering. Native evidence can enrich a failed report without converting
+  failure into success. Generic `system` / `BySystem` termination remains unknown.
+- `1bb8725`: server warning/response correlation, media quiescence without
+  closing its WebSocket, and strict warning-aware protocol verdicts and report
+  sanitization. Semantic evaluation still rejects incomplete speech evidence.
+
+`max_remote_turns` retains its existing meaning: received speech bursts separated
+by 200 ms of silence. It is not a count of semantic assistant turns. The new
+report fields expose both the effective limit and the observed starts; the old
+40-start records alone do not prove which scenario settings the caller intended.
+
+Local regression tests reproduced the dropped-TTS reporting and premature
+media-close behavior before the corrections, then passed under the race
+detector. Coverage includes all four warning codes, later response recovery,
+partial speech, warning persistence, response-specific gaps, strict warning
+projection, native caller/local/unknown termination, and missing confirmation.
+The receiver WebSocket tests verify continued audio after a recoverable chunk
+failure and quiet-but-connected media until native hangup confirmation.
+
+`go vet ./...`, `go build -buildvcs=false ./...`, the rebuilt receiver's
+`check_workbench.py`, and all five Python package tests passed. The workbench
+check used temporary loopback processes and only readiness probes reached its
+fake gateway. Independent integrated code review found no remaining actionable
+findings.
+
+The final `go test -race -json ./... -count=1` run against code `1bb8725`
+completed: **458 top-level tests passed, 1 skipped, 2 failed** (722 passes
+including subtests). There were no race diagnostics. The full duplex package
+passed in 283.076 s; all new simulator regressions passed. The only failures
+were the previously documented ordinary-server baseline cases:
+
+- `TestRealtimeCallsAreStoredWhenTheEndpointIsToldTo`: temporary directory
+  cleanup raced a remaining writer (`directory not empty`).
+- `TestRealtimeTurnBoundariesReachTheLatencyConsole`: `monotonicNs` was empty
+  on this macOS environment.
+
+These tests were neither changed nor suppressed; the full repository suite is
+therefore not green despite the passing scoped regressions.
+
+Deployment and real-provider acceptance are still required. This work does not
+restart the receiver, change the remote profile or gateway, or place calls.
