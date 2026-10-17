@@ -661,15 +661,15 @@
       "id": "ISS-039",
       "title": "The simulated customer's gateway ends every call at about 145 s",
       "area": "simulator",
-      "status": "open",
+      "status": "explained",
       "commit": "",
       "found": "2026-10-16",
       "found_on": "the first two multi-turn simulated calls",
       "found_call": "out-mvb3zqbe-4e4l",
       "symptom": "Both conversations ended at 144.15 s and 145.05 s, mid-utterance, with the receiver reporting 'Active Call control disconnected' and RustPBX 'Callee initiated hangup (UasBye)' from 172.20.0.2: the BYE came from the simulator's gateway. No scenario limit was near (290 s, 40 turns, 20 s idle).",
-      "cause": "Not known; inside Codex's package (an Active Call limit or the control link between its gateway and receiver). Asked on the desk (n12).",
-      "fix": "",
-      "verified_on": ""
+      "cause": "The receiver counts a remote turn per speech burst (each synthesized segment after a pause), so max_remote_turns is reached at roughly half the answers: 40 → 135–145 s, 80 → 200 s. A limit stop was reported as 'Active Call control disconnected' until Codex's ae89b93 added termination attribution (local_reason 'remote turn limit'). The 09:38–10:04 endings at 80–82 s were a second cause, a synthesizer error ending the call, fixed in ae89b93.",
+      "fix": "Scenarios at the cap (max_remote_turns 100) so the 295 s duration binds; Codex asked (desk n21) to count per debounced utterance and to end a limit stop as completed.",
+      "verified_on": "out-mvbsnh36-xtgf: 200 s, 42 turns, attribution 'remote turn limit'"
     },
     {
       "id": "ISS-040",
