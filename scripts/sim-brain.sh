@@ -94,6 +94,7 @@ scenario_path() {
   local s=$1
   if [ -f "$s" ]; then echo "$s"; return; fi
   if [ -f "$SIM_DIR/scenarios/simulator/$s.json" ]; then echo "$SIM_DIR/scenarios/simulator/$s.json"; return; fi
+  if [ -f "$SIM_DIR/scenarios/custom/$s.json" ]; then echo "$SIM_DIR/scenarios/custom/$s.json"; return; fi
   die "no scenario $s (see: sim-brain.sh scenarios)"
 }
 run_id() {

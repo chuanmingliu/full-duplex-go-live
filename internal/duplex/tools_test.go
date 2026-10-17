@@ -279,8 +279,9 @@ func TestANewerRequestSupersedesTheOlderTask(t *testing.T) {
 // farewellLLM says goodbye and calls end_call in the same response when the
 // caller says goodbye; otherwise it answers as the mock does.
 type farewellLLM struct {
-	mu    sync.Mutex
-	calls int
+	mu      sync.Mutex
+	calls   int
+	resumed int // requests that followed a tool result
 }
 
 func (l *farewellLLM) Name() string { return "farewell-script" }
@@ -294,7 +295,13 @@ func (l *farewellLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-ch
 	last := req.Messages[len(req.Messages)-1]
 	text, call := mock.Reply(last.Content), (*provider.ToolCall)(nil)
 	if last.Role == provider.RoleTool {
-		text = "" // nothing more to say after the hangup was accepted
+		// The real model, resumed with end_call's output, says goodbye
+		// again (the 18:11 simulated call on 10-17). The engine must not
+		// ask it.
+		l.mu.Lock()
+		l.resumed++
+		l.mu.Unlock()
+		text = "再见！"
 	} else if strings.Contains(last.Content, "再见") {
 		text = "好的，祝您用车愉快，再见。"
 		call = &provider.ToolCall{ID: id, Name: "end_call", Arguments: `{"reason":"客户道别"}`}
@@ -332,7 +339,8 @@ func TestTheAssistantHangsUpAfterItsFarewellHasPlayed(t *testing.T) {
 	c := newCollector(rate)
 	asr := newTrailingASR("好的再见")
 	asr.msPerRune = 150
-	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: &farewellLLM{}, Emit: c.emit}, &slowQuote{})
+	llm := &farewellLLM{}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &slowQuote{})
 
 	speak(e, rate, 600)
 	pause(e, rate, 700)
@@ -350,6 +358,16 @@ func TestTheAssistantHangsUpAfterItsFarewellHasPlayed(t *testing.T) {
 	}
 	if e.player.Speaking() {
 		t.Fatal("hung up while still speaking")
+	}
+	time.Sleep(300 * time.Millisecond)
+	llm.mu.Lock()
+	resumed := llm.resumed
+	llm.mu.Unlock()
+	if resumed != 0 {
+		t.Fatalf("the backend was resumed %d times after end_call was accepted; a second goodbye would be cut by the hangup", resumed)
+	}
+	if strings.Contains(c.saidAll(), "再见！") {
+		t.Fatalf("a second goodbye was said after end_call: %q", c.saidAll())
 	}
 }
 

@@ -202,6 +202,13 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		}
 	}
 	if len(wait) == 0 {
+		if e.hangingUp() {
+			// The model has said goodbye and asked to hang up. Resuming it
+			// with the tool's output would only draw a second goodbye, cut
+			// off by the hangup; the conversation is over.
+			e.log.Debug("tools: end_call accepted; not resuming the backend", "turn", job.turn)
+			return
+		}
 		e.continueWith(p)
 		return
 	}
@@ -267,6 +274,11 @@ func (e *Engine) requestEndCall(c provider.ToolCall) string {
 // minCallForEndCall is how old a call must be before the model may end it.
 var minCallForEndCall = 10 * time.Second
 
+// hangingUp says whether the model's request to end the call stands.
+func (e *Engine) hangingUp() bool {
+	return e.tools != nil && e.tools.endCall != nil
+}
+
 type endCallRequest struct {
 	reason string
 	at     time.Time
@@ -280,16 +292,24 @@ func (e *Engine) endCallWhenQuiet(reason string) {
 	deadline := time.Now().Add(20 * time.Second)
 	// Give the response that carried the tool call a moment to begin.
 	time.Sleep(600 * time.Millisecond)
+	quiet := func() bool { return !e.player.Speaking() && e.player.PendingMS() == 0 }
 	for time.Now().Before(deadline) {
 		if e.ctx.Err() != nil {
 			return
 		}
-		if !e.player.Speaking() && e.player.PendingMS() == 0 {
+		if !quiet() {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		// Quiet now; let the last of it reach the line, and hang up only if
+		// nothing began to play in the meantime (the first simulated call
+		// with the tool saw a second farewell start inside the grace and be
+		// cut by the hangup).
+		time.Sleep(hangupGrace)
+		if quiet() {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-	time.Sleep(hangupGrace)
 	if e.ctx.Err() != nil {
 		return
 	}

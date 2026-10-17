@@ -1204,6 +1204,17 @@ call up (20 s bound); the request is honoured once. The tool is described
 to the model in Chinese with the rules it must respect; the owner's prompt
 already says when to hang up, and the tool is how.
 
+Seen working on 10-17 at 18:14, on a simulated call: the customer said
+goodbye, the model answered with a six-character farewell and `end_call`,
+the farewell played in full and the line dropped 770 ms later, 155 s into
+the call. Two things that call taught (ISS-041): an accepted `end_call`
+ends the response — the backend is *not* resumed with the tool's output,
+because the model, resumed, says goodbye again and the hangup cuts it; and
+the grace is followed by a second look at the player, so a farewell that
+begins late is still played out. The simulated customer saw our BYE as its
+control link failing (`failed: Active Call control disconnected`, 20 s
+later) rather than the call ending; that is Codex's (ISS-042).
+
 ## Working memory, and work that takes longer than a turn
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",

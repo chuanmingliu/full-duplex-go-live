@@ -798,6 +798,20 @@ if mode == "sim":
             run_id = open(os.path.join(sim_dir, "data", "last-run"), encoding="utf-8").read().strip()
         except OSError:
             sys.exit("no run prepared: scripts/sim-brain.sh prepare <scenario> first, or give the run id")
+    # A reservation expires; a dial to an expired or finished run rings
+    # nobody (10-17: a run reserved at midday was `failed` by 18:10 and
+    # the first dial went to it). Ask the simulator first.
+    token = env_value(os.path.join(sim_dir, "tokens.env"), "SIM_CONTROL_TOKEN")
+    if token:
+        try:
+            q = urllib.request.Request("http://127.0.0.1:18865/sim/v1/runs/" + run_id, headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(q, timeout=5) as resp:
+                phase = json.load(resp).get("phase", "?")
+        except Exception as err:
+            phase = "unknown (%s)" % str(err)[:60]
+        if phase not in ("prepared", "waiting") and not phase.startswith("unknown"):
+            sys.exit("run %s is %s, not waiting for a call: reserve again (scripts/sim-brain.sh prepare <scenario>)" % (run_id, phase))
+        print("run %s is %s" % (run_id, phase))
     domain = env_value(os.path.join(sim_dir, "tokens.env"), "SIM_SIP_DOMAIN") or "simulator.invalid"
     to = "sip:%s@%s" % (run_id, domain)
     print("dialling the simulated customer at %s" % to)
