@@ -1,0 +1,48 @@
+# Call out-mvel3zdh-5z7r — 2026-10-19 09:37, build 35de29b
+
+A real call, the kept prompt, 95 s, morning. `end_call` available; the
+caller hung up 7 s after the last answer without a goodbye, so again not
+asked for.
+
+## What golive measured
+
+Headline, caller's last sound → first audio (pause + console's figure):
+
+| turn | at | pause | chat first token | first clause | synth first audio | first audio | **last sound → first audio** |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| item_2 | 09:37:48 | 380 | 332 | 434 | 630 | 630 | **1010** |
+| item_3 | 09:37:57 | 380 | 193 | 273 | 436 | 436 | **816** |
+| item_4 | 09:38:10 | 380 | 294 | 400 | 672 | 672 | **1052** |
+| item_5 | 09:38:14 | 380 | 318 | 399 | 613 | 613 | **993** (cut) |
+| item_6 | 09:38:22 | 380 | 348 | 472 | 681 | 682 | **1062** |
+| item_7 | 09:38:28 | 600 | 129 | 267 | 501 | 501 | **1101** |
+| item_10 | 09:38:40 | 900 | 279 | 365 | 624 | 625 | **1525** |
+| item_11 | 09:38:47 | 600 | 180 | 269 | 464 | 465 | **1065** |
+| item_12 | 09:38:54 | 600 | −202 | −133 | 41 | 41 | **641** |
+
+- 9 turns: p50 **1052**, max 1525; **1 over 1200**. Console's definition
+  p50 613, max 682. Too few turns for a p95.
+- The one over, item_10, is turn-taking, not the pipeline: the transcript
+  read as unfinished (a run of repeated words), two guesses were abandoned
+  as it moved on, the turn was taken only after the 900 ms wait, and the
+  answer took 625 from there. Four turns waited 600 ms (mid-thought); on
+  item_12 the answer prepared during the wait was ready 41 ms after the
+  close (641 from last sound).
+- Chat model, fastest of eight, 12 answers: 251–499, median ~420.
+  Synthesizer, 20 segments: 158–418, median ~210.
+- Guesses: 9 held, 2 abandoned. 1 answer cut by the caller (after 616 ms
+  played). Line filled twice, 5.6 s.
+
+## Focus
+
+Enrolment by agreement: 3 offered, 3 agreeing; 7 sounds judged, 0 vetoed,
+0 too late; 1 barge-in, honoured.
+
+## Open
+
+- `end_call` still unexercised on a real line: the call needs a goodbye.
+- The 600/900 ms mid-thought waits are now the largest term on turns that
+  take them (4 of 9 here): the pipeline answered in 465–625 after the close
+  but the caller waited 1.1–1.5 s. Whether `patient_wait_ms` can come down
+  with the answer already prepared during the wait is the next thing to
+  look at — item_12 shows what it buys when the guess holds.
