@@ -729,9 +729,10 @@ make bench-sim         # measure a server started with run-sim
 make bundle            # dist/golive-telephony.tar.gz for a box with no Go
 ```
 
-`internal/duplex` has failed once in a full run and passed on rerun; the test
-was not identified. Treat a single failure there as worth a second look, not as
-noise.
+`internal/duplex` fails now and then in a full run and passes on rerun. The
+flaky test is `TestSpokenFillersReachTheTranscript` (3 of 6 runs alone on
+10-19, on a tree without any engine change: a race in the test, not in the
+engine). Any other failure there is worth a second look.
 
 For every fix: a test that fails without it. Check that it does.
 

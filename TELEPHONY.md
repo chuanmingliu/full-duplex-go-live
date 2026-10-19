@@ -903,6 +903,30 @@ their own voice, and a soft trailing word can then close the turn early. The
 tests in `internal/audio/vad_test.go` hold both sides: a steady rumble closes
 within 3.5 s, a four-second sentence is heard to its end. `-1` turns it off.
 
+**The caller's own quiet** (`duplex.focus_quiet_close_ms`, 420, veto mode
+only). The floor only helps when the noise is steady and below the voice;
+a room with a second voice, a radio, dishes, keeps the gate open at the
+caller's own level and the recognizer keeps finding words in it, so the
+settled close never sees the words stand still either. The 09:37 call on
+10-19: one utterance open for nine seconds with half its voiced time
+another source's, three guesses made and two thrown away as the "words"
+changed, the turn taken by the 900 ms patience and the caller answered
+1525 ms after their last sound for an answer ready in 625. The focus
+channel labels every window as the caller's or not, so the turn is now
+taken when the caller's voice has been absent for 420 ms by the labels
+while the line stayed open — once the utterance has been attributed to
+the caller (160 ms of their voice), and only on the range the labels have
+reached, so their lag (tens of ms with the target-speaker service) is paid
+once and no guess is made on unlabelled audio:
+
+```
+listen: the caller's voice has been quiet though the line has not; taking the turn  caller_quiet_ms=420 others_ms=410 labelled_to_ms=64020
+```
+
+Counted as `quiet_closes` in `focus: this call`. The pause this gives is
+the labels' own 420, a little more than the detector's 380, and it is
+judged on the caller, not the room. Test: `TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot`.
+
 **Seeing what the gate saw.** Every 100 ms the gate keeps a sample — the
 loudest and quietest frame, the floor, the bar, how much was judged voiced,
 whether it was open, whether the assistant was speaking, whether the floor was

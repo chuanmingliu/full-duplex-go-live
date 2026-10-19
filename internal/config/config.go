@@ -477,6 +477,15 @@ type DuplexConfig struct {
 	// veto mode; in observe mode the verdict is only logged. 0 for the
 	// default, -1 to decide on the words alone as before.
 	FocusBargeInWaitMS int `json:"focus_barge_in_wait_ms"`
+	// FocusQuietCloseMS ends the caller's turn when the labels say the
+	// caller's own voice has been absent for this long while the line stayed
+	// loud enough to keep the gate open: background noise or another voice
+	// carrying on after the caller stopped. The detector's pause never comes
+	// on such a line, and the settled close waits on a recognizer that keeps
+	// finding words in the noise (a real call held a question open for 9 s
+	// that way, 10-19). 0 is off; it acts only in veto mode, on an utterance
+	// the labels have attributed to the caller.
+	FocusQuietCloseMS int `json:"focus_quiet_close_ms"`
 	// FocusProfile names a voice profile the target-speaker service keeps
 	// across calls, for a line that always reaches the same person (a test
 	// line), or a known contact. Empty — the general case — and the caller

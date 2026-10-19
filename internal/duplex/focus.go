@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/focus"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
@@ -52,6 +53,9 @@ type focusState struct {
 	enrolments int
 	offered    int
 	ignored    int
+	// quietCloses counts turns taken because the caller's voice went quiet
+	// while the line did not (maybeCloseOnCallerQuiet).
+	quietCloses int
 	// distrust says the enrolment did not match what followed (see
 	// checkEnrolment): verdicts are logged and not acted on.
 	distrust     bool
@@ -292,7 +296,7 @@ func (e *Engine) focusSummary() {
 		return
 	}
 	e.log.Info("focus: this call", "judged", fs.judged, "vetoed", fs.vetoed, "too_late", fs.late,
-		"barge_ins_judged", fs.bargeIns, "barge_ins_kept", fs.kept, "echo_speaker", fs.tracker.Echo(),
+		"barge_ins_judged", fs.bargeIns, "barge_ins_kept", fs.kept, "quiet_closes", fs.quietCloses, "echo_speaker", fs.tracker.Echo(),
 		"primary_speaker", fs.tracker.Primary(), "handovers", fs.tracker.Handovers())
 	_ = fs.scorer.Close()
 }
@@ -544,6 +548,46 @@ func (e *Engine) judgeUtteranceFocus() {
 	case a.VoicedMS == 0 && span >= 800:
 		e.ignoreUtterance("nothing voiced", a, span)
 	}
+}
+
+// maybeCloseOnCallerQuiet is the third way a turn ends, after the detector's
+// pause and the settled close: the caller's own voice has been absent, by
+// the labels, for duplex.focus_quiet_close_ms while the gate stayed open on
+// sound that is not theirs. On the 09:37 call of 10-19 a noisy room kept
+// one utterance open for nine seconds (half its voiced time another
+// source's), the recognizer kept making words of the noise so the settled
+// close never saw them stand still, and the caller waited 1.5 s for an
+// answer the engine had ready in 625. The labels lag the audio by tens of
+// milliseconds here (a target-speaker service), so the pause is judged on
+// the labelled range only.
+func (e *Engine) maybeCloseOnCallerQuiet() {
+	fs := e.focus
+	quiet := int64(e.opts.Cfg.Duplex.FocusQuietCloseMS)
+	if fs == nil || quiet <= 0 || !e.focusActs() || !e.userOpen || e.uttVerdict != uttCaller || e.muted || e.hold != nil {
+		return
+	}
+	to := fs.tracker.LabelledTo()
+	if now := e.inputMS.Load(); to > now {
+		to = now
+	}
+	since := to - quiet
+	if since < e.utterStartMS {
+		return
+	}
+	primaryMS, othersMS := fs.tracker.SpokenSince(since)
+	if primaryMS > 0 {
+		return
+	}
+	e.log.Info("listen: the caller's voice has been quiet though the line has not; taking the turn",
+		"caller_quiet_ms", quiet, "others_ms", othersMS, "labelled_to_ms", to,
+		"noise_floor_db", round1(e.vad.NoiseFloorDB()))
+	stop := e.vad.Stop()
+	if stop.Kind != audio.DecisionStopped {
+		return
+	}
+	stop.SilenceMS = float64(quiet)
+	fs.quietCloses++
+	e.handleDecision(stop)
 }
 
 type uttVerdict int

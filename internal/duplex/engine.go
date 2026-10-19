@@ -707,6 +707,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	e.maybeEarlyFinal()
 	e.maybeSpeculate()
 	e.maybeSettle()
+	e.maybeCloseOnCallerQuiet()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {

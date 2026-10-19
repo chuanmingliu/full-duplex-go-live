@@ -104,6 +104,7 @@
     "focus_veto_share": 0.95,
     "focus_profile": "",
     "focus_min_voiced_ms": 240,
+    "focus_quiet_close_ms": 420,
     "speculate_while_patient": true,
     "early_final_ms": 120
   },

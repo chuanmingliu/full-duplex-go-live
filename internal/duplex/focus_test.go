@@ -496,3 +496,52 @@ func TestAKeptProfileEnrolsTheCallerAtOnce(t *testing.T) {
 		})
 	}
 }
+
+// A room that never goes quiet. The caller says their piece and a second
+// source — a television, a bystander — keeps the line loud, so the
+// detector's pause never comes and the recognizer, still making words of
+// the noise, keeps the settled close from seeing them stand still. The
+// labels say the caller stopped; the turn is taken on that, long before
+// the noise ends.
+func TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.FocusQuietCloseMS = 420
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	// A recognizer that never stops finding words while there is sound.
+	asr := newTrailingASR("多少钱啊明天有空吗这个那个这个那个这个那个这个那个这个那个这个")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	// The caller for the first 800 ms of sound; someone else after.
+	scorer := newFakeScorer(func(atMS int64) int {
+		if atMS < 800 {
+			return 0
+		}
+		return 1
+	}, 60*time.Millisecond)
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, scorer)
+
+	speak(e, rate, 800)
+	// The other source carries straight on, 3 s without a gap; the answer
+	// should begin while it is still going.
+	began := time.Now()
+	var answeredAt time.Duration
+	for i := 0; i < 30; i++ {
+		speak(e, rate, 100)
+		if answeredAt == 0 && c.audioMS() > 0 {
+			answeredAt = time.Since(began)
+		}
+	}
+	if answeredAt == 0 {
+		t.Fatalf("not answered while the other source went on for 3 s (quiet closes %d)", e.focus.quietCloses)
+	}
+	if answeredAt > 2*time.Second {
+		t.Fatalf("answered %v after the caller stopped; the turn should have been taken on the caller's quiet, not the line's", answeredAt)
+	}
+	if e.focus.quietCloses != 1 {
+		t.Fatalf("quiet closes %d; wanted 1", e.focus.quietCloses)
+	}
+	pause(e, rate, 1000)
+}

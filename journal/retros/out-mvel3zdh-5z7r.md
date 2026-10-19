@@ -38,11 +38,25 @@ Headline, caller's last sound → first audio (pause + console's figure):
 Enrolment by agreement: 3 offered, 3 agreeing; 7 sounds judged, 0 vetoed,
 0 too late; 1 barge-in, honoured.
 
+## The noise (the owner: "background noise still impacts the call")
+
+Where it showed, in the gate's own words: the 9 s utterance at 55.5 s
+(item_10) was open with the line never under the bar, 6.3 s of it judged
+voiced, and the labels put half of its 8.2 voiced seconds on a source that
+was not the caller; the recognizer's hypothesis kept growing with repeated
+words, so two guesses were thrown away and the turn was taken only by the
+900 ms patience. Three more turns (7, 11, 12) ended by the settled close —
+600 ms of unchanged words — because the line never gave the detector its
+380 ms; on item_11 two seconds were "voiced" for one character. One
+barge-in (item_5 → 6) was flagged by the echo check and then judged on 200
+ms of labels split 0.5/0.5. Nothing was vetoed and no turn was lost; the
+cost was 300–900 ms of waiting per noisy turn and one 1.5 s turn.
+
+Fix in the next build (ISS-043): the turn is taken on the *caller's* quiet
+by the focus labels, 420 ms, when the line itself never goes quiet.
+
 ## Open
 
 - `end_call` still unexercised on a real line: the call needs a goodbye.
-- The 600/900 ms mid-thought waits are now the largest term on turns that
-  take them (4 of 9 here): the pipeline answered in 465–625 after the close
-  but the caller waited 1.1–1.5 s. Whether `patient_wait_ms` can come down
-  with the answer already prepared during the wait is the next thing to
-  look at — item_12 shows what it buys when the guess holds.
+- Verify the caller-quiet close on the next noisy call: `quiet_closes` in
+  `focus: this call`, and the pause column at 420 on those turns.
