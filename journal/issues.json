@@ -723,7 +723,7 @@
    "symptom": "One utterance open 9 s (55.5–64.5 s), 6.3 s judged voiced, labels: primary 0.5 / others 0.5 over 8.2 s; the recognizer's hypothesis grew 13→14→20 chars of repeated words, two speculative turns abandoned as it moved on, the turn taken by the 900 ms patience; 1525 ms from the caller's last sound for an answer the engine made in 625. Three further turns ended by the settled close after 600 ms (1065–1101 from last sound).",
    "cause": "The detector's pause needs the line quiet; the floor tracker needs the noise steady and under the voice; the settled close needs the recognizer's words to stand still, and on noise it keeps producing new ones. None of the three asks whose voice is on the line.",
    "fix": "duplex.focus_quiet_close_ms (420, telephony): the turn is taken when the focus labels show the caller's voice absent for that long while the gate stays open, once the utterance is theirs; counted as quiet_closes. Test: TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot (fails with it off).",
-   "verified_on": ""
+   "verified_on": "out-mveluuk3-n4bu: 2 quiet closes, both inside barge-ins, no misfire on 11 ordinary turns; a noisy call still owed"
   }
  ]
 }
