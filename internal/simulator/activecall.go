@@ -343,7 +343,8 @@ func (a *ActiveCall) controlClosed(controller ActiveCallController, call *active
 	call.mu.Unlock()
 	// The main SIP track end survives when the following hangup event loses
 	// the teardown race. A close frame alone (even 1000) cannot distinguish
-	// SIP termination from gateway failure, so it must remain a failure.
+	// SIP termination from gateway failure. The controller can separately
+	// recognize completion of its own successfully dispatched policy stop.
 	if answered && trackEnded {
 		a.completeTrackEnd(controller, call)
 		return
@@ -473,7 +474,8 @@ func (a *ActiveCall) Hangup(ctx context.Context, callID string) error {
 			defer cancel()
 			_ = a.hangupREST(deadline, call.dialogID, command)
 			// A missing hangup confirmation must not retain a reader indefinitely.
-			// Its close event fails the exact binding instead of reporting success.
+			// Report the close on this exact binding; the controller distinguishes
+			// its successful policy stop from an unsolicited control failure.
 			if conn != nil {
 				_ = conn.Close()
 			}

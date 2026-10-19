@@ -53,7 +53,7 @@ func (r *run) recordTermination(e Event) {
 	if e.Kind == "stop" && r.termination.LocalReason == "" {
 		// Controller-generated stop reasons only; never persist caller-supplied text.
 		switch e.Reason {
-		case "stopped", "duration limit", "remote turn limit", "inactivity limit", "scripted hangup", "customer_hangup":
+		case "stopped", "duration limit", "remote turn limit", "inactivity limit", "duration_limit", "remote_turn_limit", "inactivity", "scripted hangup", "customer_hangup":
 			r.termination.LocalReason = e.Reason
 		}
 	}
@@ -81,6 +81,11 @@ func (r *run) recordTermination(e Event) {
 }
 
 func (r *run) terminationReason() string {
+	if r.state.Phase == Completed && r.termination.LocalHangupRequested {
+		if reason := receiverStopReason(r.termination.LocalReason); reason != "" {
+			return reason
+		}
+	}
 	if r.state.Phase == Completed && r.termination.GatewayEnded {
 		if r.termination.LocalHangupRequested && r.termination.LocalReason == "customer_hangup" {
 			return "customer_hangup"

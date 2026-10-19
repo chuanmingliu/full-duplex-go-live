@@ -31,6 +31,7 @@ func TestRecoveredWarningPreservesProtocolVerdictAndDiagnostics(t *testing.T) {
 func TestSanitizedDiagnosticsExcludeArbitraryReportText(t *testing.T) {
 	s := scenario(t)
 	report := validReport(s, "owned")
+	report.TerminationReason = "PRIVATE_TERMINATION"
 	report.Termination = simulator.Termination{Side: "PRIVATE_SIDE", Evidence: "PRIVATE_EVIDENCE", NativeInitiator: "PRIVATE_INITIATOR", NativeReason: "PRIVATE_REASON", LocalReason: "PRIVATE_LOCAL"}
 	report.Warnings = []simulator.Warning{{Code: "PRIVATE_WARNING", Count: 1}, {Code: "tts_chunk_failed", Count: 3}}
 	report.Failures = []string{"warning: PRIVATE_WARNING (count=1)", "warning: tts_chunk_failed (count=3)"}
@@ -62,6 +63,27 @@ func TestSanitizedReportRetainsNormalHangupResults(t *testing.T) {
 			if safe.TerminationReason != reason || safe.Termination != report.Termination || ProtocolVerdict(s, safe) != "pass" {
 				t.Fatalf("normal hangup metadata lost: %+v", safe)
 			}
+		}
+	}
+}
+
+func TestSanitizedReportRetainsReceiverLimitResults(t *testing.T) {
+	s := scenario(t)
+	for reason, localReason := range map[string]string{
+		"duration_limit":    "duration limit",
+		"remote_turn_limit": "remote turn limit",
+		"inactivity":        "inactivity limit",
+	} {
+		for _, local := range []string{localReason, reason} {
+			t.Run(reason+"/"+local, func(t *testing.T) {
+				report := validReport(s, "owned")
+				report.TerminationReason = reason
+				report.Termination = simulator.Termination{Side: "receiver_gateway", Evidence: "local_hangup_request", LocalHangupRequested: true, LocalReason: local}
+				safe := sanitizeReport(s, report)
+				if safe.TerminationReason != reason || safe.Termination != report.Termination || ProtocolVerdict(s, safe) != "pass" {
+					t.Fatalf("receiver limit metadata or verdict lost: %+v", safe)
+				}
+			})
 		}
 	}
 }

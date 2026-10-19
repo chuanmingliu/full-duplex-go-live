@@ -134,11 +134,18 @@ func buildReport(r *run, opts Options) Report {
 		rep.Checks = append(rep.Checks, check("answered_once", o.answered == 1, "gateway answered confirmation"))
 		rep.Checks = append(rep.Checks, check("greeting_once", o.greetings == 1, "successful voice opening request; audio delivery measured separately"))
 	}
-	limitOK := r.connectedAt.IsZero() || r.terminalAt.IsZero() || r.terminalAt.Sub(r.connectedAt).Milliseconds() <= r.scenario.MaxDurationMS+1000
+	limitEnd := r.terminalAt
+	if r.receiverStop != nil {
+		// Waiting for control teardown must not count as active call time.
+		limitEnd = r.receiverStop.requestedAt
+	}
+	limitOK := r.connectedAt.IsZero() || limitEnd.IsZero() || limitEnd.Sub(r.connectedAt).Milliseconds() <= r.effectiveDurationLimitMS()+1000
 	rep.Checks = append(rep.Checks, check("call_limits", limitOK && r.remoteTurns <= r.scenario.MaxRemoteTurns, "receiver controller deadlines and assistant turns separated by customer speech"))
 	clean := Check{Name: "clean_termination", Result: "indeterminate", Evidence: "missing gateway ended confirmation"}
 	if o.ended == 1 {
 		clean = check("clean_termination", len(r.failures) == 0, "gateway ended confirmation")
+	} else if r.state.Phase == Completed && r.receiverStop != nil && r.receiverStop.completed {
+		clean = check("clean_termination", len(r.failures) == 0, "receiver stop controls completed; native gateway end not observed")
 	}
 	rep.Checks = append(rep.Checks, clean)
 	interrupted := false

@@ -160,3 +160,72 @@ func TestActiveCallUnprovenControlCloseStillFails(t *testing.T) {
 		})
 	}
 }
+
+func TestActiveCallReceiverStopSurvivesControlClose(t *testing.T) {
+	for _, reason := range []string{"duration limit", "remote turn limit", "inactivity limit", "customer_hangup"} {
+		t.Run(reason, func(t *testing.T) {
+			h := newActiveCallHarness(t)
+			clock := &fakeClock{now: time.Now()}
+			c, err := NewController(Options{Telephony: h.adapter, Voice: &fakePorts{}, Token: "test-token", Destination: "simulator-receiver", GatewayIdentity: "isolated-active-call", Clock: clock, DataDir: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			h.controller.onIncoming = func(in IncomingCall) error { return c.Incoming(ctx, in) }
+			h.controller.onEvent = func(event Event) error { return c.Handle(ctx, event) }
+			scenario := sampleScenario()
+			snap, err := c.Prepare(ctx, scenario)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const dialog = "receiver-stop-dialog"
+			if h.webhook(dialog, "sip:"+snap.RunID+"@simulator.invalid").Code != http.StatusNoContent {
+				t.Fatal("invite failed")
+			}
+			conn := activeCallReceive(t, h.attached)
+			clock.advance(time.Duration(scenario.AnswerDelayMS) * time.Millisecond)
+			if command := activeCallReceive(t, h.commands); command["command"] != "accept" {
+				t.Fatal("missing accept")
+			}
+			if err = conn.WriteJSON(activeCallEvent{Event: "answer", TrackID: dialog}); err != nil {
+				t.Fatal(err)
+			}
+			b := activeCallReceive(t, h.controller.events).Binding
+			b.SessionID = "synthetic-session"
+			if err = c.Handle(ctx, Event{Kind: "voice_ready", Binding: b}); err != nil {
+				t.Fatal(err)
+			}
+			for _, kind := range []string{"customer_speech_started", "customer_speech_ended", "remote_speech_started", "remote_speech_ended"} {
+				clock.advance(50 * time.Millisecond)
+				if err = c.Observe(ctx, b, Observation{Kind: kind, AtMS: c.RelativeMS()}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err = c.Handle(ctx, Event{Kind: "stop", Binding: b, Reason: reason}); err != nil {
+				t.Fatal(err)
+			}
+			if command := activeCallReceive(t, h.commands); command["command"] != "hangup" {
+				t.Fatal("missing hangup command")
+			}
+			// No native trackEnd/hangup arrives, exactly as in the deployed run.
+			_ = conn.Close()
+			if event := activeCallReceive(t, h.controller.events); event.Kind != "failed" || event.Reason != "Active Call control disconnected" {
+				t.Fatalf("unexpected adapter event: %+v", event)
+			}
+			report, err := c.Report(ctx, b.RunID)
+			if err != nil || report.Phase != Completed || report.TerminationReason != receiverStopReason(reason) || len(report.Failures) > 0 {
+				t.Fatalf("own control close failed: %+v %v", report, err)
+			}
+			if report.Termination.GatewayEnded || !report.Termination.LocalHangupRequested {
+				t.Fatalf("invented native end: %+v", report.Termination)
+			}
+			if len(report.AssistantGaps) != 1 || !report.AssistantGaps[0].Valid || report.AssistantGaps[0].ValueMS != 50 {
+				t.Fatalf("lost observed gap: %+v", report.AssistantGaps)
+			}
+			if reportChecks(report)["clean_termination"] != "pass" {
+				t.Fatalf("own stop did not settle: %+v", report.Checks)
+			}
+			assertArtifactMatches(t, c, b.RunID)
+		})
+	}
+}

@@ -29,6 +29,7 @@ func (s Scenario) CustomerFarewell() string {
 type customerHangup struct {
 	farewellDone bool
 	replyStarted bool
+	deadline     time.Time
 }
 
 // GoalReached accepts only the private customer model's completion signal for
@@ -56,7 +57,15 @@ func (c *RunController) beginCustomerHangup(r *run, reason string) {
 	if r.state.Phase != Connected || r.mediaDisconnected || r.customerHangup != nil || !r.scenario.CustomerHangupEnabled() {
 		return
 	}
-	r.customerHangup = &customerHangup{}
+	// The farewell and reply wait share one fixed budget. Repeated completion
+	// signals cannot extend it, and only time beyond the normal duration limit
+	// becomes grace (at most eight seconds).
+	grace := CustomerFarewellHold + customerReplyWait
+	deadline := c.clock.Now().Add(grace)
+	if latest := r.connectedAt.Add(time.Duration(r.scenario.MaxDurationMS)*time.Millisecond + grace); deadline.After(latest) {
+		deadline = latest
+	}
+	r.customerHangup = &customerHangup{deadline: deadline}
 	if r.idle != nil {
 		r.idle.Stop()
 		r.idle = nil
@@ -67,6 +76,38 @@ func (c *RunController) beginCustomerHangup(r *run, reason string) {
 	c.schedule(r, 0, func() {
 		c.performAction(id, Action{ID: CustomerFarewellActionID, Kind: "speak", Text: r.scenario.CustomerFarewell(), MaxHoldMS: CustomerFarewellHold.Milliseconds()})
 	})
+}
+
+// deferDurationLimit runs under the same lock as GoalReached and the stop
+// transition, so a duration callback already queued when the goal completes
+// cannot cancel the farewell. Other stop reasons retain their normal behavior.
+func (c *RunController) deferDurationLimit(r *run, e *Event) bool {
+	if e.Kind != "stop" || (e.Reason != "duration limit" && e.Reason != "duration_limit") || e.AtMS < 0 || r.state.Phase != Connected || !exactBinding(r.state.Binding, e.Binding) || r.customerHangup == nil {
+		return false
+	}
+	h := r.customerHangup
+	if remaining := h.deadline.Sub(c.clock.Now()); remaining > 0 {
+		b := r.state.Binding
+		c.schedule(r, remaining, func() {
+			_ = c.Handle(context.Background(), Event{Kind: "stop", Binding: b, AtMS: c.RelativeMS(), Reason: "duration_limit"})
+		})
+		c.record(r, "duration_limit_extended", "customer farewell")
+		return true
+	}
+	// At the shared deadline, a delivered farewell ends normally even if the
+	// reply timer runs later. Either timer preserves customer_hangup attribution.
+	if h.farewellDone {
+		e.Reason = "customer_hangup"
+	}
+	return false
+}
+
+func (r *run) effectiveDurationLimitMS() int64 {
+	limit := r.scenario.MaxDurationMS
+	if r.customerHangup != nil && !r.connectedAt.IsZero() {
+		limit = max(limit, r.customerHangup.deadline.Sub(r.connectedAt).Milliseconds())
+	}
+	return limit
 }
 
 func (c *RunController) scriptExhausted(r *run) {

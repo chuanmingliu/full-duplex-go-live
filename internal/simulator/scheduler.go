@@ -13,11 +13,12 @@ type pendingHangup struct {
 	endConfirmed, effectsSettled, effectsSucceeded, completed bool
 }
 
-// terminalReady keeps observed termination private while its scripted stop is
-// still executing. Callbacks can record evidence without waiting on that stop.
+// terminalReady keeps termination private while stop controls or receiver media
+// cleanup are executing. Callbacks can retain evidence without waiting on them.
 // The caller holds the controller lock.
 func (r *run) terminalReady() bool {
-	return r.state.Phase.Terminal() && (r.pendingHangup == nil || r.pendingHangup.effectsSettled)
+	return r.state.Phase.Terminal() && (r.pendingHangup == nil || r.pendingHangup.effectsSettled) &&
+		(r.receiverStop == nil || r.receiverStop.effectsSettled && !r.receiverStop.cleanupPending)
 }
 
 // completePendingHangup requires both successful controls and observed native

@@ -15,7 +15,7 @@ func sanitizeOperationalMetadata(report *simulator.Report) {
 	t.Evidence = diagnosticEnum(t.Evidence, "not_observed", "native_gateway_hangup", "native_gateway_track_end", "local_hangup_request", "control_disconnected")
 	t.NativeInitiator = diagnosticEnum(t.NativeInitiator, "caller", "callee", "system")
 	t.NativeReason = diagnosticEnum(t.NativeReason, "ByCaller", "ByCallee", "ByRefer", "BySystem", "Autohangup", "InactivityTimeout", "NoAnswer", "NoBalance", "AnswerMachine", "ServerUnavailable", "Canceled", "Rejected", "Failed", "other")
-	t.LocalReason = diagnosticEnum(t.LocalReason, "stopped", "duration limit", "remote turn limit", "inactivity limit", "scripted hangup", "customer_hangup")
+	t.LocalReason = diagnosticEnum(t.LocalReason, "stopped", "duration limit", "remote turn limit", "inactivity limit", "duration_limit", "remote_turn_limit", "inactivity", "scripted hangup", "customer_hangup")
 	warnings := make([]simulator.Warning, 0, 4)
 	projections := make(map[string]bool, 4)
 	seen := make(map[string]bool, 4)

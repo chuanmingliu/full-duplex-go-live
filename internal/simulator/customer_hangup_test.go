@@ -94,6 +94,126 @@ func TestCustomerGoalHangupWaitsForFarewellThenAssistantReply(t *testing.T) {
 	}
 }
 
+func TestCustomerGoalNearDurationLimitCompletesFarewellAndReplyWait(t *testing.T) {
+	ctx := context.Background()
+	c, clock, ports := testController(t)
+	s := sampleScenario()
+	s.Goal = "Complete the synthetic task."
+	s.MaxDurationMS = 295000
+	s.IdleTimeoutMS = 0
+	snap, err := c.Prepare(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := connect(t, c, clock, snap)
+	clock.advance(294912 * time.Millisecond)
+	c.mu.Lock()
+	callCtx := c.runs[b.RunID].ctx
+	c.mu.Unlock()
+	if err := c.GoalReached(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(0)
+	if ports.speaks != 1 {
+		t.Fatal("customer farewell was not started")
+	}
+	clock.advance(88 * time.Millisecond)
+	current, _ := c.Get(ctx, b.RunID)
+	if current.Phase != Connected || ports.hangups != 0 || callCtx.Err() != nil {
+		t.Fatalf("duration limit cancelled an active farewell: phase=%s hangups=%d context=%v", current.Phase, ports.hangups, callCtx.Err())
+	}
+	clock.advance(4912 * time.Millisecond)
+	if err := c.ActionObservation(ctx, b, ActionOutcome{ID: CustomerFarewellActionID, Result: "completed", AtMS: c.RelativeMS()}); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(2999 * time.Millisecond)
+	if ports.hangups != 0 {
+		t.Fatal("duration limit cut short the farewell reply wait")
+	}
+	clock.advance(time.Millisecond)
+	if ports.hangups != 1 {
+		t.Fatal("farewell completion did not hang up within the eight-second grace")
+	}
+	if err := c.Handle(ctx, Event{Kind: "ended", Binding: b, AtMS: c.RelativeMS()}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := c.Report(ctx, b.RunID)
+	if err != nil || report.Phase != Completed || report.TerminationReason != "customer_hangup" {
+		t.Fatalf("farewell lost its completed termination: %+v %v", report, err)
+	}
+	for _, check := range report.Checks {
+		if check.Name == "call_limits" && check.Result != "pass" {
+			t.Fatalf("bounded farewell grace failed the duration check: %+v", check)
+		}
+	}
+}
+
+func TestCustomerGoalDurationGraceIsBoundedDespiteRepeatedCompletion(t *testing.T) {
+	ctx := context.Background()
+	c, clock, ports := testController(t)
+	s := sampleScenario()
+	s.Goal = "Complete the synthetic task."
+	s.MaxDurationMS = 1000
+	s.IdleTimeoutMS = 0
+	snap, err := c.Prepare(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := connect(t, c, clock, snap)
+	clock.advance(999 * time.Millisecond)
+	if err := c.GoalReached(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(7999 * time.Millisecond)
+	if ports.hangups != 0 {
+		t.Fatal("unfinished farewell was cut off before its grace elapsed")
+	}
+	if err := c.GoalReached(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(time.Millisecond)
+	if ports.hangups != 1 || ports.speaks != 1 {
+		t.Fatalf("repeated goal extended the bounded farewell grace: hangups=%d speaks=%d", ports.hangups, ports.speaks)
+	}
+	if err := c.Handle(ctx, Event{Kind: "ended", Binding: b, AtMS: c.RelativeMS()}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := c.Report(ctx, b.RunID)
+	if err != nil || report.Phase != Completed || report.TerminationReason != "duration_limit" {
+		t.Fatalf("stalled farewell did not settle at the duration limit: %+v %v", report, err)
+	}
+}
+
+func TestCustomerGoalDurationGraceStillAllowsRemoteHangup(t *testing.T) {
+	ctx := context.Background()
+	c, clock, ports := testController(t)
+	s := sampleScenario()
+	s.Goal = "Complete the synthetic task."
+	s.MaxDurationMS = 1000
+	s.IdleTimeoutMS = 0
+	snap, err := c.Prepare(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := connect(t, c, clock, snap)
+	clock.advance(999 * time.Millisecond)
+	if err := c.GoalReached(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(time.Millisecond)
+	if ports.hangups != 0 {
+		t.Fatal("duration limit interrupted the farewell before remote BYE")
+	}
+	if err := c.Handle(ctx, Event{Kind: "ended", Binding: b, AtMS: c.RelativeMS(), Termination: &Termination{NativeInitiator: "caller", NativeReason: "ByCaller"}}); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(10 * time.Second)
+	report, err := c.Report(ctx, b.RunID)
+	if err != nil || report.Phase != Completed || report.TerminationReason != "remote_hangup" || ports.hangups != 0 {
+		t.Fatalf("deferred duration callback overrode remote BYE: phase=%s reason=%s hangups=%d error=%v", report.Phase, report.TerminationReason, ports.hangups, err)
+	}
+}
+
 func TestCustomerHangupReplyTimeoutDoesNotConfusePausesWithCompletion(t *testing.T) {
 	for _, reply := range []bool{false, true} {
 		t.Run(map[bool]string{false: "no_reply", true: "debounced_reply"}[reply], func(t *testing.T) {

@@ -361,7 +361,7 @@ func sanitizeReport(s simulator.Scenario, report simulator.Report) simulator.Rep
 	report.VoiceID = ""
 	report.Evidence = ""
 	// Keep the normal terminal enums while excluding free-form call material.
-	report.TerminationReason = diagnosticEnum(report.TerminationReason, "remote_hangup", "customer_hangup")
+	report.TerminationReason = diagnosticEnum(report.TerminationReason, "remote_hangup", "customer_hangup", "duration_limit", "remote_turn_limit", "inactivity")
 	allowed := map[string]bool{}
 	for _, name := range []string{"answered_once", "greeting_once", "call_limits", "clean_termination", "interruption_overlap", "native_cancel_before_answer", "no_answer_or_greeting", "no_speech", "no_run_failures"} {
 		allowed[name] = true

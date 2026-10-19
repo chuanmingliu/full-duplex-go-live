@@ -110,6 +110,7 @@ type run struct {
 	voiceClosed, hangupSent                       bool
 	nativeCancelledBeforeAnswer                   bool
 	pendingHangup                                 *pendingHangup
+	receiverStop                                  *receiverStop
 	events                                        []RecordedEvent
 	seq                                           uint64
 	eventsTruncated                               bool
@@ -380,6 +381,10 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		c.mu.Unlock()
 		return ErrNotFound
 	}
+	if c.deferDurationLimit(r, &e) {
+		c.mu.Unlock()
+		return ctx.Err()
+	}
 	before := r.state
 	if scriptedHangupID != "" && (before.Phase != Connected || e.Kind != "stop" || !exactBinding(before.Binding, e.Binding)) {
 		c.mu.Unlock()
@@ -390,13 +395,29 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		c.mu.Unlock()
 		return err
 	}
+	if r.deferReceiverTerminal(e) {
+		c.mu.Unlock()
+		return ctx.Err()
+	}
+	localCompletion := r.canCompleteReceiverStop(e)
+	if localCompletion {
+		// Reuse terminal cleanup without recording a fabricated gateway end.
+		completion := e
+		completion.Kind = "ended"
+		next, effects, _ = Advance(before, completion)
+		r.receiverStop.completed = true
+	}
 	if next == before && len(effects) == 0 {
-		// A media failure can precede its native SIP end callback. Keep the failed
-		// outcome, but retain later exact-call attribution instead of inventing BYE.
-		if before.Phase == Failed && r.scenario.SchemaVersion > 0 && e.Kind == "ended" && e.Termination != nil && !r.termination.GatewayEnded {
+		// Native SIP evidence can follow either a media failure or a completed
+		// local stop. Enrich attribution without changing the settled outcome.
+		if (before.Phase == Failed || before.Phase == Completed && r.receiverStop != nil && r.receiverStop.completed) && r.scenario.SchemaVersion > 0 && e.Kind == "ended" && e.Termination != nil && !r.termination.GatewayEnded {
 			r.recordTermination(e)
 			r.observer.ended = 1
-			c.record(r, "native_end_after_failure", "")
+			if before.Phase == Failed {
+				c.record(r, "native_end_after_failure", "")
+			} else {
+				c.record(r, "native_end_after_local_stop", "")
+			}
 			persistErr := errors.Join(c.persistSnapshot(r), c.persistReport(r))
 			c.mu.Unlock()
 			return errors.Join(ctx.Err(), persistErr)
@@ -406,13 +427,20 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 	}
 	r.state = next
 	r.recordTermination(e)
+	receiverStopStarted := before.Phase == Connected && next.Phase == Ending && e.Kind == "stop" && receiverStopReason(e.Reason) != ""
+	if receiverStopStarted {
+		r.receiverStop = &receiverStop{requestedAt: c.clock.Now()}
+	}
 	if scriptedHangupID != "" {
 		r.pendingHangup = &pendingHangup{id: scriptedHangupID, binding: next.Binding, requestedAtMS: c.RelativeMS()}
 	}
-	if next != before || len(effects) > 0 {
+	if localCompletion {
+		r.reason = receiverStopReason(r.termination.LocalReason)
+		c.record(r, "receiver_stop_completed", r.reason)
+	} else if next != before || len(effects) > 0 {
 		c.record(r, e.Kind, e.Reason)
 	}
-	if e.Reason != "" {
+	if e.Reason != "" && !localCompletion {
 		r.reason = redact(e.Reason)
 	}
 	if e.Kind == "answered" && next.AnswerSeen {
@@ -458,6 +486,10 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		b := next.Binding
 		c.schedule(r, c.opts.SetupTimeout, func() { c.failIfEnding(b) })
 	}
+	receiverCleanupStarted := r.receiverStop != nil && next.Phase.Terminal() && !before.Phase.Terminal()
+	if receiverCleanupStarted {
+		r.receiverStop.cleanupPending = true
+	}
 	// For asynchronous confirmations, make the completion visible atomically
 	// with terminal state before readers can retrieve the report.
 	hangupCompleted := c.completePendingHangup(r)
@@ -471,6 +503,10 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 			c.addFailure(r, "control effect failed: "+effect.Kind)
 			binding := r.state.Binding
 			terminal := r.state.Phase.Terminal()
+			if terminal && r.receiverStop != nil {
+				r.state.Phase = Failed
+				r.reason = "control effect failed: " + effect.Kind
+			}
 			c.mu.Unlock()
 			if !terminal && effect.Kind != "finalize" {
 				_ = c.Handle(context.Background(), Event{Kind: "failed", Binding: binding, AtMS: c.RelativeMS(), Reason: "control effect failed: " + effect.Kind})
@@ -478,6 +514,16 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		}
 	}
 	c.mu.Lock()
+	if receiverCleanupStarted {
+		r.receiverStop.cleanupPending = false
+	}
+	var deferredTerminal *Event
+	if receiverStopStarted {
+		r.receiverStop.effectsSettled = true
+		r.receiverStop.effectsSucceeded = len(effectErrors) == 0 && persistErr == nil
+		deferredTerminal = r.receiverStop.terminalEvent
+		r.receiverStop.terminalEvent = nil
+	}
 	scriptedEffectsSettled := false
 	if scriptedHangupID != "" && r.pendingHangup != nil && r.pendingHangup.id == scriptedHangupID {
 		r.pendingHangup.effectsSettled = true
@@ -485,10 +531,10 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		scriptedEffectsSettled = true
 	}
 	hangupCompleted = c.completePendingHangup(r) || hangupCompleted
-	if r.terminalReady() && (len(effectErrors) > 0 || hangupCompleted || scriptedEffectsSettled) {
+	if r.terminalReady() && (len(effectErrors) > 0 || hangupCompleted || scriptedEffectsSettled || receiverStopStarted || receiverCleanupStarted) {
 		effectErrors = append(effectErrors, c.persistReport(r))
 	}
-	if scriptedEffectsSettled {
+	if scriptedEffectsSettled || receiverStopStarted || receiverCleanupStarted {
 		// Store final evidence before publishing the terminal snapshot. A crash
 		// before this snapshot leaves Ending metadata and restores as aborted.
 		effectErrors = append(effectErrors, c.persistSnapshot(r))
@@ -497,6 +543,9 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		c.current = ""
 	}
 	c.mu.Unlock()
+	if deferredTerminal != nil {
+		effectErrors = append(effectErrors, c.Handle(context.Background(), *deferredTerminal))
+	}
 	return errors.Join(append(effectErrors, persistErr)...)
 }
 
@@ -586,7 +635,7 @@ func (c *RunController) failIfEnding(b Binding) {
 	}
 	b = r.state.Binding
 	c.mu.Unlock()
-	_ = c.Handle(context.Background(), Event{Kind: "failed", Binding: b, AtMS: c.RelativeMS(), Reason: "termination deadline; missing gateway ended confirmation"})
+	_ = c.Handle(context.Background(), Event{Kind: "failed", Binding: b, AtMS: c.RelativeMS(), Reason: endingDeadlineReason})
 }
 func (c *RunController) record(r *run, kind, reason string) {
 	r.seq++
