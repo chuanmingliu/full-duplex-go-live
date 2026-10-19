@@ -716,7 +716,7 @@
    "title": "Background noise kept the caller's turn open: the floor and the settled close both need the line, and the recognizer kept finding words in the noise",
    "area": "turn-taking",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "5cf9652",
    "found": "2026-10-19",
    "found_on": "a real call, noisy room (the owner said so)",
    "found_call": "out-mvel3zdh-5z7r",
