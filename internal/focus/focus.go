@@ -174,6 +174,20 @@ func (t *Tracker) MaskedWithin(fromMS, toMS int64) bool {
 	return false
 }
 
+// MaskedUntil is the end of the last mask touching the span, or -1 when
+// none does: the point after which the span is the caller's alone.
+func (t *Tracker) MaskedUntil(fromMS, toMS int64) int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	until := int64(-1)
+	for _, m := range t.masked {
+		if m.from < toMS && m.to > fromMS && m.to > until {
+			until = m.to
+		}
+	}
+	return until
+}
+
 func (t *Tracker) isMasked(startMS, endMS int64) bool {
 	mid := (startMS + endMS) / 2
 	i := sort.Search(len(t.masked), func(i int) bool { return t.masked[i].to > mid })

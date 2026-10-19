@@ -724,6 +724,20 @@
    "cause": "The detector's pause needs the line quiet; the floor tracker needs the noise steady and under the voice; the settled close needs the recognizer's words to stand still, and on noise it keeps producing new ones. None of the three asks whose voice is on the line.",
    "fix": "duplex.focus_quiet_close_ms (420, telephony): the turn is taken when the focus labels show the caller's voice absent for that long while the gate stays open, once the utterance is theirs; counted as quiet_closes. Test: TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot (fails with it off).",
    "verified_on": "out-mveluuk3-n4bu: 2 quiet closes, both inside barge-ins, no misfire on 11 ordinary turns; a noisy call still owed"
+  },
+  {
+   "id": "ISS-044",
+   "title": "A caller who answers fast and interrupts is never enrolled, and the focus channel then does nothing for the whole call",
+   "area": "focus",
+   "status": "fixed",
+   "commit": "(this commit)",
+   "found": "2026-10-19",
+   "found_on": "a real call from a metro station",
+   "found_call": "out-mvf63uuu-0iln",
+   "symptom": "judged=0, primary_speaker=-1 at the end of a 63 s call; all four sounds over the answer judged 'no primary speaker known yet' and yielded on words; a station announcement cut a 3.9 s answer and was answered.",
+   "cause": "enrolFocus offered only utterances clean from their first millisecond: not a barge-in, not within the 600 ms echo tail of the assistant's last word, 600 ms voiced. The caller replied within 0.9 s of the greeting and interrupted four of six answers; nothing qualified.",
+   "fix": "The clean tail is offered: from Tracker.MaskedUntil(start, end+tail) to the utterance's end when the proportional voiced part is >= 600 ms; barge-ins included. Logged with trimmed_ms and barge_in.",
+   "verified_on": ""
   }
  ]
 }

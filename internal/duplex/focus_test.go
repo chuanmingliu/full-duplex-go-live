@@ -545,3 +545,37 @@ func TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot(t *testing.T) 
 	}
 	pause(e, rate, 1000)
 }
+
+// A caller who interrupts and keeps talking is still a caller: the part of
+// the interruption after the assistant's voice and its echo tail is offered
+// as their voice. Before, a barge-in was never offered, and a fast talker
+// could go a whole call unenrolled.
+func TestTheCleanTailOfAnInterruptionIsOfferedForEnrolment(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊明天有空吗这个那个这个那个这个那个")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	scorer := newFakeScorer(func(int64) int { return 0 }, 60*time.Millisecond)
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, scorer)
+
+	speak(e, rate, 700)
+	pause(e, rate, 600)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 300 })
+	first := len(scorer.enrolments())
+	// Interrupt, and keep talking well past the assistant's last word.
+	speak(e, rate, 3000)
+	pause(e, rate, 800)
+	waitFor(t, "the interruption to be offered", 5*time.Second, func() bool { return len(scorer.enrolments()) > first })
+	en := scorer.enrolments()
+	last := en[len(en)-1]
+	if span := last[1] - last[0]; span >= 3000 || span < 600 {
+		t.Fatalf("offered span %d ms; wanted the clean tail of the 3000 ms interruption (600–3000)", span)
+	}
+	if e.focus.tracker.MaskedWithin(last[0], last[1]) {
+		t.Fatalf("the offered span %v overlaps the assistant's voice", last)
+	}
+}

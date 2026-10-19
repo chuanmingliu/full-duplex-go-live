@@ -77,6 +77,9 @@ type focusPending struct {
 // still be coming back down the line.
 const focusEchoTailMS = 600
 
+// focusEnrolMinMS is the least voiced audio an enrolment candidate may carry.
+const focusEnrolMinMS = 600
+
 // startFocus connects to the diarizer, when the profile asks for one. A
 // connection that cannot be made is a session without focus, logged once.
 func (e *Engine) startFocus(ctx context.Context) {
@@ -420,18 +423,34 @@ func (e *Engine) enrolFocus(startMS, endMS int64, activeMS float64, bargeIn bool
 	if !ok {
 		return
 	}
-	if bargeIn || activeMS < 600 || fs.tracker.MaskedWithin(startMS, endMS+focusEchoTailMS) {
-		return
-	}
 	if e.uttVerdict == uttIgnored || e.uttVerdict == uttNoted {
 		return // the labels already said this one was not the caller's
 	}
-	if err := en.Enrol(startMS, endMS, e.opts.Cfg.Duplex.FocusProfile); err != nil {
+	// Only the part of the utterance the caller made alone is offered: from
+	// the end of the assistant's voice and its echo tail, if they overlap
+	// the start. A fast talker answers within the tail of every reply and
+	// interrupts the rest; on the 19:25 call of 10-19 (a metro station) no
+	// utterance was clean from its first millisecond, the caller was never
+	// enrolled, and a station announcement cut an answer that the labels
+	// would have kept. The voiced part of the remainder is taken as
+	// proportional to its length.
+	from := startMS
+	if until := fs.tracker.MaskedUntil(startMS, endMS+focusEchoTailMS); until >= 0 {
+		if until >= endMS-focusEnrolMinMS {
+			return // the assistant's voice reaches into the whole of it
+		}
+		from = until
+		activeMS = activeMS * float64(endMS-from) / float64(endMS-startMS)
+	}
+	if activeMS < focusEnrolMinMS {
+		return
+	}
+	if err := en.Enrol(from, endMS, e.opts.Cfg.Duplex.FocusProfile); err != nil {
 		e.log.Warn("focus: the caller's voice could not be offered", "err", err)
 		return
 	}
 	fs.offered++
-	e.log.Info("focus: offering the caller's voice", "from_ms", startMS, "to_ms", endMS, "voiced_ms", int(activeMS), "offered", fs.offered)
+	e.log.Info("focus: offering the caller's voice", "from_ms", from, "to_ms", endMS, "voiced_ms", int(activeMS), "trimmed_ms", from-startMS, "barge_in", bargeIn, "offered", fs.offered)
 }
 
 // readEnrolments takes the service's answers: a profile found means the
