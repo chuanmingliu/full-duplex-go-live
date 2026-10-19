@@ -603,6 +603,21 @@ caller's own words) and a suite manifest.
 **`call` is the real call, `call sim` the simulated one — the owner's
 words, 10-16.**
 
+Since 10-19 22:30 Claude talks to Codex directly over Reason Network, on the
+owner's say-so ("you can talk to Codex in representation of me"): the box
+is on the workspace's network (`~/.local/bin/reason`, person
+`spark-apache-org-chuanming-thinkp`), Codex is a warm headless agent on the
+owner's Mac at **`spark-apache-org/codex`** (`reason network serve codex`
+there; `reason network who codex` says whether it is up). From a runner
+job: `reason network spark-apache-org/codex "…" --timeout 380` waits for the
+answer (the first round trip took ~60 s; the default wait is too short and
+a reply to a timed-out ask is lost — always pass `--timeout`); `send`
+does not wait; `inbox` is only for messages addressed to the box. The
+served Codex is a fresh session with no memory of the desk: give it the
+repo path, branch and the desk note number in every ask, keep asks short,
+and still post the outcome on the desk, which remains the record. Never
+put a token, a number or a transcript in a message.
+
 ## The simulated customer
 
 Codex's branch `codex/inbound-user-simulator`: a receiver that answers a call
