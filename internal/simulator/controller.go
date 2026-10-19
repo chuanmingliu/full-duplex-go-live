@@ -90,6 +90,7 @@ type EventPage struct {
 	Truncated bool            `json:"truncated"`
 }
 type run struct {
+	mediaDisconnected                             bool
 	state                                         State
 	scenario                                      Scenario
 	scenarioHash, promptHash, reason              string
@@ -105,6 +106,7 @@ type run struct {
 	remoteAudioGeneration                         uint64
 	idleGeneration                                uint64
 	customerAudioGeneration                       uint64
+	lastCustomerAudioMS, lastRemoteAudioMS        int64
 	voiceClosed, hangupSent                       bool
 	nativeCancelledBeforeAnswer                   bool
 	pendingHangup                                 *pendingHangup
@@ -116,6 +118,9 @@ type run struct {
 	actionScheduled                               map[string]bool
 	occurrences                                   map[string]int
 	remoteTurns                                   int
+	remoteSpeechStarts                            int
+	remoteTurnOpen                                bool
+	customerHangup                                *customerHangup
 	failures                                      []string
 	warnings                                      []Warning
 	termination                                   Termination
@@ -141,12 +146,12 @@ func NewController(opts Options) (*RunController, error) {
 		opts.Clock = realClock{}
 	}
 	if opts.ReservationTTL == 0 {
-		opts.ReservationTTL = 120 * time.Second
+		opts.ReservationTTL = 30 * time.Minute
 	}
 	if opts.SetupTimeout == 0 {
 		opts.SetupTimeout = 5 * time.Second
 	}
-	if opts.ReservationTTL < time.Millisecond || opts.ReservationTTL > 300*time.Second || opts.SetupTimeout < time.Millisecond || opts.SetupTimeout > 30*time.Second {
+	if opts.ReservationTTL < time.Millisecond || opts.ReservationTTL > 24*time.Hour || opts.SetupTimeout < time.Millisecond || opts.SetupTimeout > 30*time.Second {
 		return nil, errors.New("invalid controller deadlines")
 	}
 	if opts.DialTargetReference == "" {
@@ -424,6 +429,9 @@ func (c *RunController) handle(ctx context.Context, e Event, scriptedHangupID st
 		}
 	}
 	if (next.Phase == Ending || next.Phase.Terminal()) && next != before {
+		if before.Phase == Connected {
+			r.settlePendingAudioBoundaries()
+		}
 		r.cancel()
 		c.cancelTimers(r)
 	}
@@ -496,7 +504,7 @@ func (c *RunController) execute(ctx context.Context, r *run, e Effect) error {
 	switch e.Kind {
 	case "accept", "open_greeting":
 		c.mu.Lock()
-		active := r.state.Binding.RunID == e.Binding.RunID && !r.state.Phase.Terminal() && r.state.Phase != Ending
+		active := r.state.Binding.RunID == e.Binding.RunID && !r.state.Phase.Terminal() && r.state.Phase != Ending && !r.mediaDisconnected
 		callctx := r.ctx
 		c.mu.Unlock()
 		if !active {
@@ -619,6 +627,7 @@ func (c *RunController) Observe(ctx context.Context, b Binding, v Observation) e
 		return ErrInvalidTransition
 	}
 	before := r.observer.assistantSpeaking
+	customerBefore := r.observer.customerSpeaking
 	duplicate := v.ID != "" && r.observer.seen[v.ID]
 	if v.Kind == "transcript" {
 		v.Text = redact(v.Text)
@@ -630,6 +639,11 @@ func (c *RunController) Observe(ctx context.Context, b Binding, v Observation) e
 	if duplicate {
 		return nil
 	}
+	if !customerBefore && r.observer.customerSpeaking {
+		// Assistant pauses only split speech segments. A delivered customer
+		// utterance is what makes the next assistant segment a new turn.
+		r.remoteTurnOpen = false
+	}
 	if v.Kind == "customer_audio" && v.NonSilent && !v.End {
 		if r.customerIdle != nil {
 			r.customerIdle.Stop()
@@ -637,12 +651,14 @@ func (c *RunController) Observe(ctx context.Context, b Binding, v Observation) e
 		r.customerAudioGeneration++
 		generation := r.customerAudioGeneration
 		boundaryEndMS := v.AtMS
+		r.lastCustomerAudioMS = boundaryEndMS
 		r.customerIdle = c.clock.AfterFunc(200*time.Millisecond, func() {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 			if r.state.Phase != Connected || generation != r.customerAudioGeneration || !r.observer.customerSpeaking {
 				return
 			}
+			r.customerIdle = nil
 			r.observer.endCustomer(boundaryEndMS)
 			c.record(r, "customer_speech_end_debounced", "200 ms without successful outbound audio write")
 		})
@@ -660,13 +676,17 @@ func (c *RunController) Observe(ctx context.Context, b Binding, v Observation) e
 		r.remoteAudioGeneration++
 		generation := r.remoteAudioGeneration
 		boundaryEndMS := v.AtMS
+		r.lastRemoteAudioMS = boundaryEndMS
 		r.remoteIdle = c.clock.AfterFunc(200*time.Millisecond, func() {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 			if r.state.Phase != Connected || generation != r.remoteAudioGeneration || !r.observer.assistantSpeaking {
 				return
 			}
+			r.remoteIdle = nil
 			r.observer.endRemote(boundaryEndMS)
+			// A pause splits audio segments, not necessarily the assistant's
+			// reply. Only an explicit end can shorten the farewell's 3s wait.
 			c.record(r, "remote_speech_ended", "200 ms without nonsilent received assistant audio")
 			c.trigger(r, "remote_speech_ended")
 		})
@@ -676,19 +696,25 @@ func (c *RunController) Observe(ctx context.Context, b Binding, v Observation) e
 			r.remoteIdle = nil
 		}
 		r.remoteAudioGeneration++
+		c.customerHangupRemoteEnded(r)
 	}
 	if v.NonSilent || v.Kind == "remote_speech_started" || v.Kind == "customer_speech_started" {
 		c.resetIdle(r)
 	}
 	if !before && r.observer.assistantSpeaking {
-		r.remoteTurns++
+		r.remoteSpeechStarts++
 		c.record(r, "remote_speech_started", "")
 		c.trigger(r, "remote_speech_started")
-		if r.remoteTurns >= r.scenario.MaxRemoteTurns {
-			binding := r.state.Binding
-			c.schedule(r, 0, func() {
-				_ = c.Handle(context.Background(), Event{Kind: "stop", Binding: binding, AtMS: c.RelativeMS(), Reason: "remote turn limit"})
-			})
+		c.customerHangupRemoteStarted(r)
+		if !r.remoteTurnOpen {
+			r.remoteTurnOpen = true
+			r.remoteTurns++
+			if r.remoteTurns >= r.scenario.MaxRemoteTurns {
+				binding := r.state.Binding
+				c.schedule(r, 0, func() {
+					_ = c.Handle(context.Background(), Event{Kind: "stop", Binding: binding, AtMS: c.RelativeMS(), Reason: "remote turn limit"})
+				})
+			}
 		}
 	}
 	if before && !r.observer.assistantSpeaking {
@@ -727,7 +753,7 @@ func (c *RunController) ActionObservation(ctx context.Context, b Binding, outcom
 	if !exactBinding(r.state.Binding, b) || b.SessionID == "" {
 		return ErrInvalidTransition
 	}
-	known := false
+	known := outcome.ID == CustomerFarewellActionID && r.customerHangup != nil
 	for _, a := range r.scenario.Actions {
 		if a.ID == outcome.ID {
 			// Hangup is controller-owned; engine messages cannot substitute for
@@ -760,6 +786,15 @@ func (c *RunController) ActionObservation(ctx context.Context, b Binding, outcom
 		return errors.New("action outcome capacity reached")
 	}
 	r.actions = append(r.actions, outcome)
+	// Media can close before its native end signal. Retain teardown outcomes,
+	// but never start another farewell or fail one from a cancelled session.
+	if ctx.Err() == nil && !r.mediaDisconnected {
+		if outcome.ID == CustomerFarewellActionID {
+			c.customerFarewellOutcome(r, outcome)
+		} else {
+			c.scriptExhausted(r)
+		}
+	}
 	if outcome.Result == "failed" {
 		c.addFailure(r, "engine action failed: "+outcome.ID)
 	}

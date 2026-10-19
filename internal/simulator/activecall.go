@@ -59,18 +59,21 @@ type ActiveCall struct {
 }
 
 type activeCallSession struct {
-	mu          sync.Mutex // also serializes command writes with observed termination
-	dialogID    string
-	callID      string
-	runID       string
-	callee      string
-	conn        *websocket.Conn
-	ready       chan struct{}
-	admitted    bool
-	accepted    bool // never retry an uncertain Accept
-	terminal    bool
-	ended       bool
-	hangupTimer *time.Timer
+	mu             sync.Mutex // also serializes command writes with observed termination
+	dialogID       string
+	callID         string
+	runID          string
+	callee         string
+	conn           *websocket.Conn
+	ready          chan struct{}
+	admitted       bool
+	accepted       bool // never retry an uncertain Accept
+	answered       bool
+	mainTrackEnded bool
+	terminal       bool
+	ended          bool
+	hangupTimer    *time.Timer
+	endTimer       *time.Timer
 }
 
 type activeCallInvite struct {
@@ -81,11 +84,12 @@ type activeCallInvite struct {
 }
 
 type activeCallEvent struct {
-	Event     string `json:"event"`
-	TrackID   string `json:"trackId"`
-	Reason    string `json:"reason"`
-	Initiator string `json:"initiator"`
-	Refer     bool   `json:"refer"`
+	Event     string  `json:"event"`
+	TrackID   string  `json:"trackId"`
+	Reason    string  `json:"reason"`
+	Initiator string  `json:"initiator"`
+	Refer     bool    `json:"refer"`
+	PlayID    *string `json:"playId,omitempty"`
 }
 
 var activeCallRunID = regexp.MustCompile(`^sim-[0-9a-f]{24}$`)
@@ -279,7 +283,7 @@ func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCa
 	for {
 		kind, body, err := call.conn.ReadMessage()
 		if err != nil {
-			a.terminal(controller, call, "failed", "Active Call control disconnected", false)
+			a.controlClosed(controller, call, err)
 			return
 		}
 		if kind != websocket.TextMessage {
@@ -298,9 +302,26 @@ func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCa
 			<-call.ready
 			call.mu.Lock()
 			active := call.admitted && !call.terminal && call.accepted
+			call.answered = call.answered || active
 			call.mu.Unlock()
 			if active {
 				_ = controller.Handle(context.Background(), Event{Kind: "answered", Binding: Binding{RunID: call.runID, CallID: call.callID}})
+			}
+		case "trackEnd":
+			// The pinned gateway emits the main SIP track's end immediately
+			// before hangup. Playback and transfer tracks cannot end this call.
+			if event.TrackID == call.dialogID && event.PlayID == nil {
+				call.mu.Lock()
+				call.mainTrackEnded = call.answered
+				if call.mainTrackEnded && !call.terminal && call.endTimer == nil {
+					// Prefer the following hangup's native attribution, but do not
+					// wait for inactivity when only the SIP track end is delivered.
+					call.endTimer = time.AfterFunc(100*time.Millisecond, func() {
+						a.completeTrackEnd(controller, call)
+						_ = call.conn.Close()
+					})
+				}
+				call.mu.Unlock()
 			}
 		case "hangup":
 			reason := "Active Call ended"
@@ -316,13 +337,43 @@ func (a *ActiveCall) readControl(controller ActiveCallController, call *activeCa
 	}
 }
 
+func (a *ActiveCall) controlClosed(controller ActiveCallController, call *activeCallSession, err error) {
+	call.mu.Lock()
+	answered, trackEnded := call.answered, call.mainTrackEnded
+	call.mu.Unlock()
+	// The main SIP track end survives when the following hangup event loses
+	// the teardown race. A close frame alone (even 1000) cannot distinguish
+	// SIP termination from gateway failure, so it must remain a failure.
+	if answered && trackEnded {
+		a.completeTrackEnd(controller, call)
+		return
+	}
+	a.terminal(controller, call, "failed", "Active Call control disconnected", false)
+}
+
+func (a *ActiveCall) completeTrackEnd(controller ActiveCallController, call *activeCallSession) {
+	a.terminalWithEvidence(controller, call, "ended", "remote_hangup", true, &Termination{GatewayEnded: true, Evidence: "native_gateway_track_end"})
+}
+
 func (a *ActiveCall) terminal(controller ActiveCallController, call *activeCallSession, kind, reason string, ended bool, native ...activeCallEvent) {
+	var termination *Termination
+	if len(native) > 0 {
+		t := nativeTermination(native[0].Initiator, native[0].Reason)
+		termination = &t
+	}
+	a.terminalWithEvidence(controller, call, kind, reason, ended, termination)
+}
+
+func (a *ActiveCall) terminalWithEvidence(controller ActiveCallController, call *activeCallSession, kind, reason string, ended bool, termination *Termination) {
 	call.mu.Lock()
 	first := !call.terminal
 	call.terminal = true
 	call.ended = call.ended || ended
 	if call.hangupTimer != nil {
 		call.hangupTimer.Stop()
+	}
+	if call.endTimer != nil {
+		call.endTimer.Stop()
 	}
 	call.mu.Unlock()
 	if !first {
@@ -333,11 +384,7 @@ func (a *ActiveCall) terminal(controller ActiveCallController, call *activeCallS
 	admitted := call.admitted
 	call.mu.Unlock()
 	if admitted {
-		event := Event{Kind: kind, Binding: Binding{RunID: call.runID, CallID: call.callID}, Reason: reason}
-		if len(native) > 0 {
-			termination := nativeTermination(native[0].Initiator, native[0].Reason)
-			event.Termination = &termination
-		}
+		event := Event{Kind: kind, Binding: Binding{RunID: call.runID, CallID: call.callID}, Reason: reason, Termination: termination}
 		_ = controller.Handle(context.Background(), event)
 	}
 }
@@ -537,6 +584,9 @@ func (a *ActiveCall) Close() error {
 		call.mu.Lock()
 		if call.hangupTimer != nil {
 			call.hangupTimer.Stop()
+		}
+		if call.endTimer != nil {
+			call.endTimer.Stop()
 		}
 		if call.conn != nil {
 			_ = call.conn.Close()

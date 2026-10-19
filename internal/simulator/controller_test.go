@@ -226,7 +226,7 @@ func TestControllerExpiredAndUnauthenticatedIdentity(t *testing.T) {
 	if c.Incoming(ctx, bad) == nil {
 		t.Fatal("source mismatch admitted")
 	}
-	f.advance(120 * time.Second)
+	f.advance(c.opts.ReservationTTL)
 	if c.Incoming(ctx, incomingFor(s, "late")) == nil {
 		t.Fatal("expired admitted")
 	}

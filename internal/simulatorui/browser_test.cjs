@@ -114,6 +114,7 @@ const server = http.createServer(async (req, res) => {
     const s = JSON.parse(body);
     assert.equal(s.goal, "Confirm Thursday afternoon");
     assert.equal(s.retain_transcript, true);
+    assert.equal(s.hangup_after_goal, false);
     const run = {
       run_id: "run-exact-123",
       phase: "waiting",
@@ -237,6 +238,8 @@ const server = http.createServer(async (req, res) => {
       () => !document.getElementById("workspace").disabled,
     );
     assert.equal(await page.inputValue("#token"), "");
+    assert.equal(await page.locator("#hangup-after-goal").count(), 1);
+    assert.equal(await page.isChecked("#hangup-after-goal"), true);
     assert.match(
       await page.textContent("#gateway-status"),
       /Gateway unavailable/,
@@ -269,6 +272,7 @@ const server = http.createServer(async (req, res) => {
         ...scenario,
         goal: "Confirm Thursday afternoon",
         retain_transcript: true,
+        hangup_after_goal: false,
         behavior: ["Keep this instruction\nacross two lines"],
       }),
     );
@@ -282,6 +286,7 @@ const server = http.createServer(async (req, res) => {
       JSON.parse(await page.inputValue("#behavior"))[0],
       "Keep this instruction\nacross two lines",
     );
+    assert.equal(await page.isChecked("#hangup-after-goal"), false);
     await page.fill(
       "#facts",
       '{"nested_duplicate":"one","nested_duplicate":"two"}',
@@ -299,6 +304,7 @@ const server = http.createServer(async (req, res) => {
     const exported = JSON.parse(fs.readFileSync(await sd.path(), "utf8"));
     assert.equal(exported.goal, "Confirm Thursday afternoon");
     assert.equal(exported.retain_transcript, true);
+    assert.equal(exported.hangup_after_goal, false);
     assert.equal(
       exported.behavior[0],
       "Keep this instruction\nacross two lines",

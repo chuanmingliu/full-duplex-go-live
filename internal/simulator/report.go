@@ -25,6 +25,7 @@ type Report struct {
 	TerminationReason      string          `json:"termination_reason,omitempty"`
 	Termination            Termination     `json:"termination"`
 	MaxRemoteTurns         int             `json:"max_remote_turns"`
+	RemoteTurns            int             `json:"remote_turn_count"`
 	RemoteSpeechStarts     int             `json:"remote_speech_start_count"`
 	MaxDurationMS          int64           `json:"max_duration_ms"`
 	TranscriptTruncated    bool            `json:"transcript_truncated"`
@@ -84,13 +85,14 @@ func buildReport(r *run, opts Options) Report {
 	rep := Report{RunID: r.state.Binding.RunID, Phase: r.state.Phase, SourceCommit: r.provenance.SourceCommit, ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, ProviderModel: r.provenance.ProviderModel, VoiceID: r.provenance.VoiceID, Evidence: AudioBoundaryEvidence, AssistantGaps: o.assistantGaps(), SimulatorGaps: o.customerGaps(), InvalidObservations: o.invalid, Actions: append([]ActionOutcome{}, r.actions...), Failures: append([]string{}, r.failures...), EventsTruncated: r.eventsTruncated, TranscriptRetained: r.scenario.RetainTranscript}
 	rep.Termination = defaultTermination(r.termination)
 	rep.MaxRemoteTurns = r.scenario.MaxRemoteTurns
-	rep.RemoteSpeechStarts = r.remoteTurns
+	rep.RemoteTurns = r.remoteTurns
+	rep.RemoteSpeechStarts = r.remoteSpeechStarts
 	rep.MaxDurationMS = r.scenario.MaxDurationMS
 	rep.Warnings = append([]Warning(nil), r.warnings...)
 	rep.Failures = append(rep.Failures, warningFailures(r.warnings)...)
 	rep.ScenarioID = r.scenario.ID
 	rep.ExpectedOutcome = r.scenario.outcome()
-	rep.TerminationReason = redact(r.reason)
+	rep.TerminationReason = r.terminationReason()
 	if rep.TerminationReason == "" {
 		rep.TerminationReason = string(r.state.Phase)
 	}
@@ -133,7 +135,7 @@ func buildReport(r *run, opts Options) Report {
 		rep.Checks = append(rep.Checks, check("greeting_once", o.greetings == 1, "successful voice opening request; audio delivery measured separately"))
 	}
 	limitOK := r.connectedAt.IsZero() || r.terminalAt.IsZero() || r.terminalAt.Sub(r.connectedAt).Milliseconds() <= r.scenario.MaxDurationMS+1000
-	rep.Checks = append(rep.Checks, check("call_limits", limitOK && r.remoteTurns <= r.scenario.MaxRemoteTurns, "receiver controller deadlines and remote speech boundaries"))
+	rep.Checks = append(rep.Checks, check("call_limits", limitOK && r.remoteTurns <= r.scenario.MaxRemoteTurns, "receiver controller deadlines and assistant turns separated by customer speech"))
 	clean := Check{Name: "clean_termination", Result: "indeterminate", Evidence: "missing gateway ended confirmation"}
 	if o.ended == 1 {
 		clean = check("clean_termination", len(r.failures) == 0, "gateway ended confirmation")

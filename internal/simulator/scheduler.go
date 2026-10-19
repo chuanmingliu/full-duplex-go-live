@@ -62,7 +62,7 @@ func (c *RunController) resetIdle(r *run) {
 	if r.idle != nil {
 		r.idle.Stop()
 	}
-	if r.scenario.IdleTimeoutMS <= 0 {
+	if r.scenario.IdleTimeoutMS <= 0 || r.customerHangup != nil {
 		return
 	}
 	r.idleGeneration++
@@ -78,6 +78,9 @@ func (c *RunController) resetIdle(r *run) {
 	})
 }
 func (c *RunController) trigger(r *run, kind string) {
+	if r.customerHangup != nil {
+		return
+	}
 	r.occurrences[kind]++
 	for _, a := range r.scenario.Actions {
 		if a.Trigger == kind && a.Occurrence == r.occurrences[kind] && !r.actionScheduled[a.ID] {
@@ -91,13 +94,18 @@ func (c *RunController) trigger(r *run, kind string) {
 func (c *RunController) performAction(id string, a Action) {
 	c.mu.Lock()
 	r, ok := c.runs[id]
-	if !ok || r.state.Phase != Connected {
+	if !ok || r.state.Phase != Connected || r.mediaDisconnected {
+		c.mu.Unlock()
+		return
+	}
+	if r.customerHangup != nil && a.ID != CustomerFarewellActionID {
 		c.mu.Unlock()
 		return
 	}
 	b := r.state.Binding
 	if a.RequireRemoteSpeaking && !r.observer.assistantSpeaking {
 		r.actions = append(r.actions, ActionOutcome{ID: a.ID, Result: "skipped", AtMS: c.RelativeMS(), Reason: "remote assistant is no longer speaking"})
+		c.scriptExhausted(r)
 		c.mu.Unlock()
 		return
 	}
@@ -137,6 +145,11 @@ func (c *RunController) performAction(id string, a Action) {
 			c.addFailure(r, reason)
 		}
 		r.actions = append(r.actions, ActionOutcome{ID: a.ID, Result: result, AtMS: c.RelativeMS(), Reason: reason})
+		if a.ID == CustomerFarewellActionID {
+			c.customerFarewellOutcome(r, r.actions[len(r.actions)-1])
+		} else {
+			c.scriptExhausted(r)
+		}
 	}
 	if r.state.Phase.Terminal() {
 		if err := c.persistReport(r); err != nil {

@@ -53,7 +53,7 @@ func (r *run) recordTermination(e Event) {
 	if e.Kind == "stop" && r.termination.LocalReason == "" {
 		// Controller-generated stop reasons only; never persist caller-supplied text.
 		switch e.Reason {
-		case "stopped", "duration limit", "remote turn limit", "inactivity limit", "scripted hangup":
+		case "stopped", "duration limit", "remote turn limit", "inactivity limit", "scripted hangup", "customer_hangup":
 			r.termination.LocalReason = e.Reason
 		}
 	}
@@ -70,9 +70,30 @@ func (r *run) recordTermination(e Event) {
 	requested, localReason := r.termination.LocalHangupRequested, r.termination.LocalReason
 	if e.Termination != nil {
 		r.termination = nativeTermination(e.Termination.NativeInitiator, e.Termination.NativeReason)
+		if e.Termination.Evidence == "native_gateway_track_end" {
+			r.termination = Termination{Side: "unknown", GatewayEnded: true, Evidence: e.Termination.Evidence}
+		}
 	} else {
 		r.termination.GatewayEnded = true
 	}
 	r.termination.LocalHangupRequested = requested
 	r.termination.LocalReason = localReason
+}
+
+func (r *run) terminationReason() string {
+	if r.state.Phase == Completed && r.termination.GatewayEnded {
+		if r.termination.LocalHangupRequested && r.termination.LocalReason == "customer_hangup" {
+			return "customer_hangup"
+		}
+		if r.termination.NativeInitiator == "caller" && r.termination.NativeReason != "Canceled" {
+			return "remote_hangup"
+		}
+		if r.reason == "remote_hangup" && !r.termination.LocalHangupRequested {
+			return "remote_hangup"
+		}
+		if r.termination.LocalReason != "" {
+			return r.termination.LocalReason
+		}
+	}
+	return redact(r.reason)
 }

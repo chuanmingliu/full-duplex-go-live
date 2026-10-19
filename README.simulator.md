@@ -77,6 +77,7 @@ In the workbench, choose a preset, edit it, validate it and export the exact sce
 - **Persona, goal, facts and behavior** guide the simulated customer.
 - **Expectations** describe what the assistant should accomplish. They are excluded from the live customer's prompt and checked after the call.
 - **Call controls** set timing and scripted actions. `cancel_before_answer` expects the external caller to cancel; it does not originate a call or cancel one automatically.
+- **Customer hangup** defaults to enabled (`hangup_after_goal: true`). When the customer model reports its goal achieved, or every action in a nonempty script has completed, been skipped, failed, timed out or been cancelled, the receiver says a prepared farewell. Action failures remain in the report. After the farewell finishes, it waits for the assistant's observed reply to end or three seconds, then requests gateway hangup. Incoming speech and transcript evidence continue during this wait without generating another customer reply. A confirmed ending is reported as `customer_hangup`. Set `hangup_after_goal: false` to preserve the previous behavior of waiting for the caller or a configured limit. An empty script alone does not end a conversation, and an explicit scripted `hangup` keeps its immediate behavior. Goal detection uses the customer's private completion tool and works with transcript retention disabled.
 - **Transcript retention** must be enabled before the run. The UI starts each preset with retention off, so evaluation requires an explicit choice.
 
 The voice panel shows active provider settings and an editable profile for the **next startup**. Exporting a profile does not apply it or restart a service. Restart only this isolated simulator with the exported file when ready. Receiving audio uses fixed 16 kHz PCM.
@@ -99,7 +100,7 @@ Silence-suppressing gateways send no RTP between utterances. Once the call is an
 
 The pinned Active Call gateway enables **symmetric RTP latching**: an eligible RTP packet from a different source IP/port than SDP can establish the outgoing media destination. This supports a PBX advertising `192.168.71.9` while media arrives through `172.20.0.1`. A supplied SDP SSRC must match, and outgoing RTP uses SDP until the first eligible inbound packet arrives. See the [gateway source audit and limits](deploy/simulator/activecall/README.md#rtp-source-address-and-latching).
 
-The independent caller is responsible for dialing, its assistant prompt, provider configuration and call termination. There is no built-in Claude connector or outbound dial endpoint in this simulator. No text channel is used to pass conversational replies between the two services.
+The independent caller is responsible for dialing, its assistant prompt and provider configuration. Either endpoint can end the call. There is no built-in Claude connector or outbound dial endpoint in this simulator. No text channel is used to pass conversational replies between the two services.
 
 For repeated tests, run the CLI from another terminal with the same `SIM_CONTROL_TOKEN`:
 
@@ -121,7 +122,9 @@ A completed run can retain valid `assistant_response_gaps` for unaffected respon
 
 At a scenario limit or requested hangup, the receiver stops audio input and delivery, requests gateway hangup, and keeps the media socket alive until native termination evidence arrives or a bounded deadline expires. `termination` records the side and evidence when known, the local hangup request/reason, and sanitized native initiator/reason. A control disconnect alone, or the gateway's generic `system` / `BySystem` event, does not establish which endpoint sent BYE; those remain `unknown`. Explicit gateway autohangup and inactivity-timeout reasons identify the receiver gateway.
 
-`max_remote_turns` counts received speech bursts separated by at least 200 ms of silence, not semantic assistant turns. A long utterance can consume several counts. Reports expose `max_remote_turns`, `remote_speech_start_count` and `max_duration_ms` so the effective limit and its consumption can be compared with the caller's conversation count.
+A caller BYE completes the report with `termination_reason: remote_hangup`. If the gateway delivers the exact main SIP `trackEnd` and then closes control before delivering `hangup`, that native end also completes normally. A short grace retains the richer hangup attribution when available; an isolated track end completes after 100 ms. Playback/transfer track endings and control closure without native end evidence cannot claim a successful call. Media closure permits the controller's bounded setup deadline for delayed end signaling. Terminal reports settle pending audio boundaries at the last actual audio timestamps, preserving valid response gaps and protocol checks. Semantic checks still require an evaluator.
+
+`max_remote_turns` counts assistant turns separated by a customer utterance. Pauses within one assistant reply do not consume extra turns. Reports expose `remote_turn_count` for the turn budget and preserve `remote_speech_start_count` as the count of received speech segments separated by at least 200 ms of silence, alongside `max_remote_turns` and `max_duration_ms`. These segment pauses also do not shorten the customer's farewell wait: audio-only input uses the three-second deadline unless an explicit reply-end observation arrives.
 
 The audio flood guard meters decoded PCM received over the wire. Synthetic silence already bypasses this guard. At 16 kHz PCM16, normal input is 32,000 bytes/s; `max_audio_kbps: 512` admits 64,000 bytes per one-second window. Flood logs now include `wire_audio_bytes`, `wire_audio_frames`, `frame_bytes`, `window_ms` and `max_audio_kbps`. The historical n15 rejection has no such counters, so its cause is unconfirmed; this change does not raise the configured limit.
 
@@ -145,7 +148,7 @@ See the [CLI reference](cmd/golive-simctl/README.md) for exact input bounds, out
 
 ## Limits and verification
 
-- One active reservation/call per instance; reservations last 120 seconds and calls are capped at 300 seconds. Retained run history is bounded to 128 runs.
+- One active reservation/call per instance; reservations last 30 minutes by default and calls are capped at 300 seconds. Retained run history is bounded to 128 runs.
 - Audio recording and scripted silence are unsupported. Transcript retention is opt-in and bounded; use synthetic identities and facts.
 - Reports measure the receiver's application audio boundary, not handset playout or carrier latency.
 - Gateway readiness probes its control API. They do not prove a working SIP route, cellular channel or available hardware capacity.

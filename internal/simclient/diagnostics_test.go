@@ -46,3 +46,22 @@ func TestSanitizedDiagnosticsExcludeArbitraryReportText(t *testing.T) {
 		t.Fatal("unknown failure became a warning during sanitization")
 	}
 }
+
+func TestSanitizedReportRetainsNormalHangupResults(t *testing.T) {
+	s := scenario(t)
+	for _, reason := range []string{"remote_hangup", "customer_hangup"} {
+		for _, evidence := range []string{"native_gateway_hangup", "native_gateway_track_end"} {
+			report := validReport(s, "owned")
+			report.TerminationReason = reason
+			report.Termination = simulator.Termination{Side: "unknown", Evidence: evidence, GatewayEnded: true}
+			if reason == "customer_hangup" {
+				report.Termination.LocalReason = reason
+				report.Termination.LocalHangupRequested = true
+			}
+			safe := sanitizeReport(s, report)
+			if safe.TerminationReason != reason || safe.Termination != report.Termination || ProtocolVerdict(s, safe) != "pass" {
+				t.Fatalf("normal hangup metadata lost: %+v", safe)
+			}
+		}
+	}
+}

@@ -27,6 +27,13 @@ func (*simulatorPhone) Reject(context.Context, string, string) error { return ni
 func (*simulatorPhone) Hangup(context.Context, string) error         { return nil }
 func simulatorHarness(t *testing.T, actions ...simulator.Action) (*httptest.Server, *SimulatorReceiver, *simulator.RunController, simulator.Snapshot) {
 	t.Helper()
+	scenario := simulator.Scenario{SchemaVersion: 1, ID: "test-customer", Language: "en", Persona: "You are Sam, a brief customer.", Facts: map[string]string{"appointment": "Tuesday"}, Greeting: "Hello?", MaxDurationMS: 30000, MaxRemoteTurns: 10}
+	scenario.Actions = actions
+	return simulatorScenarioHarness(t, scenario)
+}
+
+func simulatorScenarioHarness(t *testing.T, scenario simulator.Scenario) (*httptest.Server, *SimulatorReceiver, *simulator.RunController, simulator.Snapshot) {
+	t.Helper()
 	cfg := config.Default()
 	cfg.ASR = "mock"
 	cfg.LLM = "mock"
@@ -44,8 +51,6 @@ func simulatorHarness(t *testing.T, actions ...simulator.Action) (*httptest.Serv
 		t.Fatal(err)
 	}
 	r.SetController(c)
-	scenario := simulator.Scenario{SchemaVersion: 1, ID: "test-customer", Language: "en", Persona: "You are Sam, a brief customer.", Facts: map[string]string{"appointment": "Tuesday"}, Greeting: "Hello?", MaxDurationMS: 30000, MaxRemoteTurns: 10}
-	scenario.Actions = actions
 	snap, err := c.Prepare(context.Background(), scenario)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +160,7 @@ func TestSimulatorMediaLossEndsRunAndHangup(t *testing.T) {
 	ts, _, c, snap := simulatorHarness(t)
 	conn := dialPath(t, ts, simulatorPath(snap))
 	conn.Close()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := c.Get(context.Background(), snap.RunID)
 		if got.Phase == simulator.Failed {
@@ -211,7 +216,7 @@ func TestSimulatorMediaCloseBeforeGatewayHangupReconciles(t *testing.T) {
 	conn := dialPath(t, ts, simulatorPath(snap))
 	bound, _ := controller.Get(context.Background(), snap.RunID)
 	conn.Close()
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 	if err := controller.Handle(context.Background(), simulator.Event{Kind: "ended", Binding: bound.Binding, AtMS: controller.RelativeMS()}); err != nil {
 		t.Fatal(err)
 	}

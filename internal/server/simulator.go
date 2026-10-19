@@ -112,16 +112,14 @@ func (r *SimulatorReceiver) ServeHTTP(w http.ResponseWriter, req *http.Request) 
 	r.sessions[binding.SessionID] = sess
 	r.mu.Unlock()
 	defer func() {
+		// BYE can close media before its control hangup event is delivered.
+		// Freeze customer work first and allow a bounded signaling grace;
+		// missing confirmation still fails and hangs up this exact leg.
+		_ = r.controller.MediaDisconnected(context.Background(), binding)
 		sim.stop()
 		r.mu.Lock()
 		delete(r.sessions, binding.SessionID)
 		r.mu.Unlock()
-		// BYE can close media before its control hangup event is delivered.
-		// Output is already closed; allow only a bounded signaling grace. A
-		// missing confirmation still fails and actively hangs up this exact leg.
-		time.AfterFunc(500*time.Millisecond, func() {
-			_ = r.controller.Handle(context.Background(), simulator.Event{Kind: "failed", Binding: binding, AtMS: r.controller.RelativeMS(), Reason: "media connection closed without hangup confirmation"})
-		})
 	}()
 	timer := time.AfterFunc(20*time.Second, func() {
 		sess.mu.Lock()
@@ -183,7 +181,7 @@ func (r *SimulatorReceiver) Speak(ctx context.Context, b simulator.Binding, id, 
 	now := time.Now()
 	// The controller gates this action on observed inbound audio. Engine VAD
 	// may lag that boundary, so it must not veto the scheduled interruption.
-	return engine.ScheduleSimulatorSpeech(s.sim.ctx, duplex.SimulatorSpeechRequest{ActionID: id, Text: text, DueAt: now, ExpiresAt: now.Add(hold), MaxHold: hold})
+	return engine.ScheduleSimulatorSpeech(s.sim.ctx, duplex.SimulatorSpeechRequest{ActionID: id, Text: text, DueAt: now, ExpiresAt: now.Add(hold), MaxHold: hold, EndConversation: id == simulator.CustomerFarewellActionID})
 }
 
 // Quiesce stops the conversation while leaving the WebSocket available for the
@@ -314,6 +312,12 @@ func (s *Session) startSimulator(ctx context.Context, p *peer, eventID string) e
 		Audio:        &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: 16000}},
 		Golive:       &live.GoliveConfig{Greeting: &quiet, Language: sim.scenario.Language, Backchannel: &off, Speculative: &off},
 	}}
+	if sim.scenario.CustomerHangupEnabled() && sim.scenario.Goal != "" {
+		request.Session.Delegation = &live.DelegationConfig{Type: live.DelegationResponses, Responses: &live.ResponsesDelegation{
+			Tools:      []json.RawMessage{json.RawMessage(`{"type":"function","name":"complete_customer_goal","description":"Signal that the simulated customer's stated goal has been achieved. The receiver will speak a farewell and hang up after the assistant replies.","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true}`)},
+			ToolChoice: "auto",
+		}}
+	}
 	data, _ := json.Marshal(request)
 	if err := s.onSessionStart(ctx, p, data, eventID); err != nil {
 		sim.fail("voice setup failed")
@@ -334,6 +338,9 @@ func (s *Session) startSimulator(ctx context.Context, p *peer, eventID string) e
 				}
 			}
 		}
+		if sim.scenario.CustomerHangupEnabled() && (sim.scenario.Goal != "" || len(sim.scenario.Actions) > 0) {
+			prepErr = e.PrepareSimulatorSpeech(prepCtx, simulator.CustomerFarewellActionID, sim.scenario.CustomerFarewell())
+		}
 	})
 	if prepErr != nil {
 		sim.fail("scripted speech preparation failed")
@@ -351,6 +358,17 @@ func (s *Session) startSimulator(ctx context.Context, p *peer, eventID string) e
 // controller. The audio observer itself runs only at transport boundaries.
 func (s *simulatorSession) observeEvent(event any) {
 	switch ev := event.(type) {
+	case live.ResponseEventEnvelope:
+		var response struct {
+			Type string `json:"type"`
+			Item struct {
+				Type string `json:"type"`
+				Name string `json:"name"`
+			} `json:"item"`
+		}
+		if json.Unmarshal(ev.Event, &response) == nil && response.Type == "response.output_item.done" && response.Item.Type == "function_call" && response.Item.Name == simulator.CustomerGoalToolName {
+			_ = s.receiver.controller.GoalReached(s.ctx, s.binding)
+		}
 	case duplex.SimulatorWarningEvent:
 		_ = s.receiver.controller.Warning(s.ctx, s.binding, ev.Code, ev.TurnID)
 	case live.ErrorEvent:

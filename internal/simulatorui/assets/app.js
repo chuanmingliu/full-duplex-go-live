@@ -162,6 +162,7 @@
         2,
       );
     $("outcome").value = s.expected_outcome || "conversation";
+    $("hangup-after-goal").checked = s.hangup_after_goal !== false;
     $("retain").checked = !!s.retain_transcript;
   }
   // Keep JSON editor fragments raw until the strict backend decoder has checked them.
@@ -179,6 +180,7 @@
       max_duration_ms: Number($("duration").value),
       idle_timeout_ms: Number($("idle").value),
       max_remote_turns: Number($("turns").value),
+      hangup_after_goal: $("hangup-after-goal").checked,
       retain_transcript: $("retain").checked,
       retain_audio: false,
       expected_outcome: $("outcome").value,

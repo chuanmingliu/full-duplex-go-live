@@ -45,8 +45,10 @@ from a token file and refuses to overwrite an existing file.
   simulator WebSocket URL and its secret key is a local placeholder, preventing
   ambient provider credentials. Only an `answer` event confirms signaling.
 - Caller CANCEL arrives as `hangup` / `Canceled` / `caller`. It is marked
-  terminal immediately, so a pending Accept fails. Socket closure is a failed
-  call, not proof that SIP ended. An exact-ID REST Hangup is attempted by the
+  terminal immediately, so a pending Accept fails. An answered main SIP
+  `trackEnd` also confirms termination if its following `hangup` is lost during
+  control teardown; playback and transfer tracks are excluded. Socket closure
+  without either native end signal remains a failed call. An exact-ID REST Hangup is attempted by the
   controller cleanup if the control socket is lost. Uncertain Accept is never
   retried or replaced by a new dial.
 - Native dialogs retain bounded tombstones (4096 per process). Duplicate

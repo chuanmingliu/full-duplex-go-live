@@ -37,6 +37,9 @@ type SimulatorSpeechRequest struct {
 	ExpiresAt             time.Time
 	MaxHold               time.Duration
 	RequireRemoteSpeaking bool
+	// EndConversation suppresses subsequent generated replies while keeping
+	// incoming audio recognition and transcript evidence alive until close.
+	EndConversation bool
 }
 
 // SimulatorSpeechEvent reports application audio boundaries, not handset
@@ -80,6 +83,7 @@ type simulatorState struct {
 	queue          []*simulatorAction
 	active         *simulatorAction
 	resumePending  bool
+	ending         bool
 	finals         []simulatorFinal
 	finalBytes     int
 	pcmBytes       int
@@ -291,6 +295,9 @@ func (e *Engine) ScheduleSimulatorSpeech(ctx context.Context, req SimulatorSpeec
 		action.reserved = true
 		action.ctx = ctx
 		action.status = "scheduled"
+		if req.EndConversation {
+			e.simulator.ending = true
+		}
 		e.simulator.queue = append(e.simulator.queue, action)
 		sort.SliceStable(e.simulator.queue, func(i, j int) bool { return e.simulator.queue[i].req.DueAt.Before(e.simulator.queue[j].req.DueAt) })
 		action.stopWatching = context.AfterFunc(ctx, func() {
@@ -341,7 +348,7 @@ func (e *Engine) simulatorOwnsOutput() bool { return e.simulator != nil && e.sim
 // simulatorDefersTurns also covers the interval between release and the posted
 // history/resume callbacks, so newer input cannot overtake buffered finals.
 func (e *Engine) simulatorDefersTurns() bool {
-	return e.simulator != nil && (e.simulator.active != nil || e.simulator.resumePending)
+	return e.simulator != nil && (e.simulator.active != nil || e.simulator.resumePending || e.simulator.ending)
 }
 
 func (e *Engine) simulatorEvent(a *simulatorAction, status, reason string) {
@@ -491,6 +498,11 @@ func (e *Engine) deferSimulatorFinal(run *asrRun, text string) bool {
 		return true
 	}
 	s := e.simulator
+	if s.ending {
+		// ASR emits its input transcript before reaching this hook. Keep that
+		// evidence, but never queue another generated answer after farewell.
+		return true
+	}
 	if len(s.finals) >= maxSimulatorQueued || s.finalBytes+len(text) > maxSimulatorPCM/16 {
 		e.failSimulator("pending final transcript queue overflow")
 		return true
@@ -507,6 +519,12 @@ func (e *Engine) resumeSimulatorFinals() {
 		return
 	}
 	s.resumePending = false
+	if s.ending {
+		s.finals = nil
+		s.finalBytes = 0
+		s.typedRequested = false
+		return
+	}
 	if len(s.finals) == 0 {
 		if s.typedRequested {
 			s.typedRequested = false

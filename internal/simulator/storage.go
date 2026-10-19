@@ -21,7 +21,7 @@ func (c *RunController) persistSnapshot(r *run) error {
 		RetainTranscript: r.scenario.RetainTranscript, PrepareKeyHash: r.idempotencyKeyHash,
 		ScenarioHash: r.scenarioHash, PromptHash: r.promptHash, Provenance: r.provenance,
 		Warnings: r.warnings, Termination: r.termination,
-		MaxRemoteTurns: r.scenario.MaxRemoteTurns, RemoteSpeechStarts: r.remoteTurns,
+		MaxRemoteTurns: r.scenario.MaxRemoteTurns, RemoteTurns: r.remoteTurns, RemoteSpeechStarts: r.remoteSpeechStarts,
 		MaxDurationMS: r.scenario.MaxDurationMS,
 	})
 }
@@ -75,7 +75,8 @@ func (c *RunController) restore() error {
 		r.termination = metadata.Termination
 		r.scenario.MaxRemoteTurns = metadata.MaxRemoteTurns
 		r.scenario.MaxDurationMS = metadata.MaxDurationMS
-		r.remoteTurns = metadata.RemoteSpeechStarts
+		r.remoteTurns = metadata.RemoteTurns
+		r.remoteSpeechStarts = metadata.RemoteSpeechStarts
 		r.createdAt = metadata.CreatedAt
 		// Older metadata lacks creation time; expiry is a deterministic fallback.
 		if r.createdAt.IsZero() {
@@ -214,6 +215,7 @@ type persistedRun struct {
 	Warnings           []Warning        `json:"warnings,omitempty"`
 	Termination        Termination      `json:"termination"`
 	MaxRemoteTurns     int              `json:"max_remote_turns"`
+	RemoteTurns        int              `json:"remote_turn_count"`
 	RemoteSpeechStarts int              `json:"remote_speech_start_count"`
 	MaxDurationMS      int64            `json:"max_duration_ms"`
 }

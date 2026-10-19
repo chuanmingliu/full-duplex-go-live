@@ -126,7 +126,7 @@ func TestReportRetainsEffectiveTurnLimitAndLocalStopBeforeDisconnect(t *testing.
 	}
 	b := connect(t, c, clock, snap)
 	for i := 0; i < 2; i++ {
-		for _, kind := range []string{"remote_speech_started", "remote_speech_ended"} {
+		for _, kind := range []string{"customer_speech_started", "customer_speech_ended", "remote_speech_started", "remote_speech_ended"} {
 			if err = c.Observe(ctx, b, Observation{Kind: kind, AtMS: c.RelativeMS()}); err != nil {
 				t.Fatal(err)
 			}
@@ -140,7 +140,7 @@ func TestReportRetainsEffectiveTurnLimitAndLocalStopBeforeDisconnect(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.MaxRemoteTurns != 2 || rep.RemoteSpeechStarts != 2 || rep.MaxDurationMS != scenario.MaxDurationMS || rep.Termination.LocalReason != "remote turn limit" || rep.Termination.GatewayEnded || !rep.Termination.LocalHangupRequested {
+	if rep.MaxRemoteTurns != 2 || rep.RemoteTurns != 2 || rep.RemoteSpeechStarts != 2 || rep.MaxDurationMS != scenario.MaxDurationMS || rep.Termination.LocalReason != "remote turn limit" || rep.Termination.GatewayEnded || !rep.Termination.LocalHangupRequested {
 		t.Fatalf("lost preceding stop evidence or limits: %+v", rep)
 	}
 }

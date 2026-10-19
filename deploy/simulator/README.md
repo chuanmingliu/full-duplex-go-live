@@ -12,7 +12,7 @@ The simulator includes an embedded configuration workbench at `/sim/`, task-orie
 
 The default profile uses synthetic ASR/LLM/TTS. It proves control and audio transport, not recognizable speech or conversational quality. Real provider accounts and carrier/handset tests are separate acceptance steps. Reports label timings `application_audio_boundary`; they are not handset playout or carrier latency. Both directions use a 200 ms speech-end debounce and one receiver-local clock. Failed, missing and overlapping responses remain marked invalid. Base run reports keep semantic checks `indeterminate`; the opt-in independent evaluator produces a separate artifact from retained transcript evidence.
 
-One reservation/call is allowed at a time. Run reservations expire after 120s; setup is bounded at 25s, calls at 300s, script holds at 5s, and retained history at 128 runs. Restart aborts unfinished runs without replaying answer/speech. IDs and default reports omit telephone numbers, credentials and raw transcripts/audio. Transcript retention requires explicit scenario opt-in; audio retention and scripted silence actions are rejected in v1. Use only synthetic personas/facts.
+One reservation/call is allowed at a time. Run reservations expire after 30 minutes by default; setup is bounded at 25s, calls at 300s, script holds at 5s, and retained history at 128 runs. Restart aborts unfinished runs without replaying answer/speech. IDs and default reports omit telephone numbers, credentials and raw transcripts/audio. Transcript retention requires explicit scenario opt-in; audio retention and scripted silence actions are rejected in v1. Use only synthetic personas/facts.
 
 ## Local binary
 

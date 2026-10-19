@@ -18,6 +18,13 @@ The adapter sends `accept`, `reject` (486), and `hangup` commands. It receives
 `reason: Canceled` and `initiator: caller`; there is no cancellation webhook.
 Native WebSocket Ping frames are answered by the Go WebSocket implementation.
 
+The main SIP leg emits `trackEnd` (same `trackId`, no `playId`) before `hangup`
+from `InviteDialogStates::on_terminated` in `src/call/sip.rs`. The adapter retains
+that native end if control teardown drops the following hangup event. A clean
+WebSocket close alone is insufficient because failed core execution can close
+the same way. Adapter tests cover both close ordering and explicit error
+precedence with synthetic events.
+
 `FIXTURE_DIALOG` in control fixtures is replaced by the test's native ID.
 These are source-derived fixtures, not captures of a carrier test. Tests of the
 adapter use an independent local HTTP/WebSocket gateway. Actual pinned-process
