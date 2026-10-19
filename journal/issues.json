@@ -730,7 +730,7 @@
    "title": "A caller who answers fast and interrupts is never enrolled, and the focus channel then does nothing for the whole call",
    "area": "focus",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "69e92fe",
    "found": "2026-10-19",
    "found_on": "a real call from a metro station",
    "found_call": "out-mvf63uuu-0iln",
