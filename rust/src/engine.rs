@@ -142,6 +142,7 @@ pub(super) struct Permit {
     pub silence_ms: i64,
     pub input_start_ms: i64,
     pub input_end_ms: i64,
+    pub barge_in: bool,
 }
 
 struct Recognition {
@@ -683,6 +684,7 @@ impl Engine {
             silence_ms: listen.silence_ms,
             input_start_ms: listen.start_ms,
             input_end_ms: listen.end_ms,
+            barge_in: listen.barge_in,
         };
         if self.output_speaking
             && (!self.cfg.bool("duplex.allow_barge_in", true)

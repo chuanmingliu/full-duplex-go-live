@@ -240,7 +240,12 @@ impl Response {
             if stats.first_audio.is_none() && self.focus.acts() {
                 let span = *self.permit.borrow();
                 if span.input_end_ms > span.input_start_ms {
-                    let attribution = self.focus.attribute(span.input_start_ms, span.input_end_ms);
+                    let attribution = if span.barge_in {
+                        self.focus
+                            .attribute_over(span.input_start_ms, span.input_end_ms)
+                    } else {
+                        self.focus.attribute(span.input_start_ms, span.input_end_ms)
+                    };
                     if attribution.veto {
                         self.event(json!({"type":"golive.focus","veto":true,"coverage":attribution.coverage})).await;
                         self.cancel.cancel();
@@ -531,5 +536,114 @@ impl PlaybackText {
         let delta = self.characters[self.emitted..count].iter().collect();
         self.emitted = count;
         delta
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::SinkExt;
+    use tokio::{net::TcpListener, sync::oneshot};
+    use tokio_tungstenite::{accept_async, tungstenite::Message as WsMessage};
+
+    #[tokio::test]
+    async fn late_focus_labels_veto_masked_barge_in_before_first_audio() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let cancel = CancellationToken::new();
+        let server_cancel = cancel.clone();
+        let (labels, send_labels) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(socket).await.unwrap();
+            for event in [
+                json!({"type":"ready"}),
+                json!({"type":"frames","start_ms":0,"frame_ms":100,"p":vec![vec![0.9,0.0];8]}),
+            ] {
+                socket
+                    .send(WsMessage::Text(event.to_string().into()))
+                    .await
+                    .unwrap();
+            }
+            send_labels.await.unwrap();
+            socket.send(WsMessage::Text(
+                json!({"type":"frames","start_ms":1000,"frame_ms":100,"p":vec![vec![0.0,0.9];8]}).to_string().into(),
+            )).await.unwrap();
+            server_cancel.cancelled().await;
+        });
+        let mut cfg = Config::default();
+        cfg.set("duplex.focus", json!("veto"));
+        cfg.set("duplex.focus_url", json!(format!("ws://{address}")));
+        cfg.set("duplex.phrase_cache", json!(false));
+        cfg.env
+            .insert("GOLIVE_MOCK_TTS_TTFB_MS".into(), "500".into());
+        let focus = crate::focus::Focus::spawn(cfg.clone(), cancel.clone());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while focus.labelled_to() < 800 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        focus.mask(1000, 2000);
+        focus.push(&[0; 640], 1800);
+        assert!(
+            !focus.attribute_over(1000, 1800).veto,
+            "labels have not arrived at confirmation"
+        );
+        let (inner, mut events) = mpsc::channel(128);
+        let (_permit, permit) = watch::channel(Permit {
+            confirmed: true,
+            input_start_ms: 1000,
+            input_end_ms: 1800,
+            barge_in: true,
+            ..Permit::default()
+        });
+        let response = Response {
+            id: 1,
+            item_id: "fixture".into(),
+            messages: vec![],
+            speak: Some("这段声音不应播放。".into()),
+            tts: provider::Synthesizer::new(cfg.clone()),
+            tools: tools::Runtime::new(cfg.clone(), inner.clone(), cancel.clone()),
+            focus: focus.clone(),
+            cfg,
+            cancel: cancel.child_token(),
+            permit,
+            inner,
+            epoch: Instant::now(),
+        };
+        let worker = tokio::spawn(response.run());
+        labels.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while focus.labelled_to() < 1800 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            !focus.attribute(1000, 1800).veto,
+            "ordinary attribution excludes the playback mask"
+        );
+        assert!(focus.attribute_over(1000, 1800).veto);
+        tokio::time::timeout(Duration::from_secs(2), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut veto = false;
+        while let Ok(event) = events.try_recv() {
+            match event {
+                Internal::Output { event, .. } => {
+                    assert_ne!(event["type"], "session.output_audio.delta");
+                    veto |= event["type"] == "golive.focus" && event["veto"] == true;
+                }
+                Internal::Spoken { .. } => panic!("vetoed speech reached transcript/history"),
+                _ => {}
+            }
+        }
+        assert!(veto);
+        cancel.cancel();
+        server.await.unwrap();
     }
 }
