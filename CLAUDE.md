@@ -86,6 +86,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-19 09:37 | 35de29b, `call`, 95 s; 4 turns on mid-thought waits | 9 | 1052 | 1525 | 1 |
 | 10-19 09:58 | c3695fe (caller-quiet close), `call`, 131 s | 13 | 926 | 1212 | 1 |
 | 10-19 19:25 | c3695fe, `call` from a metro station, 63 s; caller never enrolled (ISS-044) | 6 | 991 | 1118 | 0 |
+| 10-19 23:03 | 146c590, **simulated** (`kb-claims-skeptic`, receiver 905a255), 300 s, slow hour | 37 | 929 | 1326 (p95 1309) | 7 |
 | 10-17 18:11 | 1e35e09, **simulated** (`kb-busy-bargainer`), 155 s, **ended by the assistant's `end_call`** | 25 | 842 | 1154 (p95 1093) | 0 |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
