@@ -758,7 +758,7 @@
    "title": "The farewell was cut by a sound over it and the line dropped mid-word",
    "area": "engine",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "f8a8a7e",
    "found": "2026-10-20",
    "found_on": "a real call from a metro station; the owner heard it",
    "found_call": "out-mvg0j9mq-8p1n",
