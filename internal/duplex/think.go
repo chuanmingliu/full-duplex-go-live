@@ -155,6 +155,12 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	if len([]rune(turn.Transcript)) < e.opts.Cfg.Duplex.DelegateMinChars && turn.Transcript != "" {
 		return
 	}
+	if e.hangingUp() {
+		// The call is ending; whatever was heard after the goodbye is not
+		// answered (it would be cut by the hangup anyway).
+		e.log.Debug("hangup: not answering after the farewell", "turn", turn.ID, "reason", reason)
+		return
+	}
 	// Only stamp the origin when it belongs to this turn. While the utterance
 	// is still open — which is the case for a mid-pause speculative turn — the
 	// engine's speechEndAt is the *previous* utterance's, and stamping it here

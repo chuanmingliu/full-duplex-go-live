@@ -558,7 +558,7 @@ func (e *Engine) Say(text string) {
 // that the caller has taken the floor.
 func (e *Engine) Interrupt() {
 	e.post(func() {
-		if e.assistantHasFloor() {
+		if e.assistantHasFloor() && !e.hangingUp() {
 			e.interrupt()
 		}
 	})
@@ -1721,6 +1721,14 @@ func (e *Engine) expireHold() {
 // whether the assistant still holds the floor at all.
 func (e *Engine) yieldFloor(bargeIn bool) {
 	if !e.opts.Cfg.Duplex.AllowBargeIn || !e.assistantHasFloor() {
+		return
+	}
+	if e.hangingUp() {
+		// The farewell is the last thing said and is said whole: on the
+		// 09:37 call of 10-20 (a metro station) a sound over it cut it at
+		// four characters and the line dropped on "好的，那". Nothing the
+		// caller or the room says now changes what happens next.
+		e.log.Info("hangup: a sound over the farewell; not yielding", "barge_in", bargeIn)
 		return
 	}
 	switch e.policy() {

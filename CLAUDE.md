@@ -89,6 +89,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-19 23:03 | 146c590, **simulated** (`kb-claims-skeptic`, receiver 905a255), 300 s, slow hour | 37 | 929 | 1326 (p95 1309) | 7 |
 | 10-19 23:14 | 146c590, `call` with a goodbye: `end_call` fired, line stayed up (ISS-045) | 10 | — | — | — |
 | 10-20 09:14 | bc154ae, `call` from the metro station, goodbye → **gateway hangup 200**; 5 other voices let go by | 18 | 913 | 1193 | 0 |
+| 10-20 09:37 | 0fcd82e, `call` from the metro station, 229 s; farewell cut by a sound over it (ISS-046) | 15 | — | — | — |
 | 10-17 18:11 | 1e35e09, **simulated** (`kb-busy-bargainer`), 155 s, **ended by the assistant's `end_call`** | 25 | 842 | 1154 (p95 1093) | 0 |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 

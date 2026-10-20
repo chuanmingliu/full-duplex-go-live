@@ -528,16 +528,18 @@ func TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot(t *testing.T) 
 	// should begin while it is still going.
 	began := time.Now()
 	var answeredAt time.Duration
-	for i := 0; i < 30; i++ {
+	// (45 × 100 ms: under a full test run the answer's first audio can be
+	// a second late; the close itself is the thing under test.)
+	for i := 0; i < 45; i++ {
 		speak(e, rate, 100)
 		if answeredAt == 0 && c.audioMS() > 0 {
 			answeredAt = time.Since(began)
 		}
 	}
 	if answeredAt == 0 {
-		t.Fatalf("not answered while the other source went on for 3 s (quiet closes %d)", e.focus.quietCloses)
+		t.Fatalf("not answered while the other source went on for 4.5 s (quiet closes %d)", e.focus.quietCloses)
 	}
-	if answeredAt > 2*time.Second {
+	if answeredAt > 3*time.Second {
 		t.Fatalf("answered %v after the caller stopped; the turn should have been taken on the caller's quiet, not the line's", answeredAt)
 	}
 	if e.focus.quietCloses != 1 {

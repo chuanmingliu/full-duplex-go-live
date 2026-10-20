@@ -1252,6 +1252,13 @@ from the lead service version=N model=K engine=M`, `hangup: a rule applies
 rule=…`. Tests: `TestTheSilenceRuleSaysItsFarewellAndHangsUp`,
 `TestTheKeywordRuleEndsTheCallOnTheCallersWords`.
 
+**The farewell is said whole.** Once `end_call` is accepted nothing
+interrupts it: a sound over it does not yield the floor, nothing heard
+after the goodbye is answered, and the hangup waits for the last word
+(ISS-046: on a metro-station call the farewell was cut at four characters
+by an announcement and the line dropped mid-word; the owner's rule is
+"say the last response completely, then hang up").
+
 Guards: `end_call` in the first ten seconds of a call is refused and the
 model told to carry on; a farewell that never begins does not keep the
 call up (20 s bound); the request is honoured once. The tool is described

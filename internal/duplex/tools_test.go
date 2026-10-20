@@ -521,3 +521,43 @@ func TestTheKeywordRuleEndsTheCallOnTheCallersWords(t *testing.T) {
 		t.Fatalf("the model's answer was said as well as the farewell: %q", said)
 	}
 }
+
+// The farewell is said whole. A sound over it — the caller's "嗯", a station
+// announcement — does not cut it, and nothing said after the goodbye is
+// answered: the line drops after the whole farewell and not before.
+func TestTheFarewellIsNotCutByASoundOverIt(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("好的再见")
+	asr.msPerRune = 150
+	llm := &farewellLLM{}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &slowQuote{})
+
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the farewell to begin", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	// A sound over the farewell, long enough to be a barge-in anywhere else.
+	speak(e, rate, 900)
+	pause(e, rate, 2500)
+	hungUp := func() bool { _, ok := hungUpWith(c); return ok }
+	waitFor(t, "the hangup", 8*time.Second, hungUp)
+	if n := c.count(live.ExtAudioTruncated); n != 0 {
+		t.Fatalf("the farewell was cut (%d truncation reports)", n)
+	}
+	if !strings.Contains(c.saidAll(), "再见。") {
+		t.Fatalf("the farewell was not said to its end: %q", c.saidAll())
+	}
+	llm.mu.Lock()
+	resumed := llm.resumed
+	llm.mu.Unlock()
+	if resumed != 0 || llm.calls > 1 {
+		t.Fatalf("the sound over the farewell was answered: calls %d resumed %d", llm.calls, resumed)
+	}
+}

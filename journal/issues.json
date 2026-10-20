@@ -752,6 +752,20 @@
    "cause": "Active Call hangs up on a command from its controller (Aria) over the control WebSocket or POST /command/<dialog>; the agent's socket closing is not that.",
    "fix": "config.HangupURL (telephony: http://127.0.0.1:8081/command/{call}); Session.hangupLine POSTs the hangup command there before closing. The route and body are what Codex's receiver uses (his reply over Reason Network, 08:51).",
    "verified_on": "out-mvfzqdsc-fz8a: the gateway was told to hang up status=200; the line dropped"
+  },
+  {
+   "id": "ISS-046",
+   "title": "The farewell was cut by a sound over it and the line dropped mid-word",
+   "area": "engine",
+   "status": "fixed",
+   "commit": "(this commit)",
+   "found": "2026-10-20",
+   "found_on": "a real call from a metro station; the owner heard it",
+   "found_call": "out-mvg0j9mq-8p1n",
+   "symptom": "end_call accepted with an 11-character farewell; at 770 ms a sound over it was taken as a barge-in, the farewell truncated at 4 characters, a new turn begun on the sound; hangup 700 ms later. The caller heard four characters and the click.",
+   "cause": "After end_call the engine still treated the farewell as any answer: yieldFloor cut it on a barge-in, beginGeneration answered the sound.",
+   "fix": "While hangingUp(): yieldFloor keeps the floor, beginGeneration starts nothing, Interrupt is ignored; endCallWhenQuiet then waits for the whole farewell. Test: TestTheFarewellIsNotCutByASoundOverIt.",
+   "verified_on": ""
   }
  ]
 }
