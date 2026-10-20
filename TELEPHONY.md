@@ -1360,6 +1360,17 @@ does the quotation run (the background path, "please hold", as before).
 ISS-048 was the case: 车损险 with no price, the service refusing with a 422
 the model never spoke. Tests: `TestAQuotationAsksForItsMustFieldsBeforeItRuns`.
 
+**Seeing a quotation in the journal.** golive logs each step in numbers
+and names only — `tools: memory updated … keys=vehiclePrice` (which
+fields were recorded, never their values), `tools: task submitted`,
+`tools: task result … status=need missing=vehiclePrice,ncd` or
+`status=quote total=3542.89 lines=3 skipped=座位险 source=rules` or
+`status=error`, `tools: delivering a task's result … waited_for_gap_ms` —
+and the journal lists them on the call's page under **Quotation**, each
+with its time (click to hear the moment), with markers on the player for
+a need, a quote and a failure. The whole loop of a call is read there:
+ask → need (which fields) → recorded → ask → quote → told the model.
+
 **The business's quotation service.** The owner's interface document
 (2026-07-21) describes an asynchronous inquiry
 (`POST …/intranet/vehicle/innerProcess/vehicleApplyInquiryPriceAsync`, answers

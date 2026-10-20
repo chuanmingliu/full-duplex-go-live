@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -447,7 +448,7 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 	if err != nil {
 		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error())
 	}
-	e.log.Info("tools: memory updated", "version", v, "chars", len(args.Patch))
+	e.log.Info("tools: memory updated", "version", v, "chars", len(args.Patch), "keys", patchKeys(args.Patch))
 	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: args.Patch})
 	return fmt.Sprintf(`{"ok":true,"version":%d}`, v)
 }
@@ -493,6 +494,10 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 		delete(ts.latest, task.Tool.Name)
 	}
 	e.log.Info("tools: task done", "tool", task.Tool.Name, "task", task.ID, "took_ms", task.Result.Took.Milliseconds(), "err", errString(task.Result.Err))
+	// What came back, in numbers and names only, so the call journal can
+	// show a quotation's steps: a need (which fields), a quote (total,
+	// lines, skipped) or an error. Never the person's answers.
+	e.log.Info("tools: task result", append([]any{"tool", task.Tool.Name, "task", task.ID}, resultShape(task.Result)...)...)
 	ts.deliveries = append(ts.deliveries, task)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "done",
 		MemoryVersion: task.Request.MemoryVersion, TookMS: task.Result.Took.Milliseconds(), Error: errString(task.Result.Err)})
@@ -561,6 +566,55 @@ func (e *Engine) closeTools() {
 		e.log.Info("tools: this call", "calls", ts.calls, "async", ts.async, "delivered", ts.delivered,
 			"superseded", ts.superseded, "dropped_at_close", ts.dropped, "memory_version", ver)
 	}
+}
+
+// patchKeys names the top-level keys of a memory patch: what the model
+// recorded, never what.
+func patchKeys(patch json.RawMessage) string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(patch, &m) != nil {
+		return "?"
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+// resultShape summarises a tool's result for the log: the quotation's
+// status=need with its missing fields, status=quote with its total, lines
+// and skipped coverages, or status=error.
+func resultShape(res tools.Result) []any {
+	if res.Err != nil {
+		return []any{"status", "error", "error", res.Err.Error()}
+	}
+	var out struct {
+		Status  string `json:"status"`
+		Plan    string `json:"plan"`
+		Missing []struct {
+			Field string `json:"field"`
+		} `json:"missing"`
+		Total   float64  `json:"total"`
+		Lines   []any    `json:"lines"`
+		Skipped []string `json:"skipped"`
+		Source  string   `json:"source"`
+	}
+	if json.Unmarshal(res.Output, &out) != nil {
+		return []any{"status", "unreadable", "chars", len(res.Output)}
+	}
+	if out.Status == "need" {
+		fields := make([]string, 0, len(out.Missing))
+		for _, m := range out.Missing {
+			fields = append(fields, m.Field)
+		}
+		return []any{"status", "need", "plan", out.Plan, "missing", strings.Join(fields, ",")}
+	}
+	if out.Total > 0 || len(out.Lines) > 0 {
+		return []any{"status", "quote", "total", out.Total, "lines", len(out.Lines), "skipped", strings.Join(out.Skipped, ","), "source", out.Source}
+	}
+	return []any{"status", "ok", "chars", len(res.Output)}
 }
 
 func toolOutput(res tools.Result) string {

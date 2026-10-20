@@ -435,3 +435,55 @@ time=2026-10-12T09:40:34.000+08:00 level=DEBUG msg="listen: utterance closed" se
 		t.Fatalf("floor_raised markers: %d", raised)
 	}
 }
+
+// A quotation's steps are read from the log: what was recorded (keys
+// only), the ask, the lead service's answer (a need, then a quote), and
+// the delivery. The numbers and names are kept; nothing else.
+func TestAQuotationsStepsAreReadFromTheLog(t *testing.T) {
+	f, err := os.Open("testdata/call.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ix := NewIndexer()
+	if err := ix.ReadLog(f); err != nil {
+		t.Fatal(err)
+	}
+	extra := `time=2026-10-12T09:34:50.000+08:00 level=INFO msg="tools: memory updated" session=sess_811ccb6206d6013bacb8559a version=1 chars=80 keys=quote,vehicleAge
+time=2026-10-12T09:34:52.000+08:00 level=INFO msg="tools: task submitted" session=sess_811ccb6206d6013bacb8559a tool=quote_total task=t1 memory_version=1 turn=item_5
+time=2026-10-12T09:34:52.010+08:00 level=INFO msg="tools: task result" session=sess_811ccb6206d6013bacb8559a tool=quote_total task=t1 status=need plan=standard missing=vehiclePrice,ncd
+time=2026-10-12T09:34:53.500+08:00 level=INFO msg="tools: delivering a task's result" session=sess_811ccb6206d6013bacb8559a tool=quote_total task=t1 waited_for_gap_ms=1490 interrupting=true memory_changed=false
+time=2026-10-12T09:35:10.000+08:00 level=INFO msg="tools: memory updated" session=sess_811ccb6206d6013bacb8559a version=2 chars=30 keys=vehiclePrice
+time=2026-10-12T09:35:20.000+08:00 level=INFO msg="tools: task submitted" session=sess_811ccb6206d6013bacb8559a tool=quote_total task=t2 memory_version=3 turn=item_9
+time=2026-10-12T09:35:20.020+08:00 level=INFO msg="tools: task result" session=sess_811ccb6206d6013bacb8559a tool=quote_total task=t2 status=quote total=3542.89 lines=3 skipped=座位险 source=rules
+`
+	if err := ix.ReadLog(strings.NewReader(extra)); err != nil {
+		t.Fatal(err)
+	}
+	c := ix.Calls()[0]
+	q := c.Quotation
+	if len(q) != 7 {
+		t.Fatalf("steps %d: %+v", len(q), q)
+	}
+	if q[0].Kind != "memory" || q[0].Keys != "quote,vehicleAge" || q[0].Version != 1 {
+		t.Fatalf("step 0 %+v", q[0])
+	}
+	if q[2].Kind != "need" || q[2].Missing != "vehiclePrice,ncd" || q[2].Plan != "standard" || q[2].Task != "t1" {
+		t.Fatalf("step 2 %+v", q[2])
+	}
+	if q[3].Kind != "delivered" || q[3].WaitedMS != 1490 || !q[3].Interrupting {
+		t.Fatalf("step 3 %+v", q[3])
+	}
+	if q[6].Kind != "quote" || q[6].Total != 3542.89 || q[6].Lines != 3 || q[6].Skipped != "座位险" {
+		t.Fatalf("step 6 %+v", q[6])
+	}
+	marks := 0
+	for _, m := range c.Markers {
+		if m.Kind == "quote_need" || m.Kind == "quote" {
+			marks++
+		}
+	}
+	if marks != 2 {
+		t.Fatalf("quotation markers %d", marks)
+	}
+}

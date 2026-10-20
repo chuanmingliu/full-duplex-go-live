@@ -241,6 +241,36 @@ type Call struct {
 	Markers    []Marker    `json:"markers"`
 	Events     Events      `json:"events"`
 	Warnings   []Warning   `json:"warnings"`
+	// Quotation is every step of the call's quotations, in order: the
+	// working memory recorded (which keys), a quote asked for, what came
+	// back (a need with its fields, a quote with its total, an error), and
+	// its delivery to the model. Numbers and names only.
+	Quotation []QuoteStep `json:"quotation,omitempty"`
+}
+
+// QuoteStep is one step of a quotation, from the log.
+type QuoteStep struct {
+	TS   float64 `json:"t_s"`
+	Kind string  `json:"kind"` // memory, asked, need, quote, error, delivered, other
+	Task string  `json:"task,omitempty"`
+	Tool string  `json:"tool,omitempty"`
+	// memory: the keys recorded, the version after.
+	Keys    string `json:"keys,omitempty"`
+	Version int    `json:"version,omitempty"`
+	// need: the fields still missing, and the plan.
+	Missing string `json:"missing,omitempty"`
+	Plan    string `json:"plan,omitempty"`
+	// quote: the total, how many lines, what was skipped.
+	Total   float64 `json:"total,omitempty"`
+	Lines   int     `json:"lines,omitempty"`
+	Skipped string  `json:"skipped,omitempty"`
+	Source  string  `json:"source,omitempty"`
+	// error / other
+	Error string `json:"error,omitempty"`
+	// delivered: how long it waited for a gap, whether it interrupted.
+	WaitedMS     int  `json:"waited_ms,omitempty"`
+	Interrupting bool `json:"interrupting,omitempty"`
+	TookMS       int  `json:"took_ms,omitempty"`
 }
 
 // --- reading the log ---
@@ -742,6 +772,29 @@ func (ix *Indexer) Feed(l Line) {
 		if cb.call.EndedAt.IsZero() {
 			cb.call.EndedAt = l.Time
 		}
+	case "tools: memory updated":
+		cb.call.Quotation = append(cb.call.Quotation, QuoteStep{TS: cb.at(l.Time), Kind: "memory", Keys: l.Get("keys"), Version: l.N("version")})
+	case "tools: task submitted":
+		cb.call.Quotation = append(cb.call.Quotation, QuoteStep{TS: cb.at(l.Time), Kind: "asked", Task: l.Get("task"), Tool: l.Get("tool"), Version: l.N("memory_version")})
+	case "tools: task result":
+		st := QuoteStep{TS: cb.at(l.Time), Task: l.Get("task"), Tool: l.Get("tool"), Plan: l.Get("plan"), Missing: l.Get("missing"), Lines: l.N("lines"), Skipped: l.Get("skipped"), Source: l.Get("source"), Error: l.Get("error")}
+		st.Total, _ = l.Float("total")
+		switch l.Get("status") {
+		case "need":
+			st.Kind = "need"
+			cb.mark(l.Time, "quote_need", "Quotation: fields missing ("+l.Get("missing")+")")
+		case "quote":
+			st.Kind = "quote"
+			cb.mark(l.Time, "quote", fmt.Sprintf("Quotation: %.2f, %d lines", st.Total, st.Lines))
+		case "error":
+			st.Kind = "error"
+			cb.mark(l.Time, "quote_error", "Quotation failed: "+l.Get("error"))
+		default:
+			st.Kind = "other"
+		}
+		cb.call.Quotation = append(cb.call.Quotation, st)
+	case "tools: delivering a task's result":
+		cb.call.Quotation = append(cb.call.Quotation, QuoteStep{TS: cb.at(l.Time), Kind: "delivered", Task: l.Get("task"), Tool: l.Get("tool"), WaitedMS: l.N("waited_for_gap_ms"), Interrupting: l.Get("interrupting") == "true"})
 	}
 }
 

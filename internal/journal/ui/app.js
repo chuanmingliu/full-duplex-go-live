@@ -759,7 +759,10 @@
     hedge_refused: { name: 'second synthesis refused', shape: 'diao' },
     over: { name: 'turn over target', shape: 'none' },
     floor_raised: { name: 'the gate raised its floor to a line that never dipped', shape: 'up' },
-    barge_kept: { name: 'a sound over the answer was another voice\'s', shape: 'ring' }
+    barge_kept: { name: 'a sound over the answer was another voice\'s', shape: 'ring' },
+    quote_need: { name: 'quotation: fields missing', shape: 'dia' },
+    quote: { name: 'quotation made', shape: 'up' },
+    quote_error: { name: 'quotation failed', shape: 'tri' }
   };
 
   function Player(call, audioInfo, target) {
@@ -1498,6 +1501,27 @@
     return h('div', { class: 'chart' }, h('h3', null, title), body, note ? h('p', { class: 'chart-note' }, note) : null);
   }
 
+  function quotationBlock(call, state) {
+    var ul = h('ul', { class: 'qsteps' });
+    var asks = 0, needs = 0, quotes = 0, errors = 0;
+    (call.quotation || []).forEach(function (q) {
+      var what, cls = 'q-' + q.kind;
+      switch (q.kind) {
+        case 'memory': what = 'recorded ' + (q.keys || '?') + ' → memory v' + q.version; break;
+        case 'asked': asks++; what = q.tool + ' asked (' + q.task + ', on memory v' + q.version + ')'; break;
+        case 'need': needs++; what = 'lead service: fields missing — ' + (q.missing || '?') + (q.plan ? ' (plan ' + q.plan + ')' : ''); break;
+        case 'quote': quotes++; what = 'lead service: quote ' + (q.total ? q.total.toFixed(2) : '0') + ', ' + plural(q.lines || 0, 'line') + (q.skipped ? ', skipped ' + q.skipped : '') + (q.source ? ' (' + q.source + ')' : ''); break;
+        case 'error': errors++; what = 'lead service: ' + (q.error || 'error'); break;
+        case 'delivered': what = 'told the model (' + q.task + ')' + (q.waited_ms ? ' after waiting ' + q.waited_ms + ' ms for a gap' : '') + (q.interrupting ? ', interrupting' : ''); break;
+        default: what = q.kind + (q.error ? ': ' + q.error : '');
+      }
+      var t = h('a', { class: 'warn-t num', href: '#', onclick: function (e) { e.preventDefault(); if (state.player) state.player.playFrom(Math.max(0, q.t_s - 2)); } }, q.t_s.toFixed(1) + ' s');
+      ul.appendChild(h('li', { class: cls }, t, h('span', { class: 'q-what' }, what)));
+    });
+    var head = h('p', { class: 'facts' }, plural(asks, 'ask') + ', ' + plural(needs, 'need') + ', ' + plural(quotes, 'quote') + (errors ? ', ' + plural(errors, 'error') : '') + '.');
+    return h('div', { class: 'warns' }, head, ul);
+  }
+
   function eventsBlock(call) {
     var ev = call.events || {};
     function cnt(n, label, note) { return h('div', { class: 'cnt', title: note || null }, h('span', { class: 'cnt-v num' }, n === undefined ? '–' : n), h('span', { class: 'cnt-l' }, label)); }
@@ -1697,6 +1721,7 @@
     add('sec-turns', section('Turn by turn', plural((call.turns || []).length, 'answered turn') + ', from the caller’s last sound. A row opens what was said.', waterfall(call, target, state.player, state)));
     add('sec-stages', section('Where the time goes', 'This call’s median turn, stage by stage.', stageMedians(call)));
     add('sec-events', section('What else happened', 'Counted from the log, besides the answered turns.', eventsBlock(call)));
+    if (call.quotation && call.quotation.length) add('sec-quote', section('Quotation', 'Every step of the quotation, in order: what the assistant recorded (which fields, never the values), each ask, what the lead service answered, and when the model was told. Click a time to hear it.', quotationBlock(call, state)));
     add('sec-retro', section('Retrospective', d.retrospective && d.retrospective.updated_at ? 'Written ' + when(d.retrospective.updated_at) + '.' : null,
       d.retrospective && d.retrospective.text ? markdown(d.retrospective.text, d.repo_url) : h('p', { class: 'empty' }, 'No retrospective written yet.')));
     add('sec-notes', section('Your notes', 'How the call sounded to you: the one measurement no log has.', feedbackForm(call, d.feedback, state)));
