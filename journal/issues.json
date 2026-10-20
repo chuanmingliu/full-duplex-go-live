@@ -703,13 +703,14 @@
    "id": "ISS-042",
    "title": "The simulated customer reports the assistant's hangup as a failure and keeps no response gaps",
    "area": "simulator",
-   "status": "open (Codex, desk)",
+   "status": "fixed (Codex 905a255, 5128a8f)",
    "found": "2026-10-17",
    "found_on": "out-mvc8lypr-bnxc",
    "found_call": "out-mvc8lypr-bnxc",
    "symptom": "golive hung up after the farewell (BYE from Active Call); the run ended `failed: Active Call control disconnected`, 20 s later, after an 'inactivity limit' stop; checks indeterminate, 0 valid assistant_response_gaps, no completed report. Also: a run reserved on the desk at midday had expired to `failed` by 18:10 and the first dial went to it.",
    "cause": "The receiver treats the far end's BYE as its control link dropping rather than as the call ending; the desk does not show a reservation's expiry.",
-   "fix": "Asked of Codex (desk n23): a remote BYE ends the run `completed` with termination_reason `remote_hangup` and the full report. On our side: `call sim` should check the reserved run's phase before dialling and reserve afresh if it is not waiting."
+   "fix": "Asked of Codex (desk n23): a remote BYE ends the run `completed` with termination_reason `remote_hangup` and the full report. On our side: `call sim` should check the reserved run's phase before dialling and reserve afresh if it is not waiting.",
+   "verified_on": "out-mvgq73zj-jp6l: customer_hangup; out-mvgqd8dr-frtb: remote_hangup, completed, 15 valid gaps"
   },
   {
    "id": "ISS-043",
@@ -779,7 +780,7 @@
    "symptom": "item_13 and item_14 (3 and 6 characters, 再见) with tool_calls=0; no end_call on the call; the caller spoke twice more and hung up at 10:01:03.",
    "cause": "The hangup depended on the model remembering the tool in the same breath as its farewell; it does not always.",
    "fix": "An 'assistant' hangup rule, judged by the engine on the reply it has just finished saying (checkAssistantHangupRules, on turn completion): a match ends the call by the end_call path. In the default set as said_goodbye (再见|拜拜|不打扰您了); added to the box's hangup-rules as v2. Test: TestAGoodbyeSaidWithoutTheToolStillEndsTheCall.",
-   "verified_on": ""
+   "verified_on": "out-mvgqd8dr-frtb (simulated, 21:43): the model said goodbye without the tool; said_goodbye ended the call, gateway 200"
   }
  ]
 }
