@@ -786,13 +786,14 @@
    "id": "ISS-048",
    "title": "quote_total refused: 车损险 needs vehiclePrice, and the model had no price",
    "area": "tools",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-10-20",
    "found_on": "a real call",
    "found_call": "out-mvgqu7vv-cfqc",
    "symptom": "tools: task done tool=quote_total took_ms=15 err=HTTP 422 {\"error\":\"crm: 车损险 needs the variable vehiclePrice\"}; nothing read out.",
    "cause": "The quotation needs the vehicle price for 车损险; the lead had none and the model did not ask for it before calling the tool.",
-   "fix": "Owner's choice: the prompt collects the price before quoting, or the service quotes without 车损险 and the result says so, or the tool's description says the price is required."
+   "fix": "The intake (quote-plans on the panel): with a must field missing quote_total answers status=need with the questions in order; the model asks one at a time, records each with update_memory and re-asks; \"unknown\" on a skip field drops its coverages. Plans are per combination, chosen per call (quote_plan), the owner's rule of 10-20 22:04.",
+   "commit": "(this commit)"
   }
  ]
 }

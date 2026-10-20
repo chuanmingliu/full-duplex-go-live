@@ -168,12 +168,13 @@
   // ----- configs -----
   var CONFIG_HELP = {
     'quote-rules': 'Placeholder rules for a quote when no business service is configured: coverages with base premiums, discounts, a simulated delay. See internal/crm/quote.go.',
+    'quote-plans': 'What a quotation needs before it runs. Named plans; "default" picks one, a call can name another in its working memory (quote_plan — a lead’s own plan, once leads exist). A plan lists its coverages and its fields: name, "for" (the coverages that need it, ["*"] for all), "question" (what the assistant asks when it is unknown), "if_unknown" (skip the coverages or stop), "source" (rules, api or any — the business service looks a car up by its plate and does not need the price). With a must field missing the tool answers status=need and the assistant asks one question at a time; only with every field known is a quotation made. See internal/crm/plans.go.',
     'hangup-rules': 'When the assistant ends a call. Each rule is a case: kind "model" (the chat model judges "when" and says "farewell" before hanging up — add a case by adding a line), "keyword" (a regular expression on the caller’s words; the engine says the farewell and hangs up), "silence" (no word from the caller for "seconds"), "duration" (the call has run "seconds"). "enabled": false keeps a case without using it. Read by golive at the start of every call; a bad pattern is refused on save. See internal/tools/hangup.go.',
     'quote-api': 'The business’s quotation service: base_url up to and including /intranet, the channel ids, the coverage codes, the phone and vehicle variables and their defaults, and how long to poll. With a base_url set, quote_total goes here. See internal/crm/quoteapi.go.'
   };
   function configs(name) {
     setNav('configs');
-    page('Configs', 'Business configuration the service reads, in versions, as JSON. The assistant’s quotation tool reads quote-api (the business service) or quote-rules (the placeholder); hangup-rules says when a call ends.');
+    page('Configs', 'Business configuration the service reads, in versions, as JSON. The assistant’s quotation tool reads quote-api (the business service) or quote-rules (the placeholder); hangup-rules says when a call ends; quote-plans says what a quotation must know first.');
     var grid = h('div', { class: 'grid' });
     var list = h('div', { class: 'list' });
     var pane = h('div');

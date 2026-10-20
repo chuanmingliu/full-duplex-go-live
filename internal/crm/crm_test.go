@@ -484,7 +484,7 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 		Configs []ConfigVersion `json:"configs"`
 	}
 	// Three configs are seeded, listed by name: hangup-rules, quote-api, quote-rules.
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 3 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[2].Name != QuoteRulesName || list.Configs[2].Version != 1 || list.Configs[1].Name != QuoteAPIName {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 4 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[3].Name != QuoteRulesName || list.Configs[3].Version != 1 || list.Configs[1].Name != QuoteAPIName || list.Configs[2].Name != QuotePlansName {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
@@ -665,9 +665,11 @@ func TestAQuoteGoesToTheBusinessServiceWhenConfigured(t *testing.T) {
 	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 422 || !strings.Contains(body, "车辆信息有误") {
 		t.Fatalf("failed quote: %d %s", code, body)
 	}
-	// Nothing to quote for without a plate.
+	// Without a plate the intake asks for it first (the plan's api field),
+	// rather than the service failing on it.
 	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true}}
-	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 422 || !strings.Contains(body, "carNum") {
+	var need Need
+	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || len(need.Missing) == 0 || need.Missing[0].Field != "carNum" {
 		t.Fatalf("no plate: %d %s", code, body)
 	}
 }
@@ -699,5 +701,56 @@ func TestThePanelIsServedAndTheAPIStaysGated(t *testing.T) {
 	r.Body.Close()
 	if r.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("the API without a token answered %d", r.StatusCode)
+	}
+}
+
+// The intake: a quotation on the standard plan with a must field missing
+// does not run; it says what to ask, in order, and runs once the answers
+// are in. A field the customer cannot give, marked skip, drops its
+// coverages and the quotation says so.
+func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
+	fx := newFixture(t)
+	// The configuration list now carries quote-plans too.
+	var list struct {
+		Configs []ConfigVersion `json:"configs"`
+	}
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 4 {
+		t.Fatalf("configs: %d %s", code, body)
+	}
+	// As golive's tool call: the plan in memory, no vehicle price, no seats.
+	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "out-test", "memory_version": 3,
+		"memory": map[string]any{"quote": map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true}, "vehicleAge": 2, "ncd": 1}}
+	var need Need
+	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" {
+		t.Fatalf("intake: %d %s", code, body)
+	}
+	if len(need.Missing) != 2 || need.Missing[0].Field != "vehiclePrice" || need.Missing[1].Field != "seats" || need.Missing[0].Question == "" || need.Plan != "standard" {
+		t.Fatalf("missing %+v", need.Missing)
+	}
+	if len(need.Known) != 2 || need.Instruction == "" {
+		t.Fatalf("known %v instruction %q", need.Known, need.Instruction)
+	}
+	// The customer gives the price and does not know the seats: 座位险 is left out.
+	mem := call["memory"].(map[string]any)
+	mem["vehiclePrice"] = "12.8万"
+	mem["seats"] = "unknown"
+	var q Quote
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Total == 0 {
+		t.Fatalf("quote: %d %s", code, body)
+	}
+	if len(q.Lines) != 3 || len(q.Skipped) != 1 || q.Skipped[0] != "座位险" {
+		t.Fatalf("quote %+v", q)
+	}
+	// A plan named in memory applies: basic needs only age and ncd.
+	mem["quote_plan"] = "basic"
+	delete(mem, "vehiclePrice")
+	delete(mem, "seats")
+	mem["quote"] = map[string]any{"交强险": true, "三者险": "200万", "车损险": true}
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Total == 0 || len(q.Lines) != 2 || len(q.Skipped) != 1 || q.Skipped[0] != "车损险" {
+		t.Fatalf("basic plan: %d %s", code, body)
+	}
+	// A bad plan config is refused on save.
+	if code, _ := fx.do("PUT", "/api/configs/quote-plans?note=bad", map[string]any{"default": "x", "plans": map[string]any{}}, nil); code != 400 {
+		t.Fatalf("a bad plan config was accepted: %d", code)
 	}
 }

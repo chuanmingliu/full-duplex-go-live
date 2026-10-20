@@ -159,6 +159,11 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(QuotePlansName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(QuotePlansName, []byte(DefaultQuotePlans), "the standard motor plan and a basic one", "crm"); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(QuoteAPIName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(QuoteAPIName, []byte(DefaultQuoteAPI), "no base_url yet: quotes go to the rules", "crm"); err != nil {
 			events.Close()
@@ -184,10 +189,61 @@ func Open(cfg Config) (*Service, error) {
 // it stands in for a real rating service's time, so that the assistant's
 // handling of a slow answer can be exercised.
 func (s *Service) Quote(req QuoteRequest) (any, error) {
+	// The intake: no quotation on a plan with a must field missing.
+	if need, skipped := s.intake(req); need != nil {
+		return need, nil
+	} else if len(skipped) > 0 {
+		// The caller could not answer for these; they are left out of the
+		// selection and named in the answer.
+		for _, c := range skipped {
+			delete(req.Config, c)
+		}
+		req.Skipped = append(req.Skipped, skipped...)
+	}
 	if api, v := s.quoteAPI(); api != nil {
 		return s.quoteViaAPI(api, v, req)
 	}
-	return s.quoteViaRules(req)
+	q, err := s.quoteViaRules(req)
+	if err == nil && q != nil && len(req.Skipped) > 0 {
+		q.Skipped = append(q.Skipped, req.Skipped...)
+	}
+	return q, err
+}
+
+// intake checks the request against the quote plan it runs on.
+func (s *Service) intake(req QuoteRequest) (*Need, []string) {
+	v, err := s.configs.Get(QuotePlansName, 0)
+	if err != nil {
+		return nil, nil
+	}
+	plans, err := ParseQuotePlans(v.Body)
+	if err != nil {
+		return nil, nil
+	}
+	name, plan := plans.plan(req.Vars)
+	// Coverages outside the plan are not quoted; the quotation says so.
+	var outside []string
+	for c := range req.Config {
+		inPlan := false
+		for _, pc := range plan.Coverages {
+			if pc == c {
+				inPlan = true
+				break
+			}
+		}
+		if !inPlan && chosen(req.Config, c) {
+			outside = append(outside, c)
+		}
+	}
+	for _, c := range outside {
+		delete(req.Config, c)
+	}
+	source := "rules"
+	if api, _ := s.quoteAPI(); api != nil {
+		source = "api"
+	}
+	need, skipped := plan.Check(name, source, req.Config, req.Vars)
+	return need, append(skipped, outside...)
 }
 
 // quoteAPI is the service's config when it names a service to call.
@@ -601,6 +657,11 @@ func (s *Service) Handler() http.Handler {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 		if err != nil {
 			return fail(http.StatusBadRequest, "the config could not be read")
+		}
+		if r.PathValue("name") == QuotePlansName {
+			if _, err := ParseQuotePlans(raw); err != nil {
+				return fail(http.StatusBadRequest, "quote plans: %v", err)
+			}
 		}
 		if r.PathValue("name") == tools.HangupRulesName {
 			if _, errs := tools.ParseHangupRules(raw); len(errs) > 0 {

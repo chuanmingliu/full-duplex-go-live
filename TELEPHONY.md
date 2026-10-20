@@ -1333,6 +1333,33 @@ can be made slow for testing (`simulate_delay_ms` in the rules). Log lines:
 `tools: memory updated`, `tools: task submitted`, `tools: task done`,
 `tools: delivering a task's result`, and `tools: this call` at the end.
 
+**What a quotation must know first** (`quote-plans`, on the panel;
+`internal/crm/plans.go`). The owner's rule (10-20): essential fields are
+collected the way a form would collect them, one question at a time, and a
+quotation is made only when every must field is known. A *plan* is a
+combination — its coverages and its fields, each field saying which
+coverages need it (`"for": ["车损险"]`, `["*"]` for all), the question to ask
+when it is unknown, what to do if the customer cannot answer (`skip` the
+coverages that need it, or `stop`), and which way of quoting reads it
+(`source`: `rules`, `api` or any — the business service looks the car up by
+its plate and does not need a price). The default plan is `standard`; a
+call names another with `quote_plan` in its working memory (a lead's own
+plan, once leads are built), so leads can carry different combinations.
+`quote_total` runs the intake before anything else: with a must field
+missing it answers at once
+
+```json
+{"status":"need","plan":"standard","missing":[{"field":"vehiclePrice","for":["车损险"],"question":"您这辆车当时的购置价大概是多少？","if_unknown":"skip"}],"known":["vehicleAge"],"instruction":"…"}
+```
+
+and the tool's description tells the model to ask the first question,
+record the answer with `update_memory`, and ask for the quote again; a
+customer who does not know gives `"unknown"`, and a `skip` field then drops
+its coverages, named in the answer's `skipped`. Only with nothing missing
+does the quotation run (the background path, "please hold", as before).
+ISS-048 was the case: 车损险 with no price, the service refusing with a 422
+the model never spoke. Tests: `TestAQuotationAsksForItsMustFieldsBeforeItRuns`.
+
 **The business's quotation service.** The owner's interface document
 (2026-07-21) describes an asynchronous inquiry
 (`POST …/intranet/vehicle/innerProcess/vehicleApplyInquiryPriceAsync`, answers

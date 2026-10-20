@@ -573,6 +573,11 @@ API), an append-only checksummed event log, and a page over all of it
 is planned and not built (the owner agreed the plan on 10-13): leads and a
 variable catalogue, contacts with summaries that become variables,
 import/export, a scheduler. `internal/crm/model.go` already has those records' shapes.
+**Quote plans** (`quote-plans`, `internal/crm/plans.go`, 10-20): what a
+quotation must know first, per combination; `quote_total` answers
+`status=need` with the questions in order until every must field is in the
+working memory — the owner's "AskUserQuestion in voice". A lead's plan is
+`quote_plan` in memory once leads exist.
 
 - The owner's prompts are Jinja2 written for a Python renderer. `internal/
   jinja` must render them to the character: `testdata/gen.py` renders every

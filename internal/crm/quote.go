@@ -209,6 +209,9 @@ type QuoteRequest struct {
 	RulesVersion int `json:"rules_version,omitempty"`
 	// Call names the call this is for, when there is one.
 	Call string `json:"call,omitempty"`
+	// Skipped are coverages the intake left out (the customer could not
+	// answer for them, or they are outside the plan); echoed in the answer.
+	Skipped []string `json:"-"`
 }
 
 // toolCall is the shape golive's tool executor posts (internal/tools
