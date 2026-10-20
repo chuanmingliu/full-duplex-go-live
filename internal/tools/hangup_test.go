@@ -23,8 +23,13 @@ func TestTheDefaultHangupRulesParseAndReachTheToolDescription(t *testing.T) {
 			t.Fatalf("description lacks %q: %s", want, d)
 		}
 	}
-	if !hr.EngineRules()[0].Matches("我要投诉你们") {
-		t.Fatal("the complaint keyword rule did not match")
+	var matched, goodbye bool
+	for _, r := range hr.EngineRules() {
+		matched = matched || (r.Kind == "keyword" && r.Matches("我要投诉你们"))
+		goodbye = goodbye || (r.Kind == "assistant" && r.Matches("好的，再见。"))
+	}
+	if !matched || !goodbye {
+		t.Fatalf("complaint matched %v, assistant goodbye matched %v", matched, goodbye)
 	}
 }
 

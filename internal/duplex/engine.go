@@ -1864,6 +1864,7 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 			return
 		}
 		e.emitMetrics(turn, totalMS, false)
+		e.checkAssistantHangupRules(text)
 	})
 	e.deps.Emit(e.UsageEvent())
 }

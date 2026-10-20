@@ -1240,7 +1240,11 @@ one JSON object:
 
 `model` rules are written into `end_call`'s description, numbered, each
 with its farewell: the model says the farewell and calls the tool in the
-same breath. `keyword`, `silence` and `duration` rules the engine judges
+same breath. An `assistant` rule (`"pattern": "再见|拜拜|不打扰您了"`) is the
+net under that: when a reply the assistant has just finished saying
+matches, the call ends — on the 09:59 call of 10-20 the model said goodbye
+twice and never called the tool, and the line stayed up until the caller
+hung up (ISS-047). `keyword`, `silence` and `duration` rules the engine judges
 itself (`checkHangupRules`, on the tick and on each final transcript): it
 says the farewell as an opening line would be said, drops any answer in
 flight, and hangs up when the farewell has played — the same path as the

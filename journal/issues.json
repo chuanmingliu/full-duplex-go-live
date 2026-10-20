@@ -766,6 +766,20 @@
    "cause": "After end_call the engine still treated the farewell as any answer: yieldFloor cut it on a barge-in, beginGeneration answered the sound.",
    "fix": "While hangingUp(): yieldFloor keeps the floor, beginGeneration starts nothing, Interrupt is ignored; endCallWhenQuiet then waits for the whole farewell. Test: TestTheFarewellIsNotCutByASoundOverIt.",
    "verified_on": ""
+  },
+  {
+   "id": "ISS-047",
+   "title": "The model said goodbye twice without calling end_call; the line stayed up",
+   "area": "engine",
+   "status": "fixed",
+   "commit": "(this commit)",
+   "found": "2026-10-20",
+   "found_on": "a real call; the owner: 'the hangup was postponed'",
+   "found_call": "out-mvg1bnk3-ke09",
+   "symptom": "item_13 and item_14 (3 and 6 characters, 再见) with tool_calls=0; no end_call on the call; the caller spoke twice more and hung up at 10:01:03.",
+   "cause": "The hangup depended on the model remembering the tool in the same breath as its farewell; it does not always.",
+   "fix": "An 'assistant' hangup rule, judged by the engine on the reply it has just finished saying (checkAssistantHangupRules, on turn completion): a match ends the call by the end_call path. In the default set as said_goodbye (再见|拜拜|不打扰您了); added to the box's hangup-rules as v2. Test: TestAGoodbyeSaidWithoutTheToolStillEndsTheCall.",
+   "verified_on": ""
   }
  ]
 }

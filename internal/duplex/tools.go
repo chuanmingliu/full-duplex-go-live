@@ -309,6 +309,25 @@ func (e *Engine) loadHangupRules() tools.HangupRules {
 	return hr
 }
 
+// checkAssistantHangupRules runs when the assistant has finished saying a
+// reply: an assistant rule that matches it ends the call now — the reply
+// was the farewell. Called on the loop goroutine.
+func (e *Engine) checkAssistantHangupRules(said string) {
+	ts := e.tools
+	if ts == nil || ts.endCall != nil || said == "" || time.Since(ts.started) < minCallForEndCall {
+		return
+	}
+	for _, r := range ts.engine {
+		if r.Kind != "assistant" || !r.Matches(said) {
+			continue
+		}
+		e.log.Info("hangup: the assistant said goodbye; ending the call", "rule", r.ID, "chars", len([]rune(said)))
+		ts.endCall = &endCallRequest{reason: r.ID, at: time.Now()}
+		go e.endCallWhenQuiet(r.ID)
+		return
+	}
+}
+
 // noteCallerSpoke is the silence rule's clock: the caller's last word.
 func (e *Engine) noteCallerSpoke() {
 	if e.tools != nil {

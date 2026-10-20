@@ -21,20 +21,26 @@ import (
 //   - timed and keyword rules are judged by the engine itself: silence
 //     (the caller has said nothing for N seconds), duration (the call has
 //     run N seconds), keyword (the caller's words match a pattern). The
-//     engine says the rule's farewell and hangs up.
+//     engine says the rule's farewell and hangs up;
+//   - an assistant rule is judged on the assistant's own words: when a
+//     reply it has just finished saying matches the pattern (再见, 拜拜), the
+//     call ends — the model said goodbye and forgot the tool, which it did
+//     twice on the 09:59 call of 10-20. No farewell is added: it was the
+//     reply.
 type HangupRules struct {
 	Version int          `json:"version,omitempty"`
 	Rules   []HangupRule `json:"rules"`
 }
 
-// HangupRule is one case. Kind is model, silence, duration or keyword.
+// HangupRule is one case. Kind is model, silence, duration, keyword or
+// assistant.
 type HangupRule struct {
 	ID       string `json:"id"`
 	Name     string `json:"name,omitempty"`
 	Kind     string `json:"kind"`
 	When     string `json:"when,omitempty"`     // model: the condition, in the model's language
 	Seconds  int    `json:"seconds,omitempty"`  // silence, duration
-	Pattern  string `json:"pattern,omitempty"`  // keyword: a regular expression on the caller's words
+	Pattern  string `json:"pattern,omitempty"`  // keyword: a regular expression on the caller's words; assistant: on the assistant's
 	Farewell string `json:"farewell,omitempty"` // what to say before hanging up
 	Enabled  *bool  `json:"enabled,omitempty"`  // nil is enabled
 
@@ -63,6 +69,8 @@ const DefaultHangupRules = `{
     {"id": "done", "name": "流程完成", "kind": "model",
      "when": "本次通话的事项已经办完，客户没有其他问题",
      "farewell": "好的，那就先这样，再见。"},
+    {"id": "said_goodbye", "name": "助手已道别", "kind": "assistant",
+     "pattern": "再见|拜拜|不打扰您了"},
     {"id": "complaint", "name": "投诉或拒接", "kind": "keyword",
      "pattern": "投诉|别再打|不要再打|骚扰",
      "farewell": "好的，不再打扰您，再见。"},
@@ -96,7 +104,7 @@ func ParseHangupRules(raw []byte) (HangupRules, []error) {
 				errs = append(errs, fmt.Errorf("rule %q: %s needs 'seconds'", r.ID, r.Kind))
 				continue
 			}
-		case "keyword":
+		case "keyword", "assistant":
 			re, err := regexp.Compile(r.Pattern)
 			if err != nil || strings.TrimSpace(r.Pattern) == "" {
 				errs = append(errs, fmt.Errorf("rule %q: bad pattern: %v", r.ID, err))
@@ -113,9 +121,9 @@ func ParseHangupRules(raw []byte) (HangupRules, []error) {
 	return hr, errs
 }
 
-// Matches reports whether a keyword rule matches the caller's words.
+// Matches reports whether a keyword or assistant rule matches the words.
 func (r HangupRule) Matches(text string) bool {
-	return r.Kind == "keyword" && r.re != nil && r.re.MatchString(text)
+	return (r.Kind == "keyword" || r.Kind == "assistant") && r.re != nil && r.re.MatchString(text)
 }
 
 // ModelRules are the rules the model judges, enabled ones only.

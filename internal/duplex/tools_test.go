@@ -561,3 +561,54 @@ func TestTheFarewellIsNotCutByASoundOverIt(t *testing.T) {
 		t.Fatalf("the sound over the farewell was answered: calls %d resumed %d", llm.calls, resumed)
 	}
 }
+
+// goodbyeLLM says goodbye without calling end_call, as the real model did
+// twice on the 09:59 call of 10-20.
+type goodbyeLLM struct{}
+
+func (goodbyeLLM) Name() string { return "goodbye-no-tool" }
+func (goodbyeLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	out := make(chan provider.LLMDelta, 4)
+	go func() {
+		defer close(out)
+		time.Sleep(80 * time.Millisecond)
+		out <- provider.LLMDelta{Text: "好的，再见。"}
+	}()
+	return out, nil
+}
+
+// A goodbye the model says without the tool still ends the call: the
+// assistant rule in the default set matches the reply once it has played.
+func TestAGoodbyeSaidWithoutTheToolStillEndsTheCall(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true // no lead service: the built-in rules
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("好的拜拜")
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: goodbyeLLM{}, Emit: c.emit}, &slowQuote{})
+
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := hungUpWith(c); ok {
+			break
+		}
+		pause(e, rate, 200)
+	}
+	ev, ok := hungUpWith(c)
+	if !ok {
+		t.Fatal("the assistant said goodbye and the call did not end")
+	}
+	if ev.Reason != "said_goodbye" {
+		t.Fatalf("reason %q", ev.Reason)
+	}
+	if e.player.Speaking() {
+		t.Fatal("hung up while still speaking")
+	}
+}
