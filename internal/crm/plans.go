@@ -37,6 +37,11 @@ type QuotePlan struct {
 	Coverages []string `json:"coverages"`
 	// Fields the quotation may need, in the order to ask for them.
 	Fields []PlanField `json:"fields"`
+	// Options are the tiers a coverage comes in ("三者险": ["100万", …]); a
+	// coverage chosen without one of them is asked for before the
+	// quotation. "0" or "不要" among the options means none, and the
+	// coverage is left out.
+	Options map[string][]string `json:"options,omitempty"`
 }
 
 // PlanField is one variable the quotation reads.
@@ -64,7 +69,11 @@ const DefaultQuotePlans = `{
   "default": "standard",
   "plans": {
     "standard": {
-      "coverages": ["交强险", "车损险", "三者险", "座位险", "划痕险", "玻璃险"],
+      "coverages": ["交强险", "车损险", "三者险", "座位险", "划痕险", "玻璃险", "驾乘险"],
+      "options": {
+        "三者险": ["100万", "200万", "300万", "500万"],
+        "驾乘险": ["0", "30万", "50万", "80万"]
+      },
       "fields": [
         {"name": "carNum", "for": ["*"], "question": "您的车牌号是多少？", "source": "api"},
         {"name": "vehiclePrice", "for": ["车损险"], "question": "您这辆车当时的购置价大概是多少？", "if_unknown": "skip", "source": "rules"},
@@ -124,10 +133,14 @@ func ParseQuotePlans(raw []byte) (QuotePlans, error) {
 	return p, nil
 }
 
-// Missing is one must field the customer has not given.
+// Missing is one must field the customer has not given, or a coverage
+// chosen without its tier (Kind "choice": record the answer under
+// quote.<Field>).
 type Missing struct {
 	Field     string   `json:"field"`
+	Kind      string   `json:"kind,omitempty"` // "", or "choice"
 	For       []string `json:"for"`
+	Options   []string `json:"options,omitempty"`
 	Question  string   `json:"question"`
 	IfUnknown string   `json:"if_unknown,omitempty"`
 }
@@ -167,6 +180,26 @@ func known(vars map[string]any, name string) bool {
 func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need *Need, skipped []string) {
 	var missing []Missing
 	var have []string
+	// A coverage with tiers, chosen without one: ask which.
+	for _, c := range p.Coverages {
+		opts := p.Options[c]
+		if len(opts) == 0 || !chosen(config, c) {
+			continue
+		}
+		choice := strings.TrimSpace(fmt.Sprint(config[c]))
+		ok := false
+		for _, o := range opts {
+			if o == choice {
+				ok = true
+				break
+			}
+		}
+		if ok {
+			continue
+		}
+		missing = append(missing, Missing{Field: c, Kind: "choice", For: []string{c}, Options: opts,
+			Question: fmt.Sprintf("%s有这几个档位：%s，您想选哪一个？", c, strings.Join(opts, "、"))})
+	}
 	for _, f := range p.Fields {
 		if f.Source != "" && f.Source != "any" && f.Source != source {
 			continue
@@ -209,7 +242,7 @@ func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need
 		return nil, skipped
 	}
 	return &Need{Status: "need", Plan: name, Missing: missing, Known: have,
-		Instruction: "报价前还缺少必要信息。请按顺序一次只问一个问题，用户回答后用 update_memory 记录该字段，再重新调用 quote_total；若用户不知道且该字段允许 skip，记录为 \"unknown\" 后重新调用。"}, skipped
+		Instruction: "报价前还缺少必要信息。请按顺序一次只问一个问题，用户回答后用 update_memory 记录该字段，再重新调用 quote_total；若用户不知道且该字段允许 skip，记录为 \"unknown\" 后重新调用。kind 为 choice 的是险种档位，答案记录在 quote 下该险种名下（如 quote.驾乘险 = \"50万\"，选 0 表示不要）。"}, skipped
 }
 
 // plan picks the plan a request runs on: vars.quote_plan, else the default.

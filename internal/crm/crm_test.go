@@ -499,10 +499,16 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	if q.Total < want-0.05 || q.Total > want+0.05 || len(q.Lines) != 4 || len(q.Skipped) != 1 || q.Skipped[0] != "玻璃险" || q.RulesVersion != 1 || q.MemoryVersion != 7 {
 		t.Fatalf("quote %+v (want total %.2f)", q, want)
 	}
-	// An option the table does not have is an error the caller can act on.
+	// An option the plan does not have is asked for again, with the tiers.
 	bad := req
 	bad.Config = map[string]any{"三者险": "800万"}
-	if code, body := fx.do("POST", "/api/tools/quote", bad, nil); code != 422 || !strings.Contains(body, "800万") {
+	var need Need
+	if code, body := fx.do("POST", "/api/tools/quote", bad, &need); code != 200 || need.Status != "need" || len(need.Missing) != 1 || need.Missing[0].Kind != "choice" || need.Missing[0].Field != "三者险" || len(need.Missing[0].Options) != 4 {
+		t.Fatalf("bad option: %d %s", code, body)
+	}
+	// A tier the plan allows but the rules do not price is still a 422.
+	bad.Config = map[string]any{"三者险": "100万", "划痕险": "9999"}
+	if code, body := fx.do("POST", "/api/tools/quote", bad, nil); code != 422 || !strings.Contains(body, "9999") {
 		t.Fatalf("bad option: %d %s", code, body)
 	}
 	// New rules: a new version, used from then on.
@@ -740,6 +746,19 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	}
 	if len(q.Lines) != 3 || len(q.Skipped) != 1 || q.Skipped[0] != "座位险" {
 		t.Fatalf("quote %+v", q)
+	}
+	// 驾乘险 chosen without its tier is asked for; "0" means none.
+	mem["quote"].(map[string]any)["驾乘险"] = true
+	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || need.Missing[0].Field != "驾乘险" || need.Missing[0].Kind != "choice" || len(need.Missing[0].Options) != 4 {
+		t.Fatalf("驾乘险 tier: %d %s", code, body)
+	}
+	mem["quote"].(map[string]any)["驾乘险"] = "50万"
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || len(q.Lines) != 4 {
+		t.Fatalf("驾乘险 50万: %d %s", code, body)
+	}
+	mem["quote"].(map[string]any)["驾乘险"] = "0"
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || len(q.Lines) != 3 {
+		t.Fatalf("驾乘险 0: %d %s", code, body)
 	}
 	// A plan named in memory applies: basic needs only age and ncd.
 	mem["quote_plan"] = "basic"

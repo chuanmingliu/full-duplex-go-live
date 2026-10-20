@@ -302,7 +302,7 @@ func selected(choice any) bool {
 		return x
 	case string:
 		s := strings.TrimSpace(x)
-		return s != "" && s != "false" && s != "否" && s != "不要" && s != "无"
+		return s != "" && s != "false" && s != "否" && s != "不要" && s != "无" && s != "0"
 	case nil:
 		return false
 	}

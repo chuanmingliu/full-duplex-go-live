@@ -1345,6 +1345,10 @@ coverages that need it, or `stop`), and which way of quoting reads it
 its plate and does not need a price). The default plan is `standard`; a
 call names another with `quote_plan` in its working memory (a lead's own
 plan, once leads are built), so leads can carry different combinations.
+A coverage that comes in tiers lists them under `options`
+(`"驾乘险": ["0", "30万", "50万", "80万"]`, the owner's tiers of 10-20); chosen
+without one of them it is asked for as a `choice` (recorded under
+`quote.<coverage>`), and `"0"` or `不要` means none.
 `quote_total` runs the intake before anything else: with a must field
 missing it answers at once
 

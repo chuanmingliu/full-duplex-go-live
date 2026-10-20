@@ -221,6 +221,12 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string) {
 		return nil, nil
 	}
 	name, plan := plans.plan(req.Vars)
+	// A coverage declined ("0", "不要", false) is not in the selection.
+	for c, v := range req.Config {
+		if !selected(v) {
+			delete(req.Config, c)
+		}
+	}
 	// Coverages outside the plan are not quoted; the quotation says so.
 	var outside []string
 	for c := range req.Config {
