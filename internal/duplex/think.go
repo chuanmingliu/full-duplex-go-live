@@ -324,6 +324,9 @@ func (e *Engine) systemPrompt(front bool) string {
 	if !e.clientMode() {
 		parts = append(parts, strings.TrimSpace(e.backend.Instructions))
 	}
+	// The engine's own rules for its tools, after the owner's prompt so
+	// they stand where a later instruction outweighs an earlier one.
+	parts = append(parts, strings.TrimSpace(e.opts.Cfg.InstructionsAppend))
 	if front {
 		parts = append(parts, delegationPolicy)
 	}

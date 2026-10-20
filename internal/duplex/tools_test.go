@@ -612,3 +612,20 @@ func TestAGoodbyeSaidWithoutTheToolStillEndsTheCall(t *testing.T) {
 		t.Fatal("hung up while still speaking")
 	}
 }
+
+// The engine's own tool rules follow the owner's prompt in the system
+// prompt, so a prompt that says "no direct quotes" is outweighed by the
+// rule that a customer who asks for a price gets one through the tool.
+func TestTheToolRulesFollowTheOwnersPrompt(t *testing.T) {
+	opts := quoteConfig()
+	opts.Instructions = "你是小翠儿。不能直接报价。"
+	opts.Cfg.InstructionsAppend = "【工具规则】客户要报价时调用 quote_total。"
+	opts.ClientRate = opts.Cfg.ClientRate
+	opts.SessionID = "test"
+	e := New(opts, Deps{ASR: newTrailingASR("x"), LLM: mock.NewLLM(), TTS: mock.NewTTS(), Emit: func(any) {}})
+	got := e.systemPrompt(false)
+	i, j := strings.Index(got, "不能直接报价"), strings.Index(got, "【工具规则】")
+	if i < 0 || j < 0 || j < i {
+		t.Fatalf("prompt order wrong: %q", got)
+	}
+}

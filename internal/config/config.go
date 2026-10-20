@@ -156,6 +156,14 @@ type Config struct {
 	// for a provider to be handed "marin".
 	VoiceAliases map[string]string `json:"voice_aliases"`
 	Instructions string            `json:"instructions"`
+	// InstructionsAppend is added after whatever instructions the session
+	// arrives with (the owner's prompt from the originator's page included):
+	// the engine's own rules for its tools, which a prompt written before
+	// the tools existed does not know. The telephony profile uses it to say
+	// that a customer who asks for a price gets one through quote_total —
+	// the owner's prompt of 10-20 said quotes come through the link, and the
+	// assistant refused to quote on every call (the owner's finding, 23:30).
+	InstructionsAppend string `json:"instructions_append"`
 	// Greeting is spoken as soon as a session opens, before the caller says
 	// anything. Empty means the assistant waits to be spoken to.
 	Greeting string  `json:"greeting"`
