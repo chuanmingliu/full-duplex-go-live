@@ -860,3 +860,48 @@ func TestTelemetryEventIDsAreUniqueAcrossRestartsAndShort(t *testing.T) {
 		t.Errorf("sequence %v and the count in the id %q differ", ev["sequence"], count)
 	}
 }
+
+// The assistant's hangup must reach the phone line. Closing the socket does
+// not do it (10-19 23:16: goodbye said, line up until the caller hung up),
+// so the session tells the gateway: Active Call's command route for the
+// call, with the hangup command, before the socket closes.
+func TestTheAssistantsHangupIsSentToTheGateway(t *testing.T) {
+	var mu sync.Mutex
+	var gotPath, gotBody string
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		gotPath, gotBody = r.Method+" "+r.URL.Path, string(b)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer gateway.Close()
+
+	ts, srv, _ := newServerWith(t, func(c *config.Config) {
+		c.Realtime.SampleRate = 16000
+		c.HangupURL = gateway.URL + "/command/{call}"
+	})
+	var emit func(any)
+	srv.Factory = func(o duplex.Options, d duplex.Deps) *duplex.Engine {
+		mu.Lock()
+		emit = d.Emit
+		mu.Unlock()
+		return duplex.New(o, d)
+	}
+	const call = "out-mvfeat7d-nmvx"
+	c := dialRealtime(t, ts, "/v1/realtime?call="+call)
+	sendRaw(t, c.conn, activeCallSessionUpdate)
+	c.first("session.updated", 2*time.Second)
+	await(t, "the engine", 2*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return emit != nil })
+
+	emit(live.HangupEvent{Envelope: live.Envelope{Type: "session.hangup"}, Reason: "客户道别"})
+	await(t, "the gateway to be told", 3*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return gotPath != "" })
+	mu.Lock()
+	defer mu.Unlock()
+	if gotPath != "POST /command/"+call {
+		t.Fatalf("gateway got %q; wanted POST /command/%s", gotPath, call)
+	}
+	if !strings.Contains(gotBody, `"command":"hangup"`) {
+		t.Fatalf("body %q; wanted the hangup command", gotBody)
+	}
+}

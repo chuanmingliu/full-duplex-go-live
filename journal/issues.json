@@ -738,6 +738,20 @@
    "cause": "enrolFocus offered only utterances clean from their first millisecond: not a barge-in, not within the 600 ms echo tail of the assistant's last word, 600 ms voiced. The caller replied within 0.9 s of the greeting and interrupted four of six answers; nothing qualified.",
    "fix": "The clean tail is offered: from Tracker.MaskedUntil(start, end+tail) to the utterance's end when the proportional voiced part is >= 600 ms; barge-ins included. Logged with trimmed_ms and barge_in.",
    "verified_on": ""
+  },
+  {
+   "id": "ISS-045",
+   "title": "The assistant's hangup closed golive's socket but the phone line stayed up",
+   "area": "line",
+   "status": "fixed",
+   "commit": "(this commit)",
+   "found": "2026-10-19",
+   "found_on": "the first real call that ended with a goodbye",
+   "found_call": "out-mvfeat7d-nmvx",
+   "symptom": "end_call accepted, farewell played, session closed assistant_hangup at 23:16:33; the owner heard the goodbye and the line stayed up until he hung up (his word: option 1).",
+   "cause": "Active Call hangs up on a command from its controller (Aria) over the control WebSocket or POST /command/<dialog>; the agent's socket closing is not that.",
+   "fix": "config.HangupURL (telephony: http://127.0.0.1:8081/command/{call}); Session.hangupLine POSTs the hangup command there before closing. The route and body are what Codex's receiver uses (his reply over Reason Network, 08:51).",
+   "verified_on": ""
   }
  ]
 }

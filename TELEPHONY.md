@@ -1239,6 +1239,19 @@ begins late is still played out. The simulated customer saw our BYE as its
 control link failing (`failed: Active Call control disconnected`, 20 s
 later) rather than the call ending; that is Codex's (ISS-042).
 
+On the real line, closing the socket did **not** hang up the phone (10-19
+23:16: the farewell played, `session: the assistant hung up`, and the owner
+had to hang up himself). The gateway's BYE comes from its controller, not
+from its agent going away. So the session now tells the gateway directly
+(ISS-045): `hangup_url` (`http://127.0.0.1:8081/command/{call}` in the
+telephony profile) is Active Call's command route for the call's dialog —
+the call id the originator gave golive at session open — and golive POSTs
+`{"command":"hangup","reason":"normal","initiator":"system","refer":false}`
+there before closing the socket (the same thing Codex's receiver sends on
+its side; he told us the shape). `session: the gateway was told to hang
+up … status=200` is what to look for; a 404 `not_found` means the id was
+not the dialog's. Test: `TestTheAssistantsHangupIsSentToTheGateway`.
+
 ## Working memory, and work that takes longer than a turn
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",

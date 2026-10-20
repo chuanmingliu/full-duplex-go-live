@@ -37,6 +37,7 @@
   "tools_workers": 4,
   "tools_deliver_wait_ms": 1500,
   "tools_end_call": true,
+    "hangup_url": "http://127.0.0.1:8081/command/{call}",
   "tools": [
     {
       "name": "quote_total",

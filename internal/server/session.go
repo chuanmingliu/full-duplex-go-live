@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -284,6 +285,36 @@ func (s *Session) Serve(ctx context.Context) {
 // the lag worse.
 func (s *Session) Emit(event any) { s.deliver(nil, event) }
 
+// hangupLine asks the call gateway to end the phone call: Active Call's
+// command route takes {"command":"hangup"} for the call's dialog, which is
+// the call id its controller gave golive at session open. Done before the
+// socket closes, synchronously but briefly, so the BYE goes out while the
+// farewell's last audio is still fresh. A session with no call id (the
+// browser demo, the bench) has no line to hang up.
+func (s *Session) hangupLine(reason string) {
+	url := s.cfg.HangupURL
+	call := s.CallID()
+	if url == "" || call == "" {
+		return
+	}
+	url = strings.ReplaceAll(url, "{call}", call)
+	body := `{"command":"hangup","reason":"normal","initiator":"system","refer":false}`
+	client := hangupClient
+	if client == nil {
+		client = &http.Client{Timeout: 2 * time.Second}
+	}
+	resp, err := client.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		s.log.Warn("session: the gateway could not be told to hang up", "err", err, "call", call)
+		return
+	}
+	defer resp.Body.Close()
+	s.log.Info("session: the gateway was told to hang up", "call", call, "status", resp.StatusCode, "reason", reason)
+}
+
+// hangupClient is the HTTP client hangupLine uses; tests replace it.
+var hangupClient *http.Client
+
 // reply queues an event for one connection only: the answer to a command it
 // sent, which is nobody else's business.
 func (s *Session) reply(to *peer, event any) { s.deliver(to, event) }
@@ -291,10 +322,11 @@ func (s *Session) reply(to *peer, event any) { s.deliver(to, event) }
 func (s *Session) deliver(only *peer, event any) {
 	switch ev := event.(type) {
 	case live.HangupEvent:
-		// The assistant ended the call. Closing the connection is the
-		// hangup: the gateway on the other end sends BYE when its agent
-		// goes away. Nothing is sent to the client.
+		// The assistant ended the call. The phone line is hung up by
+		// telling the gateway so (hangupLine); closing the connection alone
+		// leaves a phone call up. Nothing is sent to the client.
 		s.log.Info("session: the assistant hung up", "reason", ev.Reason)
+		s.hangupLine(ev.Reason)
 		s.setCloseReason(live.CloseAssistantHangup)
 		s.finish()
 		return
