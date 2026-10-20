@@ -772,7 +772,7 @@
    "title": "The model said goodbye twice without calling end_call; the line stayed up",
    "area": "engine",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "0dbfdba",
    "found": "2026-10-20",
    "found_on": "a real call; the owner: 'the hangup was postponed'",
    "found_call": "out-mvg1bnk3-ke09",
