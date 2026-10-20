@@ -793,7 +793,7 @@
    "symptom": "tools: task done tool=quote_total took_ms=15 err=HTTP 422 {\"error\":\"crm: 车损险 needs the variable vehiclePrice\"}; nothing read out.",
    "cause": "The quotation needs the vehicle price for 车损险; the lead had none and the model did not ask for it before calling the tool.",
    "fix": "The intake (quote-plans on the panel): with a must field missing quote_total answers status=need with the questions in order; the model asks one at a time, records each with update_memory and re-asks; \"unknown\" on a skip field drops its coverages. Plans are per combination, chosen per call (quote_plan), the owner's rule of 10-20 22:04.",
-   "commit": "(this commit)"
+   "commit": "6a6b079"
   }
  ]
 }
