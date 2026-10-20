@@ -744,7 +744,7 @@
    "title": "The assistant's hangup closed golive's socket but the phone line stayed up",
    "area": "line",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "efe4ea3",
    "found": "2026-10-19",
    "found_on": "the first real call that ended with a goodbye",
    "found_call": "out-mvfeat7d-nmvx",
