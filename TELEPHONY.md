@@ -1222,6 +1222,36 @@ gives the last audio 700 ms to reach the line, and closes the session; the
 gateway sends BYE when its agent goes away, and that is the hangup. The
 journal records the close reason `assistant_hangup`.
 
+**The cases, on the panel.** Which situations end a call is business
+knowledge, so it lives where the owner edits it: the lead service's config
+`hangup-rules` (the panel's Configs page, versioned like the quote rules;
+`internal/tools/hangup.go`). golive reads it at the start of every call
+(`hangup_rules: true`, through `tools_base_url` with the tools' token) and
+falls back to the built-in set if the service cannot be reached. A rule is
+one JSON object:
+
+```json
+{"id": "wrong_number", "name": "打错电话", "kind": "model",
+ "when": "对方表示不是本人、打错了", "farewell": "抱歉打扰了，再见。"}
+{"id": "complaint", "kind": "keyword", "pattern": "投诉|别再打", "farewell": "好的，不再打扰您，再见。"}
+{"id": "silence", "kind": "silence", "seconds": 25, "farewell": "听不到您的声音，我稍后再联系您，再见。"}
+{"id": "too_long", "kind": "duration", "seconds": 900, "farewell": "今天先聊到这里，再见。"}
+```
+
+`model` rules are written into `end_call`'s description, numbered, each
+with its farewell: the model says the farewell and calls the tool in the
+same breath. `keyword`, `silence` and `duration` rules the engine judges
+itself (`checkHangupRules`, on the tick and on each final transcript): it
+says the farewell as an opening line would be said, drops any answer in
+flight, and hangs up when the farewell has played — the same path as the
+model's `end_call`, reason = the rule's id. `"enabled": false` keeps a
+case without using it; a bad pattern is refused on save. The default set
+(goodbye, refused twice, wrong number, done, complaint, 25 s silence, 15
+min) is seeded on a lead service that has none. Log lines: `hangup: rules
+from the lead service version=N model=K engine=M`, `hangup: a rule applies
+rule=…`. Tests: `TestTheSilenceRuleSaysItsFarewellAndHangsUp`,
+`TestTheKeywordRuleEndsTheCallOnTheCallersWords`.
+
 Guards: `end_call` in the first ten seconds of a call is refused and the
 model told to carry on; a farewell that never begins does not keep the
 call up (20 s bound); the request is honoured once. The tool is described

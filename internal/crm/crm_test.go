@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/chuanmingliu/golive/internal/tools"
 	"io"
 	"log/slog"
 	"net/http"
@@ -482,7 +483,8 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 2 || list.Configs[1].Name != QuoteRulesName || list.Configs[1].Version != 1 || list.Configs[0].Name != QuoteAPIName {
+	// Three configs are seeded, listed by name: hangup-rules, quote-api, quote-rules.
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 3 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[2].Name != QuoteRulesName || list.Configs[2].Version != 1 || list.Configs[1].Name != QuoteAPIName {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},

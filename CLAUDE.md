@@ -686,9 +686,15 @@ voice from opening a turn in the first place are not built.
 (`internal/tools.EndCallTool`, `Engine.requestEndCall`, `endCallWhenQuiet`
 in `internal/duplex/tools.go`); the engine emits `live.HangupEvent` once the
 farewell has played and the session closes the socket
-(`CloseAssistantHangup`), which makes Active Call send BYE. Refused in the
-first 10 s. "Hanging up" in `TELEPHONY.md`. The simulated customer needs
-the same on its side (Codex, desk).
+(`CloseAssistantHangup`) after telling the gateway (`hangup_url`, Active
+Call's `/command/{call}`; the socket closing alone does not drop the line).
+Refused in the first 10 s. **The cases are the owner's**: the lead
+service's config `hangup-rules` (panel → Configs), read at every call
+start (`hangup_rules: true`); `model` rules go into `end_call`'s
+description, `keyword`/`silence`/`duration` rules the engine judges itself
+(`checkHangupRules`) and says the rule's farewell. `tools.DefaultHangupRules`
+is the fallback and the seed. "Hanging up" in `TELEPHONY.md`. The simulated
+customer hangs up on its side since Codex's 905a255/5128a8f.
 
 ## Working memory and background tools
 

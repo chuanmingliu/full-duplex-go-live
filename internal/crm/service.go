@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chuanmingliu/golive/internal/tools"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -150,6 +151,11 @@ func Open(cfg Config) (*Service, error) {
 	if _, err := s.configs.Get(QuoteRulesName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(QuoteRulesName, []byte(DefaultQuoteRules), "placeholder rules: every number is made up", "crm"); err != nil {
 			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(tools.HangupRulesName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.HangupRulesName, []byte(tools.DefaultHangupRules), "the cases the prompt already describes", "crm"); err != nil {
 			return nil, err
 		}
 	}
@@ -595,6 +601,15 @@ func (s *Service) Handler() http.Handler {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 		if err != nil {
 			return fail(http.StatusBadRequest, "the config could not be read")
+		}
+		if r.PathValue("name") == tools.HangupRulesName {
+			if _, errs := tools.ParseHangupRules(raw); len(errs) > 0 {
+				msgs := make([]string, 0, len(errs))
+				for _, e := range errs {
+					msgs = append(msgs, e.Error())
+				}
+				return fail(http.StatusBadRequest, "hangup rules: %s", strings.Join(msgs, "; "))
+			}
 		}
 		if r.PathValue("name") == QuoteRulesName {
 			var rules QuoteRules

@@ -47,6 +47,13 @@ type toolState struct {
 	// endCall is the model's request to hang up, once made.
 	started time.Time
 	endCall *endCallRequest
+	// rules are the hangup rules in force (see tools.HangupRules); engine
+	// is the subset the engine judges itself, checked on the tick.
+	rules  tools.HangupRules
+	engine []tools.HangupRule
+	// lastCallerAt is when the caller last finished saying something (the
+	// silence rule's clock); zero until they have.
+	lastCallerAt time.Time
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
 	// stats
@@ -65,7 +72,9 @@ func (e *Engine) setupTools() {
 		ts.defs = append(ts.defs, tools.UpdateMemoryTool)
 	}
 	if cfg.ToolsEndCall {
-		ts.defs = append(ts.defs, tools.EndCallTool)
+		ts.rules = e.loadHangupRules()
+		ts.engine = ts.rules.EngineRules()
+		ts.defs = append(ts.defs, ts.rules.EndCallTool())
 	}
 	for _, c := range cfg.Tools {
 		if c.Name == "" || c.Name == tools.UpdateMemoryTool.Name {
@@ -264,7 +273,7 @@ func (e *Engine) requestEndCall(c provider.ToolCall) string {
 		return `{"status":"refused","note":"通话刚开始，不能挂断；请继续对话"}`
 	}
 	if e.tools.endCall == nil {
-		e.tools.endCall = &endCallRequest{reason: args.Reason, at: time.Now()}
+		e.tools.endCall = &endCallRequest{reason: args.Reason, at: time.Now(), byModel: true}
 		e.log.Info("tools: end_call: the call will end when the answer has played", "reason", args.Reason)
 		go e.endCallWhenQuiet(args.Reason)
 	}
@@ -274,6 +283,90 @@ func (e *Engine) requestEndCall(c provider.ToolCall) string {
 // minCallForEndCall is how old a call must be before the model may end it.
 var minCallForEndCall = 10 * time.Second
 
+// loadHangupRules reads the rules from the lead service when the profile
+// says to, and falls back to the built-in set: a call must not start
+// without a way to end.
+func (e *Engine) loadHangupRules() tools.HangupRules {
+	cfg := e.opts.Cfg
+	if cfg.HangupRules && cfg.ToolsBaseURL != "" {
+		token := ""
+		if cfg.ToolsTokenFile != "" {
+			if b, err := os.ReadFile(cfg.ToolsTokenFile); err == nil {
+				token = strings.TrimSpace(string(b))
+			}
+		}
+		hr, errs := tools.FetchHangupRules(cfg.ToolsBaseURL, token, 2*time.Second)
+		if len(hr.Rules) > 0 {
+			e.log.Info("hangup: rules from the lead service", "version", hr.Version, "model", len(hr.ModelRules()), "engine", len(hr.EngineRules()), "dropped", len(errs))
+			for _, err := range errs {
+				e.log.Warn("hangup: a rule was dropped", "err", err)
+			}
+			return hr
+		}
+		e.log.Warn("hangup: the lead service's rules could not be read; using the built-in set", "errs", errs)
+	}
+	hr, _ := tools.ParseHangupRules([]byte(tools.DefaultHangupRules))
+	return hr
+}
+
+// noteCallerSpoke is the silence rule's clock: the caller's last word.
+func (e *Engine) noteCallerSpoke() {
+	if e.tools != nil {
+		e.tools.lastCallerAt = time.Now()
+	}
+}
+
+// checkHangupRules judges the engine's rules once a tick: silence, duration,
+// and — on the caller's final words — keyword. A rule that applies is
+// acted on once: the farewell is said as an opening line would be, and
+// the call ends when it has played, exactly as the model's end_call does.
+func (e *Engine) checkHangupRules(callerWords string) {
+	ts := e.tools
+	if ts == nil || ts.endCall != nil || len(ts.engine) == 0 {
+		return
+	}
+	age := time.Since(ts.started)
+	if age < minCallForEndCall {
+		return
+	}
+	for _, r := range ts.engine {
+		switch r.Kind {
+		case "keyword":
+			if callerWords == "" || !r.Matches(callerWords) {
+				continue
+			}
+		case "duration":
+			if age < time.Duration(r.Seconds)*time.Second {
+				continue
+			}
+			// At a quiet moment, not over the caller.
+			if e.userOpen || e.assistantHasFloor() {
+				continue
+			}
+		case "silence":
+			since := ts.lastCallerAt
+			if since.IsZero() {
+				since = ts.started
+			}
+			if time.Since(since) < time.Duration(r.Seconds)*time.Second || e.userOpen || e.assistantHasFloor() {
+				continue
+			}
+		default:
+			continue
+		}
+		e.log.Info("hangup: a rule applies", "rule", r.ID, "kind", r.Kind, "name", r.Name)
+		ts.endCall = &endCallRequest{reason: r.ID, at: time.Now()}
+		if r.Kind == "keyword" {
+			e.abandonSpeculation("the hangup rule " + r.ID)
+		}
+		if r.Farewell != "" {
+			e.Say(r.Farewell)
+		}
+		go e.endCallWhenQuiet(r.ID)
+		return
+	}
+}
+
 // hangingUp says whether the model's request to end the call stands.
 func (e *Engine) hangingUp() bool {
 	return e.tools != nil && e.tools.endCall != nil
@@ -282,6 +375,9 @@ func (e *Engine) hangingUp() bool {
 type endCallRequest struct {
 	reason string
 	at     time.Time
+	// byModel: the model asked (end_call); otherwise one of the engine's
+	// own rules did.
+	byModel bool
 }
 
 // endCallWhenQuiet waits for the player to finish what it has (the farewell

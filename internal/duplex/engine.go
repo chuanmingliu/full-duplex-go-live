@@ -787,6 +787,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.speechEndAt = time.Now()
 		e.speechEndMS = d.EndMS
 		e.speechEndSilenceMS = int64(d.SilenceMS)
+		e.noteCallerSpoke()
 		e.enrolFocus(d.StartMS, d.EndMS, d.ActiveMS, d.BargeIn)
 		// ...but only for a turn this utterance actually produced. A turn that
 		// was already live when the caller started talking belongs to an
@@ -832,6 +833,7 @@ func (e *Engine) onTick() {
 	e.maybeHoldingFiller()
 	e.judgeUtteranceFocus()
 	e.judgeFocus()
+	e.checkHangupRules("")
 	e.maybeDeliver()
 	e.drainDeferred()
 	// The session's lifetime is the session's business: the server bounds it

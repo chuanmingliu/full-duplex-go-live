@@ -127,7 +127,15 @@ type Config struct {
 	// session's socket alone does not end a phone call (10-19 23:16: the
 	// assistant said goodbye and the line stayed up until the caller hung
 	// up). Empty: nothing is sent and only the socket closes.
-	HangupURL          string `json:"hangup_url"`
+	HangupURL string `json:"hangup_url"`
+	// HangupRules turns on the hangup rules: the cases that end a call,
+	// read from the lead service (ToolsBaseURL, the tools' token) at session
+	// start as the versioned config `hangup-rules` — the owner edits them on
+	// its panel. Model rules go into end_call's description; silence,
+	// duration and keyword rules the engine judges itself, says the rule's
+	// farewell and hangs up. Off, or the service unreachable: the built-in
+	// default set (tools.DefaultHangupRules) applies when tools_end_call is on.
+	HangupRules        bool   `json:"hangup_rules"`
 	ToolsTokenFile     string `json:"tools_token_file"`
 	ToolsWorkers       int    `json:"tools_workers"`
 	ToolsDeliverWaitMS int    `json:"tools_deliver_wait_ms"`

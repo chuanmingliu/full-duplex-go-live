@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -390,5 +392,132 @@ func TestEndCallIsRefusedInTheFirstSecondsOfACall(t *testing.T) {
 	}
 	if e.tools.endCall != nil {
 		t.Fatal("an early end_call was accepted")
+	}
+}
+
+// rulesService serves one hangup-rules config the way the lead service does.
+func rulesService(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/configs/hangup-rules" {
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = w.Write([]byte(`{"config":{"name":"hangup-rules","version":7,"body":` + body + `}}`))
+	}))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// shortLLM answers every turn with three characters, so the assistant is
+// quiet again at once.
+type shortLLM struct{}
+
+func (shortLLM) Name() string { return "short" }
+func (shortLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	out := make(chan provider.LLMDelta, 4)
+	go func() {
+		defer close(out)
+		time.Sleep(80 * time.Millisecond)
+		out <- provider.LLMDelta{Text: "好的。"}
+	}()
+	return out, nil
+}
+
+func hungUpWith(c *collector) (live.HangupEvent, bool) {
+	ev := c.find(func(ev any) bool { _, ok := ev.(live.HangupEvent); return ok })
+	if ev == nil {
+		return live.HangupEvent{}, false
+	}
+	return ev.(live.HangupEvent), true
+}
+
+// A caller who has gone quiet is not kept on the line for ever: the silence
+// rule from the owner's panel says the farewell and hangs up.
+func TestTheSilenceRuleSaysItsFarewellAndHangsUp(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	svc := rulesService(t, `{"rules":[{"id":"quiet","kind":"silence","seconds":2,"farewell":"听不到您，再见。"}]}`)
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	opts.Cfg.HangupRules = true
+	opts.Cfg.ToolsBaseURL = svc.URL
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊")
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: shortLLM{}, Emit: c.emit}, &slowQuote{})
+	if e.tools.rules.Version != 7 || len(e.tools.engine) != 1 {
+		t.Fatalf("rules not read from the service: %+v", e.tools.rules)
+	}
+
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the answer", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	// The caller says nothing more.
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := hungUpWith(c); ok {
+			break
+		}
+		pause(e, rate, 200)
+	}
+	ev, ok := hungUpWith(c)
+	if !ok {
+		t.Fatal("the silence rule did not hang up")
+	}
+	if ev.Reason != "quiet" {
+		t.Fatalf("reason %q", ev.Reason)
+	}
+	if !strings.Contains(c.saidAll(), "听不到您") {
+		t.Fatalf("the farewell was not said: %q", c.saidAll())
+	}
+}
+
+// The caller's own words can end the call: a keyword rule (a complaint, a
+// "stop calling") says the farewell instead of an answer, and hangs up.
+func TestTheKeywordRuleEndsTheCallOnTheCallersWords(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	svc := rulesService(t, `{"rules":[{"id":"complaint","kind":"keyword","pattern":"投诉|别再打","farewell":"好的，不再打扰，再见。"}]}`)
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	opts.Cfg.HangupRules = true
+	opts.Cfg.ToolsBaseURL = svc.URL
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("别再打了")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &slowQuote{})
+
+	speak(e, rate, 700)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := hungUpWith(c); ok {
+			break
+		}
+		pause(e, rate, 200)
+	}
+	ev, ok := hungUpWith(c)
+	if !ok {
+		t.Fatal("the keyword rule did not hang up")
+	}
+	if ev.Reason != "complaint" {
+		t.Fatalf("reason %q", ev.Reason)
+	}
+	said := c.saidAll()
+	if !strings.Contains(said, "不再打扰") {
+		t.Fatalf("the farewell was not said: %q", said)
+	}
+	if strings.Contains(said, "我听到你说") {
+		t.Fatalf("the model's answer was said as well as the farewell: %q", said)
 	}
 }

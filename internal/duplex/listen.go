@@ -1079,6 +1079,14 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		return
 	}
 
+	// The caller's words, final: the keyword rules' moment.
+	e.checkHangupRules(text)
+	if e.tools != nil && e.tools.endCall != nil && !e.tools.endCall.byModel {
+		// A rule is ending the call; the farewell is being said and nothing
+		// else should be answered.
+		e.abandonSpeculation("the call is ending")
+		return
+	}
 	if spec := e.liveSpeculation(); spec != nil {
 		if sameWords(spec.Transcript, text) {
 			// The guess held: the audio already flowing is correct, and the
