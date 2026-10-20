@@ -119,7 +119,7 @@ type Config struct {
 	ToolsMemory  bool   `json:"tools_memory"`
 	// ToolsEndCall gives the model end_call: a way to hang up once the
 	// conversation is over, instead of talking until the line drops.
-	ToolsEndCall       bool   `json:"tools_end_call"`
+	ToolsEndCall bool `json:"tools_end_call"`
 	// HangupURL is where the assistant's hangup is made real on the phone
 	// line: Active Call's command route for the call, with {call} standing
 	// for the call id the client gave at session open. golive POSTs its
@@ -127,7 +127,7 @@ type Config struct {
 	// session's socket alone does not end a phone call (10-19 23:16: the
 	// assistant said goodbye and the line stayed up until the caller hung
 	// up). Empty: nothing is sent and only the socket closes.
-	HangupURL string `json:"hangup_url"`
+	HangupURL          string `json:"hangup_url"`
 	ToolsTokenFile     string `json:"tools_token_file"`
 	ToolsWorkers       int    `json:"tools_workers"`
 	ToolsDeliverWaitMS int    `json:"tools_deliver_wait_ms"`
