@@ -1026,6 +1026,13 @@ func (e *Engine) speculateAtClose() {
 }
 
 func (e *Engine) startSpeculativeTurn(text string) {
+	if e.hangingUp() {
+		// Nothing after the farewell is answered, and a turn begun here
+		// would become the current one and abort the farewell's speech
+		// (16:38 on 10-21: the silence farewell cut at 1.0 s by the
+		// caller's own reply to it).
+		return
+	}
 	turn := e.tracker.Begin(text, true)
 	e.specTurn = turn
 	e.resumeNoted = false
@@ -1119,6 +1126,9 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 	}
 
 	e.specTurn = nil
+	if e.hangingUp() {
+		return
+	}
 	turn := e.tracker.Begin(text, false)
 	turn.MarkTranscriptFinal()
 	e.commitTurn(turn)

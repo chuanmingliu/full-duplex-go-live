@@ -57,9 +57,13 @@ type toolState struct {
 	// is the subset the engine judges itself, checked on the tick.
 	rules  tools.HangupRules
 	engine []tools.HangupRule
-	// lastCallerAt is when the caller last finished saying something (the
-	// silence rule's clock); zero until they have.
+	// lastCallerAt is when the caller last finished saying something, and
+	// lastQuietAt when the assistant last finished speaking: the silence
+	// rule's clock runs from the later of the two, so a long answer is not
+	// counted as the caller's silence (16:38 on 10-21: two answers of 20 s
+	// and the rule hung up as the second one ended).
 	lastCallerAt time.Time
+	lastQuietAt  time.Time
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
 	// stats
@@ -334,6 +338,14 @@ func (e *Engine) checkAssistantHangupRules(said string) {
 	}
 }
 
+// noteAssistantQuiet marks the assistant finishing (or being cut off); the
+// silence rule's clock restarts here.
+func (e *Engine) noteAssistantQuiet() {
+	if e.tools != nil {
+		e.tools.lastQuietAt = time.Now()
+	}
+}
+
 // noteCallerSpoke is the silence rule's clock: the caller's last word.
 func (e *Engine) noteCallerSpoke() {
 	if e.tools != nil {
@@ -372,6 +384,9 @@ func (e *Engine) checkHangupRules(callerWords string) {
 			since := ts.lastCallerAt
 			if since.IsZero() {
 				since = ts.started
+			}
+			if ts.lastQuietAt.After(since) {
+				since = ts.lastQuietAt
 			}
 			if time.Since(since) < time.Duration(r.Seconds)*time.Second || e.userOpen || e.assistantHasFloor() {
 				continue

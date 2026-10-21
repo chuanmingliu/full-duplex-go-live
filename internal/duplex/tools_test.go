@@ -656,3 +656,87 @@ func TestARepeatedToolCallIsFoldedIntoThePreviousOne(t *testing.T) {
 		t.Fatalf("tasks submitted %d; wanted the second call folded into the first", n)
 	}
 }
+
+// The silence clock runs from whoever spoke last. A long answer is not
+// the caller's silence: with a 2 s rule and a 4 s answer, the hangup must
+// not come as the answer ends.
+func TestTheSilenceRuleDoesNotCountTheAssistantsOwnAnswer(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	svc := rulesService(t, `{"rules":[{"id":"quiet","kind":"silence","seconds":2,"farewell":"听不到您，再见。"}]}`)
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	opts.Cfg.HangupRules = true
+	opts.Cfg.ToolsBaseURL = svc.URL
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊")
+	llm := mock.NewLLM() // a long answer: several seconds of audio
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &slowQuote{})
+
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the answer", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	// Listen through the whole answer; the rule must not fire while it
+	// plays nor the moment it ends.
+	deadline := time.Now().Add(12 * time.Second)
+	for e.assistantHasFloor() && time.Now().Before(deadline) {
+		pause(e, rate, 200)
+	}
+	ended := time.Now()
+	pause(e, rate, 800)
+	if e.hangingUp() {
+		t.Fatalf("hanging up %v after the answer ended: the answer was counted as the caller's silence", time.Since(ended))
+	}
+	// Two seconds of real silence after it: now it fires.
+	deadline = time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := hungUpWith(c); ok {
+			break
+		}
+		pause(e, rate, 200)
+	}
+	if _, ok := hungUpWith(c); !ok {
+		t.Fatal("the silence rule did not fire after the caller's real silence")
+	}
+}
+
+// The caller answering the silence farewell ("喂？我在") must not cut it:
+// no turn begins after the farewell, so nothing aborts its speech.
+func TestTheCallerSpeakingOverTheSilenceFarewellDoesNotCutIt(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	svc := rulesService(t, `{"rules":[{"id":"quiet","kind":"silence","seconds":2,"farewell":"听不到您的声音，我稍后再联系您，再见。"}]}`)
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	opts.Cfg.HangupRules = true
+	opts.Cfg.ToolsBaseURL = svc.URL
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊我在呢")
+	asr.msPerRune = 150
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: shortLLM{}, Emit: c.emit}, &slowQuote{})
+
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the answer", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	waitFor(t, "the silence farewell to begin", 8*time.Second, func() bool { return e.hangingUp() })
+	heard := c.audioMS()
+	// The caller speaks over the farewell.
+	speak(e, rate, 900)
+	pause(e, rate, 2500)
+	waitFor(t, "the hangup", 6*time.Second, func() bool { _, ok := hungUpWith(c); return ok })
+	if n := c.count(live.ExtAudioTruncated); n != 0 {
+		t.Fatalf("the farewell was cut (%d truncation reports)", n)
+	}
+	if c.audioMS() <= heard+300 {
+		t.Fatalf("the farewell did not play on: %.0f ms before, %.0f after", heard, c.audioMS())
+	}
+}

@@ -1840,6 +1840,7 @@ func (e *Engine) onSpeakingChanged(speaking bool) {
 }
 
 func (e *Engine) onTruncated(r TruncationReport) {
+	e.post(e.noteAssistantQuiet)
 	e.log.Info("speak: turn truncated",
 		"turn", r.TurnID,
 		"played_ms", r.PlayedMS,
@@ -1884,6 +1885,7 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 			return
 		}
 		e.emitMetrics(turn, totalMS, false)
+		e.noteAssistantQuiet()
 		e.checkAssistantHangupRules(text)
 	})
 	e.deps.Emit(e.UsageEvent())
