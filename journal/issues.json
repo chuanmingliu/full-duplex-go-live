@@ -827,7 +827,7 @@
    "title": "The silence rule counted the assistant's own answer as the caller's silence and hung up as the answer ended; the farewell was then cut by the caller's reply",
    "area": "engine",
    "status": "fixed",
-   "commit": "(this commit)",
+   "commit": "3c3d4e7",
    "found": "2026-10-21",
    "found_on": "a real call; the owner heard it",
    "found_call": "out-mvhv0189-xw9u",
