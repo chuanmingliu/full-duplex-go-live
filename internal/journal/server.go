@@ -554,12 +554,21 @@ func (s *Server) Handler() http.Handler {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"benchmarks": rows})
 	})
+	var static http.Handler
 	if s.cfg.UIDir != "" {
-		mux.Handle("/", http.FileServer(http.Dir(s.cfg.UIDir)))
+		static = http.FileServer(http.Dir(s.cfg.UIDir))
 	} else {
 		sub, _ := fs.Sub(uiFiles, "ui")
-		mux.Handle("/", http.FileServer(http.FS(sub)))
+		static = http.FileServer(http.FS(sub))
 	}
+	// The page's script and style are revalidated on every load: a browser
+	// that kept the old app.js showed a journal without its newest sections
+	// twice (the Quotation section on 10-20, the Benchmarks tab on 10-21)
+	// until a hard refresh.
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		static.ServeHTTP(w, r)
+	}))
 	return mux
 }
 
