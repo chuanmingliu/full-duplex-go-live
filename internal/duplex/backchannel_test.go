@@ -189,3 +189,46 @@ func TestAMurmurAsTheAnswerEndsIsNotAnsweredLater(t *testing.T) {
 		}
 	}
 }
+
+// A hesitation over the answer is not an interruption either.
+//
+// The full-duplex bench's vocal-tic scenario found it: "呃" said 1.5 s into
+// an answer cut the answer every time, because the floor hold knew murmurs by
+// their list and hesitations not at all, so "呃" was words-that-are-not-a-
+// murmur and yielded. A bare hesitation into silence was already left alone
+// (ignore_hesitations); the same sound over the assistant deserves the same.
+func TestAHesitationOverTheAnswerDoesNotCutIt(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.AllowBargeIn = true
+	cfg.opts.Cfg.Duplex.OnNewQuery = "cut"
+	cfg.opts.Cfg.Duplex.IgnoreHesitations = true
+	cfg.opts.Cfg.Duplex.UserBackchannelPhrases = []string{"嗯", "对对", "好"}
+	cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 600
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱呃")
+	asr.msPerRune = 200
+	asr.fullStop = true
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	e := startEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit})
+
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the assistant to take the floor", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	waitFor(t, "the answer to be under way", 5*time.Second, func() bool { return c.audioMS() > 1500 })
+	// "呃", 400 ms of it, over the answer; then quiet.
+	speak(e, rate, 400)
+	pause(e, rate, 3000)
+
+	waitFor(t, "the hesitation to be judged", 4*time.Second, func() bool {
+		return c.count(live.ExtInputBackchannel) > 0 || c.count(live.ExtAudioTruncated) > 0
+	})
+	if n := c.count(live.ExtAudioTruncated); n != 0 {
+		t.Fatalf("the hesitation cut the answer %d time(s)", n)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if reasons := c.delegationReasons(); len(reasons) != 1 {
+		t.Fatalf("delegations = %v; a hesitation must not be answered as a turn", reasons)
+	}
+}

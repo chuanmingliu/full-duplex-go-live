@@ -142,6 +142,17 @@
       "undo": "Read the console column instead",
       "needs": "Nothing; sim-retro and the journal headline the last-sound figure",
       "status": "in force 10-16"
+    },
+    {
+      "rank": 14,
+      "title": "Speech to someone else (等一下我接个电话, 先别说) over the answer: ignore it, or keep cutting",
+      "gain": "τ-voice's selectivity S_ND: golive answers every aside (0 of 12 ignored on the bench); the best commercial agent in the paper scores 57%, OpenAI's 6%",
+      "basis": "The full-duplex bench of 10-21 (FULLDUPLEX-BENCH.md). An aside is real words from the caller, so the floor hold yields to it and the engine then answers it as a turn; nothing in the cascade knows who it was said to",
+      "cost": "A list of aside phrases (like the murmur list) is cheap and blunt: every phrase on it is one the caller can no longer use to interrupt. A level/direction cue (an aside is said away from the handset, quieter and duller) is the honest signal and needs measurement on the archive first",
+      "guard": "The bench's non-directed scenario, over the answer and into silence; any list stays short",
+      "undo": "Empty the list",
+      "needs": "The owner's choice; a few recordings with real asides on them",
+      "status": "waiting"
     }
   ]
 }

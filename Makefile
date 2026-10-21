@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: all build test race vet fmt run run-mock run-sim demo bench bench-sim ttsprobe dist bundle sim-bundle clean tidy
+.PHONY: all build test race vet fmt run run-mock run-sim run-fdb-sim demo bench bench-sim bench-fdb ttsprobe dist bundle sim-bundle clean tidy
 
 all: vet test build
 
@@ -19,6 +19,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golive ./cmd/golive
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivectl ./cmd/golivectl
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivebench ./cmd/golivebench
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivefdb ./cmd/golivefdb
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/ttsprobe ./cmd/ttsprobe
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/echoprobe ./cmd/echoprobe
 
@@ -64,6 +65,18 @@ run-sim: build
 bench-sim: build
 	$(BIN)/golivebench -a golive-sim=ws://127.0.0.1:8080/v1/live/sessions \
 		-synth-ms 700,1500,2400,3300 -runs 12 -warmup 1 -v -md bench-sim.md -json bench-sim.json
+
+## run-fdb-sim: the telephony profile's turn-taking on the mock providers, for
+## the full-duplex benchmark. See FULLDUPLEX-BENCH.md.
+run-fdb-sim: build
+	$(BIN)/golive -profile configs/fdb-sim.json -env configs/fdb-sim.env
+
+## bench-fdb: the full-duplex benchmark against a server started with
+## run-fdb-sim: murmurs, hesitations, interruptions, asides, pauses, a tool
+## task, scored as τ-voice and Full-Duplex-Bench score them.
+bench-fdb: build
+	$(BIN)/golivefdb -url ws://127.0.0.1:8089/v1/live -sessions 2 -episodes 6 -parallel 4 \
+		-md bench-fdb.md -json bench-fdb.json
 
 ## demo: drive a full turn, then interrupt it, and save both sides
 demo: build

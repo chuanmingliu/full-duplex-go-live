@@ -794,6 +794,19 @@
    "cause": "The quotation needs the vehicle price for 车损险; the lead had none and the model did not ask for it before calling the tool.",
    "fix": "The intake (quote-plans on the panel): with a must field missing quote_total answers status=need with the questions in order; the model asks one at a time, records each with update_memory and re-asks; \"unknown\" on a skip field drops its coverages. Plans are per combination, chosen per call (quote_plan), the owner's rule of 10-20 22:04.",
    "commit": "6a6b079"
+  },
+  {
+   "id": "ISS-049",
+   "title": "A hesitation (呃) said over the answer cut it, every time",
+   "area": "engine",
+   "status": "fixed",
+   "commit": "",
+   "found": "2026-10-21",
+   "found_on": "the full-duplex bench (cmd/golivefdb, vocal-tic scenario) on the mock providers with the telephony profile's turn-taking",
+   "found_call": "",
+   "symptom": "12 of 12 hesitations said 1.5 s into an answer truncated it (S_VT over the agent 0%); the same sound into silence was left unanswered as intended (ignore_hesitations).",
+   "cause": "The floor hold knows murmurs by the user_backchannel_phrases list and hesitations not at all; 呃 was words-that-are-not-a-murmur, and yielded on the first partial.",
+   "fix": "judgeHold treats a hesitation (endpoint.Hesitation, under ignore_hesitations) like a murmur: waits for its final, keeps the floor on one, drops any guess begun on it (golive.input_backchannel is emitted). Test: TestAHesitationOverTheAnswerDoesNotCutIt."
   }
  ]
 }

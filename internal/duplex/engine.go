@@ -1625,6 +1625,26 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 		e.abandonSpeculation("the sound over the answer had no words in it")
 		return true
 	}
+	// A hesitation — "呃", "um" — is the sound of someone about to speak, and
+	// over the answer it is most often the sound of someone deciding not to.
+	// It was being yielded to as words that were not a murmur (the
+	// full-duplex bench's vocal-tic scenario cut the answer on every one),
+	// while the same sound into a silence was already left unanswered. Wait
+	// for its final as for a murmur, and keep the floor on one.
+	if e.opts.Cfg.Duplex.IgnoreHesitations && endpoint.Hesitation(withoutForcedStop(text)) {
+		if !final {
+			e.hold.sawEvidence()
+			return false
+		}
+		e.log.Debug("listen: a hesitation over the answer; keeping the floor", "text", text)
+		e.deps.Emit(live.InputBackchannelEvent{
+			Envelope: live.Envelope{Type: live.ExtInputBackchannel},
+			Text:     strings.TrimSpace(text),
+		})
+		e.hold = nil
+		e.abandonSpeculation("the words were a hesitation, not a turn")
+		return true
+	}
 	if e.bcSet.CouldBecome(text) {
 		if !final {
 			// The recognizer is producing, and what it produces still looks
