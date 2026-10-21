@@ -242,6 +242,11 @@ func TestAResultForAnOlderPlanSaysSo(t *testing.T) {
 // Asking again while a quote is running supersedes the first: one result is
 // read out, for the latest request.
 func TestANewerRequestSupersedesTheOlderTask(t *testing.T) {
+	// The same request within repeatWindow is folded, not superseded; this
+	// test is about a later one, so the window is off.
+	oldWindow := repeatWindow
+	repeatWindow = 0
+	defer func() { repeatWindow = oldWindow }()
 	opts := quoteConfig()
 	rate := opts.Cfg.ClientRate
 	c := newCollector(rate)
@@ -627,5 +632,27 @@ func TestTheToolRulesFollowTheOwnersPrompt(t *testing.T) {
 	i, j := strings.Index(got, "不能直接报价"), strings.Index(got, "【工具规则】")
 	if i < 0 || j < 0 || j < i {
 		t.Fatalf("prompt order wrong: %q", got)
+	}
+}
+
+// The same tool asked twice in a row on the same memory is one task, not
+// two results read out.
+func TestARepeatedToolCallIsFoldedIntoThePreviousOne(t *testing.T) {
+	opts := quoteConfig()
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	e := startQuoteEngine(t, opts, Deps{ASR: newTrailingASR("x"), LLM: mock.NewLLM(), Emit: c.emit}, &slowQuote{})
+	done := make(chan int, 1)
+	e.post(func() {
+		job := backendJob{turn: e.tracker.Begin("", false)}
+		call := provider.ToolCall{ID: "k1", Name: "quote_total", Arguments: `{}`}
+		tool := e.tools.byName["quote_total"]
+		e.submitTask(job, call, tool)
+		call.ID = "k2"
+		e.submitTask(job, call, tool)
+		done <- e.tools.async
+	})
+	if n := <-done; n != 1 {
+		t.Fatalf("tasks submitted %d; wanted the second call folded into the first", n)
 	}
 }

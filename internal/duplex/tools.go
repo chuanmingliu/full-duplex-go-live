@@ -44,6 +44,11 @@ type toolState struct {
 	// newest per tool, which supersedes older ones of the same tool.
 	tasks  map[string]*tools.Task
 	latest map[string]string
+	// recent is the last submission per tool: the same call again within
+	// a few seconds on the same memory is folded into it, not resubmitted
+	// (the model asked quote_total twice in half a second on 10-21 and the
+	// total was read out twice).
+	recent map[string]recentCall
 	// started is when the tools came up (the call's start, near enough);
 	// endCall is the model's request to hang up, once made.
 	started time.Time
@@ -457,6 +462,10 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) string {
 	ts := e.tools
 	snap, ver := e.memorySnapshot()
+	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
+		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id)
+	}
 	// A newer request for the same tool supersedes the older: its result
 	// would be read out to a caller who has moved on.
 	if oldID := ts.latest[t.Name]; oldID != "" {
@@ -473,6 +482,10 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) s
 	})
 	ts.tasks[task.ID] = task
 	ts.latest[t.Name] = task.ID
+	if ts.recent == nil {
+		ts.recent = map[string]recentCall{}
+	}
+	ts.recent[t.Name] = recentCall{id: task.ID, ver: ver, args: c.Arguments, at: time.Now()}
 	ts.async++
 	eta := t.ETASeconds
 	if eta <= 0 {
@@ -482,6 +495,17 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) s
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
 	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta)
 }
+
+type recentCall struct {
+	id   string
+	ver  int
+	args string
+	at   time.Time
+}
+
+// repeatWindow is how long a repeated call of the same tool on the same
+// memory is folded into the previous one.
+var repeatWindow = 8 * time.Second
 
 // onTaskDone queues a finished task for delivery.
 func (e *Engine) onTaskDone(task *tools.Task) {
