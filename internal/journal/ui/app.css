@@ -781,3 +781,18 @@ h3 { font-size: 13.5px; font-weight: 650; }
 .qsteps .q-error .q-what { color: var(--over-ink); }
 .qsteps .q-quote .q-what { font-weight: 600; }
 .qsteps .q-memory .q-what, .qsteps .q-delivered .q-what { color: var(--ink-2); }
+
+.bench { margin: 18px 0 26px; }
+.bench h2 { font-size: 16px; margin-bottom: 8px; }
+.bench-wrap { overflow-x: auto; }
+.bench-t { border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.bench-t th, .bench-t td { padding: 4px 10px; border-bottom: 1px solid var(--line-2); text-align: left; }
+.bench-t th.num, .bench-t td.num { text-align: right; }
+.bench-t th { color: var(--ink-3); font-weight: 500; font-size: 11.5px; }
+.bench-miss { color: var(--over-ink); font-weight: 600; }
+.bench-ok { color: var(--ink); }
+.bench-report { color: var(--ink-3); font-size: 11.5px; }
+.bench-spark td { padding-top: 6px; color: var(--ink-3); font-size: 11.5px; }
+.spark-l { fill: none; stroke: var(--ink-3); stroke-width: 1; }
+.spark-d { fill: var(--ink-3); }
+.spark-now { fill: var(--ink); }

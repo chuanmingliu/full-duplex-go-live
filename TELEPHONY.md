@@ -485,6 +485,10 @@ What it shows:
   warnings; the retrospective; the owner's rating and note.
 - **Issues**: everything found so far — symptom, cause, fix, commit, the call
   that verified it — and **Decisions**: the options that need the owner.
+- **Benchmarks**: the standing evaluation's records (`journal/benchmarks/`,
+  written by `make eval`, `golivefdb -record`, `golivebench -record`): a row
+  per run per layer, a red figure where a bar is missed, a trend per metric
+  across builds. See FULLDUPLEX-BENCH.md.
 
 Where its content comes from:
 

@@ -1945,6 +1945,110 @@
   }
 
   // ====================================================================
+  // Benchmarks: the standing evaluation's scorecard, one row per record
+  // (journal/benchmarks/*.json), a sparkline per metric across builds.
+  // ====================================================================
+
+  var LAYERS = { L1: 'Turn decision (TurnBench)', L2: 'Duplex behaviour (golivefdb)', L3: 'Latency (golivebench)', L4: 'Task and conversation' };
+  var METRIC_NAMES = { R_R: 'response rate', L_R_ms: 'response latency, mean ms', R_Y: 'yield rate', L_Y_ms: 'yield latency, mean ms', I_A: 'agent interruptions', S_BC: 'murmurs talked through', S_VT: 'tics ignored', S_ND: 'asides ignored', pause_held: 'pauses held', p50_ms: 'last sound → first audio p50 ms', p95_ms: 'p95 ms', max_ms: 'max ms', iqr_ms: 'IQR ms', pass_1: 'tool task pass^1', eot_recall: 'EOT recall', eot_fpr: 'EOT false positives', eot_latency_ms: 'EOT latency ms', int_recall: 'INT recall', int_fpr: 'INT false positives' };
+  var RATE_METRICS = { R_R: 1, R_Y: 1, I_A: 1, S_BC: 1, S_VT: 1, S_ND: 1, pause_held: 1, pass_1: 1, eot_recall: 1, eot_fpr: 1, int_recall: 1, int_fpr: 1 };
+
+  function fmtMetric(name, v) {
+    if (v === undefined || v === null || isNaN(v)) return '–';
+    if (RATE_METRICS[name]) return Math.round(v * 100) + '%';
+    return Math.round(v).toString();
+  }
+
+  function sparkline(vals, lowerIsBetter) {
+    // Oldest left, newest right; a dot per record, the newest filled.
+    var w = 90, hh = 22, n = vals.length;
+    if (!n) return null;
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + hh); svg.setAttribute('class', 'spark'); svg.setAttribute('width', w); svg.setAttribute('height', hh);
+    var pts = vals.map(function (v, i) {
+      var x = n === 1 ? w / 2 : 4 + (w - 8) * i / (n - 1);
+      var y = max === min ? hh / 2 : 3 + (hh - 6) * (lowerIsBetter ? (v - min) / (max - min) : (max - v) / (max - min));
+      return [x, y];
+    });
+    if (n > 1) {
+      var path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      path.setAttribute('points', pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '));
+      path.setAttribute('class', 'spark-l'); svg.appendChild(path);
+    }
+    pts.forEach(function (p, i) {
+      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', p[0].toFixed(1)); c.setAttribute('cy', p[1].toFixed(1)); c.setAttribute('r', i === n - 1 ? 3 : 1.8);
+      c.setAttribute('class', i === n - 1 ? 'spark-d spark-now' : 'spark-d'); svg.appendChild(c);
+    });
+    return svg;
+  }
+
+  function renderBenchmarks(data, repo) {
+    if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+    clear(view);
+    var recs = data.benchmarks || [];
+    view.appendChild(h('div', { class: 'page-head' }, h('h1', null, 'Benchmarks'),
+      h('p', { class: 'lede' }, 'The standing evaluation, one record per run: L2 duplex behaviour and L3 latency from `make eval` on the mocks and from runs on the box; L1 (TurnBench) and L4 (τ-voice, the simulated customer) when they are run. Rates are shares; a red figure misses the layer’s bar.')));
+    if (!recs.length) { view.appendChild(h('p', { class: 'empty' }, 'No records yet. `make eval` writes journal/benchmarks/<date>-<build>-<layer>.json.')); return; }
+    ['L1', 'L2', 'L3', 'L4'].forEach(function (layer) {
+      var rows = recs.filter(function (r) { return r.layer === layer; });
+      if (!rows.length) return;
+      var names = [];
+      rows.forEach(function (r) { Object.keys(r.metrics || {}).forEach(function (k) { if (names.indexOf(k) < 0) names.push(k); }); });
+      var known = Object.keys(METRIC_NAMES);
+      names.sort(function (a, b) { var ia = known.indexOf(a), ib = known.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+      var sec = h('section', { class: 'bench' }, h('h2', null, layer + ' · ' + (LAYERS[layer] || layer)));
+      var table = h('table', { class: 'bench-t' });
+      var head = h('tr', null, h('th', null, 'when'), h('th', null, 'build'), h('th', null, 'spoke'));
+      names.forEach(function (n) { head.appendChild(h('th', { class: 'num', title: n }, METRIC_NAMES[n] || n)); });
+      head.appendChild(h('th', null, 'report'));
+      table.appendChild(h('thead', null, head));
+      var body = h('tbody');
+      rows.forEach(function (r) {
+        var tr = h('tr', null, h('td', { class: 'num' }, when(r.at)), h('td', { class: 'num' }, commitLink(r.build, repo)), h('td', null, r.source || ''));
+        names.forEach(function (n) {
+          var v = (r.metrics || {})[n], verdict = (r.verdicts || {})[n];
+          var cls = 'num' + (verdict === false ? ' bench-miss' : verdict === true ? ' bench-ok' : '');
+          var cnt = (r.counts || {})['n_' + n] || (n === 'p50_ms' || n === 'p95_ms' ? (r.counts || {}).n_turns : null);
+          tr.appendChild(h('td', { class: cls, title: (r.thresholds || {})[n] ? 'bar ' + r.thresholds[n] + (cnt ? ', n=' + cnt : '') : (cnt ? 'n=' + cnt : null) }, fmtMetric(n, v)));
+        });
+        tr.appendChild(h('td', null, r.report ? h('span', { class: 'bench-report', title: r.report }, r.report.replace(/^.*\//, '')) : ''));
+        body.appendChild(tr);
+      });
+      table.appendChild(body);
+      // Sparklines: the metric across builds, oldest to newest.
+      var sp = h('tr', { class: 'bench-spark' }, h('td', { colspan: 3 }, 'trend →'));
+      names.forEach(function (n) {
+        var vals = rows.slice().reverse().map(function (r) { return (r.metrics || {})[n]; }).filter(function (v) { return v !== undefined && !isNaN(v); });
+        var lower = /_ms$|fpr|I_A/.test(n);
+        sp.appendChild(h('td', { class: 'num' }, sparkline(vals, lower)));
+      });
+      sp.appendChild(h('td'));
+      table.appendChild(h('tfoot', null, sp));
+      sec.appendChild(h('div', { class: 'bench-wrap' }, table));
+      view.appendChild(sec);
+    });
+  }
+
+  function routeBenchmarks() {
+    var token = ++S.token;
+    setNav('benchmarks');
+    document.title = 'Benchmarks – Call journal';
+    if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+    showLoading('the benchmarks');
+    var ov = S.ov ? Promise.resolve(S.ov) : loadOverview().catch(function () { return null; });
+    return Promise.all([api('/api/benchmarks'), ov]).then(function (r) {
+      if (token !== S.token) return;
+      renderBenchmarks(r[0], r[1] ? r[1].repo_url : '');
+      window.scrollTo(0, 0);
+    }).catch(function (e) {
+      if (token !== S.token) return;
+      showError(e, routeBenchmarks, 'The benchmarks');
+    });
+  }
+
+  // ====================================================================
   // Router, refresh, keys
   // ====================================================================
 
@@ -1953,6 +2057,7 @@
     if (p[0] === 'call' && p[1]) return { name: 'call', id: p[1] };
     if (p[0] === 'issues') return { name: 'issues', id: p[1] || '' };
     if (p[0] === 'decisions') return { name: 'decisions' };
+    if (p[0] === 'benchmarks') return { name: 'benchmarks' };
     return { name: 'overview' };
   }
   function route() {
@@ -1962,6 +2067,7 @@
     if (r.name === 'call') return routeCall(r.id);
     if (r.name === 'issues') return routeIssues(r.id);
     if (r.name === 'decisions') return routeDecisions();
+    if (r.name === 'benchmarks') return routeBenchmarks();
     return routeOverview(false);
   }
   window.addEventListener('hashchange', route);

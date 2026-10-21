@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/chuanmingliu/golive/internal/benchrec"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -48,6 +50,9 @@ func run() error {
 		timeoutS  = flag.Int("answer-timeout-s", 12, "give up waiting for an answer after this long")
 		outJSON   = flag.String("json", "", "write every panel and the windows here")
 		outMD     = flag.String("md", "", "write the report here as markdown")
+		recordDir = flag.String("record", "", "write the L2 scorecard record (benchrec) into this directory")
+		build     = flag.String("build", "", "the build under test, for the record (default: asked of golive's /healthz)")
+		source    = flag.String("source", "mocks", "what spoke, for the record: mocks, box")
 		printEnv  = flag.Bool("print-env", false, "print the GOLIVE_MOCK_PHRASES line the mock recognizer needs, and exit")
 		listOnly  = flag.Bool("list", false, "list the scenarios and exit")
 		verbose   = flag.Bool("v", false, "print each session's events as they are scored")
@@ -186,6 +191,21 @@ func run() error {
 			return err
 		}
 	}
+	if *recordDir != "" {
+		all := &panel{}
+		for _, r := range ordered {
+			all.merge(r.Panel)
+		}
+		b := *build
+		if b == "" {
+			b = buildOf(*url)
+		}
+		path, err := benchrec.Write(*recordDir, all.record(b, *source, *outMD))
+		if err != nil {
+			return err
+		}
+		fmt.Printf("· recorded %s\n", path)
+	}
 	if *outJSON != "" {
 		out := map[string]any{
 			"windows":   defaultWindows,
@@ -264,4 +284,22 @@ func dumpTimeline(tl *timeline) {
 	for _, e := range tl.Errors {
 		fmt.Fprintf(os.Stderr, "  error %s\n", e)
 	}
+}
+
+// buildOf asks golive's /healthz for its version; "" when it will not say.
+func buildOf(wsURL string) string {
+	u := strings.Replace(strings.Replace(wsURL, "wss://", "https://", 1), "ws://", "http://", 1)
+	if i := strings.Index(u, "/v1/"); i > 0 {
+		u = u[:i]
+	}
+	resp, err := http.Get(u + "/healthz")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var h struct {
+		Version string `json:"version"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&h)
+	return h.Version
 }

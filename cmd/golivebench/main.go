@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/chuanmingliu/golive/internal/benchrec"
 	"math"
 	"net/http"
 	"os"
@@ -86,6 +87,9 @@ func run() error {
 		timeout   = flag.Int("timeout-s", 30, "give up on a run after this long")
 		outJSON   = flag.String("json", "", "write raw per-run results here")
 		outMD     = flag.String("md", "", "write the report here as markdown")
+		recordDir = flag.String("record", "", "write the L3 scorecard record (benchrec) into this directory")
+		build     = flag.String("build", "", "the build under test, for the record (default: asked of the first stack's /healthz)")
+		source    = flag.String("source", "mocks", "what spoke, for the record: mocks, box")
 		verbose   = flag.Bool("v", false, "print every run as it completes")
 		token     = flag.String("token", "", "bearer token for golive; also read from GOLIVE_AUTH_TOKEN")
 	)
@@ -183,7 +187,55 @@ func run() error {
 		}
 		fmt.Printf("· wrote %s\n", *outMD)
 	}
+	if *recordDir != "" {
+		// The first stack is the one under test.
+		var vals []int64
+		failures := 0
+		for _, r := range results {
+			if r.Stack != stacks[0].name || !r.Measured {
+				continue
+			}
+			if r.Err != "" {
+				failures++
+				continue
+			}
+			vals = append(vals, r.FirstAudioMS)
+		}
+		d := describe(vals, failures)
+		b := *build
+		if b == "" {
+			b = buildOf(stacks[0].url)
+		}
+		rec := benchrec.Record{Layer: "L3", Build: b, Source: *source,
+			Metrics:    map[string]float64{"p50_ms": float64(d.p50), "p95_ms": float64(d.p95), "max_ms": float64(d.max), "iqr_ms": float64(d.iqr)},
+			Counts:     map[string]int{"n_turns": d.n, "n_failed": d.failures},
+			Thresholds: map[string]string{"p95_ms": "<=1200"},
+			Report:     *outMD}
+		path, err := benchrec.Write(*recordDir, rec)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("· recorded %s\n", path)
+	}
 	return nil
+}
+
+// buildOf asks a stack's /healthz for its version; "" when it will not say.
+func buildOf(wsURL string) string {
+	u := strings.Replace(strings.Replace(wsURL, "wss://", "https://", 1), "ws://", "http://", 1)
+	if i := strings.Index(u, "/v1/"); i > 0 {
+		u = u[:i]
+	}
+	resp, err := http.Get(u + "/healthz")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var h struct {
+		Version string `json:"version"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&h)
+	return h.Version
 }
 
 // incoming is one normalized event from either dialect. Both protocols are

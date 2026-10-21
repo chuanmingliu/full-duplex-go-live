@@ -767,6 +767,7 @@ make vet test          # go vet, go test ./...   (internal/duplex takes ~3 min)
 make race              # with the race detector
 make run-sim           # mock providers with realistic stage latencies
 make bench-sim         # measure a server started with run-sim
+make eval              # L2+L3 on the mocks, recorded in journal/benchmarks/ (journal's Benchmarks tab)
 make bundle            # dist/golive-telephony.tar.gz for a box with no Go
 ```
 

@@ -137,3 +137,17 @@ bundle:
 
 clean:
 	rm -rf $(BIN) dist *.wav golive.log bench.md bench.json bench-sim.md bench-sim.json
+
+## eval: the standing evaluation on the mocks, L2 (golivefdb) and L3
+## (golivebench), recorded as journal/benchmarks/<date>-<build>-<layer>.json
+## so a commit carries its own scorecard. Starts golive on the fdb mocks,
+## runs both, stops it. The journal's Benchmarks tab reads the directory.
+eval: build
+	@$(BIN)/golive -profile configs/fdb-sim.json -env configs/fdb-sim.env > eval-golive.log 2>&1 & echo $$! > .eval.pid; \
+	for i in 1 2 3 4 5 6 7 8 9 10; do curl -sf http://127.0.0.1:8089/healthz > /dev/null && break; sleep 0.5; done; \
+	$(BIN)/golivefdb -url ws://127.0.0.1:8089/v1/live -sessions 1 -episodes 3 -parallel 6 \
+		-md bench-fdb.md -json bench-fdb.json -record journal/benchmarks -source mocks; rc=$$?; \
+	$(BIN)/golivebench -a golive-mocks=ws://127.0.0.1:8089/v1/live/sessions \
+		-synth-ms 700,1500,2400,3300 -runs 6 -warmup 1 -md bench-sim.md -json bench-sim.json -record journal/benchmarks -source mocks; rc2=$$?; \
+	kill $$(cat .eval.pid) 2>/dev/null; rm -f .eval.pid; \
+	ls -t journal/benchmarks | head -2; exit $$(( rc + rc2 ))

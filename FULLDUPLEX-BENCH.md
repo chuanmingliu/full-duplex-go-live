@@ -132,3 +132,33 @@ hold on real providers, where the recognizer's words arrive later and less
 reliably (so the hold's 600 ms cap matters more). A latency is the injected
 stage latencies in `configs/sim.env` plus the engine's own waiting, and means
 nothing outside this harness except as a comparison between two builds.
+
+## The standing evaluation: `make eval` and the Benchmarks tab
+
+Each benchmark run can leave a record behind, so a build's figures sit beside
+the last build's instead of in a terminal that scrolled away:
+
+```bash
+make eval              # golive on configs/fdb-sim.json, then golivefdb (L2) and golivebench (L3) on it
+bin/golivefdb  … -record journal/benchmarks -source box    # any run, recorded
+bin/golivebench … -record journal/benchmarks -source box
+```
+
+A record is `journal/benchmarks/<date>-<build>-<layer>.json` (package
+`internal/benchrec`): the layer, the build (`golive`'s `/healthz` version;
+`-build` overrides it), where it ran (`mocks`, `box`), the metrics, their
+counts, and the bars each is held to. The layers follow the project doc:
+
+| | What | Bars |
+| --- | --- | --- |
+| L1 | the turn decision (TurnBench) | EOT/INT FPR ≤ 0.15 |
+| L2 | duplex behaviour (`golivefdb`) | S_BC, S_VT, R_R, R_Y ≥ 0.9; p95 ≤ 1200 ms |
+| L3 | latency (`golivebench`) | p95 ≤ 1200 ms |
+| L4 | task and conversation (τ-voice, the simulated customer) | — |
+
+The journal's **Benchmarks** tab (`/api/benchmarks`) lists the records per
+layer, newest first, a red figure where a bar is missed, and a trend line per
+metric across builds. Records are committed with the code, so a PR carries
+its own scorecard; the mocks' latencies compare builds and say nothing about
+the phone. L1 waits on the TurnBench adapter (`cmd/goliveturn`), L4 on
+τ-voice; neither has a record yet.

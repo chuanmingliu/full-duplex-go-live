@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"github.com/chuanmingliu/golive/internal/benchrec"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -534,6 +535,25 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calls/", s.handleCall)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
 	mux.HandleFunc("/api/decisions", s.handleFile("decisions.json", `{"decisions":[]}`))
+	mux.HandleFunc("/api/benchmarks", func(w http.ResponseWriter, r *http.Request) {
+		// The standing evaluation's records: journal/benchmarks/*.json,
+		// newest first, with each record's verdicts against its thresholds.
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		var recs []benchrec.Record
+		if s.cfg.NotesDir != "" {
+			recs, _ = benchrec.Read(filepath.Join(s.cfg.NotesDir, "benchmarks"))
+		}
+		type row struct {
+			benchrec.Record
+			Verdicts map[string]bool `json:"verdicts"`
+		}
+		rows := make([]row, 0, len(recs))
+		for _, rec := range recs {
+			rows = append(rows, row{Record: rec, Verdicts: rec.Verdicts()})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"benchmarks": rows})
+	})
 	if s.cfg.UIDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.cfg.UIDir)))
 	} else {

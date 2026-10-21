@@ -6,3 +6,8 @@
 .DS_Store
 golive.log
 dist/
+bench-fdb.md
+bench-fdb.json
+eval-golive.log
+/golivebench
+.eval.pid

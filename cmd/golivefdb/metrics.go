@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/chuanmingliu/golive/internal/benchrec"
 	"math"
 	"sort"
 	"time"
@@ -309,4 +310,42 @@ func passPowK(n, c, k int) float64 {
 		return 0
 	}
 	return num / den
+}
+
+// record is the panel as the standing evaluation's L2 scorecard: rates 0–1,
+// latencies in ms, the project's headline beside them.
+func (p *panel) record(build, source, report string) benchrec.Record {
+	m := map[string]float64{}
+	c := map[string]int{}
+	put := func(name string, ctr counter) {
+		if ctr.Total > 0 {
+			m[name] = ctr.rate()
+		}
+		c["n_"+name] = ctr.Total
+	}
+	put("R_R", p.Response)
+	put("R_Y", p.Yield)
+	put("S_BC", p.Backchannel)
+	put("S_VT", counter{Total: p.TicOver.Total + p.TicSilent.Total, Good: p.TicOver.Good + p.TicSilent.Good})
+	put("S_ND", counter{Total: p.NDOver.Total + p.NDSilent.Total, Good: p.NDOver.Good + p.NDSilent.Good})
+	put("pause_held", p.PauseHold)
+	if len(p.Response.LatenciesMS) > 0 {
+		m["L_R_ms"] = mean(p.Response.LatenciesMS)
+	}
+	if len(p.Yield.LatenciesMS) > 0 {
+		m["L_Y_ms"] = mean(p.Yield.LatenciesMS)
+	}
+	if p.Response.Total > 0 {
+		m["I_A"] = p.agentIntRate()
+	}
+	if d := describe(p.LastSoundMS); d.N > 0 {
+		m["p50_ms"], m["p95_ms"] = float64(d.P50), float64(d.P95)
+		c["n_turns"] = d.N
+	}
+	if p.ToolAttempts > 0 {
+		m["pass_1"] = float64(p.ToolPasses) / float64(p.ToolAttempts)
+		c["n_tool"] = p.ToolAttempts
+	}
+	return benchrec.Record{Layer: "L2", Build: build, Source: source, Metrics: m, Counts: c, Report: report,
+		Thresholds: map[string]string{"S_BC": ">=0.9", "S_VT": ">=0.9", "R_R": ">=0.9", "R_Y": ">=0.9", "p95_ms": "<=1200"}}
 }
