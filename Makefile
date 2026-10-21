@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 # Go toolchain.
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-.PHONY: all build test race vet fmt run run-mock run-sim run-fdb-sim demo bench bench-sim bench-fdb ttsprobe dist bundle sim-bundle clean tidy
+.PHONY: all build test race vet fmt run run-mock run-sim run-fdb-sim demo bench bench-sim bench-fdb turnbench-sim ttsprobe dist bundle sim-bundle clean tidy
 
 all: vet test build
 
@@ -19,6 +19,7 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golive ./cmd/golive
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivectl ./cmd/golivectl
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivebench ./cmd/golivebench
+	go build -ldflags "$(LDFLAGS)" -o $(BIN)/goliveturn ./cmd/goliveturn
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/golivefdb ./cmd/golivefdb
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/ttsprobe ./cmd/ttsprobe
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/echoprobe ./cmd/echoprobe
@@ -71,6 +72,18 @@ bench-sim: build
 run-fdb-sim: build
 	$(BIN)/golive -profile configs/fdb-sim.json -env configs/fdb-sim.env
 
+## turnbench-sim: a smoke test of the TurnBench adapter on the mocks — a
+## toy two-channel conversation, golive detector-only on each channel, the
+## predictions compared with what the toy was built to contain.
+turnbench-sim: build
+	@python3 scripts/turnbench/synth.py /tmp/golive-turnbench-toy
+	@GOLIVE_MOCK_PHRASES='so what I was thinking is that we should do it next week|yeah' \
+	 $(BIN)/golive -profile configs/turnbench-sim.json -env configs/turnbench-sim.env > /tmp/golive-turnbench-toy/golive.log 2>&1 & echo $$! > /tmp/golive-turnbench-toy/pid; \
+	 sleep 2; \
+	 $(BIN)/goliveturn -data /tmp/golive-turnbench-toy -url ws://127.0.0.1:8091/v1/live -out /tmp/golive-turnbench-toy/predictions.json -v; \
+	 kill `cat /tmp/golive-turnbench-toy/pid`; \
+	 echo "expected:"; cat /tmp/golive-turnbench-toy/toy/gold.json
+
 ## bench-fdb: the full-duplex benchmark against a server started with
 ## run-fdb-sim: murmurs, hesitations, interruptions, asides, pauses, a tool
 ## task, scored as τ-voice and Full-Duplex-Bench score them.
@@ -120,7 +133,7 @@ sim-bundle:
 BUNDLE := dist/golive-telephony
 bundle:
 	@rm -rf $(BUNDLE) && mkdir -p $(BUNDLE)/bin $(BUNDLE)/configs $(BUNDLE)/scripts
-	@for c in golive golivebench golivectl llmprobe ttsprobe echoprobe journal crm edge desk; do \
+	@for c in golive golivebench golivefdb goliveturn golivectl llmprobe ttsprobe echoprobe journal crm edge desk; do \
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" \
 			-o $(BUNDLE)/bin/$$c-linux-amd64 ./cmd/$$c || exit 1; \
 	done

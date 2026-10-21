@@ -162,3 +162,64 @@ metric across builds. Records are committed with the code, so a PR carries
 its own scorecard; the mocks' latencies compare builds and say nothing about
 the phone. L1 waits on the TurnBench adapter (`cmd/goliveturn`), L4 on
 τ-voice; neither has a record yet.
+
+## L1: the turn decision on TurnBench
+
+TurnBench (Sesame, github.com/SesameAILabs/turnbench, MIT; the data on Hugging
+Face, gated, non-commercial) scores two events per speaker on 30 h of
+two-channel human dialogue in English: **EOT**, the speaker's turn is over,
+and **INT**, the speaker takes the floor while the other holds it. A
+prediction is causal — its time is the audio heard when the system committed
+— and scored on recall, false positives (a fire in a mid-turn pause or on a
+backchannel) and latency; a system qualifies at FPR ≤ 0.15 and ranks by
+recall.
+
+`cmd/goliveturn` runs golive's own turn decision on it. Each speaker's channel
+runs in a golive session of its own, detector only (`configs/turnbench.json`:
+client delegation, so no chat model or synthesizer, English backchannel
+words, the telephony profile's endpointing), both fed in lockstep at
+real-time pace from one clock. golive decides, per channel, when the turn is
+taken (`session.delegation.created`: the VAD, the early final, semantic
+endpointing, patience, the settled close) and what is a backchannel; the
+adapter adds the one thing a single channel cannot see — who holds the
+floor — and from that:
+
+- EOT = the turn taken on this channel, unless its words were a backchannel
+  said while the other speaker held the floor;
+- INT = this channel's utterance opened while the other held the floor,
+  committed at its first words that are not a backchannel;
+- the floor is held from the onset of an utterance with words until its EOT,
+  so a mid-turn pause does not give it up.
+
+Prerequisites on the box, both the owner's: access to the dev dataset
+(`mundo-ai/turn-benchmark-dev` on Hugging Face, then `huggingface-cli
+login`), and an English recognizer — a second Tencent env file,
+`~/golive-turnbench.env`, with `TENCENT_ASR_ENGINE=16k_en`, so the phone
+line's `16k_zh` is untouched. Then:
+
+```bash
+git clone https://github.com/SesameAILabs/turnbench ~/turnbench && cd ~/turnbench && uv sync
+uv run python ~/golive-telephony/scripts/turnbench/export.py ~/golive-turnbench/dev      # 38 conversations, 16 kHz WAVs
+cd ~/golive-telephony
+bin/golive-linux-amd64 -profile configs/turnbench.json -env ~/golive-turnbench.env &      # detector only, :8090
+bin/goliveturn-linux-amd64 -data ~/golive-turnbench/dev -parallel 4 -out ~/golive-turnbench/predictions-<build>.json
+cd ~/turnbench && uv run python ~/golive-telephony/scripts/turnbench/score.py ~/golive-turnbench/predictions-<build>.json \
+    --build <build> --record ~/golive-telephony/journal/benchmarks        # the journal's L1 record
+```
+
+Four conversations at a time is eight recognizer sessions; the dev split is
+7.3 h of audio per channel and runs in real time, so a full pass is about
+two hours at `-parallel 4` (`-limit N` for a look). The adapter's plumbing is
+checked without any of this by `make turnbench-sim`: a toy conversation on
+the mocks (a sentence with a mid-turn pause, a backchannel over it, a cut-in,
+two plain turns) whose expected events are written beside it — on 10-21 the
+rule found all six and nothing else, 360–940 ms after the gold.
+
+What the first run should show, against the leaderboard's anchors (best 0.978
+recall / 0.077 FPR / 298 ms; OpenAI's server VAD 0.955 recall but 0.525 FPR,
+disqualified; Gemini Live 0.657 / 0.022 / 1234 ms): golive's EOT latency will
+sit near 600–900 ms (the pause it waits through plus the patience it gives a
+mid-thought), its FPR is the question — ISS-050 was exactly a fire in a
+mid-turn pause — and INT depends on how often a real cut-in is first heard as
+a backchannel prefix. A submission needs a public write-up; this file and
+the project doc would be it.

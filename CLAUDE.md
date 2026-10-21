@@ -768,6 +768,7 @@ make race              # with the race detector
 make run-sim           # mock providers with realistic stage latencies
 make bench-sim         # measure a server started with run-sim
 make eval              # L2+L3 on the mocks, recorded in journal/benchmarks/ (journal's Benchmarks tab)
+make turnbench-sim     # the TurnBench adapter (cmd/goliveturn, L1) on a toy conversation; the real run is in FULLDUPLEX-BENCH.md
 make bundle            # dist/golive-telephony.tar.gz for a box with no Go
 ```
 

@@ -1950,7 +1950,7 @@
   // ====================================================================
 
   var LAYERS = { L1: 'Turn decision (TurnBench)', L2: 'Duplex behaviour (golivefdb)', L3: 'Latency (golivebench)', L4: 'Task and conversation' };
-  var METRIC_NAMES = { R_R: 'response rate', L_R_ms: 'response latency, mean ms', R_Y: 'yield rate', L_Y_ms: 'yield latency, mean ms', I_A: 'agent interruptions', S_BC: 'murmurs talked through', S_VT: 'tics ignored', S_ND: 'asides ignored', pause_held: 'pauses held', p50_ms: 'last sound → first audio p50 ms', p95_ms: 'p95 ms', max_ms: 'max ms', iqr_ms: 'IQR ms', pass_1: 'tool task pass^1', eot_recall: 'EOT recall', eot_fpr: 'EOT false positives', eot_latency_ms: 'EOT latency ms', int_recall: 'INT recall', int_fpr: 'INT false positives' };
+  var METRIC_NAMES = { R_R: 'response rate', L_R_ms: 'response latency, mean ms', R_Y: 'yield rate', L_Y_ms: 'yield latency, mean ms', I_A: 'agent interruptions', S_BC: 'murmurs talked through', S_VT: 'tics ignored', S_ND: 'asides ignored', pause_held: 'pauses held', p50_ms: 'last sound → first audio p50 ms', p95_ms: 'p95 ms', max_ms: 'max ms', iqr_ms: 'IQR ms', pass_1: 'tool task pass^1', eot_recall: 'EOT recall', eot_fpr: 'EOT false positives', eot_latency_ms: 'EOT latency p50 ms', int_recall: 'INT recall', int_fpr: 'INT false positives', int_latency_ms: 'INT latency p50 ms' };
   var RATE_METRICS = { R_R: 1, R_Y: 1, I_A: 1, S_BC: 1, S_VT: 1, S_ND: 1, pause_held: 1, pass_1: 1, eot_recall: 1, eot_fpr: 1, int_recall: 1, int_fpr: 1 };
 
   function fmtMetric(name, v) {
