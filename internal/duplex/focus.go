@@ -597,9 +597,20 @@ func (e *Engine) maybeCloseOnCallerQuiet() {
 	if primaryMS > 0 {
 		return
 	}
+	// "Though the line has not": the close needs evidence that something
+	// other than the caller is keeping the gate open. The labels are that
+	// evidence; the caller's silence alone is not. Without this, a caller who
+	// paused mid-thought on a quiet line (given patient_silence_ms by semantic
+	// endpointing) had their turn taken at focus_quiet_close_ms regardless —
+	// 7 of a call's 8 turns on 10-21, others_ms=0 on every one — and a caller
+	// talking over the assistant was cut off at the same mark, because the
+	// masked echo window made their own voice count for nothing.
+	if othersMS == 0 {
+		return
+	}
 	e.log.Info("listen: the caller's voice has been quiet though the line has not; taking the turn",
-		"caller_quiet_ms", quiet, "others_ms", othersMS, "labelled_to_ms", to,
-		"noise_floor_db", round1(e.vad.NoiseFloorDB()))
+		"caller_quiet_ms", quiet, "others_ms", othersMS, "labelled_to_ms", to, "now_ms", e.inputMS.Load(),
+		"line_silence_ms", int(e.vad.TrailingSilenceMS()), "noise_floor_db", round1(e.vad.NoiseFloorDB()))
 	stop := e.vad.Stop()
 	if stop.Kind != audio.DecisionStopped {
 		return

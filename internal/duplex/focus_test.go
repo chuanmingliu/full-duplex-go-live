@@ -581,3 +581,57 @@ func TestTheCleanTailOfAnInterruptionIsOfferedForEnrolment(t *testing.T) {
 		t.Fatalf("the offered span %v overlaps the assistant's voice", last)
 	}
 }
+
+// The quiet close is for a line that never goes quiet. On an ordinary
+// quiet line it must not act at all: a caller who pauses mid-thought is
+// given patient_silence_ms by semantic endpointing, and the quiet close
+// was ending their turn at focus_quiet_close_ms (420) regardless — on the
+// full-duplex bench of 10-21 every "我想问一下", 600 ms pause, "车险一年多少钱"
+// was answered on its first half and cut by its second; in the archive, 7
+// of a call's 8 turns had closed that way, with others_ms=0 on every one.
+func TestTheQuietCloseLeavesAQuietLineAlone(t *testing.T) {
+	// The recognizer reveals one phrase across the utterances, by voice
+	// heard: the first 600 ms are "多少钱啊", answered, and enrol the caller;
+	// the second utterance is the one under test.
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.FocusQuietCloseMS = 420
+	cfg.opts.Cfg.Duplex.SemanticEndpointing = true
+	cfg.opts.Cfg.Duplex.PatientSilenceMS = 900
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊就是那个保险多少钱")
+	asr.fullStop = true
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	// Every voiced frame is the caller's.
+	scorer := newFakeScorer(func(atMS int64) int { return 0 }, 60*time.Millisecond)
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, scorer)
+
+	// The caller's first turn: answered, and their voice enrolled.
+	speak(e, rate, 600)
+	pause(e, rate, 1200)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	listenThrough(t, e, rate)
+	if e.focus.tracker.Primary() != 0 {
+		t.Fatalf("primary speaker %d; wanted the caller, 0", e.focus.tracker.Primary())
+	}
+	turnsBefore := c.count(live.ExtSpeechStopped)
+	closesBefore := e.focus.quietCloses
+
+	speak(e, rate, 340)  // 就是
+	pause(e, rate, 550)  // a thinking pause: over 420, under the 900 the words earn
+	speak(e, rate, 1100) // 那个保险多少钱
+	pause(e, rate, 1200)
+
+	waitFor(t, "the second turn to be answered", 4*time.Second, func() bool {
+		return c.count(live.ExtSpeechStopped) > turnsBefore
+	})
+	time.Sleep(300 * time.Millisecond)
+	if n := e.focus.quietCloses - closesBefore; n != 0 {
+		t.Errorf("quiet closes %d on a quiet line; wanted none", n)
+	}
+	if n := c.count(live.ExtSpeechStopped) - turnsBefore; n != 1 {
+		t.Fatalf("the caller's one sentence was taken as %d turns", n)
+	}
+}

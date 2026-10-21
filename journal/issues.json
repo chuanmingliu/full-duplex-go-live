@@ -807,6 +807,19 @@
    "symptom": "12 of 12 hesitations said 1.5 s into an answer truncated it (S_VT over the agent 0%); the same sound into silence was left unanswered as intended (ignore_hesitations).",
    "cause": "The floor hold knows murmurs by the user_backchannel_phrases list and hesitations not at all; 呃 was words-that-are-not-a-murmur, and yielded on the first partial.",
    "fix": "judgeHold treats a hesitation (endpoint.Hesitation, under ignore_hesitations) like a murmur: waits for its final, keeps the floor on one, drops any guess begun on it (golive.input_backchannel is emitted). Test: TestAHesitationOverTheAnswerDoesNotCutIt."
+  },
+  {
+   "id": "ISS-050",
+   "title": "The speaker-focus quiet close ends turns at 420 ms on a quiet line, and cuts a caller who talks over the assistant",
+   "area": "turn-taking",
+   "status": "fixed",
+   "commit": "",
+   "found": "2026-10-21",
+   "found_on": "the full-duplex bench on the box against the real providers (pause scenario: every 我想问一下 + 600 ms pause answered on its first half and cut by its second; non-directed: asides over the answer chopped at 420 ms); then the archive",
+   "found_call": "out-mvhrz2ti-s3x1",
+   "symptom": "listen: the caller's voice has been quiet though the line has not; taking the turn … others_ms=0, end_silence_ms=420. On 15 archived calls since 10-19; on the 15:12 call of 10-21, 7 of 8 turns closed this way. Semantic endpointing's patient_silence_ms (700) never got to act; the real-provider bench held 0 of 8 pauses where the mocks (no focus channel) held every one under 700.",
+   "cause": "maybeCloseOnCallerQuiet required only that the caller's labelled voice had been absent for focus_quiet_close_ms — true in any ordinary pause, and true throughout a barge-in because the assistant's echo window is masked and the caller's own voice there counts for nothing. Nothing checked that anything else was keeping the gate open.",
+   "fix": "The close acts only when the labels have another voice in the window (others_ms > 0): the evidence the line 'has not' gone quiet. Test: TestTheQuietCloseLeavesAQuietLineAlone (3 quiet closes and a sentence in 3 turns without the fix). The noisy-room case it was built for (TestTheTurnIsTakenWhenTheCallerGoesQuietThoughTheLineDoesNot) still passes. Not yet verified on a call."
   }
  ]
 }
