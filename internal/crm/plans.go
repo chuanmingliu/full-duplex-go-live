@@ -56,6 +56,11 @@ type PlanField struct {
 	// drops the coverages that need it and quotes the rest; "stop" (the
 	// default) does not quote.
 	IfUnknown string `json:"if_unknown,omitempty"`
+	// Aliases are other names the assistant may record the field under
+	// (car_price, 车价); the intake reads them as the field. The model named
+	// its own keys on the first run (10-20 23:36: car_price, vehicle_age,
+	// claim_count) and was asked for what it had just recorded.
+	Aliases []string `json:"aliases,omitempty"`
 	// Source limits the field to one way of quoting: "rules" (the
 	// placeholder rules read it), "api" (the business service needs it),
 	// "" or "any" for both. The business service looks a vehicle up by its
@@ -75,18 +80,18 @@ const DefaultQuotePlans = `{
         "驾乘险": ["0", "30万", "50万", "80万"]
       },
       "fields": [
-        {"name": "carNum", "for": ["*"], "question": "您的车牌号是多少？", "source": "api"},
-        {"name": "vehiclePrice", "for": ["车损险"], "question": "您这辆车当时的购置价大概是多少？", "if_unknown": "skip", "source": "rules"},
-        {"name": "seats", "for": ["座位险"], "question": "您的车是几座的？", "if_unknown": "skip", "source": "rules"},
-        {"name": "vehicleAge", "for": ["*"], "question": "车是哪一年买的，用了几年了？"},
-        {"name": "ncd", "for": ["*"], "question": "去年有没有出过险？出了几次？", "source": "rules"}
+        {"name": "carNum", "for": ["*"], "question": "您的车牌号是多少？", "source": "api", "aliases": ["car_num", "plate", "车牌", "车牌号"]},
+        {"name": "vehiclePrice", "for": ["车损险"], "question": "您这辆车当时的购置价大概是多少？", "if_unknown": "skip", "source": "rules", "aliases": ["car_price", "vehicle_price", "price", "车价", "购置价"]},
+        {"name": "seats", "for": ["座位险"], "question": "您的车是几座的？", "if_unknown": "skip", "source": "rules", "aliases": ["seat_count", "座位", "座位数"]},
+        {"name": "vehicleAge", "for": ["*"], "question": "车是哪一年买的，用了几年了？", "aliases": ["vehicle_age", "car_age", "age", "车龄"]},
+        {"name": "ncd", "for": ["*"], "question": "去年有没有出过险？出了几次？", "source": "rules", "aliases": ["claim_count", "claims", "出险次数", "出险"]}
       ]
     },
     "basic": {
       "coverages": ["交强险", "三者险"],
       "fields": [
-        {"name": "vehicleAge", "for": ["*"], "question": "车用了几年了？"},
-        {"name": "ncd", "for": ["*"], "question": "去年有没有出过险？", "source": "rules"}
+        {"name": "vehicleAge", "for": ["*"], "question": "车用了几年了？", "aliases": ["vehicle_age", "car_age", "车龄"]},
+        {"name": "ncd", "for": ["*"], "question": "去年有没有出过险？", "source": "rules", "aliases": ["claim_count", "出险次数"]}
       ]
     }
   }
@@ -177,7 +182,24 @@ func known(vars map[string]any, name string) bool {
 // the quotation may run. A field marked skip whose coverages the caller
 // has said they cannot answer (vars[name] == "unknown") is not asked again:
 // its coverages are left out, and Skipped names them.
+// Normalize copies a field's value from any of its aliases, so the
+// quotation reads it under the plan's name.
+func (p QuotePlan) Normalize(vars map[string]any) {
+	for _, f := range p.Fields {
+		if known(vars, f.Name) {
+			continue
+		}
+		for _, a := range f.Aliases {
+			if known(vars, a) {
+				vars[f.Name] = vars[a]
+				break
+			}
+		}
+	}
+}
+
 func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need *Need, skipped []string) {
+	p.Normalize(vars)
 	var missing []Missing
 	var have []string
 	// A coverage with tiers, chosen without one: ask which.

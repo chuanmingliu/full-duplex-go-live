@@ -747,6 +747,14 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	if len(q.Lines) != 3 || len(q.Skipped) != 1 || q.Skipped[0] != "座位险" {
 		t.Fatalf("quote %+v", q)
 	}
+	// A field recorded under another name is read as the field.
+	delete(mem, "vehiclePrice")
+	mem["car_price"] = "12.8万"
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Total == 0 {
+		t.Fatalf("alias: %d %s", code, body)
+	}
+	delete(mem, "car_price")
+	mem["vehiclePrice"] = "12.8万"
 	// 驾乘险 chosen without its tier is asked for; "0" means none.
 	mem["quote"].(map[string]any)["驾乘险"] = true
 	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || need.Missing[0].Field != "驾乘险" || need.Missing[0].Kind != "choice" || len(need.Missing[0].Options) != 4 {
