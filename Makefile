@@ -140,7 +140,7 @@ bundle:
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" \
 		-o $(BUNDLE)/bin/golive-linux-arm64 ./cmd/golive
 	@cp configs/*.json configs/sim.env $(BUNDLE)/configs/
-	@cp scripts/*.sh $(BUNDLE)/scripts/
+	@cp scripts/*.sh $(BUNDLE)/scripts/ && mkdir -p $(BUNDLE)/scripts/turnbench && cp scripts/turnbench/*.py $(BUNDLE)/scripts/turnbench/
 	@cp start.sh TELEPHONY.md .env.example $(BUNDLE)/
 	@cp -r journal $(BUNDLE)/journal
 	@mkdir -p $(BUNDLE)/web && cp web/index.html $(BUNDLE)/web/
