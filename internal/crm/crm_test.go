@@ -560,10 +560,11 @@ func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
 	if code, _ := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Lines[len(q.Lines)-1].Choice != "300万" && q.Lines[0].Choice != "300万" {
 		t.Fatalf("override: %+v", q)
 	}
-	// Nothing settled yet: a clear error for the model.
+	// Nothing settled yet: the first question, not an error.
 	call["memory"] = map[string]any{}
 	call["arguments"] = map[string]any{}
-	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 400 || !strings.Contains(body, "quote") {
+	var need Need
+	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || need.Missing[0].Field != "quote" || need.Missing[0].Kind != "plan" {
 		t.Fatalf("empty: %d %s", code, body)
 	}
 }
@@ -767,6 +768,17 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	mem["quote"].(map[string]any)["驾乘险"] = "0"
 	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || len(q.Lines) != 3 {
 		t.Fatalf("驾乘险 0: %d %s", code, body)
+	}
+	// A coverage under another name is the plan's; no selection at all is
+	// the first question, not an error.
+	mem["seats"] = "5"
+	mem["quote"] = map[string]any{"交强险": true, "车上人员责任险": true, "第三者责任险": "200万"}
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || len(q.Lines) != 3 {
+		t.Fatalf("coverage aliases: %d %s", code, body)
+	}
+	mem["quote"] = map[string]any{}
+	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || need.Missing[0].Kind != "plan" {
+		t.Fatalf("no plan: %d %s", code, body)
 	}
 	// A plan named in memory applies: basic needs only age and ncd.
 	mem["quote_plan"] = "basic"

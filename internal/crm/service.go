@@ -221,6 +221,7 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string) {
 		return nil, nil
 	}
 	name, plan := plans.plan(req.Vars)
+	plan.NormalizeCoverages(req.Config)
 	// A coverage declined ("0", "不要", false) is not in the selection.
 	for c, v := range req.Config {
 		if !selected(v) {

@@ -42,6 +42,10 @@ type QuotePlan struct {
 	// quotation. "0" or "不要" among the options means none, and the
 	// coverage is left out.
 	Options map[string][]string `json:"options,omitempty"`
+	// CoverageAliases map other names for a coverage to the plan's
+	// ("车上人员责任险" → "座位险"); the model used the formal name on 10-21 and
+	// the coverage was skipped as unknown.
+	CoverageAliases map[string]string `json:"coverage_aliases,omitempty"`
 }
 
 // PlanField is one variable the quotation reads.
@@ -78,6 +82,15 @@ const DefaultQuotePlans = `{
       "options": {
         "三者险": ["100万", "200万", "300万", "500万"],
         "驾乘险": ["0", "30万", "50万", "80万"]
+      },
+      "coverage_aliases": {
+        "交强": "交强险", "机动车交通事故责任强制保险": "交强险",
+        "车损": "车损险", "机动车损失险": "车损险", "机动车损失保险": "车损险",
+        "三者": "三者险", "第三者责任险": "三者险", "第三者责任保险": "三者险", "商业三者险": "三者险",
+        "座位": "座位险", "车上人员责任险": "座位险", "车上人员": "座位险",
+        "划痕": "划痕险", "车身划痕险": "划痕险",
+        "玻璃": "玻璃险", "玻璃单独破碎险": "玻璃险",
+        "驾乘": "驾乘险", "驾乘意外险": "驾乘险", "驾乘人员意外险": "驾乘险"
       },
       "fields": [
         {"name": "carNum", "for": ["*"], "question": "您的车牌号是多少？", "source": "api", "aliases": ["car_num", "plate", "车牌", "车牌号"]},
@@ -198,10 +211,26 @@ func (p QuotePlan) Normalize(vars map[string]any) {
 	}
 }
 
+// NormalizeCoverages renames coverages the model named otherwise.
+func (p QuotePlan) NormalizeCoverages(config map[string]any) {
+	for k, v := range config {
+		if canon, ok := p.CoverageAliases[k]; ok && canon != k {
+			if _, exists := config[canon]; !exists {
+				config[canon] = v
+			}
+			delete(config, k)
+		}
+	}
+}
+
 func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need *Need, skipped []string) {
 	p.Normalize(vars)
 	var missing []Missing
 	var have []string
+	if len(config) == 0 {
+		missing = append(missing, Missing{Field: "quote", Kind: "plan", For: p.Coverages, Options: p.Coverages,
+			Question: fmt.Sprintf("您想投哪些险种？可选：%s。", strings.Join(p.Coverages, "、"))})
+	}
 	// A coverage with tiers, chosen without one: ask which.
 	for _, c := range p.Coverages {
 		opts := p.Options[c]
@@ -264,7 +293,7 @@ func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need
 		return nil, skipped
 	}
 	return &Need{Status: "need", Plan: name, Missing: missing, Known: have,
-		Instruction: "报价前还缺少必要信息。请按顺序一次只问一个问题，用户回答后用 update_memory 记录该字段，再重新调用 quote_total；若用户不知道且该字段允许 skip，记录为 \"unknown\" 后重新调用。kind 为 choice 的是险种档位，答案记录在 quote 下该险种名下（如 quote.驾乘险 = \"50万\"，选 0 表示不要）。"}, skipped
+		Instruction: "报价前还缺少必要信息。请按顺序一次只问一个问题，用户回答后用 update_memory 记录该字段，再重新调用 quote_total；若用户不知道且该字段允许 skip，记录为 \"unknown\" 后重新调用。kind 为 choice 的是险种档位，答案记录在 quote 下该险种名下（如 quote.驾乘险 = \"50万\"，选 0 表示不要）；kind 为 plan 表示还没有险种方案，请问清客户要投的险种并记录在 quote 下。"}, skipped
 }
 
 // plan picks the plan a request runs on: vars.quote_plan, else the default.

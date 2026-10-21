@@ -263,9 +263,9 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 				req.Vars[k] = v
 			}
 		}
-		if len(req.Config) == 0 {
-			return req, errors.New("no coverage selection: nothing under \"quote\" in the working memory and no config in the arguments")
-		}
+		// No selection yet is the first thing to ask for, not an error: the
+		// intake answers need with the plan's coverages (10-21: the model
+		// asked for a total before recording the plan and got a 400).
 		return req, nil
 	}
 	var req QuoteRequest
