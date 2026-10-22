@@ -29,7 +29,7 @@ archive (audio.wav, call.json, prompts/)
 
 ## What `omni/data` produces (M0)
 
-`python -I -m omni.data.build --archive ~/golive-archive --out ~/golive-omni/v1`
+`PYTHONPATH=. python3 -P -m omni.data.build --archive ~/golive-archive --out ~/golive-omni/v1`
 
 ```
 v1/

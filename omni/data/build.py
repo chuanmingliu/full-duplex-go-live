@@ -1,6 +1,6 @@
 """Build a dataset version from the archive.
 
-    python -I -m omni.data.build --archive ~/golive-archive --out ~/golive-omni/v1 \
+    PYTHONPATH=. python3 -P -m omni.data.build --archive ~/golive-archive --out ~/golive-omni/v1 \
         --sim-ids ~/golive-sim/dials.ids [--include-real] [--scenarios scenarios.json]
 
 Prints counts only.
@@ -47,7 +47,7 @@ def build(archive: Path, out: Path, *, sim_ids: set[str], include_real: bool,
         if audio is None:
             drops["no recording"] += 1
             continue
-        records, dropped = arch.turn_records(call, sim=sim, scenario=scenarios.get(cid, ""))
+        records, dropped = arch.turn_records(call, sim=sim, scenario=scenarios.get(cid, ""), audio=audio)
         for d in dropped:
             drops[d.reason] += 1
         calls += 1
@@ -62,7 +62,7 @@ def build(archive: Path, out: Path, *, sim_ids: set[str], include_real: bool,
                 files[str(p)] = {"bytes": (out / p).stat().st_size, "sha256": sha256(out / p)}
             turns_f.write(json.dumps(r.to_json(), ensure_ascii=False) + "\n")
             turns += 1
-        labels = arch.floor_labels(call, audio.seconds)
+        labels = arch.floor_labels(call, audio)
         label_counts.update(labels)
         floor_f.write(json.dumps({"call_id": cid, "frame_ms": arch.FRAME_MS, "labels": labels}) + "\n")
         if call.get("prompt_sha"):

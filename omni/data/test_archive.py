@@ -66,15 +66,15 @@ def label_at(labels, t_s):
 def test_turn_records_and_floor(tmp_path):
     cid = synthetic_call(tmp_path / "archive")
     call, audio = arch.load_call(next(arch.iter_calls(tmp_path / "archive")))
-    recs, dropped = arch.turn_records(call, sim=True, scenario="unit")
+    recs, dropped = arch.turn_records(call, sim=True, scenario="unit", audio=audio)
     assert [r.turn for r in recs] == [1, 2] and not dropped
     r1, r2 = recs
     assert (r1.caller.start_s, r1.caller.end_s) == (1.0, 3.0)
-    assert (r1.assistant.start_s, r1.assistant.end_s) == (3.9, 9.0)  # until the caller's next start
-    assert r2.assistant.interrupted and r2.assistant.end_s == 13.0
+    assert r1.assistant.start_s == 3.9 and abs(r1.assistant.end_s - 7.15) < 0.02  # the track's last sound + 150 ms
+    assert r2.assistant.interrupted and abs(r2.assistant.end_s - 13.0) < 0.02
     assert [h["who"] for h in r2.history] == ["assistant", "caller", "assistant", "caller"]
 
-    labels = arch.floor_labels(call, audio.seconds)
+    labels = arch.floor_labels(call, audio)
     assert label_at(labels, 0.2) == arch.SILENCE
     assert label_at(labels, 2.0) == arch.LISTEN
     assert label_at(labels, 3.5) == arch.WAIT
@@ -82,6 +82,7 @@ def test_turn_records_and_floor(tmp_path):
     assert label_at(labels, 5.6) == arch.HOLD    # murmur, answer carried on
     assert label_at(labels, 13.1) == arch.YIELD  # barge-in, answer cut
     assert label_at(labels, 16.0) == arch.SILENCE
+    assert label_at(labels, 8.0) == arch.SILENCE   # after the answer ended, before the caller spoke
 
     out = tmp_path / "v1"
     m = build(tmp_path / "archive", out, sim_ids={cid}, include_real=False, scenarios={cid: "unit"})
@@ -91,7 +92,7 @@ def test_turn_records_and_floor(tmp_path):
     cw = arch.read_wav(out / lines[0]["caller"]["wav"])
     assert abs(cw.seconds - 2.0) < 0.01 and max(cw.caller) > 5000
     aw = arch.read_wav(out / lines[1]["assistant"]["wav"])
-    assert abs(aw.seconds - 1.1) < 0.01
+    assert abs(aw.seconds - 1.1) < 0.03
     assert (out / "prompts" / "abc123.txt").exists()
     assert set(m["files"]) >= {"turns.jsonl", "floor.jsonl", lines[0]["caller"]["wav"]}
 
@@ -110,3 +111,9 @@ def test_realign_drops_repeated_chunks():
              {"t_s": 3 * chunk / rate, "frames": 4, "bytes": 640}]  # 4 chunks arrived in 3 chunks' time
     fixed = arch.realign(audio, marks)
     assert len(fixed.caller) == 3 * chunk and fixed.caller[chunk] == 2 and fixed.caller[2 * chunk] == 3
+
+
+def test_null_lists_as_go_writes_them():
+    call = {"id": "x", "duration_s": 2.0, "turns": None, "transcript": None, "utterances": None}
+    assert arch.turn_records(call, sim=True, scenario="") == ([], [])
+    assert set(arch.floor_labels(call)) == {arch.SILENCE}

@@ -80,6 +80,16 @@ class Audio:
         b = min(len(track), int(end_s * self.rate))
         return track[a:b] if b > a else []
 
+    def last_sound_s(self, track: list[int], start_s: float, end_s: float,
+                     threshold: int = 400, hang_ms: int = 150) -> float:
+        """Where the sound in [start, end) of a track actually ends: the last
+        sample above threshold, plus a short hangover; start_s if none."""
+        a = max(0, int(start_s * self.rate)); b = min(len(track), int(end_s * self.rate))
+        for i in range(b - 1, a - 1, -1):
+            if abs(track[i]) > threshold:
+                return min(end_s, (i / self.rate) + hang_ms / 1000)
+        return start_s
+
 
 def read_wav(path: Path) -> Audio:
     with wave.open(str(path), "rb") as w:
@@ -146,8 +156,16 @@ def realign(audio: Audio, marks: list[dict]) -> Audio:
     return Audio(audio.rate, out, audio.assistant)
 
 
+def _lists(call: dict) -> dict:
+    """Go writes a nil slice as null; read every list field as empty."""
+    for k in ("turns", "transcript", "utterances", "audio_in", "markers", "warnings", "stage_medians"):
+        if call.get(k) is None:
+            call[k] = []
+    return call
+
+
 def load_call(call_dir: Path) -> tuple[dict, Audio | None]:
-    call = json.loads((call_dir / "call.json").read_text())
+    call = _lists(json.loads((call_dir / "call.json").read_text()))
     wav = call_dir / "audio.wav"
     audio = read_wav(wav) if wav.exists() else None
     if audio is not None and call.get("audio_in"):
@@ -155,9 +173,10 @@ def load_call(call_dir: Path) -> tuple[dict, Audio | None]:
     return call, audio
 
 
-def assistant_segments(call: dict) -> dict[int, Segment]:
+def assistant_segments(call: dict, audio: Audio | None = None) -> dict[int, Segment]:
     """The answer of each turn as it was heard: from its first audio to the
-    next line of the conversation, or the caller's next start."""
+    next line of the conversation or the caller's next start, and, when the
+    recording is in hand, trimmed to the assistant track's last sound."""
     lines = sorted(call.get("transcript", []), key=lambda s: s["t_s"])
     segs: dict[int, Segment] = {}
     turns = {t["n"]: t for t in call.get("turns", [])}
@@ -178,8 +197,12 @@ def assistant_segments(call: dict) -> dict[int, Segment]:
             if nxt.get("who") == "caller" and (nxt.get("turn") or cut):
                 end = nxt.get("start_s") or nxt["t_s"]
                 break
+        start = t.get("audio_out_s", s["t_s"])
+        end = max(end, s["t_s"])
+        if audio is not None:
+            end = max(audio.last_sound_s(audio.assistant, start, end), start + 0.1)
         segs[s["turn"]] = Segment(
-            start_s=t.get("audio_out_s", s["t_s"]), end_s=max(end, s["t_s"]),
+            start_s=start, end_s=end,
             text=s.get("text", ""), interrupted=bool(t.get("interrupted")),
             cache_hit=bool(t.get("cache_hit")))
     return segs
@@ -200,9 +223,10 @@ def caller_segments(call: dict) -> dict[int, Segment]:
     return segs
 
 
-def turn_records(call: dict, *, sim: bool, scenario: str,
+def turn_records(call: dict, *, sim: bool, scenario: str, audio: Audio | None = None,
                  history: int = 6) -> tuple[list[TurnRecord], list[Dropped]]:
-    callers, answers = caller_segments(call), assistant_segments(call)
+    _lists(call)
+    callers, answers = caller_segments(call), assistant_segments(call, audio)
     lines = sorted(call.get("transcript", []), key=lambda s: s["t_s"])
     out: list[TurnRecord] = []
     dropped: list[Dropped] = []
@@ -232,12 +256,13 @@ def turn_records(call: dict, *, sim: bool, scenario: str,
     return out, dropped
 
 
-def floor_labels(call: dict, duration_s: float | None = None) -> list[str]:
+def floor_labels(call: dict, audio: Audio | None = None) -> list[str]:
     """One label per FRAME_MS frame of the call."""
-    dur = duration_s or call.get("duration_s") or 0.0
+    _lists(call)
+    dur = audio.seconds if audio is not None else (call.get("duration_s") or 0.0)
     n = int(dur * 1000 / FRAME_MS) + 1
     labels = [SILENCE] * n
-    answers = assistant_segments(call)
+    answers = assistant_segments(call, audio)
     turns = {t["n"]: t for t in call.get("turns", [])}
 
     def frames(a: float, b: float) -> range:

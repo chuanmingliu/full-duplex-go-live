@@ -170,4 +170,4 @@ omni-test:
 	python3 -m pytest omni/data -q
 
 omni-data:  ## ARCHIVE=~/golive-archive OUT=~/golive-omni/v1 SIM_IDS=<file>
-	python3 -I -m omni.data.build --archive $(ARCHIVE) --out $(OUT) $(if $(SIM_IDS),--sim-ids $(SIM_IDS))
+	PYTHONPATH=$(CURDIR) python3 -P -m omni.data.build --archive $(ARCHIVE) --out $(OUT) $(if $(SIM_IDS),--sim-ids $(SIM_IDS))
