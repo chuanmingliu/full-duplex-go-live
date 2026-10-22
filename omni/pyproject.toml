@@ -1,0 +1,15 @@
+[project]
+name = "golive-omni"
+version = "0.0.1"
+description = "Qwen3-Omni audio-in/audio-out pipeline for golive: data, train, eval, serve"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+mlx = ["mlx>=0.31", "mlx-vlm", "mlx-audio", "safetensors", "numpy"]
+unsloth = ["unsloth", "unsloth_zoo"]
+eval = ["jiwer", "numpy", "soundfile"]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["data", "train", "eval"]

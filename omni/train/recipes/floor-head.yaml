@@ -1,0 +1,8 @@
+# B0: a duplex head on the thinker's streaming hidden states, trained on floor.jsonl.
+backend: mlx
+base: Qwen/Qwen3-Omni-30B-A3B-Instruct
+dataset: ~/golive-omni/v1
+targets: [floor_head]   # thinker frozen; a small head over each 80 ms frame -> {silence, listen, wait, speak, yield, hold}
+task: floor
+frame_ms: 80
+eval: {split: 0.1, metrics: [f1_wait, f1_hold, f1_yield, decision_lag_ms]}

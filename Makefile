@@ -164,3 +164,10 @@ eval: build
 		-synth-ms 700,1500,2400,3300 -runs 6 -warmup 1 -md bench-sim.md -json bench-sim.json -record journal/benchmarks -source mocks; rc2=$$?; \
 	kill $$(cat .eval.pid) 2>/dev/null; rm -f .eval.pid; \
 	ls -t journal/benchmarks | head -2; exit $$(( rc + rc2 ))
+
+# --- omni (branch omni-s2s): the one-model turn and the floor head ---
+omni-test:
+	python3 -m pytest omni/data -q
+
+omni-data:  ## ARCHIVE=~/golive-archive OUT=~/golive-omni/v1 SIM_IDS=<file>
+	python3 -I -m omni.data.build --archive $(ARCHIVE) --out $(OUT) $(if $(SIM_IDS),--sim-ids $(SIM_IDS))

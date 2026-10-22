@@ -1,0 +1,12 @@
+# M3: the owner's voice, from the assistant track of the archive (MiniMax clone).
+backend: mlx
+base: Qwen/Qwen3-Omni-30B-A3B-Instruct
+dataset: ~/golive-omni/v1
+targets: [talker]       # talker + MTP code predictor; thinker and code2wav frozen
+task: tts               # assistant text -> assistant audio codec tokens
+quant: none             # bf16 talker fits on 128 GB
+lora: {rank: 8, alpha: 16}
+steps: 600
+batch: 2
+lr: 5.0e-5
+eval: {split: 0.1, metrics: [speaker_similarity, first_codec_frame_ms]}

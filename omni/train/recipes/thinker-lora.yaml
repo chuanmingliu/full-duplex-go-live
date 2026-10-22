@@ -1,0 +1,14 @@
+# M2: the thinker on phone audio. One recipe, two backends.
+backend: mlx            # mlx (the Mac) | unsloth (CUDA)
+base: Qwen/Qwen3-Omni-30B-A3B-Instruct
+dataset: ~/golive-omni/v1
+targets: [thinker]      # thinker | talker | floor_head
+task: spoken_qa         # asr (caller audio -> caller text) | spoken_qa (caller audio + prompt + history -> assistant text)
+quant: 4bit             # thinker weights; the audio encoder stays frozen
+lora: {rank: 16, alpha: 32, modules: [q_proj, k_proj, v_proj, o_proj]}
+max_seq: 8192           # the 13k-character prompt is ~7k tokens
+steps: 400
+batch: 1
+grad_accum: 8
+lr: 1.0e-4
+eval: {split: 0.1, metrics: [wer, held_out_loss]}
