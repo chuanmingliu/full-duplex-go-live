@@ -101,6 +101,7 @@ lan_ip() {
   [ -n "$dev" ] && ip -o -4 addr show dev "$dev" 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}'
 }
 JOURNAL_PORT="${JOURNAL_PORT:-8790}"
+JOURNAL_TARGET_MS="${JOURNAL_TARGET_MS:-1200}"   # the latency goal the journal counts against (1000 from 10-22 once the owner says so)
 if [ -z "${JOURNAL_ADDR:-}" ]; then _ip="$(lan_ip)"; JOURNAL_ADDR="${_ip:-127.0.0.1}:$JOURNAL_PORT"; fi
 JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
 # Where finished calls are kept for good: recording, conversation, measurements
@@ -262,7 +263,7 @@ jstart() {
   local store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
   setsid nohup "$JBIN" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
     -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" \
-    -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" >> "$JLOG" 2>&1 < /dev/null &
+    -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" -target "$JOURNAL_TARGET_MS" >> "$JLOG" 2>&1 < /dev/null &
   echo $! > "$JPID"
   sleep 1
   if jrunning; then say "the call journal is up on $JOURNAL_ADDR (pid $(cat "$JPID")); archive: $ARCHIVE_DIR"

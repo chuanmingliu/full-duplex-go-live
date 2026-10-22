@@ -18,7 +18,12 @@ Providers in use: Tencent realtime ASR, DeepSeek (`deepseek-chat`), MiniMax
 
 **End-to-end latency within 1200 ms at p95, on a phone call.** The owner said
 so in as many words: the figure is a p95, not a median. This is the thing to
-optimise; everything else is in service of it.
+optimise; everything else is in service of it. **On 10-22 the owner moved the
+aim to 1000 ms at p95**: `journal/RETRO-1000.md` is the retrospective over
+every turn so far and the ranked levers (decision 15: open every answer from
+the phrase cache; race the copies on the first clause). The journal counts
+against `-target` (`JOURNAL_TARGET_MS` in `phone-brain.sh`), 1200 until the
+owner says 1000.
 
 Two definitions are in use. **The headline is always the first, caller's
 last sound → first audio** (the owner settled it on 10-16: it is what the

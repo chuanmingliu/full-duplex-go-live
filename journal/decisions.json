@@ -153,6 +153,17 @@
       "undo": "Empty the list",
       "needs": "The owner's choice; a few recordings with real asides on them",
       "status": "waiting"
+    },
+    {
+      "rank": 15,
+      "title": "The target moves from p95 1200 to p95 1000 ms: open every answer from the phrase cache, and race the copies on the first clause",
+      "gain": "The only lever that beats both vendor tails at once. Cache-opened turns measured 515–831 ms from last sound (n≈20 over three calls) against a ~880 median and a 1045–1160 p95 on today's good calls; with most turns opened that way the chat model's first token and the synthesizer's first audio move off the path of the first audio, and p95 ~900 is in reach. The first-clause race removes the 600–700 ms first clauses outright (−30 to −60 ms at p90)",
+      "basis": "journal/RETRO-1000.md: ~1,100 turns on 24 builds. The ordinary turn is ~880 ms of which ~225 is golive's and the rest three vendors' round trips; the pause is not on the path; of ~70 turns over 1200, ~55% were the chat model's first token, ~20% the synthesizer's first audio, ~12% a patience wait, ~5% a long first clause",
+      "cost": "The assistant's voice changes: every answer opens with one of a few short acknowledgements (好的，/ 明白，/ 您说的对，/ 这个我帮您看一下，). That is a change to the owner's prompt, so it is the owner's; one line in instructions_append, no build, two calls to measure. The first-clause race is a small change in internal/provider/hedge.go with a test. Neither touches the 23:00 hour (decision 1)",
+      "guard": "What the assistant says; the clause list stays short and the owner hears two calls before it stays. The journal's overview counts against 1000 from the deploy that carries `-target 1000`",
+      "undo": "yes — remove the line; the race rule is a config",
+      "needs": "The owner's yes on the opening clauses and the wording; then `min_silence_ms` 380 → 300 becomes worth 80 ms a turn and is the next lever",
+      "status": "proposed 10-22 with the retrospective"
     }
   ]
 }

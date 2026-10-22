@@ -12,8 +12,10 @@ import (
 )
 
 // TargetMS is the goal the journal judges turns against: the caller's last
-// sound to the first audio leaving golive, at p95.
-const TargetMS = 1200
+// sound to the first audio leaving golive, at p95. 1200 was the owner's
+// first target; on 10-22 the aim moved to 1000 (journal/RETRO-1000.md),
+// set with the journal's -target flag (JOURNAL_TARGET_MS on the box).
+var TargetMS = 1200
 
 // MinTurnsForP95 is how many turns it takes before a p95 is more than the
 // worst turn or the one before it.
