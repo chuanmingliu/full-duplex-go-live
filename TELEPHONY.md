@@ -1297,6 +1297,15 @@ its side; he told us the shape). `session: the gateway was told to hang
 up … status=200` is what to look for; a 404 `not_found` means the id was
 not the dialog's. Test: `TestTheAssistantsHangupIsSentToTheGateway`.
 
+Since 10-23 a model rule may carry `min_turns` (and the set `model_min_turns`):
+the engine counts the caller's turns with words and refuses the model's
+`end_call` under the minimum, answering it with why, so the conversation goes
+on; the goodbye net stands down for 20 s so the farewell the model already
+said does not end the call anyway. The seed gives `refused_twice` two turns:
+on 10-23 the model hung up as "refused twice" on the caller's first, garbled
+line. The `end_call` tool names each rule's id in its description and takes
+it as `rule`.
+
 ## Working memory, and work that takes longer than a turn
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",

@@ -30,6 +30,11 @@ import (
 type HangupRules struct {
 	Version int          `json:"version,omitempty"`
 	Rules   []HangupRule `json:"rules"`
+	// ModelMinTurns is how many turns the caller must have had answered
+	// before any model rule may end the call; a rule's own MinTurns
+	// overrides it. The 09:43 call of 10-23 was ended as "refused" on one
+	// seven-character transcript 17 s in (ISS-054).
+	ModelMinTurns int `json:"model_min_turns,omitempty"`
 }
 
 // HangupRule is one case. Kind is model, silence, duration, keyword or
@@ -43,6 +48,9 @@ type HangupRule struct {
 	Pattern  string `json:"pattern,omitempty"`  // keyword: a regular expression on the caller's words; assistant: on the assistant's
 	Farewell string `json:"farewell,omitempty"` // what to say before hanging up
 	Enabled  *bool  `json:"enabled,omitempty"`  // nil is enabled
+	// MinTurns, on a model rule: the caller must have had this many turns
+	// answered before the rule may end the call (0: the set's model_min_turns).
+	MinTurns int `json:"min_turns,omitempty"`
 
 	re *regexp.Regexp
 }
@@ -61,7 +69,7 @@ const DefaultHangupRules = `{
      "when": "客户明确表示再见、挂了、先这样、不聊了",
      "farewell": "好的，再见。"},
     {"id": "refused_twice", "name": "客户再次拒绝", "kind": "model",
-     "when": "客户明确拒绝且已按规则挽留过一次，再次拒绝",
+     "when": "客户明确拒绝且已按规则挽留过一次，再次拒绝", "min_turns": 2,
      "farewell": "好的，那不打扰您了，再见。"},
     {"id": "wrong_number", "name": "打错电话", "kind": "model",
      "when": "对方表示不是本人、打错了、不认识这辆车",
@@ -158,16 +166,32 @@ func (hr HangupRules) EndCallTool() Tool {
 		return t
 	}
 	var b strings.Builder
-	b.WriteString("挂断电话。出现下列任一情况时，先说出对应的告别语，再调用本工具（同一句回复里完成）：")
+	b.WriteString("挂断电话。出现下列任一情况时，先说出对应的告别语，再调用本工具（同一句回复里完成），并在 rule 参数中填写该情况的编号：")
 	for i, r := range rules {
-		fmt.Fprintf(&b, "\n%d. %s", i+1, strings.TrimSpace(r.When))
+		fmt.Fprintf(&b, "\n%d. [%s] %s", i+1, r.ID, strings.TrimSpace(r.When))
 		if r.Farewell != "" {
 			fmt.Fprintf(&b, "，告别语：“%s”", strings.TrimSpace(r.Farewell))
 		}
 	}
 	b.WriteString("\n其他情况不要调用：对话未结束、客户还有问题时继续对话。调用后系统会在当前这句话播放完后挂断。")
 	t.Description = b.String()
+	t.Parameters = json.RawMessage(`{"type":"object","properties":{"rule":{"type":"string","description":"适用情况的编号（方括号内的标识）"},"reason":{"type":"string","description":"结束原因，几个字即可"}}}`)
 	return t
+}
+
+// MinTurnsFor is how many answered turns of the caller the rule named (by
+// id, or by its words in reason) requires before the model may end the
+// call: the rule's own MinTurns, else the set's ModelMinTurns.
+func (hr HangupRules) MinTurnsFor(rule, reason string) int {
+	for _, r := range hr.ModelRules() {
+		if r.ID == rule || (rule == "" && reason != "" && (strings.Contains(r.When, reason) || strings.Contains(reason, r.Name))) {
+			if r.MinTurns > 0 {
+				return r.MinTurns
+			}
+			break
+		}
+	}
+	return hr.ModelMinTurns
 }
 
 // FetchHangupRules reads the config from the lead service: GET

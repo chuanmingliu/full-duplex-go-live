@@ -64,6 +64,11 @@ type toolState struct {
 	// and the rule hung up as the second one ended).
 	lastCallerAt time.Time
 	lastQuietAt  time.Time
+	// callerTurns counts the caller's turns that were committed with words
+	// (what the hangup rules' min_turns is judged on). netHeldUntil keeps
+	// the goodbye net from acting on the farewell of a refused end_call.
+	callerTurns  int
+	netHeldUntil time.Time
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
 	// stats
@@ -275,12 +280,23 @@ func (e *Engine) continueWith(p *pendingResponse) {
 // that has barely begun is not ended on the model's say-so.
 func (e *Engine) requestEndCall(c provider.ToolCall) string {
 	var args struct {
+		Rule   string `json:"rule"`
 		Reason string `json:"reason"`
 	}
 	_ = json.Unmarshal([]byte(c.Arguments), &args)
 	if since := time.Since(e.tools.started); since < minCallForEndCall {
 		e.log.Warn("tools: end_call refused this early in the call", "after_ms", since.Milliseconds(), "reason", args.Reason)
 		return `{"status":"refused","note":"通话刚开始，不能挂断；请继续对话"}`
+	}
+	// A rule may want the caller to have been heard a few times first: "refused
+	// twice" on one garbled line 17 s into the 09:43 call of 10-23 (ISS-054).
+	if min := e.tools.rules.MinTurnsFor(args.Rule, args.Reason); min > 0 && e.tools.callerTurns < min {
+		e.log.Warn("tools: end_call refused: too few turns for the rule", "rule", args.Rule, "reason", args.Reason,
+			"turns", e.tools.callerTurns, "min_turns", min)
+		// The farewell it said with this call must not end the call by the
+		// goodbye net either (said_goodbye matches "不打扰您了").
+		e.tools.netHeldUntil = time.Now().Add(netHoldAfterRefusal)
+		return fmt.Sprintf(`{"status":"refused","note":"客户还只说了 %d 轮，按规则至少 %d 轮后才能以此理由挂断；请继续对话（如客户拒绝，先挽留一次）"}`, e.tools.callerTurns, min)
 	}
 	if e.tools.endCall == nil {
 		e.tools.endCall = &endCallRequest{reason: args.Reason, at: time.Now(), byModel: true}
@@ -292,6 +308,11 @@ func (e *Engine) requestEndCall(c provider.ToolCall) string {
 
 // minCallForEndCall is how old a call must be before the model may end it.
 var minCallForEndCall = 10 * time.Second
+
+// netHoldAfterRefusal is how long the goodbye net stands down after an
+// end_call was refused for too few turns: the model's farewell in that
+// reply has already been said and must not end the call by the back door.
+var netHoldAfterRefusal = 20 * time.Second
 
 // loadHangupRules reads the rules from the lead service when the profile
 // says to, and falls back to the built-in set: a call must not start
@@ -325,6 +346,10 @@ func (e *Engine) loadHangupRules() tools.HangupRules {
 func (e *Engine) checkAssistantHangupRules(said string) {
 	ts := e.tools
 	if ts == nil || ts.endCall != nil || said == "" || time.Since(ts.started) < minCallForEndCall {
+		return
+	}
+	if time.Now().Before(ts.netHeldUntil) {
+		e.log.Info("hangup: the assistant's words would end the call, but its end_call was just refused; not acting", "chars", len([]rune(said)))
 		return
 	}
 	for _, r := range ts.engine {

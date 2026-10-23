@@ -740,3 +740,75 @@ func TestTheCallerSpeakingOverTheSilenceFarewellDoesNotCutIt(t *testing.T) {
 		t.Fatalf("the farewell did not play on: %.0f ms before, %.0f after", heard, c.audioMS())
 	}
 }
+
+// refusingLLM says the caller refused and asks to end the call under the
+// "refused twice" rule on every turn.
+type refusingLLM struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (l *refusingLLM) Name() string { return "refusing-script" }
+func (l *refusingLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	l.mu.Lock()
+	l.calls++
+	id := fmt.Sprintf("call_%d", l.calls)
+	l.mu.Unlock()
+	out := make(chan provider.LLMDelta, 8)
+	last := req.Messages[len(req.Messages)-1]
+	go func() {
+		defer close(out)
+		time.Sleep(80 * time.Millisecond)
+		if last.Role == provider.RoleTool {
+			out <- provider.LLMDelta{Text: "好的，那我再介绍一下。"}
+			return
+		}
+		out <- provider.LLMDelta{Text: "好的，不打扰您了，再见。"}
+		out <- provider.LLMDelta{ToolCall: &provider.ToolCall{ID: id, Name: "end_call", Arguments: `{"rule":"refused_twice","reason":"客户明确拒绝"}`}}
+	}()
+	return out, nil
+}
+
+// A model rule with min_turns is not acted on before the caller has had that
+// many turns: "refused twice" on the caller's first (garbled) line, 17 s into
+// the 09:43 call of 10-23 (ISS-054). The model is told why and carries on.
+func TestAModelHangupRuleWaitsForItsMinimumTurns(t *testing.T) {
+	oldMin, oldGrace := minCallForEndCall, hangupGrace
+	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
+	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	// With the goodbye net on too: the refused farewell must not end the
+	// call by the back door.
+	svc := rulesService(t, `{"rules":[{"id":"refused_twice","kind":"model","when":"客户明确拒绝且已挽留过一次","min_turns":2,"farewell":"好的，再见。"},
+		{"id":"said_goodbye","kind":"assistant","pattern":"再见|不打扰您了"}]}`)
+
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	opts.Cfg.HangupRules = true
+	opts.Cfg.ToolsBaseURL = svc.URL
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("不需要不需要不需要不需要") // two utterances' worth: the phrase is consumed in order
+	asr.msPerRune = 150
+	llm := &refusingLLM{}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &slowQuote{})
+	if got := e.tools.rules.MinTurnsFor("refused_twice", ""); got != 2 {
+		t.Fatalf("min_turns read as %d", got)
+	}
+	// Turn 1: the model wants to hang up; the rule needs two turns.
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the first answer", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	time.Sleep(1500 * time.Millisecond)
+	if e.tools.endCall != nil {
+		t.Fatal("end_call was accepted on the caller's first turn")
+	}
+	if _, ok := hungUpWith(c); ok {
+		t.Fatal("hung up on the first turn")
+	}
+	// Turn 2: now it may.
+	pause(e, rate, 1500)
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the second end_call", 6*time.Second, func() bool { return e.tools.endCall != nil })
+}

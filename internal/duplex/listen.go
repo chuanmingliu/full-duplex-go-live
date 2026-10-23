@@ -1153,6 +1153,9 @@ func (e *Engine) commitTurn(turn *Turn) {
 	if turn.Transcript == "" {
 		return
 	}
+	if e.tools != nil {
+		e.tools.callerTurns++
+	}
 	// Something the caller said earlier and was never answered — they carried
 	// on after a pause that closed the turn, or asked again before the answer
 	// came — is still part of what they are asking now. It goes into the

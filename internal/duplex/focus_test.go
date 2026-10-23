@@ -635,3 +635,108 @@ func TestTheQuietCloseLeavesAQuietLineAlone(t *testing.T) {
 		t.Fatalf("the caller's one sentence was taken as %d turns", n)
 	}
 }
+
+// A sound over the answer that the labels call mostly another voice — with
+// less of the caller in it than counts as the caller speaking — keeps the
+// floor when the hold runs out, instead of yielding to the words as the
+// pre-label engine did. The 09:43 call of 10-23: a station announcement over
+// the answer, 92% another voice and 100 ms the caller's, 3 points short of
+// the veto share; the hold waited out and the answer was cut (ISS-052).
+func TestAnUndecidedHoldThatIsMostlyAnotherVoiceKeepsTheFloor(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.AllowBargeIn = true
+	cfg.opts.Cfg.Duplex.OnNewQuery = "cut"
+	cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 600
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊本次列车开往")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 40 * time.Millisecond
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	// The caller's enrolment utterance; then the announcement over the
+	// answer with 100 ms of the caller in it.
+	scorer := newFakeScorer(func(atMS int64) int {
+		switch {
+		case atMS < 1000:
+			return 0
+		case atMS >= 1300 && atMS < 1400:
+			return 0
+		}
+		return 1
+	}, 150*time.Millisecond)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, Log: logger}, scorer)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 250 })
+	speak(e, rate, 1200)
+	pause(e, rate, 1500)
+	if cut := c.count(live.ExtAudioTruncated); cut != 0 {
+		t.Fatalf("the answer was cut %d time(s) by a sound that was mostly another voice", cut)
+	}
+	if !strings.Contains(logs.String(), "waited out, mostly another voice") {
+		t.Fatalf("the hold was not kept on the waited-out verdict")
+	}
+}
+
+// An utterance another voice opened and the caller joined for a moment is
+// not answered at the quiet close: its words are mostly the other voice's.
+// The 09:43 call of 10-23: 200 ms of the caller in 2.6 s of a station
+// announcement, taken as a turn, seven garbled characters read by the model
+// as a refusal (ISS-053).
+func TestTheQuietCloseDoesNotAnswerAnUtteranceThatIsMostlyAnotherVoice(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.FocusQuietCloseMS = 420
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊本次列车开往这个那个这个那个这个那个这个那个这个那个这个那个")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	// The caller for 800 ms (enrolment); silence; then another voice for
+	// 3.5 s with the caller joining for 200 ms a second in.
+	scorer := newFakeScorer(func(atMS int64) int {
+		switch {
+		case atMS < 800:
+			return 0
+		case atMS >= 4000 && atMS < 4200:
+			return 0
+		}
+		return 1
+	}, 60*time.Millisecond)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, Log: logger}, scorer)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	speak(e, rate, 800)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 0 })
+	pause(e, rate, 1500) // the short answer plays out; audio now at 3000 ms
+	turns := c.count(live.ServerDelegationCreated)
+	for i := 0; i < 35; i++ { // 3.5 s of the announcement, the caller inside it at 4000–4200
+		speak(e, rate, 100)
+	}
+	pause(e, rate, 800)
+	if got := c.count(live.ServerDelegationCreated); got != turns {
+		t.Fatalf("a turn was made of an utterance that was mostly another voice (%d → %d)", turns, got)
+	}
+	if !strings.Contains(logs.String(), "mostly another voice at the quiet close") {
+		t.Fatalf("the quiet close did not judge the utterance's voice")
+	}
+	if e.focus.quietCloses != 0 {
+		t.Fatalf("quiet closes %d; wanted 0", e.focus.quietCloses)
+	}
+}

@@ -369,7 +369,18 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 			return bargeInKeep
 		}
 	} else if verdict == bargeInWait && waited >= e.focusBargeInWait() {
-		verdict, why = bargeInYield, why+"; waited out"
+		// Waited out. The words used to decide here as they did before the
+		// labels existed — but when the labels are in and say the sound was
+		// mostly somebody else's, with less of the caller in it than counts
+		// as the caller speaking, the words are that somebody's too. On the
+		// 09:43 call of 10-23 a station announcement over the answer was 92%
+		// another voice, 100 ms the caller's — 3 points short of the veto
+		// share — and the answer was cut on it (ISS-052).
+		if a.Known && a.Coverage >= 0.6 && primaryMS < 160 && a.Others >= 0.5 {
+			verdict, why = bargeInKeep, why+"; waited out, mostly another voice"
+		} else {
+			verdict, why = bargeInYield, why+"; waited out"
+		}
 	}
 	if !h.words {
 		h.words = true
@@ -556,6 +567,11 @@ func (e *Engine) judgeUtteranceFocus() {
 	switch {
 	case primaryMS >= 160:
 		if e.uttVerdict == uttIgnored {
+			if e.uttQuietIgnored {
+				// Already taken up once and let go at the quiet close as
+				// mostly another voice's; the share only falls from here.
+				return
+			}
 			e.log.Info("focus: the caller's voice joined the utterance; taking it up", "primary_ms", primaryMS, "span_ms", span)
 			e.stopIgnoring()
 		}
@@ -606,6 +622,17 @@ func (e *Engine) maybeCloseOnCallerQuiet() {
 	// talking over the assistant was cut off at the same mark, because the
 	// masked echo window made their own voice count for nothing.
 	if othersMS == 0 {
+		return
+	}
+	// And the turn it takes must be the caller's. An utterance another voice
+	// opened and the caller joined for a moment (200 ms of 2.6 s on the 09:43
+	// call of 10-23, a station announcement) has a transcript that is mostly
+	// the other voice's words; answered, the model read seven garbled
+	// characters as a refusal and hung up (ISS-053). Mostly not the caller's:
+	// let it go by, as an utterance judged another voice's is.
+	if a := fs.tracker.AttributeOver(e.utterStartMS, to); a.Known && a.Coverage >= 0.6 && a.VoicedMS > 0 && a.Primary < 0.5 {
+		e.uttQuietIgnored = true
+		e.ignoreUtterance("mostly another voice at the quiet close", a, to-e.utterStartMS)
 		return
 	}
 	e.log.Info("listen: the caller's voice has been quiet though the line has not; taking the turn",

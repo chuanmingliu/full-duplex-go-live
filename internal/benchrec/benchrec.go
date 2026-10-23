@@ -21,8 +21,8 @@ type Record struct {
 	// Layer: L1 turn decision (TurnBench), L2 duplex behaviour (golivefdb),
 	// L3 latency (golivebench), L4 task and conversation (τ-voice, the
 	// simulated customer).
-	Layer string `json:"layer"`
-	Build string `json:"build"`
+	Layer string    `json:"layer"`
+	Build string    `json:"build"`
 	At    time.Time `json:"at"`
 	// Source says what spoke: "mocks", "box" (real providers on the test
 	// box), "phone" (a call), "sim" (the simulated customer).

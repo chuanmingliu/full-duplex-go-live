@@ -240,6 +240,9 @@ type Engine struct {
 	// uttVerdict is what the focus labels have said about the open
 	// utterance so far (see judgeUtteranceFocus).
 	uttVerdict uttVerdict
+	// uttQuietIgnored: this utterance was taken up on the caller joining and
+	// then let go at the quiet close as mostly another voice's; not taken up again.
+	uttQuietIgnored bool
 	// focus is the speaker-focus side channel, nil when off; utterStartMS is
 	// where the current utterance began, on the audio clock.
 	focus        *focusState
@@ -735,6 +738,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.turnBeforeUtterance = e.tracker.Current()
 		e.utterStartMS = d.StartMS
 		e.uttVerdict = uttUnjudged
+		e.uttQuietIgnored = false
 		e.log.Debug("listen: utterance opened",
 			"start_ms", d.StartMS,
 			"active_ms", int(d.ActiveMS),
