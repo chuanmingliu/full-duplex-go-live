@@ -762,9 +762,26 @@ var ackGrace = 400 * time.Millisecond
 // sayAck says an async tool's ack if its task is still running and the
 // floor is free. Loop goroutine.
 func (e *Engine) sayAck(p *pendingResponse) {
-	if e.tools == nil || e.tools.tasks[p.scriptedTask] == nil {
-		e.log.Info("tools: the task finished within the ack's grace; not saying it", "task", p.scriptedTask)
+	ts := e.tools
+	if ts == nil {
 		return
+	}
+	delete(ts.ackPending, p.scriptedTask)
+	if ts.tasks[p.scriptedTask] == nil {
+		// Done within the grace. A real result (the status the opening is
+		// for — a quote) is still announced: the owner wants the caller told
+		// the premium was worked out, however quickly (23:15 on 10-23). A
+		// `need` or an error is not a computation and gets no "请您稍等".
+		announce := false
+		for _, t := range ts.deliveries {
+			if t.ID == p.scriptedTask {
+				announce = t.Result.Err == nil && t.Tool.OpeningFor(t.Result.Output) != ""
+			}
+		}
+		if !announce {
+			e.log.Info("tools: the task finished within the ack's grace with nothing to announce; not saying the ack", "task", p.scriptedTask)
+			return
+		}
 	}
 	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.hangingUp() {
 		e.log.Info("tools: the ack's moment passed (the caller or the assistant is speaking); not saying it", "task", p.scriptedTask)

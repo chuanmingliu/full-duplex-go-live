@@ -904,3 +904,29 @@ func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Reque
 	out, _ := json.Marshal(map[string]any{"status": s.status, "total": 3200, "memory_version": req.MemoryVersion})
 	return tools.Result{Output: out, Took: s.delay}
 }
+
+// A quote that is back at once (the placeholder rules take 15 ms) is still
+// announced: ack, then the opening, then the model's words, in that order
+// (the owner, 23:15 on 10-23: "where is 请您稍等").
+func TestAnInstantQuoteStillGetsTheAckThenTheOpening(t *testing.T) {
+	opts := quoteConfig()
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpening = "保费给您计算好了，"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpeningStatus = "quote"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: 10 * time.Millisecond, status: "quote"})
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "三千二百") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	said := c.saidAll()
+	a, o, m := strings.Index(said, "请您稍等"), strings.Index(said, "保费给您计算好了"), strings.Index(said, "报价出来了")
+	if a < 0 || o < 0 || m < 0 || !(a < o && o < m) {
+		t.Fatalf("wanted ack, opening, then the model's words; said %q", said)
+	}
+}

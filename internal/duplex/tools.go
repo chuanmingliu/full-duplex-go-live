@@ -69,6 +69,9 @@ type toolState struct {
 	// the goodbye net from acting on the farewell of a refused end_call.
 	callerTurns  int
 	netHeldUntil time.Time
+	// ackPending holds a task's delivery until its ack has been said or
+	// passed over (the ack comes first, the result after it).
+	ackPending map[string]bool
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
 	// stats
@@ -238,6 +241,10 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 				// the phrase cache once the model's own sentence has played,
 				// and the model is not resumed until the result comes.
 				p.scripted = t.Ack
+				if ts.ackPending == nil {
+					ts.ackPending = map[string]bool{}
+				}
+				ts.ackPending[taskID] = true
 			}
 		default:
 			wait = append(wait, c)
@@ -606,6 +613,9 @@ func (e *Engine) maybeDeliver() {
 		return
 	}
 	task := ts.deliveries[0]
+	if ts.ackPending[task.ID] {
+		return // its ack first
+	}
 	waited := time.Since(task.Submitted.Add(task.Result.Took))
 	wait := time.Duration(e.opts.Cfg.ToolsDeliverWaitMS) * time.Millisecond
 	if wait <= 0 {
@@ -768,6 +778,10 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 			if taskID != "" && t.Ack != "" && p.scripted == "" {
 				p.scriptedTask = taskID
 				p.scripted = t.Ack
+				if e.tools.ackPending == nil {
+					e.tools.ackPending = map[string]bool{}
+				}
+				e.tools.ackPending[taskID] = true
 			}
 		default:
 			c := c
