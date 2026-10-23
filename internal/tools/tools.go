@@ -42,6 +42,31 @@ type Tool struct {
 	ETASeconds int `json:"eta_s,omitempty"`
 	// Builtin names a tool the engine implements itself ("update_memory").
 	Builtin string `json:"builtin,omitempty"`
+	// Ack is a fixed line said when an async tool is submitted;
+	// ResultOpening the fixed opening of the reply that delivers its result
+	// (only for results whose status is ResultOpeningStatus, when set). See
+	// config.ToolConfig.
+	Ack                 string `json:"ack,omitempty"`
+	ResultOpening       string `json:"result_opening,omitempty"`
+	ResultOpeningStatus string `json:"result_opening_status,omitempty"`
+}
+
+// OpeningFor is the fixed opening for a result, or "" when the result's
+// status is not the one the opening is for.
+func (t Tool) OpeningFor(output []byte) string {
+	if t.ResultOpening == "" {
+		return ""
+	}
+	if t.ResultOpeningStatus == "" {
+		return t.ResultOpening
+	}
+	var r struct {
+		Status string `json:"status"`
+	}
+	if json.Unmarshal(output, &r) != nil || r.Status != t.ResultOpeningStatus {
+		return ""
+	}
+	return t.ResultOpening
 }
 
 // Definition is the tool as the chat model sees it (chat-completions form).

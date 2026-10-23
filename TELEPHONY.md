@@ -1440,3 +1440,14 @@ what it did take.
 Not yet: seeding the memory from the lead's record (phone, plate, last
 year's plan) when the lead service places the call, writing the final
 memory back as the contact's summary, the task events in the journal.
+**The owner's words for the wait and the result (10-23).** An async tool may
+carry `ack` and `result_opening` (with `result_opening_status`) in the
+profile. On submission the assistant says the ack from the phrase cache —
+"这会儿正在给您计算保费，请您稍等" — once the model's own sentence has played, and
+the model is not resumed to improvise one; a result waiting for a gap does
+not cut the ack. The reply that delivers a result of the named status
+("quote", not a "need") opens with the fixed line — "保费给您计算好了，" — from
+the cache before the model's first token, and the model is told to carry on
+after it. Both lines are synthesized at start-up (`WarmPhrases`), so neither
+costs a synthesis on the call.
+

@@ -47,6 +47,9 @@ type pendingResponse struct {
 	calls        []provider.ToolCall
 	outputs      map[string]string
 	createdAt    time.Time
+	// scripted, when set, is said in place of resuming the model: an async
+	// tool's ack. The model hears the result later, as a task_result turn.
+	scripted string
 }
 
 func (p *pendingResponse) complete() bool {
@@ -420,6 +423,13 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	pipe := e.newSpeechPipe(turn, false)
 	settled()
 	var full strings.Builder
+	if turn.Opening != "" {
+		// A result's fixed opening goes out before the model's first token,
+		// from the phrase cache: the caller hears "保费给您计算好了，" at once.
+		pipe.Push(turn.Opening)
+		full.WriteString(turn.Opening)
+		turn.AppendResponse(turn.Opening)
+	}
 	var calls []provider.ToolCall
 	var usage provider.TokenUsage
 	started := time.Now()
@@ -727,6 +737,15 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 	turn.DelegationID = p.delegationID
 	e.specTurn = nil
 	e.commitTurn(turn)
+	if p.scripted != "" {
+		turn.Scripted = true
+		e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "chars", len([]rune(p.scripted)))
+		pipe := e.newSpeechPipe(turn, true)
+		pipe.Push(p.scripted)
+		pipe.Close()
+		turn.AppendResponse(p.scripted)
+		return
+	}
 	e.log.Debug("think: resuming the backend with function results",
 		"delegation", p.delegationID, "turn", turn.ID, "calls", len(p.calls),
 		"waited_ms", time.Since(p.createdAt).Milliseconds())

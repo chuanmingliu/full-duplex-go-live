@@ -276,6 +276,16 @@ type ToolConfig struct {
 	Async       bool            `json:"async,omitempty"`
 	TimeoutMS   int             `json:"timeout_ms,omitempty"`
 	ETASeconds  int             `json:"eta_s,omitempty"`
+	// Ack, on an async tool, is a fixed line the assistant says when the
+	// tool is submitted ("这会儿正在给您计算保费，请您稍等"), from the phrase cache,
+	// in place of whatever the model would have improvised; the model is
+	// not resumed until the result comes. ResultOpening is the fixed opening
+	// of the reply that delivers the result ("保费给您计算好了，"), said from
+	// the cache before the model's first token; ResultOpeningStatus limits
+	// it to results whose "status" is that ("quote": not a "need").
+	Ack                 string `json:"ack,omitempty"`
+	ResultOpening       string `json:"result_opening,omitempty"`
+	ResultOpeningStatus string `json:"result_opening_status,omitempty"`
 }
 
 // DuplexConfig tunes the simulated full-duplex behaviour.

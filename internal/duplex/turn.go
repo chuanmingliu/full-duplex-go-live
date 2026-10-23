@@ -89,6 +89,13 @@ type Turn struct {
 	// id is derived from the turn's own.
 	DelegationID string
 
+	// Scripted marks a turn whose words were handed to the assistant (an
+	// async tool's ack): a result waiting for a gap does not interrupt it.
+	// Opening is a fixed line said at the start of the turn, before the
+	// model's first token (a result's opening).
+	Scripted bool
+	Opening  string
+
 	mu sync.Mutex
 	// committed, dead, held and commitCh implement the rule that a turn begun
 	// on a guess says nothing binding until the guess is confirmed. See

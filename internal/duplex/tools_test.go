@@ -812,3 +812,93 @@ func TestAModelHangupRuleWaitsForItsMinimumTurns(t *testing.T) {
 	pause(e, rate, 700)
 	waitFor(t, "the second end_call", 6*time.Second, func() bool { return e.tools.endCall != nil })
 }
+
+// The owner's words for the wait and for the result (10-23): when an async
+// tool is submitted the assistant says the tool's ack from the phrase cache
+// — the model is not resumed to improvise one — and the reply that delivers
+// the result opens with the tool's fixed opening before the model's first
+// token. The opening is for results of the configured status only.
+func TestAnAsyncToolsAckAndResultOpeningAreTheOwners(t *testing.T) {
+	opts := quoteConfig()
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpening = "保费给您计算好了，"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpeningStatus = "quote"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	llm := &quoteLLM{}
+	quote := &statusQuote{delay: 800 * time.Millisecond, status: "quote"}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, quote)
+
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	waitFor(t, "the ack to be said", 6*time.Second, func() bool { return strings.Contains(c.saidAll(), "请您稍等") })
+	if strings.Contains(c.saidAll(), "我这边马上帮您算") {
+		t.Fatalf("the model was resumed to improvise the wait: %q", c.saidAll())
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "三千二百") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	said := c.saidAll()
+	i, j := strings.Index(said, "保费给您计算好了"), strings.Index(said, "报价出来了")
+	if i < 0 || j < 0 || i > j {
+		t.Fatalf("the result was not opened with the owner's words before the model's: %q", said)
+	}
+	if strings.Contains(said, "请您稍等。保费") == false && !strings.Contains(said, "请您稍等。") {
+		t.Fatalf("the ack was cut: %q", said)
+	}
+	llm.mu.Lock()
+	var resumed int
+	for _, r := range llm.requests {
+		if last := r.Messages[len(r.Messages)-1]; last.Role == provider.RoleTool {
+			resumed++
+		}
+	}
+	llm.mu.Unlock()
+	if resumed != 0 {
+		t.Fatalf("the model was resumed %d time(s) with the running output", resumed)
+	}
+}
+
+// …and a "need" result (a field is missing) gets no "计算好了" opening.
+func TestTheResultOpeningIsOnlyForItsStatus(t *testing.T) {
+	opts := quoteConfig()
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpening = "保费给您计算好了，"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpeningStatus = "quote"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: 300 * time.Millisecond, status: "need"})
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "报价出来了") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	if strings.Contains(c.saidAll(), "保费给您计算好了") {
+		t.Fatalf("a need result was opened as a quote: %q", c.saidAll())
+	}
+	if !strings.Contains(c.saidAll(), "请您稍等") {
+		t.Fatalf("the ack was not said: %q", c.saidAll())
+	}
+}
+
+// statusQuote answers with a status, as the lead service does.
+type statusQuote struct {
+	delay  time.Duration
+	status string
+}
+
+func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Request) tools.Result {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return tools.Result{Err: ctx.Err()}
+	}
+	out, _ := json.Marshal(map[string]any{"status": s.status, "total": 3200, "memory_version": req.MemoryVersion})
+	return tools.Result{Output: out, Took: s.delay}
+}

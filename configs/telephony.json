@@ -18,7 +18,7 @@
   "speed": 1.2,
   "client_rate": 16000,
   "instructions": "你是一个电话语音助手。用简短口语化的中文回答，每次一到两句话，不要使用列表、标题或书面语。需要查询的问题先说明正在查，不要凭空猜测结果。",
-  "instructions_append": "【工具规则，优先于前文中“不能直接报价”“报价以链接为准”等说法】你有报价工具 quote_total。当客户明确要求报价、询问总价、或说出了想要的险种方案时：先用 update_memory 把险种方案记录在 quote 字段（险种名为键，true 或档位如“200万”为值），把客户已说的信息记录为这些字段名：vehiclePrice（车价）、vehicleAge（车龄，年数）、ncd（去年出险次数，没出过为 0）、seats（座位数）、carNum（车牌），再调用 quote_total。工具若返回 status=need，按 missing 顺序一次只问一个问题，记录答案后再调用；全部信息齐全后工具会给出总保费，请直接口头告诉客户总保费和各险种明细，不要拒绝、不要只让客户看链接。客户改动方案后同样记录并重新调用。同一次报价结果只念一遍。",
+  "instructions_append": "【工具规则，优先于前文中“不能直接报价”“报价以链接为准”等说法】你有报价工具 quote_total。当客户明确要求报价、询问总价、或说出了想要的险种方案时：先用 update_memory 把险种方案记录在 quote 字段（险种名为键，true 或档位如“200万”为值），把客户已说的信息记录为这些字段名：vehiclePrice（车价）、vehicleAge（车龄，年数）、ncd（去年出险次数，没出过为 0）、seats（座位数）、carNum（车牌），再调用 quote_total。工具若返回 status=need，按 missing 顺序一次只问一个问题，记录答案后再调用；全部信息齐全后工具会给出总保费，请直接口头告诉客户总保费和各险种明细，不要拒绝、不要只让客户看链接。调用 quote_total 后不要自己说“稍等”，系统会替你说；结果通知里若写明系统已说出开头，就从开头之后接着说，不要重复。客户改动方案后同样记录并重新调用。同一次报价结果只念一遍。",
   "backend_model": "deepseek-chat",
   "backend_base_url": "https://api.deepseek.com",
   "temperature": 0.7,
@@ -43,13 +43,13 @@
   "tools": [
     {
       "name": "quote_total",
-      "description": "计算当前投保方案的总保费（含各险种明细）。当用户要求报价、问“一共多少钱”、或方案改动后要求重新算时调用。方案以工作记忆中的 quote 字段为准，调用前请确保已用 update_memory 记录了用户确认的险种组合。报价前系统会核对必要信息：若结果为 status=need，说明还缺字段，请按 missing 的顺序一次只问一个问题（可用 question 的措辞），用户答复后用 update_memory 记录该字段（字段名见 field），再重新调用本工具；用户确实不知道且该字段 if_unknown=skip 时记录为 \"unknown\" 再调用，相关险种会被跳过并在结果中注明。所有必要信息齐全后计算才会进行：计算在后台需要几秒，调用后告诉用户稍等并继续对话，结果出来后系统会通知你再向用户报告。",
+      "description": "计算当前投保方案的总保费（含各险种明细）。当用户要求报价、问“一共多少钱”、或方案改动后要求重新算时调用。方案以工作记忆中的 quote 字段为准，调用前请确保已用 update_memory 记录了用户确认的险种组合。报价前系统会核对必要信息：若结果为 status=need，说明还缺字段，请按 missing 的顺序一次只问一个问题（可用 question 的措辞），用户答复后用 update_memory 记录该字段（字段名见 field），再重新调用本工具；用户确实不知道且该字段 if_unknown=skip 时记录为 \"unknown\" 再调用，相关险种会被跳过并在结果中注明。所有必要信息齐全后计算才会进行：计算在后台需要几秒，调用后系统会自动对用户说“这会儿正在给您计算保费，请您稍等”，你不必再说稍等；结果出来后系统会通知你，并已替你说出开头“保费给您计算好了，”，你直接接着报总价和关键构成。",
       "parameters": {"type": "object", "properties": {"config": {"type": "object", "description": "可选：临时覆盖工作记忆中的险种选择，键为险种名，值为 true/false 或档位（如“300万”）"}}},
       "url": "/api/tools/quote",
       "async": true,
       "timeout_ms": 120000,
       "eta_s": 20
-    }
+    , "ack": "这会儿正在给您计算保费，请您稍等。", "result_opening": "保费给您计算好了，", "result_opening_status": "quote"}
   ],
   "history_turns": 16,
   "duplex": {

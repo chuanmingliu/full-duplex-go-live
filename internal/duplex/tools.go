@@ -100,7 +100,8 @@ func (e *Engine) setupTools() {
 			url = strings.TrimRight(cfg.ToolsBaseURL, "/") + url
 		}
 		ts.defs = append(ts.defs, tools.Tool{Name: c.Name, Description: c.Description, Parameters: c.Parameters,
-			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds})
+			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds,
+			Ack: strings.TrimSpace(c.Ack), ResultOpening: strings.TrimSpace(c.ResultOpening), ResultOpeningStatus: c.ResultOpeningStatus})
 	}
 	for _, d := range ts.defs {
 		ts.byName[d.Name] = d
@@ -220,7 +221,14 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			p.outputs[c.ID] = e.submitTask(job, c, t)
+			out, submitted := e.submitTask(job, c, t)
+			p.outputs[c.ID] = out
+			if submitted && t.Ack != "" && p.scripted == "" {
+				// The owner's words for the wait, not the model's: said from
+				// the phrase cache once the model's own sentence has played,
+				// and the model is not resumed until the result comes.
+				p.scripted = t.Ack
+			}
 		default:
 			wait = append(wait, c)
 		}
@@ -499,12 +507,12 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 }
 
 // submitTask starts an async tool and answers the model at once.
-func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) string {
+func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, bool) {
 	ts := e.tools
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
 		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id)
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), false
 	}
 	// A newer request for the same tool supersedes the older: its result
 	// would be read out to a caller who has moved on.
@@ -533,7 +541,10 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) s
 	}
 	e.log.Info("tools: task submitted", "tool", c.Name, "task", task.ID, "memory_version", ver, "turn", job.turn.ID)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
-	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta)
+	if t.Ack != "" {
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统已替你对用户说“%s”；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), true
+	}
+	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), true
 }
 
 type recentCall struct {
@@ -584,6 +595,11 @@ func (e *Engine) maybeDeliver() {
 	if busy && waited < wait {
 		return
 	}
+	if cur := e.tracker.Current(); busy && cur != nil && cur.Scripted && e.assistantHasFloor() {
+		// The ack for this very task is still being said; the result waits
+		// for it to finish rather than cutting "请您稍等" in half.
+		return
+	}
 	ts.deliveries = ts.deliveries[1:]
 	ts.delivered++
 	if busy {
@@ -597,6 +613,9 @@ func (e *Engine) maybeDeliver() {
 		fmt.Fprintf(&note, "，但失败了：%s。请告诉用户暂时算不出来，并说明会稍后再试或请人工跟进。", task.Result.Err.Error())
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
+		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" && task.Request.MemoryVersion == ver {
+			fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
+		}
 		if task.Request.MemoryVersion != ver {
 			fmt.Fprintf(&note, "\n注意：该结果基于工作记忆 v%d 计算，而当前工作记忆已是 v%d（方案在计算期间有改动）。请先告知结果对应的是之前的方案，并询问是否按最新方案重新计算。", task.Request.MemoryVersion, ver)
 		} else {
@@ -611,6 +630,9 @@ func (e *Engine) maybeDeliver() {
 	turn := e.tracker.Begin("", false)
 	e.specTurn = nil
 	e.commitTurn(turn)
+	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
+		turn.Opening = task.Tool.OpeningFor(task.Result.Output)
+	}
 	e.beginGeneration(turn, "task_result", false)
 }
 
@@ -721,7 +743,11 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			p.outputs[c.ID] = e.submitTask(job, c, t)
+			out, submitted := e.submitTask(job, c, t)
+			p.outputs[c.ID] = out
+			if submitted && t.Ack != "" && p.scripted == "" {
+				p.scripted = t.Ack
+			}
 		default:
 			c := c
 			go func() {
