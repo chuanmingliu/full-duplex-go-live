@@ -50,6 +50,9 @@ type pendingResponse struct {
 	// scripted, when set, is said in place of resuming the model: an async
 	// tool's ack. The model hears the result later, as a task_result turn.
 	scripted string
+	// scriptedTask is the task the ack is for: finished already when the
+	// ack is due, it is not said.
+	scriptedTask string
 }
 
 func (p *pendingResponse) complete() bool {
@@ -733,23 +736,50 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 	}
 	e.trimHistory()
 
+	if p.scripted != "" {
+		// The owner's words for the wait, in place of resuming the model —
+		// but only if there is a wait: a task that is done within the grace
+		// (a `need` from the rules takes 15 ms) gets no "请您稍等" (the owner,
+		// 22:31 on 10-23); its result is delivered as usual.
+		grace := ackGrace
+		time.AfterFunc(grace, func() { e.post(func() { e.sayAck(p) }) })
+		return
+	}
 	turn := e.tracker.Begin("", false)
 	turn.DelegationID = p.delegationID
 	e.specTurn = nil
 	e.commitTurn(turn)
-	if p.scripted != "" {
-		turn.Scripted = true
-		e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "chars", len([]rune(p.scripted)))
-		pipe := e.newSpeechPipe(turn, true)
-		pipe.Push(p.scripted)
-		pipe.Close()
-		turn.AppendResponse(p.scripted)
-		return
-	}
 	e.log.Debug("think: resuming the backend with function results",
 		"delegation", p.delegationID, "turn", turn.ID, "calls", len(p.calls),
 		"waited_ms", time.Since(p.createdAt).Milliseconds())
 	e.beginGeneration(turn, "tool_result", false)
+}
+
+// ackGrace is how long a submitted task is given to finish before its ack
+// is said: a result inside it is delivered instead, with no wait announced.
+var ackGrace = 400 * time.Millisecond
+
+// sayAck says an async tool's ack if its task is still running and the
+// floor is free. Loop goroutine.
+func (e *Engine) sayAck(p *pendingResponse) {
+	if e.tools == nil || e.tools.tasks[p.scriptedTask] == nil {
+		e.log.Info("tools: the task finished within the ack's grace; not saying it", "task", p.scriptedTask)
+		return
+	}
+	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.hangingUp() {
+		e.log.Info("tools: the ack's moment passed (the caller or the assistant is speaking); not saying it", "task", p.scriptedTask)
+		return
+	}
+	turn := e.tracker.Begin("", false)
+	turn.DelegationID = p.delegationID
+	turn.Scripted = true
+	e.specTurn = nil
+	e.commitTurn(turn)
+	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(p.scripted)))
+	pipe := e.newSpeechPipe(turn, true)
+	pipe.Push(p.scripted)
+	pipe.Close()
+	turn.AppendResponse(p.scripted)
 }
 
 // --- function calls: the conversational model delegating ---

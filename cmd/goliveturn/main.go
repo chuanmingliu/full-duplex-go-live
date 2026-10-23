@@ -455,10 +455,10 @@ type incoming struct {
 }
 
 type session struct {
-	conn   *websocket.Conn
-	sendMu sync.Mutex
-	events chan incoming
-	errMu  sync.Mutex
+	conn    *websocket.Conn
+	sendMu  sync.Mutex
+	events  chan incoming
+	errMu   sync.Mutex
 	lastErr error
 }
 

@@ -862,7 +862,9 @@ func TestAnAsyncToolsAckAndResultOpeningAreTheOwners(t *testing.T) {
 	}
 }
 
-// …and a "need" result (a field is missing) gets no "计算好了" opening.
+// …and a "need" result (a field is missing) gets no "计算好了" opening — and
+// when it comes back at once, as the rules' does, no "请您稍等" either: there
+// was nothing to wait for (the owner, 22:31 on 10-23).
 func TestTheResultOpeningIsOnlyForItsStatus(t *testing.T) {
 	opts := quoteConfig()
 	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
@@ -872,7 +874,7 @@ func TestTheResultOpeningIsOnlyForItsStatus(t *testing.T) {
 	c := newCollector(rate)
 	asr := newTrailingASR("一共多少钱")
 	asr.msPerRune = 150
-	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: 300 * time.Millisecond, status: "need"})
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: 10 * time.Millisecond, status: "need"})
 	speak(e, rate, 750)
 	pause(e, rate, 700)
 	deadline := time.Now().Add(8 * time.Second)
@@ -882,8 +884,8 @@ func TestTheResultOpeningIsOnlyForItsStatus(t *testing.T) {
 	if strings.Contains(c.saidAll(), "保费给您计算好了") {
 		t.Fatalf("a need result was opened as a quote: %q", c.saidAll())
 	}
-	if !strings.Contains(c.saidAll(), "请您稍等") {
-		t.Fatalf("the ack was not said: %q", c.saidAll())
+	if strings.Contains(c.saidAll(), "请您稍等") {
+		t.Fatalf("the ack was said for a result that was already in: %q", c.saidAll())
 	}
 }
 

@@ -286,6 +286,10 @@ type ToolConfig struct {
 	Ack                 string `json:"ack,omitempty"`
 	ResultOpening       string `json:"result_opening,omitempty"`
 	ResultOpeningStatus string `json:"result_opening_status,omitempty"`
+	// Brief names a config on the lead service whose default plan's must
+	// fields are written into the tool's description at call start
+	// ("quote-plans"), so the model collects them before calling.
+	Brief string `json:"brief,omitempty"`
 }
 
 // DuplexConfig tunes the simulated full-duplex behaviour.

@@ -99,7 +99,16 @@ func (e *Engine) setupTools() {
 		if strings.HasPrefix(url, "/") && cfg.ToolsBaseURL != "" {
 			url = strings.TrimRight(cfg.ToolsBaseURL, "/") + url
 		}
-		ts.defs = append(ts.defs, tools.Tool{Name: c.Name, Description: c.Description, Parameters: c.Parameters,
+		desc := c.Description
+		if c.Brief == "quote-plans" {
+			if brief, err := tools.FetchQuoteBrief(cfg.ToolsBaseURL, e.toolsToken(), 2*time.Second); err == nil {
+				desc = strings.TrimSpace(desc) + "\n" + brief.Text("")
+				e.log.Info("tools: the quote plan's fields are in the tool description", "tool", c.Name, "plan", brief.Plan, "fields", len(brief.Fields))
+			} else {
+				e.log.Warn("tools: the quote plan could not be read for the tool description", "tool", c.Name, "err", err)
+			}
+		}
+		ts.defs = append(ts.defs, tools.Tool{Name: c.Name, Description: desc, Parameters: c.Parameters,
 			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds,
 			Ack: strings.TrimSpace(c.Ack), ResultOpening: strings.TrimSpace(c.ResultOpening), ResultOpeningStatus: c.ResultOpeningStatus})
 	}
@@ -221,9 +230,10 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			out, submitted := e.submitTask(job, c, t)
+			out, taskID := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
-			if submitted && t.Ack != "" && p.scripted == "" {
+			if taskID != "" && t.Ack != "" && p.scripted == "" {
+				p.scriptedTask = taskID
 				// The owner's words for the wait, not the model's: said from
 				// the phrase cache once the model's own sentence has played,
 				// and the model is not resumed until the result comes.
@@ -321,6 +331,16 @@ var minCallForEndCall = 10 * time.Second
 // end_call was refused for too few turns: the model's farewell in that
 // reply has already been said and must not end the call by the back door.
 var netHoldAfterRefusal = 20 * time.Second
+
+// toolsToken is the lead service's bearer token, from the profile's file.
+func (e *Engine) toolsToken() string {
+	if f := e.opts.Cfg.ToolsTokenFile; f != "" {
+		if b, err := os.ReadFile(f); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return ""
+}
 
 // loadHangupRules reads the rules from the lead service when the profile
 // says to, and falls back to the built-in set: a call must not start
@@ -507,12 +527,12 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 }
 
 // submitTask starts an async tool and answers the model at once.
-func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, bool) {
+func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string) {
 	ts := e.tools
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
 		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), false
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), ""
 	}
 	// A newer request for the same tool supersedes the older: its result
 	// would be read out to a caller who has moved on.
@@ -542,9 +562,9 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	e.log.Info("tools: task submitted", "tool", c.Name, "task", task.ID, "memory_version", ver, "turn", job.turn.ID)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
 	if t.Ack != "" {
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统已替你对用户说“%s”；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), true
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统已替你对用户说“%s”；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID
 	}
-	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), true
+	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID
 }
 
 type recentCall struct {
@@ -743,9 +763,10 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			out, submitted := e.submitTask(job, c, t)
+			out, taskID := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
-			if submitted && t.Ack != "" && p.scripted == "" {
+			if taskID != "" && t.Ack != "" && p.scripted == "" {
+				p.scriptedTask = taskID
 				p.scripted = t.Ack
 			}
 		default:

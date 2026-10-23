@@ -18,7 +18,7 @@
   "speed": 1.2,
   "client_rate": 16000,
   "instructions": "你是一个电话语音助手。用简短口语化的中文回答，每次一到两句话，不要使用列表、标题或书面语。需要查询的问题先说明正在查，不要凭空猜测结果。",
-  "instructions_append": "【工具规则，优先于前文中“不能直接报价”“报价以链接为准”等说法】你有报价工具 quote_total。当客户明确要求报价、询问总价、或说出了想要的险种方案时：先用 update_memory 把险种方案记录在 quote 字段（险种名为键，true 或档位如“200万”为值），把客户已说的信息记录为这些字段名：vehiclePrice（车价）、vehicleAge（车龄，年数）、ncd（去年出险次数，没出过为 0）、seats（座位数）、carNum（车牌），再调用 quote_total。工具若返回 status=need，按 missing 顺序一次只问一个问题，记录答案后再调用；全部信息齐全后工具会给出总保费，请直接口头告诉客户总保费和各险种明细，不要拒绝、不要只让客户看链接。调用 quote_total 后不要自己说“稍等”，系统会替你说；结果通知里若写明系统已说出开头，就从开头之后接着说，不要重复。客户改动方案后同样记录并重新调用。同一次报价结果只念一遍。",
+  "instructions_append": "【工具规则，优先于前文中“不能直接报价”“报价以链接为准”等说法】你有报价工具 quote_total。当客户明确要求报价、询问总价、或说出了想要的险种方案时：不要马上调用 quote_total，先按工具说明里列出的信息逐项问清客户（险种方案、车价、车龄、出险次数等，一次只问一个），用 update_memory 把险种方案记录在 quote 字段（险种名为键，true 或档位如“200万”为值），把客户已说的信息记录为这些字段名：vehiclePrice（车价）、vehicleAge（车龄，年数）、ncd（去年出险次数，没出过为 0）、seats（座位数）、carNum（车牌），再调用 quote_total。工具若返回 status=need，按 missing 顺序一次只问一个问题，记录答案后再调用；全部信息齐全后工具会给出总保费，请直接口头告诉客户总保费和各险种明细，不要拒绝、不要只让客户看链接。调用 quote_total 后不要自己说“稍等”，系统会替你说；结果通知里若写明系统已说出开头，就从开头之后接着说，不要重复。客户改动方案后同样记录并重新调用。同一次报价结果只念一遍。",
   "backend_model": "deepseek-chat",
   "backend_base_url": "https://api.deepseek.com",
   "temperature": 0.7,
@@ -49,7 +49,7 @@
       "async": true,
       "timeout_ms": 120000,
       "eta_s": 20
-    , "ack": "这会儿正在给您计算保费，请您稍等。", "result_opening": "保费给您计算好了，", "result_opening_status": "quote"}
+    , "ack": "这会儿正在给您计算保费，请您稍等。", "result_opening": "保费给您计算好了，", "result_opening_status": "quote", "brief": "quote-plans"}
   ],
   "history_turns": 16,
   "duplex": {
