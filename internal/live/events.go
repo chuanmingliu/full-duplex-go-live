@@ -60,7 +60,15 @@ const (
 	ExtTurnMetrics      = "golive.turn.metrics"
 	ExtBackchannel      = "golive.backchannel"
 	ExtInputBackchannel = "golive.input_backchannel"
-	ExtChannelState     = "golive.channel.state"
+	// ExtMemory is golive.memory: the call's working memory was edited
+	// (Version after the edit, Patch what was merged). ExtTask is
+	// golive.task: a slow tool call was submitted, finished, or delivered.
+	ExtMemory = "golive.memory"
+	ExtTask   = "golive.task"
+	// ExtFocus says whose voice an answered utterance was, by the speaker-
+	// activity model, and whether its answer was dropped for it. See FocusEvent.
+	ExtFocus        = "golive.focus"
+	ExtChannelState = "golive.channel.state"
 	// ExtInputTranscript carries the recognizer's whole current hypothesis for
 	// an utterance, revisions included. See InputTranscriptEvent.
 	ExtInputTranscript = "golive.input_transcript.updated"
@@ -309,6 +317,12 @@ type GoliveConfig struct {
 	// OnNewQuery overrides what happens to an in-flight answer when the user
 	// speaks again: "cut", "finish_sentence" or "queue".
 	OnNewQuery string `json:"on_new_query,omitempty"`
+	// MinSilenceMS is how long the caller must be quiet before their turn is
+	// taken as over, for this session. Zero leaves the server's
+	// vad.min_silence_ms. It is the single largest term in how quickly an
+	// answer can start, and the right value belongs to the line: a phone
+	// caller pauses differently from someone at a desk.
+	MinSilenceMS int `json:"min_silence_ms,omitempty"`
 	// Greeting is spoken the moment the session opens, before the caller says
 	// anything. A pointer so the three cases stay distinct: absent uses the
 	// server default, an empty string explicitly suppresses it, and any other
@@ -602,6 +616,9 @@ type SpeechEvent struct {
 	StartMS int64 `json:"start_ms"`
 	EndMS   int64 `json:"end_ms,omitempty"`
 	BargeIn bool  `json:"barge_in,omitempty"`
+	// SilenceMS, on a stop, is the pause the stop was judged on: the caller's
+	// last sound was this long before the event.
+	SilenceMS int64 `json:"silence_ms,omitempty"`
 }
 
 // AudioTruncatedEvent is golive.output_audio.truncated: the assistant was cut
@@ -633,6 +650,20 @@ type TurnMetricsEvent struct {
 	// other figure here is relative to.
 	SpeechEndMS int64 `json:"speech_end_ms"`
 
+	// EndSilenceMS is how long the caller had already been silent at that
+	// origin: the pause the turn's end was judged on. A caller's wait is from
+	// their last sound, so every figure below is that much short of what they
+	// experienced, and by a different amount when the pause is not the default
+	// — a client that asked for a shorter one, a turn held open for a caller
+	// mid-thought.
+	EndSilenceMS int64 `json:"end_silence_ms"`
+
+	// TurnStartMS is speech end to the moment the turn's answer was begun.
+	// Negative for a speculative turn: that is how much of the caller's pause
+	// the backend was already working through, and with LLMFirstTokenMS it
+	// gives the backend's own time to first token, which no other pair of
+	// figures here does.
+	TurnStartMS int64 `json:"turn_start_ms"`
 	// ASRFinalMS is speech end to the final transcript.
 	ASRFinalMS int64 `json:"asr_final_ms"`
 	// LLMFirstTokenMS is speech end to the backend's first token. Negative when
@@ -690,6 +721,62 @@ type BackchannelEvent struct {
 	Envelope
 	Kind string `json:"kind,omitempty"`
 	Text string `json:"text"`
+}
+
+// MemoryEvent is golive.memory.
+type MemoryEvent struct {
+	Envelope
+	Version int             `json:"version"`
+	Patch   json.RawMessage `json:"patch"`
+}
+
+// HangupEvent is the engine telling the session to end the call: the model
+// called end_call and its last words have played. It is not sent to the
+// client; the session closes the connection instead, which is the hangup.
+type HangupEvent struct {
+	Envelope
+	Reason string `json:"reason"`
+}
+
+// CloseAssistantHangup is the close reason when the assistant ended the call.
+const CloseAssistantHangup = "assistant_hangup"
+
+// TaskEvent is golive.task: Status is "running", "done" or "delivered".
+type TaskEvent struct {
+	Envelope
+	TaskID        string `json:"task_id"`
+	Tool          string `json:"tool"`
+	Status        string `json:"status"`
+	MemoryVersion int    `json:"memory_version"`
+	TookMS        int64  `json:"took_ms,omitempty"`
+	WaitedMS      int64  `json:"waited_ms,omitempty"`
+	Interrupting  bool   `json:"interrupting,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+// FocusEvent is golive.focus: the speaker-activity model's view of one
+// answered utterance. PrimaryShare and OthersShare are shares of its voiced
+// frames; Coverage how much of it was labelled when judged; AnotherVoice
+// whether it read as somebody else's; Vetoed whether the answer was dropped
+// for that before anyone heard it.
+type FocusEvent struct {
+	Envelope
+	TurnID       string  `json:"turn_id"`
+	PrimaryShare float64 `json:"primary_share"`
+	OthersShare  float64 `json:"others_share"`
+	VoicedMS     int64   `json:"voiced_ms"`
+	Coverage     float64 `json:"coverage"`
+	Primary      int     `json:"primary_speaker"`
+	AnotherVoice bool    `json:"another_voice"`
+	Vetoed       bool    `json:"vetoed,omitempty"`
+	// BargeIn says this judged a sound over the answer rather than a turn:
+	// AnotherVoice then means the answer was not the caller's to stop, and
+	// Vetoed that it was indeed kept going (veto mode).
+	BargeIn bool `json:"barge_in,omitempty"`
+	// Utterance says this judged an open utterance as it was being said:
+	// AnotherVoice that it was not the caller's, Vetoed that it was let go
+	// by with no turn made of it (veto mode).
+	Utterance bool `json:"utterance,omitempty"`
 }
 
 // InputBackchannelEvent is golive.input_backchannel: the caller said something

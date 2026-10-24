@@ -486,6 +486,32 @@ The sideband receives every event, the caller's audio included, and can send
 anything except audio — which is how an application server answers delegations
 for a call whose media a telephony bridge is carrying.
 
+### A phone call without a phone
+
+`/v1/realtime` is what a SIP gateway talks to. `golivebench` speaks the same
+protocol, so the path a call takes through golive can be timed with no PBX:
+
+```bash
+make run-sim
+./bin/golivebench -a live=ws://127.0.0.1:8080/v1/live/sessions \
+                  -b realtime=ws://127.0.0.1:8080/v1/realtime -runs 8
+```
+
+The two should not differ: the translation is at the edge of the session and
+adds nothing to the audio path.
+
+For a real call, see *On a phone line* in the README. What to read afterwards:
+
+```bash
+grep -E "turn: response latency|latency summary|realtime:" golive-telephony.log | tail -40
+```
+
+`first_audio_out_ms` is measured from the moment the turn was judged over to
+the first audio written towards the gateway. The caller waits that, plus
+`vad.min_silence_ms` before it (unless `speculative=true`, in which case most
+of the pause was already spent working), plus whatever the gateway, the PBX and
+the carrier add after it — which only a recording at the handset can tell you.
+
 ---
 
 ## Switching to the real providers

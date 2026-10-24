@@ -74,10 +74,71 @@ type Config struct {
 	// Empty disables storage: store:true is then accepted and ignored, and
 	// those two endpoints answer 404.
 	StoreDir string `json:"store_dir"`
+	// LastCallFile, when set, is where the instructions and opening line of the
+	// last answered phone call are kept, readable by the server's user alone.
+	//
+	// An originator's operator composes the prompt in a browser, and it lives
+	// there: a call placed from anywhere else carries none of it. With this
+	// file a call can be placed again from the machine itself exactly as the
+	// last one was (scripts/phone-brain.sh call). It is the conversation's
+	// instructions at rest on disk, so it is off unless a path is given.
+	LastCallFile string `json:"last_call_file"`
+	// Realtime configures /v1/realtime, the endpoint that speaks the OpenAI
+	// Realtime event protocol over the same engine. It exists for clients that
+	// cannot speak gpt-live-1 — a SIP media gateway, mostly.
+	Realtime RealtimeConfig `json:"realtime"`
+
+	// TelemetryURL, when set, receives a small JSON event for each boundary of
+	// a turn (speech start and stop, final transcript, first token, first
+	// audio) as it happens, for an external latency console. Posting is
+	// asynchronous and lossy by design: it is never on the audio path.
+	TelemetryURL string `json:"telemetry_url"`
+	// TelemetryFormat is the shape of those events: "v1", one self-describing
+	// record per boundary with a call id, a turn number and a monotonic
+	// timestamp; or "legacy", the looser {at, component, event} envelope that
+	// came before it.
+	TelemetryFormat string `json:"telemetry_format"`
+
 	// StoreTTLHours is how long a stored session is kept. gpt-live-1 keeps
 	// recordings thirty days; the default here is one, because this is a disk
 	// on your machine rather than somebody else's.
 	StoreTTLHours int `json:"store_ttl_hours"`
+
+	// Tools the assistant can call that golive carries out itself (see
+	// internal/tools): quick ones answered in the same turn, slow ones
+	// (async) submitted to a pool and reported when they finish. ToolsMemory
+	// gives the model the update_memory builtin and renders the call's
+	// working memory into its context. ToolsToken is read from ToolsTokenFile
+	// and sent as a bearer to the tools' services. ToolsWorkers bounds the
+	// pool; ToolsDeliverWaitMS is how long a finished task waits for a gap in
+	// the conversation before it is announced over whatever is going on.
+	Tools []ToolConfig `json:"tools,omitempty"`
+	// ToolsBaseURL is where tools whose URL is a path live: the lead service,
+	// on this machine or on the intranet (GOLIVE_TOOLS_BASE_URL).
+	ToolsBaseURL string `json:"tools_base_url"`
+	ToolsMemory  bool   `json:"tools_memory"`
+	// ToolsEndCall gives the model end_call: a way to hang up once the
+	// conversation is over, instead of talking until the line drops.
+	ToolsEndCall bool `json:"tools_end_call"`
+	// HangupURL is where the assistant's hangup is made real on the phone
+	// line: Active Call's command route for the call, with {call} standing
+	// for the call id the client gave at session open. golive POSTs its
+	// hangup command there once the farewell has played. Closing the
+	// session's socket alone does not end a phone call (10-19 23:16: the
+	// assistant said goodbye and the line stayed up until the caller hung
+	// up). Empty: nothing is sent and only the socket closes.
+	HangupURL string `json:"hangup_url"`
+	// HangupRules turns on the hangup rules: the cases that end a call,
+	// read from the lead service (ToolsBaseURL, the tools' token) at session
+	// start as the versioned config `hangup-rules` — the owner edits them on
+	// its panel. Model rules go into end_call's description; silence,
+	// duration and keyword rules the engine judges itself, says the rule's
+	// farewell and hangs up. Off, or the service unreachable: the built-in
+	// default set (tools.DefaultHangupRules) applies when tools_end_call is on.
+	HangupRules        bool   `json:"hangup_rules"`
+	ToolsTokenFile     string `json:"tools_token_file"`
+	ToolsWorkers       int    `json:"tools_workers"`
+	ToolsDeliverWaitMS int    `json:"tools_deliver_wait_ms"`
 
 	// Providers, by registry name.
 	ASR string `json:"asr"`
@@ -95,6 +156,14 @@ type Config struct {
 	// for a provider to be handed "marin".
 	VoiceAliases map[string]string `json:"voice_aliases"`
 	Instructions string            `json:"instructions"`
+	// InstructionsAppend is added after whatever instructions the session
+	// arrives with (the owner's prompt from the originator's page included):
+	// the engine's own rules for its tools, which a prompt written before
+	// the tools existed does not know. The telephony profile uses it to say
+	// that a customer who asks for a price gets one through quote_total —
+	// the owner's prompt of 10-20 said quotes come through the link, and the
+	// assistant refused to quote on every call (the owner's finding, 23:30).
+	InstructionsAppend string `json:"instructions_append"`
 	// Greeting is spoken as soon as a session opens, before the caller says
 	// anything. Empty means the assistant waits to be spoken to.
 	Greeting string  `json:"greeting"`
@@ -121,7 +190,64 @@ type Config struct {
 	Temperature                  float64 `json:"temperature"`
 	MaxOutputTokens              int     `json:"max_output_tokens"`
 	DisableThinking              bool    `json:"disable_thinking"`
-	HistoryTurns                 int     `json:"history_turns"`
+	// LLMHedge is how many copies of each completion may be sent to the chat
+	// model, the first to produce output being the one used. The model's time
+	// to first token is the largest term in a turn's latency and varies
+	// several-fold from one identical request to the next; the faster of two
+	// is reliably nearer the fast end. The cost is the losing copy's tokens.
+	// 0 or 1 sends one.
+	LLMHedge int `json:"llm_hedge"`
+	// LLMHedgeAfterMS is how long a copy is given to produce its first output
+	// before the next is sent. 0 sends them together, which is the most
+	// latency this buys; a figure near the model's usual time to first token
+	// spends the extra request only on the slow turns.
+	LLMHedgeAfterMS int `json:"llm_hedge_after_ms"`
+	// TTSHedge, at 2, gives each session a second synthesis connection and
+	// asks both for the first segment of every answer, playing whichever
+	// produces audio first. The synthesizer's first audio is ~180 ms at the
+	// median and over 300 one turn in ten; on a first segment that is silence
+	// the caller hears. Later segments are not raced. It costs the first
+	// segment's characters twice and one more request per turn against the
+	// provider's rate limit. 0 or 1 is one connection.
+	TTSHedge int `json:"tts_hedge"`
+	// TTSHedgeRPM is how many synthesis requests a minute, across every
+	// session of this process, the hedging may add to what would have been
+	// made anyway: second requests, and the second connections they go to.
+	// Past a vendor's rate limit it refuses the request that was going to be
+	// made anyway, and the caller hears nothing, so what hedging adds is kept
+	// small. It bounds the additions and not the total: a call makes 15–22
+	// requests a minute by itself, and a bound on the total set near that
+	// leaves no room for the second request when it is needed. 0 is no limit.
+	TTSHedgeRPM int `json:"tts_hedge_rpm"`
+	// TTSHedgeAfterMS, above zero, makes the hedging frugal: the second
+	// connection is asked only for a segment the first has produced no audio
+	// for after this long, so the extra request is spent on the slow
+	// syntheses alone — one in ten at 220 ms against a median of 180 — and an
+	// account with no room for two requests a turn can still be spared its
+	// worst ones (1.3 and 1.8 s on one call). It then covers every segment,
+	// later ones with three times the wait. 0 asks both at once for each
+	// first segment.
+	TTSHedgeAfterMS int `json:"tts_hedge_after_ms"`
+	// TTSAccountRPM is how many synthesis requests a minute one account is
+	// trusted with, when the synthesizer holds a pool of accounts (several
+	// keys). Every request to an account is counted; a second, optional
+	// request goes to the other account only while that one has room, and a
+	// session whose account is at the figure moves to one that is not. It is
+	// unused with a single key. 0 is no limit.
+	TTSAccountRPM int `json:"tts_account_rpm"`
+	// TTSPoolAfterMS is tts_hedge_after_ms for the first segment of an answer
+	// when the second connection is on another account: 0 asks both accounts
+	// at once, which a second account's own allowance is what makes affordable.
+	TTSPoolAfterMS int `json:"tts_pool_after_ms"`
+	// TTSFallback names a second synthesizer, another vendor, asked for a
+	// segment the primary has produced no audio for after TTSFallbackAfterMS
+	// (three times that for a segment after the first); whichever answers
+	// first is heard. It is for the primary vendor stalling, which a second
+	// connection to it does not cure. Its voice is that provider's own
+	// (FISH_TTS_VOICE_ID for "fish"). Empty is no fallback.
+	TTSFallback        string `json:"tts_fallback"`
+	TTSFallbackAfterMS int    `json:"tts_fallback_after_ms"`
+	HistoryTurns       int    `json:"history_turns"`
 	// HistoryMaxChars bounds conversation history by size as well as by turns,
 	// because size is what the backend charges for in latency.
 	//
@@ -139,6 +265,39 @@ type Config struct {
 
 	// VAD
 	VAD VADProfile `json:"vad"`
+}
+
+// ToolConfig is one tool the assistant may call, as the profile declares it.
+type ToolConfig struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+	URL         string          `json:"url"`
+	Async       bool            `json:"async,omitempty"`
+	TimeoutMS   int             `json:"timeout_ms,omitempty"`
+	ETASeconds  int             `json:"eta_s,omitempty"`
+	// Ack, on an async tool, is a fixed line the assistant says when the
+	// tool is submitted ("这会儿正在给您计算保费，请您稍等"), from the phrase cache,
+	// in place of whatever the model would have improvised; the model is
+	// not resumed until the result comes. ResultOpening is the fixed opening
+	// of the reply that delivers the result ("保费给您计算好了，"), said from
+	// the cache before the model's first token; ResultOpeningStatus limits
+	// it to results whose "status" is that ("quote": not a "need").
+	Ack                 string `json:"ack,omitempty"`
+	ResultOpening       string `json:"result_opening,omitempty"`
+	ResultOpeningStatus string `json:"result_opening_status,omitempty"`
+	// Brief names a config on the lead service whose default plan's must
+	// fields are written into the tool's description at call start
+	// ("quote-plans"), so the model collects them before calling.
+	Brief string `json:"brief,omitempty"`
+	// Speech names a config on the lead service ("quote-speech") whose
+	// prehook, posthook and template replace Ack and ResultOpening at call
+	// start, so the panel edits what is said around a quotation.
+	Speech string `json:"speech,omitempty"`
+	// Prefetch is a path on the lead service POSTed at session start with
+	// {call, session} ("/api/quote/prefetch"): the default quotation is
+	// worked out while the phone rings.
+	Prefetch string `json:"prefetch,omitempty"`
 }
 
 // DuplexConfig tunes the simulated full-duplex behaviour.
@@ -256,6 +415,42 @@ type DuplexConfig struct {
 	// half a sentence. Ignored unless it is longer than vad.min_silence_ms and
 	// SemanticEndpointing is on; 0 disables it.
 	PatientSilenceMS int `json:"patient_silence_ms"`
+	// SpeculateWhilePatient begins the answer during the longer wait
+	// PatientSilenceMS gives a caller who seems to be mid-thought, instead of
+	// only once that wait has run out. The wait is for the caller; preparing
+	// the answer does not need it, and a turn that does end there was being
+	// answered a whole backend round later than any other — 1400 ms and more
+	// after the caller's last sound. Nothing is heard before the turn is taken,
+	// so what it costs is a completion thrown away each time they do carry on.
+	// It applies to a guess made on a final asked for early (EarlyFinalMS).
+	SpeculateWhilePatient bool `json:"speculate_while_patient"`
+	// SettledCloseMS ends a turn when the caller's words have not changed for
+	// this long although the line never went quiet enough for the detector to
+	// end it. The detector waits for silence, and a line with a room, a car or
+	// a carrier's noise on it can go seconds without any: a real call held a
+	// finished question open for 3.3 s that way. The recognizer is the better
+	// witness there — speech makes words, noise does not. It applies only
+	// while less than half of that time was voiced, so a recognizer that has
+	// merely fallen behind a talking caller does not end their turn. 0 turns
+	// it off.
+	SettledCloseMS int `json:"settled_close_ms"`
+	// EarlyFinalMS asks the recognizer for its final transcript this far into
+	// a pause, instead of when the pause has run its whole length and ended
+	// the turn.
+	//
+	// A streaming recognizer's hypotheses trail the audio — by 300 ms and more
+	// on the one measured — so through most of a pause the words so far are
+	// not yet all there to guess on, and the answer was being started only
+	// once the turn had closed and the final had come back: the whole of
+	// vad.min_silence_ms plus a round trip, on every turn. Ending the
+	// recognition early gets the final a round trip after the request, and the
+	// answer is begun on it while the rest of the pause is still being waited
+	// out. If the caller carries on, what they say next is recognized on a
+	// fresh connection and joined to what was already settled.
+	//
+	// It needs duplex.speculative, and should be longer than the stops inside
+	// a word (vad.gap_tolerance_ms is the scale). 0 turns it off.
+	EarlyFinalMS int `json:"early_final_ms"`
 
 	// ASRPredial opens the recognizer's connection when the detector first
 	// suspects speech, rather than when it is sure. The detector takes
@@ -272,6 +467,16 @@ type DuplexConfig struct {
 	// says — the greeting, acknowledgements, holding fillers — so they play
 	// from memory instead of being synthesized again on every call.
 	PhraseCache bool `json:"phrase_cache"`
+	// PhraseCacheLearnChars, above zero, also keeps any segment of an ordinary
+	// answer that is at most this many characters long, and plays it from
+	// memory the next time those words come up in that voice. An assistant
+	// opens most of its answers with one of a handful of clauses — "好的，",
+	// "是的，", "您说，" — and each is a synthesis the caller waits through in
+	// silence: 180 ms when the synthesizer is prompt, and a second or more when
+	// it stalls, which no second connection to the same vendor helped with. On
+	// two calls one answer in eight opened with words already said on them.
+	// Needs phrase_cache. 0 keeps only the fixed phrases.
+	PhraseCacheLearnChars int `json:"phrase_cache_learn_chars"`
 	// BackendPrefixWarm sends the backend a one-token request carrying the
 	// conversation so far when the caller starts speaking, so a provider with a
 	// prefix cache has it loaded by the time the real request follows. It
@@ -279,6 +484,60 @@ type DuplexConfig struct {
 	// long prompt, and whether that trade is worth anything depends entirely on
 	// the provider: measure before leaving it on.
 	BackendPrefixWarm bool `json:"backend_prefix_warm"`
+	// BackendPrefixWarmStart sends that same one-token request when the session
+	// opens and again when its opening line is spoken, and at no other time.
+	// The first completion of a call was measured at 1100 ms to its first token
+	// with every later one near 450 — on a prompt the provider already had
+	// cached, so it is the first use that is slow, not the first sight. A phone
+	// call spends seconds ringing and then seconds on its greeting before the
+	// caller can have said anything; this spends them.
+	BackendPrefixWarmStart bool `json:"backend_prefix_warm_start"`
+	// IgnoreHesitations leaves a turn that was only a hesitation — "呃", "um" —
+	// unanswered. The caller has not said anything yet; an answer to it is an
+	// answer to nothing, and on a real call it was cut off 200 ms in by the
+	// sentence the hesitation was the start of.
+	IgnoreHesitations bool `json:"ignore_hesitations"`
+
+	// Focus keeps the conversation on one voice, with a speaker-activity
+	// model run beside the audio (internal/focus). "" is off. "veto" abandons
+	// an answer begun on an utterance that was mostly somebody else's — a
+	// television, a bystander — before it is heard; the model's labels arrive
+	// too late to decide turns, and early enough for that. "observe" runs the
+	// model and logs attributions without acting on them.
+	Focus string `json:"focus"`
+	// FocusURL is the diarization WebSocket (the edge gateway's
+	// /v1/audio/diarize?model=nemotron-diar); FocusTokenFile holds its bearer
+	// token.
+	FocusURL       string `json:"focus_url"`
+	FocusTokenFile string `json:"focus_token_file"`
+	// FocusVetoShare is the share of an utterance's voiced frames that must be
+	// another voice's, with the primary silent, before its answer is vetoed;
+	// FocusMinVoicedMS is how much voiced audio the model must have heard in
+	// it before any judgment is made.
+	FocusVetoShare   float64 `json:"focus_veto_share"`
+	FocusMinVoicedMS int     `json:"focus_min_voiced_ms"`
+	// FocusBargeInWaitMS is how long a sound over the answer is held for the
+	// model's labels before the recognizer's words alone decide it (900). A
+	// barge-in whose labelled voice is not the caller's — the assistant's
+	// own return, a television, a bystander — does not stop the answer, in
+	// veto mode; in observe mode the verdict is only logged. 0 for the
+	// default, -1 to decide on the words alone as before.
+	FocusBargeInWaitMS int `json:"focus_barge_in_wait_ms"`
+	// FocusQuietCloseMS ends the caller's turn when the labels say the
+	// caller's own voice has been absent for this long while the line stayed
+	// loud enough to keep the gate open: background noise or another voice
+	// carrying on after the caller stopped. The detector's pause never comes
+	// on such a line, and the settled close waits on a recognizer that keeps
+	// finding words in the noise (a real call held a question open for 9 s
+	// that way, 10-19). 0 is off; it acts only in veto mode, on an utterance
+	// the labels have attributed to the caller.
+	FocusQuietCloseMS int `json:"focus_quiet_close_ms"`
+	// FocusProfile names a voice profile the target-speaker service keeps
+	// across calls, for a line that always reaches the same person (a test
+	// line), or a known contact. Empty — the general case — and the caller
+	// is whoever picked up, learned from the call itself: the largest
+	// group of their utterances that agree with each other.
+	FocusProfile string `json:"focus_profile"`
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
@@ -385,10 +644,69 @@ type VADProfile struct {
 	GapToleranceMS     int     `json:"gap_tolerance_ms"`
 	BargeInMarginDB    float64 `json:"barge_in_margin_db"`
 	BargeInMinSpeechMS int     `json:"barge_in_min_speech_ms"`
+	// EchoTailMS keeps the barge-in bar raised for this long after the
+	// assistant stops sending audio: on a phone line the caller is still
+	// hearing it, and its echo is still coming back. 0 for a line with none.
+	EchoTailMS int `json:"echo_tail_ms"`
+	// FloorTrackMS raises the noise floor to the quietest frame of the last
+	// this-many ms of an open utterance when none of it dipped under the
+	// bar: a line whose noise sits above the bar (a subway, a street) can
+	// otherwise hold an utterance open until max_speech_ms. 0 for the
+	// default, -1 to turn it off.
+	FloorTrackMS int `json:"floor_track_ms"`
+	// GateTraceMS is how often the gate's state is sampled for the stored
+	// session's record (the journal draws it). 0 for the default, -1 for
+	// none.
+	GateTraceMS int `json:"gate_trace_ms"`
+	// LineFillMS fills the line with silence, on the wall clock, when the
+	// client has sent no audio for this long: a peer with silence
+	// suppression sends nothing between words, and the gate and the
+	// recognizer both need the pause to arrive as audio to close a turn on
+	// it. A phone line that never goes quiet never triggers it. 0 is off.
+	LineFillMS int `json:"line_fill_ms"`
 }
 
 // Default returns a configuration that runs end to end with the mock providers
 // and no credentials at all.
+// RealtimeConfig is the OpenAI-Realtime-compatible endpoint.
+type RealtimeConfig struct {
+	// Enabled serves /v1/realtime, /v1/opening and /v1/pool.
+	Enabled bool `json:"enabled"`
+	// SampleRate is the rate of "pcm16" audio on this endpoint, in both
+	// directions, for a client that does not say. OpenAI's own is 24000. A
+	// media gateway usually has one fixed internal rate and no way to state it
+	// — Active Call's is 16000 — so this is where it is told.
+	SampleRate int `json:"sample_rate"`
+	// Dialect picks the event names for assistant audio: "beta"
+	// (response.audio.delta) or "ga" (response.output_audio.delta). OpenAI
+	// renamed them, and older clients match only the old names.
+	Dialect string `json:"dialect"`
+	// HoldForOpening keeps a new session deaf and silent until POST
+	// /v1/opening releases it. An outbound phone call connects its agent before
+	// anyone has answered, and what arrives in the meantime is ringback.
+	HoldForOpening bool `json:"hold_for_opening"`
+	// HoldTimeoutSeconds releases a held session that nobody released. A call
+	// that has not been answered by then is not going to be.
+	HoldTimeoutSeconds int `json:"hold_timeout_seconds"`
+	// HonorTurnDetection takes the end-of-turn silence from the client's
+	// turn_detection.silence_duration_ms instead of vad.min_silence_ms. That
+	// is what the field means in the protocol, and a client that sets it —
+	// a call originator tuning for its line — expects to be obeyed.
+	HonorTurnDetection bool `json:"honor_turn_detection"`
+	// MinSilenceFloorMS is the least silence a client can ask for. The
+	// detector here judges frames by energy, and at frame scale the stops and
+	// unvoiced consonants inside a word are silence; a model-based detector
+	// can be asked for 150 ms, this one cannot yet be trusted with it.
+	MinSilenceFloorMS int `json:"min_silence_floor_ms"`
+	// StoreCalls keeps every call on this endpoint as a stored session — the
+	// caller and the assistant as two tracks on one timeline, under store_dir
+	// for store_ttl_hours — as store:true does for a gpt-live-1 session. A
+	// Realtime client has no way to ask, and a phone gateway would not know
+	// to. It is how a call is measured from the audio afterwards (echoprobe).
+	// Off by default: it is somebody's voice on disk.
+	StoreCalls bool `json:"store_calls"`
+}
+
 func Default() Config {
 	return Config{
 		Addr:                   ":8080",
@@ -401,14 +719,22 @@ func Default() Config {
 		AuthFailWindowSeconds:  60,
 		ShutdownTimeoutSeconds: 10,
 		StoreTTLHours:          24,
-		ASR:                    "mock",
-		LLM:                    "mock",
-		TTS:                    "mock",
-		Model:                  "golive-1",
-		Voice:                  "",
-		Language:               "zh",
-		Speed:                  1.0,
-		ClientRate:             24000,
+		Realtime: RealtimeConfig{
+			Enabled:            true,
+			SampleRate:         24000,
+			Dialect:            "beta",
+			HoldTimeoutSeconds: 45,
+			HonorTurnDetection: true,
+			MinSilenceFloorMS:  200,
+		},
+		ASR:        "mock",
+		LLM:        "mock",
+		TTS:        "mock",
+		Model:      "golive-1",
+		Voice:      "",
+		Language:   "zh",
+		Speed:      1.0,
+		ClientRate: 24000,
 		Instructions: "You are a calm, friendly voice assistant. Speak warmly and " +
 			"naturally, at an unhurried pace. Keep routine answers to one or two " +
 			"short sentences. Never read out markup, lists or code.",
@@ -468,6 +794,7 @@ func Default() Config {
 			SpeculativeSettleMS:        80,
 			SemanticEndpointing:        true,
 			PatientSilenceMS:           700,
+			SettledCloseMS:             600,
 			ASRPredial:                 true,
 			TTSNativeRate:              true,
 			PhraseCache:                true,
@@ -558,12 +885,36 @@ func (c *Config) applyEnv() {
 	setString(&c.Instructions, "GOLIVE_INSTRUCTIONS")
 	setString(&c.Greeting, "GOLIVE_GREETING")
 	setString(&c.BackendModel, "GOLIVE_BACKEND_MODEL")
+	setInt(&c.LLMHedge, "GOLIVE_LLM_HEDGE")
+	setInt(&c.LLMHedgeAfterMS, "GOLIVE_LLM_HEDGE_AFTER_MS")
+	setInt(&c.TTSHedge, "GOLIVE_TTS_HEDGE")
+	setInt(&c.TTSHedgeRPM, "GOLIVE_TTS_HEDGE_RPM")
+	setInt(&c.TTSHedgeAfterMS, "GOLIVE_TTS_HEDGE_AFTER_MS")
+	setInt(&c.TTSAccountRPM, "GOLIVE_TTS_ACCOUNT_RPM")
+	setInt(&c.TTSPoolAfterMS, "GOLIVE_TTS_POOL_AFTER_MS")
+	setString(&c.TTSFallback, "GOLIVE_TTS_FALLBACK")
+	setInt(&c.TTSFallbackAfterMS, "GOLIVE_TTS_FALLBACK_AFTER_MS")
 	setString(&c.BackendBaseURL, "GOLIVE_BACKEND_BASE_URL")
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")
 	setString(&c.StoreDir, "GOLIVE_STORE_DIR")
+	setString(&c.LastCallFile, "GOLIVE_LAST_CALL_FILE")
 	setInt(&c.StoreTTLHours, "GOLIVE_STORE_TTL_HOURS")
+	setBool(&c.Realtime.Enabled, "GOLIVE_REALTIME_ENABLED")
+	setInt(&c.Realtime.SampleRate, "GOLIVE_REALTIME_RATE")
+	setString(&c.Realtime.Dialect, "GOLIVE_REALTIME_DIALECT")
+	setBool(&c.Realtime.HoldForOpening, "GOLIVE_REALTIME_HOLD")
+	setBool(&c.Realtime.HonorTurnDetection, "GOLIVE_REALTIME_HONOR_TURN_DETECTION")
+	setBool(&c.Realtime.StoreCalls, "GOLIVE_REALTIME_STORE_CALLS")
+	setInt(&c.Realtime.MinSilenceFloorMS, "GOLIVE_REALTIME_MIN_SILENCE_FLOOR_MS")
+	setString(&c.TelemetryURL, "GOLIVE_TELEMETRY_URL")
+	setString(&c.TelemetryFormat, "GOLIVE_TELEMETRY_FORMAT")
 	setBool(&c.Duplex.LegacyAudioField, "GOLIVE_LEGACY_AUDIO_FIELD")
+	setString(&c.ToolsTokenFile, "GOLIVE_TOOLS_TOKEN_FILE")
+	setString(&c.ToolsBaseURL, "GOLIVE_TOOLS_BASE_URL")
+	setString(&c.Duplex.Focus, "GOLIVE_FOCUS")
+	setString(&c.Duplex.FocusURL, "GOLIVE_FOCUS_URL")
+	setString(&c.Duplex.FocusTokenFile, "GOLIVE_FOCUS_TOKEN_FILE")
 	setBool(&c.Duplex.SemanticEndpointing, "GOLIVE_SEMANTIC_ENDPOINTING")
 	setBool(&c.Duplex.BackendPrefixWarm, "GOLIVE_BACKEND_PREFIX_WARM")
 	setInt(&c.ClientRate, "GOLIVE_CLIENT_RATE")
@@ -635,6 +986,33 @@ func (c *Config) Validate() error {
 	if c.VAD.SnapshotMS > 0 && c.VAD.FrameMS > 0 && c.VAD.SnapshotMS%c.VAD.FrameMS != 0 {
 		return fmt.Errorf("config: vad.snapshot_ms (%d) must be a multiple of vad.frame_ms (%d)",
 			c.VAD.SnapshotMS, c.VAD.FrameMS)
+	}
+	switch c.Realtime.SampleRate {
+	case 0:
+		c.Realtime.SampleRate = 24000
+	case 8000, 16000, 24000, 48000:
+	default:
+		return fmt.Errorf("config: realtime.sample_rate %d is not one of 8000, 16000, 24000, 48000", c.Realtime.SampleRate)
+	}
+	switch c.Realtime.Dialect {
+	case "":
+		c.Realtime.Dialect = "beta"
+	case "beta", "ga":
+	default:
+		return fmt.Errorf("config: realtime.dialect %q must be beta or ga", c.Realtime.Dialect)
+	}
+	switch c.TelemetryFormat {
+	case "":
+		c.TelemetryFormat = "v1"
+	case "v1", "legacy":
+	default:
+		return fmt.Errorf("config: telemetry_format %q must be v1 or legacy", c.TelemetryFormat)
+	}
+	if c.Realtime.HoldTimeoutSeconds <= 0 {
+		c.Realtime.HoldTimeoutSeconds = 45
+	}
+	if c.Realtime.MinSilenceFloorMS <= 0 {
+		c.Realtime.MinSilenceFloorMS = 200
 	}
 	if c.StoreTTLHours < 0 {
 		return fmt.Errorf("config: store_ttl_hours must be >= 0")

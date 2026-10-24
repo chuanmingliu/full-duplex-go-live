@@ -82,7 +82,8 @@ var incompleteSuffixes = []string{
 	"也就是", "那就是", "就是", "还有就是", "的话", "的时候", "一下那个", "就是那个",
 	"跟", "与", "把", "被", "对于", "关于", "除了",
 	"我想", "我想要", "我想问", "我想问一下", "我想说", "我觉得", "我是说",
-	"帮我", "请问", "想问一下", "问一下",
+	"帮我", "请问", "想问一下", "问一下", "问你一下", "问您一下", "想问你", "想问您",
+	"问一下啊", "问你一下啊", "问您一下啊", "问一下哈", "问你一下哈", "请教一下", "咨询一下",
 	"呃", "额", "唔",
 }
 
@@ -98,6 +99,26 @@ var incompleteWords = setOf(
 	"to", "of", "for", "with", "my", "your", "i", "um", "uh", "er", "like", "then", "also",
 	"about", "is", "are", "was", "can", "could", "would", "should", "want", "need", "its",
 )
+
+// Hesitation reports whether text is nothing but the sound of someone about to
+// speak: "呃", "额额", "um". Not "嗯" or "啊", which answer questions.
+func Hesitation(text string) bool {
+	norm := normalize(text)
+	if norm == "" {
+		return false
+	}
+	if hesitationWords[norm] {
+		return true
+	}
+	for _, r := range norm {
+		if r != '呃' && r != '额' && r != '唔' {
+			return false
+		}
+	}
+	return true
+}
+
+var hesitationWords = setOf("um", "uh", "er", "erm", "uhm", "umm", "uhh")
 
 // Classify judges a transcript whose speaker has paused. It looks only at how
 // the text ends, so it costs the same for a word as for a paragraph.

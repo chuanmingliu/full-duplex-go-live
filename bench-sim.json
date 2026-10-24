@@ -1,0 +1,86 @@
+[
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_0700ms",
+    "index": -1,
+    "measured": false,
+    "first_audio_ms": 1355,
+    "transcript_ms": 700,
+    "speech_stopped_ms": 700,
+    "audio_ms": 7241.666666666666,
+    "transcript": "我想问",
+    "reply": "好的，我听到你说我想问。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  },
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_1500ms",
+    "index": 0,
+    "measured": true,
+    "first_audio_ms": 1110,
+    "transcript_ms": 380,
+    "speech_stopped_ms": 380,
+    "audio_ms": 7425,
+    "transcript": "我想问一下",
+    "reply": "好的，我听到你说我想问一下。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  },
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_2400ms",
+    "index": 1,
+    "measured": true,
+    "first_audio_ms": 1045,
+    "transcript_ms": 640,
+    "speech_stopped_ms": 640,
+    "audio_ms": 7425,
+    "transcript": "我想问一下",
+    "reply": "好的，我听到你说我想问一下。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  },
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_3300ms",
+    "index": 2,
+    "measured": true,
+    "first_audio_ms": 1024,
+    "transcript_ms": 300,
+    "speech_stopped_ms": 300,
+    "audio_ms": 7516.666666666667,
+    "transcript": "我想问一下车",
+    "reply": "好的，我听到你说我想问一下车。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  },
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_0700ms",
+    "index": 3,
+    "measured": true,
+    "first_audio_ms": 1105,
+    "transcript_ms": 701,
+    "speech_stopped_ms": 701,
+    "audio_ms": 7241.666666666666,
+    "transcript": "我想问",
+    "reply": "好的，我听到你说我想问。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  },
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_1500ms",
+    "index": 4,
+    "measured": true,
+    "first_audio_ms": 1105,
+    "transcript_ms": 380,
+    "speech_stopped_ms": 380,
+    "audio_ms": 7425,
+    "transcript": "我想问一下",
+    "reply": "好的，我听到你说我想问一下。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  },
+  {
+    "stack": "golive-mocks",
+    "clip": "synthetic_2400ms",
+    "index": 5,
+    "measured": true,
+    "first_audio_ms": 1045,
+    "transcript_ms": 640,
+    "speech_stopped_ms": 640,
+    "audio_ms": 7425,
+    "transcript": "我想问一下",
+    "reply": "好的，我听到你说我想问一下。让我确认一下细节，然后给你一个完整的答复。这句话故意说得长一点，方便你在中途打断我，测试打断之后的对话历史是否只保留你真正听到的部分。"
+  }
+]

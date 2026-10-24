@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -151,7 +152,7 @@ func ResolveVoice(cfg config.Config, requested string) string {
 	if v, ok := cfg.VoiceAliases[requested]; ok {
 		return v
 	}
-	if liveVoiceNames[requested] {
+	if liveVoiceNames[requested] || realtimeVoiceNames[requested] {
 		// A gpt-live-1 voice name with no mapping. Handing it to a vendor
 		// fails the session at the first sentence; the configured voice is
 		// what the operator meant a caller to hear.
@@ -165,6 +166,14 @@ var liveVoiceNames = map[string]bool{
 	"marin": true, "cedar": true, "quartz": true, "ripple": true, "vesper": true,
 	"willow": true, "stone": true, "gleam": true, "meridian": true, "bossa": true,
 	"tempo": true, "beacon": true, "delta": true, "cinder": true,
+}
+
+// realtimeVoiceNames are the OpenAI Realtime API's voices, which is what a
+// client of /v1/realtime sends — "alloy", unless it was told otherwise.
+var realtimeVoiceNames = map[string]bool{
+	"alloy": true, "ash": true, "ballad": true, "coral": true, "echo": true,
+	"sage": true, "shimmer": true, "verse": true, "fable": true, "onyx": true,
+	"nova": true,
 }
 
 // segmentWhole cuts a complete piece of text the way a speech pipe does when
@@ -206,45 +215,93 @@ func WarmPhrases(ctx context.Context, cfg config.Config, tts provider.TTS, log *
 	if cfg.Duplex.HoldingFiller {
 		texts = append(texts, cfg.Duplex.HoldingFillerPhrases...)
 	}
+	for _, t := range cfg.Tools {
+		if t.Ack != "" {
+			texts = append(texts, segmentWhole(cfg, t.Ack)...)
+		}
+		if t.ResultOpening != "" {
+			texts = append(texts, segmentWhole(cfg, t.ResultOpening)...)
+		}
+	}
+	added, _, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, ""), cfg.ClientRate, cfg.Language, log)
+	return added, err
+}
+
+// WarmSpeech synthesizes one piece of text into the shared cache ahead of the
+// session that will say it, cut into the segments that session will ask for.
+// It returns how many bytes of audio the whole of it comes to, cached before
+// this call or by it.
+//
+// This is how an opening line is ready the instant a phone is answered: the
+// call is known about while it is still ringing, and the first thing the
+// assistant says on it is known too. voice and language are as a session would
+// state them; clientRate is the session's audio rate.
+func WarmSpeech(ctx context.Context, cfg config.Config, tts provider.TTS, text, voice string, clientRate int, language string, log *slog.Logger) (int, error) {
+	if tts == nil {
+		return 0, fmt.Errorf("no synthesizer")
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	if language == "" {
+		language = cfg.Language
+	}
+	texts := segmentWhole(cfg, strings.TrimSpace(text))
 	if len(texts) == 0 {
 		return 0, nil
 	}
+	_, bytes, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, voice), clientRate, language, log)
+	return bytes, err
+}
 
-	voice := ResolveVoice(cfg, "")
-	want := SynthesisRate(cfg, cfg.ClientRate)
+// warmTexts fills the cache for segments exactly as given, and reports how many
+// it added and the size of all of them.
+func warmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, voice string, clientRate int, language string, log *slog.Logger) (added, bytes int, err error) {
+	want := SynthesisRate(cfg, clientRate)
+	key := func(text string) PhraseKey {
+		return PhraseKey{
+			Provider: tts.Name(), Voice: voice, Speed: cfg.Speed,
+			Language: language, Rate: want, Text: text,
+		}
+	}
+	var missing []string
+	for _, text := range texts {
+		if cached, ok := Phrases().Get(key(text)); ok {
+			bytes += len(cached.PCM)
+		} else {
+			missing = append(missing, text)
+		}
+	}
+	if len(missing) == 0 {
+		return 0, bytes, nil
+	}
+
 	stream, err := tts.Open(ctx, provider.TTSOptions{
 		SampleRate: want,
 		Voice:      voice,
 		Speed:      cfg.Speed,
-		Language:   cfg.Language,
+		Language:   language,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("warming phrases: %w", err)
+		return 0, bytes, fmt.Errorf("warming phrases: %w", err)
 	}
 	defer stream.Close()
 
-	added := 0
-	for _, text := range texts {
-		key := PhraseKey{
-			Provider: tts.Name(), Voice: voice, Speed: cfg.Speed,
-			Language: cfg.Language, Rate: want, Text: text,
-		}
-		if _, ok := Phrases().Get(key); ok {
-			continue
-		}
+	for _, text := range missing {
 		started := time.Now()
 		pcm, err := synthesizeWhole(ctx, stream, text)
 		if err != nil {
-			return added, fmt.Errorf("warming %q: %w", text, err)
+			return added, bytes, fmt.Errorf("warming %q: %w", text, err)
 		}
-		Phrases().Put(key, PhraseAudio{PCM: pcm, Rate: stream.SampleRate()})
+		Phrases().Put(key(text), PhraseAudio{PCM: pcm, Rate: stream.SampleRate()})
 		added++
+		bytes += len(pcm)
 		log.Debug("phrase cached",
 			"text", text,
 			"audio_ms", int(audio.PCM16(stream.SampleRate()).DurationMS(pcm)),
 			"ms", time.Since(started).Milliseconds())
 	}
-	return added, nil
+	return added, bytes, nil
 }
 
 // synthesizeWhole runs one segment to completion and returns its audio.

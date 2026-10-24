@@ -89,6 +89,13 @@ type Turn struct {
 	// id is derived from the turn's own.
 	DelegationID string
 
+	// Scripted marks a turn whose words were handed to the assistant (an
+	// async tool's ack): a result waiting for a gap does not interrupt it.
+	// Opening is a fixed line said at the start of the turn, before the
+	// model's first token (a result's opening).
+	Scripted bool
+	Opening  string
+
 	mu sync.Mutex
 	// committed, dead, held and commitCh implement the rule that a turn begun
 	// on a guess says nothing binding until the guess is confirmed. See
@@ -101,6 +108,7 @@ type Turn struct {
 	startedAt       time.Time
 	speechEndAt     time.Time
 	speechEndMS     int64
+	endSilenceMS    int64
 	transcriptFinal time.Time
 	firstToken      time.Time
 	firstSegment    time.Time
@@ -114,6 +122,7 @@ type Timings struct {
 	StartedAt       time.Time
 	SpeechEndAt     time.Time
 	SpeechEndMS     int64
+	EndSilenceMS    int64
 	TranscriptFinal time.Time
 	FirstToken      time.Time
 	FirstSegment    time.Time
@@ -130,6 +139,7 @@ func (t *Turn) Timings() Timings {
 		StartedAt:       t.startedAt,
 		SpeechEndAt:     t.speechEndAt,
 		SpeechEndMS:     t.speechEndMS,
+		EndSilenceMS:    t.endSilenceMS,
 		TranscriptFinal: t.transcriptFinal,
 		FirstToken:      t.firstToken,
 		FirstSegment:    t.firstSegment,
@@ -184,6 +194,13 @@ func (t *Turn) commit(emit func(any)) {
 
 // kill abandons the turn: nothing held for it is ever sent, and nothing more
 // will be.
+// Dead reports whether the turn has been killed.
+func (t *Turn) Dead() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.dead
+}
+
 func (t *Turn) kill() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -231,11 +248,12 @@ func (t *Turn) awaitCommit(done <-chan struct{}) bool {
 // every latency this turn reports. It is set once: a turn that began
 // speculatively is stamped when speech actually ends, and one begun from a
 // final transcript inherits the VAD's timestamp at creation.
-func (t *Turn) MarkSpeechEnd(at time.Time, sessionMS int64) {
+func (t *Turn) MarkSpeechEnd(at time.Time, sessionMS, silenceMS int64) {
 	t.mu.Lock()
 	if t.speechEndAt.IsZero() {
 		t.speechEndAt = at
 		t.speechEndMS = sessionMS
+		t.endSilenceMS = silenceMS
 	}
 	t.mu.Unlock()
 }
@@ -422,14 +440,17 @@ func (t *Tracker) IsCurrent(turn *Turn) bool {
 	if turn == nil {
 		return false
 	}
+	// The whole comparison is under the lock, not just the pointer: State is
+	// written by Commit and Abandon on the loop goroutine while generation
+	// goroutines ask this.
 	t.mu.RLock()
 	cur := t.current
-	t.mu.RUnlock()
-	return cur != nil &&
+	live := cur != nil &&
 		cur.ID == turn.ID &&
 		cur.Revision == turn.Revision &&
-		cur.State != TurnAbandoned &&
-		t.gen.Valid(turn.Generation)
+		cur.State != TurnAbandoned
+	t.mu.RUnlock()
+	return live && t.gen.Valid(turn.Generation)
 }
 
 // rollingMS keeps the recent history of one duration, in milliseconds, so the

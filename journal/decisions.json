@@ -1,0 +1,169 @@
+{
+  "decisions": [
+    {
+      "rank": 1,
+      "title": "A faster or second chat-model vendor in the race",
+      "gain": "About 300 to 400 ms on every turn in that hour, which is the difference between missing the target on most turns and meeting it; 100 to 200 ms at the median at other busy times",
+      "basis": "measured: the chat model's first token (fastest of eight copies) is about 700 ms at the median between roughly 23:00 and midnight, against 160 to 320 at other hours, on two nights running; a call at 23:14 on 10-12 had 12 of 13 turns over 1200 for that reason alone; on the simulated customer, same build and persona 14 minutes apart (10-16 23:15 and 23:29): first audio p50 655 → 1214 ms, every other stage unchanged, the chat model's first token 656 → 775 at the median and up to 1341",
+      "cost": "A new account and key; answer quality with the 13k-character prompt must be checked",
+      "guard": "What the assistant says",
+      "undo": "yes",
+      "needs": "A vendor that answers the 13k-character prompt in under about 400 ms at 23:00 (a prompt cache, or a small fast model), with room for a few copies at once; `scripts/phone-brain.sh llm -last-call ~/golive-last-call.json -try ...` measures a candidate with the real prompt",
+      "status": "waiting: two routes to Qwen3.8-27B measured on 10-13 at 20:40 and neither is one to add. With the call's own 13,116-character prompt, one request each in rotation, first token at the median: DeepSeek 581 ms, the same model through SiliconFlow (reasoning off) 1548, through OpenRouter (reasoning off) 1048; all 20 of each candidate's were over 550. With a 30-character prompt SiliconFlow is 409 (p90 457), so the long prompt costs it over a second: no sign of a prompt cache in 20 requests with one prefix. Four copies at once on the SiliconFlow account were refused (HTTP 429) on 148 of 160 requests. With reasoning left on, first token is 3 s (SiliconFlow) and 1.3 s (OpenRouter). DeepSeek's eight copies in the same minutes: 365 at the median, 538 at p90. A candidate has to hold the long prompt in a cache, or be fast without one. MiniMax-M3 (the synthesis accounts' own keys, thinking off, 21:04–21:11): the long prompt costs it nothing (first token 748 ms at the median with it, 713 without) and four copies at once were not refused, but it does not beat what a call does now: its first six characters come 920–980 ms in against 705–720 for one DeepSeek copy, copies of it are slow together (fastest of four 732–748), and DeepSeek's eight copies in the same minutes gave a first token at 377. Its OpenAI-shaped endpoint is slower (1063) than chatcompletion_v2; the priority tier bought nothing clear (584 against 666); thinking left on is 1.1–1.4 s with empty answers. The same again at 23:20 to 23:26 on 10-13, in the slow hour, real prompt: one request each, first token at the median: DeepSeek 601 ms, MiniMax-M3 581, SiliconFlow 1676, OpenRouter 1628. Fastest of several at once: DeepSeek's eight 456 and 434 (it was a mild night: 707 the night before), MiniMax-M3's four 381 and 426. M3's first six characters still trail its first token by about 270 ms against DeepSeek's 70, so on the first clause DeepSeek's eight were ahead (about 525 against about 650). Standing: the two Qwen routes are out; MiniMax-M3 is the one candidate in range at that hour, level with DeepSeek on a bad night and behind it on a mild one, and has not been raced inside golive"
+    },
+    {
+      "rank": 2,
+      "title": "A second synthesis account, used as a pool of two",
+      "gain": "The faster of two first audios on every turn instead of one (unmeasured; the tail is the point: 646 and 938 ms on the 09:34 call), and a second allowance of requests. Cures the multi-second stalls only if they turn out to be per account.",
+      "basis": "measured 10-12, 30 rounds, both accounts asked at once: first audio p50 265 / p90 336 / worst 689 ms on the first account alone, 248 / 328 / 337 for the faster of the two; a first audio of 400 ms or more on 4 rounds, never on both at once. No multi-second stall occurred, so nothing is known about those.",
+      "cost": "The two accounts' copies of the voice differ: the second speaks about 9% faster and about 3 dB louder. The owner heard both and keeps them as they are: both are his voice, and the variation from turn to turn is wanted.",
+      "guard": "The assistant's voice (identical on both accounts); refused requests (an answer nobody hears)",
+      "undo": "yes: remove the key; one key behaves exactly as before",
+      "needs": "More calls, to see how often a turn is asked of both now that the accounts are counted by their own allowances.",
+      "status": "taken 10-12: on. First call: both accounts spoke, nothing refused; the first carries the call, the second takes what fits under its 8 a minute"
+    },
+    {
+      "rank": 3,
+      "title": "Ask the model to open answers with one of a few short clauses",
+      "gain": "~195 ms on most turns; first audio immune to synthesizer stalls",
+      "basis": "measured on cache-hit turns: 515–756 ms against ~870",
+      "cost": "Changes how the assistant talks; openers repeat",
+      "guard": "How natural it sounds",
+      "undo": "yes",
+      "needs": "A yes, and a listen",
+      "status": "waiting"
+    },
+    {
+      "rank": 4,
+      "title": "A holding phrase on slow turns",
+      "gain": "No change at the median; ends dead air at about 1.2 s in a stall",
+      "basis": "built and off (holding_filler); fires at 1.5× the call's median",
+      "cost": "First audio is then a phrase, not the answer; reported separately",
+      "guard": "Moves the number without moving the answer",
+      "undo": "yes",
+      "needs": "A yes, and the phrases to use",
+      "status": "waiting"
+    },
+    {
+      "rank": 5,
+      "title": "Wired network, and providers routed outside the VPN tunnel",
+      "gain": "Tens of ms per vendor round trip; possibly the synthesizer's stalls",
+      "basis": "unknown; could not be measured without root",
+      "cost": "Needs root on the box",
+      "guard": "none",
+      "undo": "yes",
+      "needs": "Root, or the owner making the change",
+      "status": "waiting"
+    },
+    {
+      "rank": 6,
+      "title": "Ask for the recognizer's final 100 or 80 ms into a pause, not 120",
+      "gain": "20–40 ms on every turn",
+      "basis": "measured: 66 pauses on two calls; 100 ms splits 18–43% more recognitions, 80 ms 43–71% more",
+      "cost": "More split recognitions on a line where recognition is already the weak point",
+      "guard": "Recognition accuracy",
+      "undo": "yes",
+      "needs": "More pause data from quiet calls; leave at 120 for now",
+      "status": "deferred"
+    },
+    {
+      "rank": 7,
+      "title": "The synthesizer's HTTP endpoint as a second route in a stall",
+      "gain": "unknown",
+      "basis": "untried",
+      "cost": "Engineering time; same account and voice",
+      "guard": "none",
+      "undo": "yes",
+      "needs": "A probe that asks both routes at once",
+      "status": "untried"
+    },
+    {
+      "rank": 8,
+      "title": "Fish Audio as the synthesizer's cross-vendor stall fallback",
+      "gain": "A MiniMax stall (3–8 s, once in each of three runs) becomes ~750 ms: the wait (320) plus Fish's own first audio (424 at the median, 748 worst in 20 paced turns)",
+      "basis": "Measured 10-14 22:32–22:39 from the box: MiniMax first audio p50 216 / p95 309; Fish drama-3 (balanced) 423 / 709, s2.1-pro 562 / 940; 190 ms of that is the round trip to api.fish.audio. 0 of 40 refused at 20 a minute.",
+      "cost": "One Fish request per segment that MiniMax has not answered in 320 ms (about one in twenty); a second vendor's bill and voice (drama-3 on the owner's cloned voice) on those turns only",
+      "guard": "Not raced on ordinary turns — it would lose by ~200 ms and cost a request each time; tts_fallback_after_ms sits just past MiniMax's p95",
+      "undo": "yes: tts_fallback empty",
+      "needs": "A call with a stall in it, to see it fire; the owner's ear on the two voices (~/golive-voices/fish-*.wav)",
+      "status": "on since 10-14 (owner: go)"
+    },
+    {
+      "rank": 9,
+      "title": "Speaker focus: a diarizer beside the audio, vetoing answers to other voices",
+      "gain": "An answer to a television or a bystander is dropped before it is heard; the transcript can say whose words were whose. Nothing on an ordinary turn: the model is off the critical path.",
+      "basis": "Nemotron-3-Diarization on the box's CPU: 127 ms per 345 ms chunk on a short track, ~330 ms (p90 480) in steady state on a 120 s track; a second voice mixed at −8 dB was labelled as its own speaker for 7.2 of 9.1 s. Labels 220–330 ms behind the audio on the first bench sessions.",
+      "cost": "Four CPU threads busy during a call; ~700 ms label lag means a veto lands before the first audio only when the answer is not fast; the model is a third-party 100 M-parameter network with its own failure modes",
+      "guard": "observe mode first: attributions logged, nothing acted on; veto only once a call shows the labels in time; a down model is a call without focus",
+      "undo": "yes: duplex.focus empty",
+      "needs": "A call with somebody talking in the background; then veto; a recording of a real background-talker situation to anchor the thresholds",
+      "status": "observe since 10-15 12:51 (owner: go ahead to implement)"
+    },
+    {
+      "rank": 10,
+      "title": "Working memory and background tools: the quotation does not hold the conversation",
+      "gain": "A price that takes seconds is asked for and the call goes on; the plan the caller keeps changing is in the model's context as one object, not scattered over twenty turns",
+      "basis": "Built 10-15 on the owner's design (async task pool + working memory, reusing the lead service's versioned configs for the quotation); engine tests with a scripted model and a slow tool",
+      "cost": "One extra chat-model round when a tool is called (the model's 稍等 after the running answer); a result delivered over the caller when no gap comes within 1.5 s",
+      "guard": "Delivery waits for a gap; a newer request supersedes an older task; a result nobody wants is dropped; the memory block is after the instructions so the prefix cache holds",
+      "undo": "yes: tools_memory false, tools empty",
+      "needs": "A call that asks for a price; the business's real quote-rules tables; seeding the memory from the lead",
+      "status": "on since 10-15 (not yet seen on a call)"
+    },
+    {
+      "rank": 11,
+      "title": "Only the primary voice counts: whoever picked up, learned from the call by agreement; the diarizer off the decision path",
+      "gain": "A show, a bystander or the assistant's own echo cannot cut the answer, open a turn or be answered: every window of the caller's audio is scored against the caller's own voice within ~200 ms, however much the background talks",
+      "basis": "The owner's rule (10-15 22:35): target my voice; a second voice is ignored. The 22:29 call: 38 sounds over the answer judged, 1 in time, the diarizer 1–1.2 s behind under continuous speech. Measured on this line's archive: CAM++ cosine similarity of the caller's later utterances to a 2 s enrolment 0.45–0.68, the assistant 0.14–0.21, the show under 0.25; 10 ms a window on the CPU",
+      "cost": "The first utterance is unjudged (nothing to compare with until the caller has spoken ~600 ms alone); a second legitimate speaker on the call (a spouse taking over) is ignored until a handover rule exists; a wrong enrolment (the show speaking first) would ignore the caller — the enrolment extends only with utterances the labels call the caller's; a show playing under the caller's voice makes every window a mixture that scores like a stranger (the 23:20 call: four of the caller's answers dropped), so no verdict may act on a mixture: only a span with zero caller voice is another voice's",
+      "guard": "veto mode acts, observe mode logs; the caller's own voice joining an ignored utterance takes it up at once; the threshold is a flag (--threshold, 0.35) and the per-window similarity is in the frames for the journal to read; the caller is whoever picked up — learned from up to six of their own utterances by mutual agreement, one bad window outvoted — never a stored voice unless the line names one (focus_profile); the caller is pinned as the primary and an enrolment the next seconds contradict is distrusted",
+      "undo": "Set focus_url back to the diarizer (ws://127.0.0.1:8030/v1/audio/diarize?model=nemotron-diar) and focus to observe; the engine is unchanged.",
+      "needs": "A call with the show on (the test), then one with a second person in the room; the threshold read off the journal's similarities.",
+      "status": "on the box 10-16 10:45 as the general setup (no profile on the line); first call pending"
+    },
+    {
+      "rank": 12,
+      "title": "A simulated customer on the box, from Codex's branch, as a service of its own",
+      "gain": "Calls without a person holding a phone: a scenario reserved, the assistant dialled at it, a report on answer time, speech boundaries, interruption and hangup; the same scenario repeated to see variability. The latency figures it gives are at its own audio boundary, not a handset's",
+      "basis": "The branch codex/inbound-user-simulator (6269dd2) builds, vets and passes its own tests and workbench check in the workspace; the receiver runs on the box on loopback with the mock profile and reserved and stopped a run (10-16)",
+      "cost": "A Docker package for its gateway (sudo on the box), a PBX route for the simulator.invalid domain to that gateway, the originator allowing sip:<run id>@simulator.invalid as a callee, and provider accounts of its own for recognizable speech",
+      "guard": "Nothing merged into telephony-realtime; separate binaries, tokens and data under ~/golive-sim; the phone line's keys are not reused; the reservation binds by run id so a late call cannot take the next one",
+      "undo": "sim-brain.sh stop and remove ~/golive-sim; the route and callee allowance are the owner's to take back",
+      "needs": "The owner: start the Docker package, set the route and the callee allowance, fill ~/golive-sim/providers.env; then a first cooperative call with the mock profile to prove transport, then one on real speech",
+      "status": "running since 10-16 23:14: two conversations of 144 s; ISS-039 ends them at ~145 s"
+    },
+    {
+      "rank": 13,
+      "title": "The headline latency is the caller's last sound → first audio; the console's turn-judged-over figure is secondary",
+      "gain": "The figure optimised is the one the caller waits through, and the end-of-turn pause (380 ms) stays visible as part of every turn's budget instead of disappearing from the measure",
+      "basis": "The goal was set on this definition; the console's leaves out the pause that ended the turn. Settled by the owner on 10-16 after the first simulated conversations were read under both",
+      "cost": "Every report carries the pause: the same build reads ~380 ms slower than under the console's definition",
+      "guard": "Both figures are printed, labelled; comparisons with the owner's console use its definition",
+      "undo": "Read the console column instead",
+      "needs": "Nothing; sim-retro and the journal headline the last-sound figure",
+      "status": "in force 10-16"
+    },
+    {
+      "rank": 14,
+      "title": "Speech to someone else (等一下我接个电话, 先别说) over the answer: ignore it, or keep cutting",
+      "gain": "τ-voice's selectivity S_ND: golive answers every aside (0 of 12 ignored on the bench); the best commercial agent in the paper scores 57%, OpenAI's 6%",
+      "basis": "The full-duplex bench of 10-21 (FULLDUPLEX-BENCH.md). An aside is real words from the caller, so the floor hold yields to it and the engine then answers it as a turn; nothing in the cascade knows who it was said to",
+      "cost": "A list of aside phrases (like the murmur list) is cheap and blunt: every phrase on it is one the caller can no longer use to interrupt. A level/direction cue (an aside is said away from the handset, quieter and duller) is the honest signal and needs measurement on the archive first",
+      "guard": "The bench's non-directed scenario, over the answer and into silence; any list stays short",
+      "undo": "Empty the list",
+      "needs": "The owner's choice; a few recordings with real asides on them",
+      "status": "waiting"
+    },
+    {
+      "rank": 15,
+      "title": "The target moves from p95 1200 to p95 1000 ms: open every answer from the phrase cache, and race the copies on the first clause",
+      "gain": "The only lever that beats both vendor tails at once. Cache-opened turns measured 515–831 ms from last sound (n≈20 over three calls) against a ~880 median and a 1045–1160 p95 on today's good calls; with most turns opened that way the chat model's first token and the synthesizer's first audio move off the path of the first audio, and p95 ~900 is in reach. The first-clause race removes the 600–700 ms first clauses outright (−30 to −60 ms at p90)",
+      "basis": "journal/RETRO-1000.md: ~1,100 turns on 24 builds. The ordinary turn is ~880 ms of which ~225 is golive's and the rest three vendors' round trips; the pause is not on the path; of ~70 turns over 1200, ~55% were the chat model's first token, ~20% the synthesizer's first audio, ~12% a patience wait, ~5% a long first clause",
+      "cost": "The assistant's voice changes: every answer opens with one of a few short acknowledgements (好的，/ 明白，/ 您说的对，/ 这个我帮您看一下，). That is a change to the owner's prompt, so it is the owner's; one line in instructions_append, no build, two calls to measure. The first-clause race is a small change in internal/provider/hedge.go with a test. Neither touches the 23:00 hour (decision 1)",
+      "guard": "What the assistant says; the clause list stays short and the owner hears two calls before it stays. The journal's overview counts against 1000 from the deploy that carries `-target 1000`",
+      "undo": "yes — remove the line; the race rule is a config",
+      "needs": "The owner's yes on the opening clauses and the wording; then `min_silence_ms` 380 → 300 becomes worth 80 ms a turn and is the next lever",
+      "status": "proposed 10-22 with the retrospective"
+    }
+  ]
+}
