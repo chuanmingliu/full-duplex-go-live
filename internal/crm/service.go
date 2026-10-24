@@ -164,6 +164,11 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(tools.QuoteSpeechName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.QuoteSpeechName, []byte(tools.DefaultQuoteSpeech), "what is said around a quotation: prehook, posthook, the readout template", "crm"); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(QuoteAPIName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(QuoteAPIName, []byte(DefaultQuoteAPI), "no base_url yet: quotes go to the rules", "crm"); err != nil {
 			events.Close()
@@ -668,6 +673,11 @@ func (s *Service) Handler() http.Handler {
 		if r.PathValue("name") == QuotePlansName {
 			if _, err := ParseQuotePlans(raw); err != nil {
 				return fail(http.StatusBadRequest, "quote plans: %v", err)
+			}
+		}
+		if r.PathValue("name") == tools.QuoteSpeechName {
+			if _, err := tools.ParseQuoteSpeech(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
 			}
 		}
 		if r.PathValue("name") == tools.HangupRulesName {

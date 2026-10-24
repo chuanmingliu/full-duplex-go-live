@@ -589,7 +589,12 @@ working memory — the owner's "AskUserQuestion in voice". A lead's plan is
 quotes; `instructions_append` in the telephony profile puts the tool rules
 after it** (10-20 23:30: three simulated runs, `sim-quote-loop`,
 `sim-quote-direct` on the box). The journal's Quotation section shows the
-steps of any call.
+steps of any call. **What is said around a quotation** is the panel's
+`quote-speech` config (10-24): prehook ("这会儿正在给您计算保费，请您稍等"), posthook
+("保费给您计算好了，") and a Jinja2 readout template, said from the phrase cache
+and the template before the model speaks; the tool's `brief: "quote-plans"`
+puts the plan's must fields into its description so the model collects them
+before calling (`internal/tools/quotespeech.go`, `quoteplan.go`).
 
 - The owner's prompts are Jinja2 written for a Python renderer. `internal/
   jinja` must render them to the character: `testdata/gen.py` renders every

@@ -49,6 +49,24 @@ type Tool struct {
 	Ack                 string `json:"ack,omitempty"`
 	ResultOpening       string `json:"result_opening,omitempty"`
 	ResultOpeningStatus string `json:"result_opening_status,omitempty"`
+	// Speech, when the panel's quote-speech config was read, also carries
+	// the template that reads a result out.
+	Speech *QuoteSpeech `json:"-"`
+}
+
+// WithSpeech applies the panel's quote-speech config to the tool.
+func (t Tool) WithSpeech(qs QuoteSpeech) Tool {
+	t.Ack, t.ResultOpening, t.ResultOpeningStatus = qs.Prehook, qs.Posthook, qs.PosthookStatus
+	t.Speech = &qs
+	return t
+}
+
+// ReadoutFor renders the result's figures from the speech template, or "".
+func (t Tool) ReadoutFor(output []byte) string {
+	if t.Speech == nil {
+		return ""
+	}
+	return t.Speech.Readout(output)
 }
 
 // OpeningFor is the fixed opening for a result, or "" when the result's

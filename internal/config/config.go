@@ -290,6 +290,10 @@ type ToolConfig struct {
 	// fields are written into the tool's description at call start
 	// ("quote-plans"), so the model collects them before calling.
 	Brief string `json:"brief,omitempty"`
+	// Speech names a config on the lead service ("quote-speech") whose
+	// prehook, posthook and template replace Ack and ResultOpening at call
+	// start, so the panel edits what is said around a quotation.
+	Speech string `json:"speech,omitempty"`
 }
 
 // DuplexConfig tunes the simulated full-duplex behaviour.

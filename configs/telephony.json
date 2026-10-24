@@ -49,7 +49,7 @@
       "async": true,
       "timeout_ms": 120000,
       "eta_s": 20
-    , "ack": "这会儿正在给您计算保费，请您稍等。", "result_opening": "保费给您计算好了，", "result_opening_status": "quote", "brief": "quote-plans"}
+    , "ack": "这会儿正在给您计算保费，请您稍等。", "result_opening": "保费给您计算好了，", "result_opening_status": "quote", "brief": "quote-plans", "speech": "quote-speech"}
   ],
   "history_turns": 16,
   "duplex": {

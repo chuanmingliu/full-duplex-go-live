@@ -930,3 +930,46 @@ func TestAnInstantQuoteStillGetsTheAckThenTheOpening(t *testing.T) {
 		t.Fatalf("wanted ack, opening, then the model's words; said %q", said)
 	}
 }
+
+// The panel's quote-speech config: the figures are read out from its
+// template right after the posthook, before the model says anything, and
+// the model is told not to repeat them.
+func TestTheQuoteIsReadOutFromThePanelsTemplate(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/configs/quote-speech" {
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = w.Write([]byte(`{"config":{"name":"quote-speech","version":2,"body":{"prehook":"马上给您算。","posthook":"算好了，","posthook_status":"quote","template":"一共{{ total | round | int }}元整。"}}}`))
+	}))
+	t.Cleanup(svc.Close)
+	opts := quoteConfig()
+	opts.Cfg.ToolsBaseURL = svc.URL
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Speech = "quote-speech"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	llm := &quoteLLM{}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &statusQuote{delay: 10 * time.Millisecond, status: "quote"})
+	if d := e.tools.byName["quote_total"]; d.Ack != "马上给您算。" || d.Speech == nil {
+		t.Fatalf("the panel's speech was not applied: %+v", d)
+	}
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "报价出来了") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	said := c.saidAll()
+	a, o, r, m := strings.Index(said, "马上给您算"), strings.Index(said, "算好了，"), strings.Index(said, "一共3200元整"), strings.Index(said, "报价出来了")
+	if a < 0 || o < 0 || r < 0 || m < 0 || !(a < o && o < r && r < m) {
+		t.Fatalf("wanted prehook, posthook, the readout, then the model; said %q", said)
+	}
+	llm.mu.Lock()
+	defer llm.mu.Unlock()
+	last := llm.requests[len(llm.requests)-1].Messages
+	if note := last[len(last)-1].Content; !strings.Contains(note, "不要重复任何数字") {
+		t.Fatalf("the model was not told the figures were read out: %q", note)
+	}
+}

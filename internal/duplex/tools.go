@@ -111,9 +111,19 @@ func (e *Engine) setupTools() {
 				e.log.Warn("tools: the quote plan could not be read for the tool description", "tool", c.Name, "err", err)
 			}
 		}
-		ts.defs = append(ts.defs, tools.Tool{Name: c.Name, Description: desc, Parameters: c.Parameters,
+		def := tools.Tool{Name: c.Name, Description: desc, Parameters: c.Parameters,
 			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds,
-			Ack: strings.TrimSpace(c.Ack), ResultOpening: strings.TrimSpace(c.ResultOpening), ResultOpeningStatus: c.ResultOpeningStatus})
+			Ack: strings.TrimSpace(c.Ack), ResultOpening: strings.TrimSpace(c.ResultOpening), ResultOpeningStatus: c.ResultOpeningStatus}
+		if c.Speech == tools.QuoteSpeechName {
+			if qs, err := tools.FetchQuoteSpeech(cfg.ToolsBaseURL, e.toolsToken(), 2*time.Second); err == nil {
+				def = def.WithSpeech(qs)
+				e.log.Info("tools: what is said around the quotation comes from the panel", "tool", c.Name, "version", qs.Version,
+					"prehook", qs.Prehook != "", "posthook", qs.Posthook != "", "template", qs.Template != "")
+			} else {
+				e.log.Warn("tools: the quote-speech config could not be read; using the profile's lines", "tool", c.Name, "err", err)
+			}
+		}
+		ts.defs = append(ts.defs, def)
 	}
 	for _, d := range ts.defs {
 		ts.byName[d.Name] = d
@@ -644,7 +654,11 @@ func (e *Engine) maybeDeliver() {
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
 		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" && task.Request.MemoryVersion == ver {
-			fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
+			if readout := task.Tool.ReadoutFor(task.Result.Output); readout != "" {
+				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。不要重复任何数字或险种，只需用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
+			} else {
+				fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
+			}
 		}
 		if task.Request.MemoryVersion != ver {
 			fmt.Fprintf(&note, "\n注意：该结果基于工作记忆 v%d 计算，而当前工作记忆已是 v%d（方案在计算期间有改动）。请先告知结果对应的是之前的方案，并询问是否按最新方案重新计算。", task.Request.MemoryVersion, ver)
@@ -661,7 +675,11 @@ func (e *Engine) maybeDeliver() {
 	e.specTurn = nil
 	e.commitTurn(turn)
 	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
-		turn.Opening = task.Tool.OpeningFor(task.Result.Output)
+		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" {
+			// The posthook from the cache, then the figures from the template
+			// (synthesized: they change), before the model's first token.
+			turn.Opening = opening + task.Tool.ReadoutFor(task.Result.Output)
+		}
 	}
 	e.beginGeneration(turn, "task_result", false)
 }
