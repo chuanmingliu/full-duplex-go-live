@@ -606,7 +606,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	e.log.Info("tools: task submitted", "tool", c.Name, "task", task.ID, "memory_version", ver, "turn", job.turn.ID)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
 	if t.Ack != "" {
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统已替你对用户说“%s”；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID
 	}
 	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID
 }
@@ -685,7 +685,7 @@ func (e *Engine) maybeDeliver() {
 				opening = "" // the default quotation: ready before the call, no "算好了"
 			}
 			if readout := task.Tool.ReadoutFor(task.Result.Output); readout != "" {
-				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。不要重复任何数字或险种，只需用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
+				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
 			} else if opening != "" {
 				fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 			}
