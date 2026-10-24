@@ -221,6 +221,7 @@ type toolCall struct {
 	Tool          string          `json:"tool"`
 	CallID        string          `json:"call_id"`
 	Session       string          `json:"session"`
+	Call          string          `json:"call"` // the phone call, when golive knows it
 	Arguments     json.RawMessage `json:"arguments"`
 	Memory        map[string]any  `json:"memory"`
 	MemoryVersion int             `json:"memory_version"`
@@ -240,6 +241,9 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 			return QuoteRequest{}, errors.New("the tool call is not readable")
 		}
 		req := QuoteRequest{Config: map[string]any{}, Vars: map[string]any{}, MemoryVersion: tc.MemoryVersion, Call: tc.Session}
+		if tc.Call != "" {
+			req.Call = tc.Call
+		}
 		for k, v := range tc.Memory {
 			if k == "quote" {
 				if m, ok := v.(map[string]any); ok {

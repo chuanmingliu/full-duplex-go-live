@@ -560,12 +560,14 @@ func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
 	if code, _ := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Lines[len(q.Lines)-1].Choice != "300万" && q.Lines[0].Choice != "300万" {
 		t.Fatalf("override: %+v", q)
 	}
-	// Nothing settled yet: the first question, not an error.
+	// Nothing chosen: the default quotation (10-24) — the plan's
+	// default_selection over its default_vars, priced without a question.
 	call["memory"] = map[string]any{}
 	call["arguments"] = map[string]any{}
-	var need Need
-	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || need.Missing[0].Field != "quote" || need.Missing[0].Kind != "plan" {
-		t.Fatalf("empty: %d %s", code, body)
+	call["call"] = "out-test-1"
+	var dq Quote
+	if code, body := fx.do("POST", "/api/tools/quote", call, &dq); code != 200 || dq.Status != "quote" || len(dq.Lines) != 4 || dq.Total <= 0 {
+		t.Fatalf("default quotation: %d %s", code, body)
 	}
 }
 
@@ -777,8 +779,8 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 		t.Fatalf("coverage aliases: %d %s", code, body)
 	}
 	mem["quote"] = map[string]any{}
-	if code, body := fx.do("POST", "/api/tools/quote", call, &need); code != 200 || need.Status != "need" || need.Missing[0].Kind != "plan" {
-		t.Fatalf("no plan: %d %s", code, body)
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Status != "quote" || len(q.Lines) != 4 {
+		t.Fatalf("no selection must be the default quotation: %d %s", code, body)
 	}
 	// A plan named in memory applies: basic needs only age and ncd.
 	mem["quote_plan"] = "basic"
@@ -791,5 +793,40 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	// A bad plan config is refused on save.
 	if code, _ := fx.do("PUT", "/api/configs/quote-plans?note=bad", map[string]any{"default": "x", "plans": map[string]any{}}, nil); code != 400 {
 		t.Fatalf("a bad plan config was accepted: %d", code)
+	}
+}
+
+// The default quotation is worked out while the phone rings (the lead's
+// variables, the plan's default selection) and handed over without a
+// question; a second quotation reuses the lead's variables and asks only
+// for what the lead does not know.
+func TestTheDefaultQuotationIsPrefetchedForTheCall(t *testing.T) {
+	fx := newFixture(t)
+	code, body := fx.do("POST", "/api/quote/prefetch", map[string]any{"call": "out-lead-7", "vars": map[string]any{"vehiclePrice": 300000, "vehicleAge": 2, "ncd": 1, "seats": 7, "carNum": "test"}}, nil)
+	if code != 202 {
+		t.Fatalf("prefetch: %d %s", code, body)
+	}
+	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "s1", "call": "out-lead-7", "arguments": map[string]any{}, "memory": map[string]any{}, "memory_version": 0}
+	var q Quote
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q.Status != "quote" {
+		t.Fatalf("default: %d %s", code, body)
+	}
+	// 车损险 on the lead's 300000 at age 2 (0.95) and one claim (0.85): 3600 × 0.8075.
+	var damage float64
+	for _, l := range q.Lines {
+		if l.Coverage == "车损险" {
+			damage = l.Premium
+		}
+	}
+	if damage != 2907 {
+		t.Fatalf("the default quotation did not use the lead's variables: %+v", q.Lines)
+	}
+	// A second quotation names a new combination and nothing else; the
+	// lead's variables fill the must fields, so no question is asked.
+	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "三者险": "500万", "驾乘险": "50万"}}
+	call["memory_version"] = 1
+	var q2 Quote
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q2); code != 200 || q2.Status != "quote" || len(q2.Lines) != 3 {
+		t.Fatalf("second quotation: %d %s", code, body)
 	}
 }

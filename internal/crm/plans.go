@@ -46,6 +46,12 @@ type QuotePlan struct {
 	// ("车上人员责任险" → "座位险"); the model used the formal name on 10-21 and
 	// the coverage was skipped as unknown.
 	CoverageAliases map[string]string `json:"coverage_aliases,omitempty"`
+	// DefaultSelection is the fixed default quotation — what a lead is
+	// quoted without being asked (10-24): coverage → true or a tier.
+	// DefaultVars stand in for a lead's variables on a call that has no
+	// lead (the box's redial of a kept prompt).
+	DefaultSelection map[string]any `json:"default_selection,omitempty"`
+	DefaultVars      map[string]any `json:"default_vars,omitempty"`
 }
 
 // PlanField is one variable the quotation reads.
@@ -83,6 +89,8 @@ const DefaultQuotePlans = `{
         "三者险": ["100万", "200万", "300万", "500万"],
         "驾乘险": ["0", "30万", "50万", "80万"]
       },
+      "default_selection": {"交强险": true, "车损险": true, "三者险": "200万", "座位险": true},
+      "default_vars": {"vehiclePrice": 150000, "vehicleAge": 3, "ncd": 0, "seats": 5},
       "coverage_aliases": {
         "交强": "交强险", "机动车交通事故责任强制保险": "交强险",
         "车损": "车损险", "机动车损失险": "车损险", "机动车损失保险": "车损险",

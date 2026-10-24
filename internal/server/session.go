@@ -1011,6 +1011,7 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 	engine := s.newEngine(duplex.Options{
 		Cfg:              cfg,
 		SessionID:        s.id,
+		CallID:           s.CallID(),
 		ClientRate:       resolved.Audio.Format.Rate,
 		Instructions:     resolved.Instructions,
 		Voice:            duplex.ResolveVoice(s.cfg, voiceOf(request)),

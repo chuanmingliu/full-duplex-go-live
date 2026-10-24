@@ -294,6 +294,10 @@ type ToolConfig struct {
 	// prehook, posthook and template replace Ack and ResultOpening at call
 	// start, so the panel edits what is said around a quotation.
 	Speech string `json:"speech,omitempty"`
+	// Prefetch is a path on the lead service POSTed at session start with
+	// {call, session} ("/api/quote/prefetch"): the default quotation is
+	// worked out while the phone rings.
+	Prefetch string `json:"prefetch,omitempty"`
 }
 
 // DuplexConfig tunes the simulated full-duplex behaviour.

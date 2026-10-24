@@ -1,9 +1,11 @@
 package duplex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -124,6 +126,9 @@ func (e *Engine) setupTools() {
 			}
 		}
 		ts.defs = append(ts.defs, def)
+		if c.Prefetch != "" && cfg.ToolsBaseURL != "" {
+			go e.prefetch(strings.TrimRight(cfg.ToolsBaseURL, "/") + c.Prefetch)
+		}
 	}
 	for _, d := range ts.defs {
 		ts.byName[d.Name] = d
@@ -278,7 +283,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		for _, c := range wait {
 			t := ts.byName[c.Name]
 			began := time.Now()
-			res := ts.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID,
+			res := ts.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
 				Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver})
 			out := toolOutput(res)
 			e.log.Info("tools: ran", "tool", c.Name, "ms", time.Since(began).Milliseconds(), "err", errString(res.Err))
@@ -348,6 +353,28 @@ var minCallForEndCall = 10 * time.Second
 // end_call was refused for too few turns: the model's farewell in that
 // reply has already been said and must not end the call by the back door.
 var netHoldAfterRefusal = 20 * time.Second
+
+// prefetch asks the lead service to work the default quotation out now,
+// while the phone is ringing (crm/prefetch.go); a call placed from a lead
+// already has one and the ask is a no-op there.
+func (e *Engine) prefetch(url string) {
+	body, _ := json.Marshal(map[string]any{"call": e.opts.CallID, "session": e.opts.SessionID})
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := e.toolsToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		e.log.Warn("tools: the default quotation could not be prefetched", "err", err)
+		return
+	}
+	resp.Body.Close()
+	e.log.Info("tools: default quotation prefetch asked for", "call", e.opts.CallID, "status", resp.StatusCode)
+}
 
 // toolsToken is the lead service's bearer token, from the profile's file.
 func (e *Engine) toolsToken() string {
@@ -561,7 +588,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 			e.log.Info("tools: a task was superseded by a newer one", "tool", t.Name, "task", oldID)
 		}
 	}
-	req := tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver}
+	req := tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID, Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver}
 	task := ts.pool.Submit(e.ctx, t, req, func(task *tools.Task) {
 		e.post(func() { e.onTaskDone(task) })
 	})
@@ -804,7 +831,7 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		default:
 			c := c
 			go func() {
-				res := e.tools.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID,
+				res := e.tools.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
 					Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver})
 				e.post(func() {
 					if p := e.pending[job.delegationID]; p != nil {

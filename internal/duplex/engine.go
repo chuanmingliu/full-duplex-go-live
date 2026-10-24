@@ -66,6 +66,9 @@ type Deps struct {
 type Options struct {
 	Cfg          config.Config
 	SessionID    string
+	// CallID is the telephone call this session answers, when the gateway
+	// said; it goes on every tool request.
+	CallID       string
 	ClientRate   int
 	Instructions string
 	Voice        string

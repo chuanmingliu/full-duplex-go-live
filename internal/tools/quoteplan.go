@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -22,6 +23,9 @@ type QuoteBrief struct {
 	Coverages []string
 	Options   map[string][]string
 	Fields    []QuoteField
+	// Default is the plan's default_selection: the quotation prepared for
+	// the lead before the call, read out without a question.
+	Default map[string]any
 }
 
 // QuoteField is one must field: its name, what to ask, and which coverages
@@ -40,6 +44,7 @@ func ParseQuoteBrief(raw []byte) (QuoteBrief, error) {
 		Plans   map[string]struct {
 			Coverages []string            `json:"coverages"`
 			Options   map[string][]string `json:"options"`
+			Default   map[string]any      `json:"default_selection"`
 			Fields    []struct {
 				Name     string   `json:"name"`
 				Question string   `json:"question"`
@@ -55,7 +60,7 @@ func ParseQuoteBrief(raw []byte) (QuoteBrief, error) {
 	if !ok {
 		return QuoteBrief{}, fmt.Errorf("no default plan %q", cfg.Default)
 	}
-	b := QuoteBrief{Plan: cfg.Default, Coverages: p.Coverages, Options: p.Options}
+	b := QuoteBrief{Plan: cfg.Default, Coverages: p.Coverages, Options: p.Options, Default: p.Default}
 	for _, f := range p.Fields {
 		b.Fields = append(b.Fields, QuoteField{Name: f.Name, Question: f.Question, For: f.For, Source: f.Source})
 	}
@@ -67,7 +72,24 @@ func ParseQuoteBrief(raw []byte) (QuoteBrief, error) {
 // rules do not read (source "api") are left out when source is "rules".
 func (b QuoteBrief) Text(source string) string {
 	var sb strings.Builder
-	sb.WriteString("调用前必须先和客户问清并用 update_memory 记录以下信息，缺一不可：")
+	if len(b.Default) > 0 {
+		names := make([]string, 0, len(b.Default))
+		for c := range b.Default {
+			names = append(names, c)
+		}
+		sort.Strings(names)
+		parts := make([]string, 0, len(names))
+		for _, c := range names {
+			if s, ok := b.Default[c].(string); ok && s != "" && s != "true" {
+				parts = append(parts, c+s)
+			} else {
+				parts = append(parts, c)
+			}
+		}
+		fmt.Fprintf(&sb, "默认方案（%s）的保费在通话前已为这位客户算好：客户问价格、要报价时，直接调用本工具，不带 config，不要问车牌、车价、车龄等任何信息，系统会读出默认方案的报价。\n", strings.Join(parts, "、"))
+		sb.WriteString("只有当客户想换方案（加减险种、改档位）做第二次报价时，才按下面的规则：")
+	}
+	sb.WriteString("先和客户问清并用 update_memory 记录以下信息（客户资料里已有的不必再问），再调用：")
 	fmt.Fprintf(&sb, "\n- quote：客户想投的险种方案（可选：%s", strings.Join(b.Coverages, "、"))
 	var tiers []string
 	for _, c := range b.Coverages {
@@ -89,7 +111,10 @@ func (b QuoteBrief) Text(source string) string {
 		}
 		fmt.Fprintf(&sb, "\n- %s：%s（%s需要）", f.Name, strings.TrimSpace(f.Question), need)
 	}
-	sb.WriteString("\n一次只问一个问题；客户确实不知道的可记为 \"unknown\"。信息齐全后再调用本工具；不要在对话一开始、客户还没说方案时就调用。")
+	sb.WriteString("\n一次只问一个问题；客户确实不知道的可记为 \"unknown\"。")
+	if len(b.Default) == 0 {
+		sb.WriteString("信息齐全后再调用本工具；不要在对话一开始、客户还没说方案时就调用。")
+	}
 	return sb.String()
 }
 

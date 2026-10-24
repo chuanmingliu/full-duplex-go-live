@@ -69,6 +69,8 @@ type Service struct {
 	calls    []CallRecord // newest last
 	dialing  bool
 	greeting string
+	// prefetches are the default quotations by call id (prefetch.go).
+	prefetches map[string]*prefetched
 }
 
 const tokenFile = "api.token"
@@ -490,6 +492,8 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 	}
 	s.log.Info("crm: call placed", "call", callID, "template", r.Template, "version", r.Version, "render", r.SHA,
 		"chars", r.Chars, "vars", len(r.Supplied), "undefined", len(r.Undefined), "by", by)
+	// The default quotation is worked out while the phone rings.
+	s.Prefetch(callID, vars)
 	res.OK, res.CallID = true, callID
 	return res, nil
 }
@@ -721,6 +725,22 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
+		if len(req.Config) == 0 {
+			// Nothing chosen: the default plan, worked out while the phone
+			// rang (prefetch.go). The customer is asked for nothing.
+			q, err := s.DefaultQuote(r.Context(), req.Call, nil, 60*time.Second)
+			if err != nil {
+				return fail(http.StatusUnprocessableEntity, "%v", err)
+			}
+			writeJSON(w, http.StatusOK, q)
+			return nil
+		}
+		// A second quotation: what the lead already knows is not asked again.
+		for k, v := range s.LeadVars(req.Call) {
+			if _, have := req.Vars[k]; !have {
+				req.Vars[k] = v
+			}
+		}
 		q, err := s.Quote(req)
 		if err != nil {
 			return fail(http.StatusUnprocessableEntity, "%v", err)
@@ -728,6 +748,7 @@ func (s *Service) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, q)
 		return nil
 	}))
+	mux.HandleFunc("POST /api/quote/prefetch", s.authed(s.handlePrefetch))
 	mux.HandleFunc("POST /api/render", s.authed(func(w http.ResponseWriter, r *http.Request) error {
 		var req CallRequest
 		if err := readJSON(r, &req); err != nil {
