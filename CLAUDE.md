@@ -594,7 +594,11 @@ steps of any call. **What is said around a quotation** is the panel's
 ("保费给您计算好了，") and a Jinja2 readout template, said from the phrase cache
 and the template before the model speaks; the tool's `brief: "quote-plans"`
 puts the plan's must fields into its description so the model collects them
-before calling (`internal/tools/quotespeech.go`, `quoteplan.go`).
+before calling (`internal/tools/quotespeech.go`, `quoteplan.go`). **The
+default quotation is prefetched while the phone rings** (`crm/prefetch.go`,
+the plan's `default_selection`; `default_vars` for a call without a lead):
+`quote_total` with nothing chosen returns it at once; only a second
+quotation goes through the questions, the async inquiry and the prehook.
 
 - The owner's prompts are Jinja2 written for a Python renderer. `internal/
   jinja` must render them to the character: `testdata/gen.py` renders every
