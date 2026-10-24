@@ -194,6 +194,7 @@ type apiQuoteInfo struct {
 // totals as numbers, the coverages as lines, the dates, and a few words the
 // model can say. The service's own record is kept with the quote event.
 type APIQuote struct {
+	Status           string      `json:"status,omitempty"`
 	Total            float64     `json:"total"`
 	Currency         string      `json:"currency"`
 	BusinessPremium  float64     `json:"business_premium"`
@@ -441,7 +442,7 @@ func (a *QuoteAPI) query(ctx context.Context, client *http.Client, in apiInquiry
 
 func (a *QuoteAPI) normalize(d *apiQuoteDetail, info apiQuoteInfo, skipped []string) *APIQuote {
 	f := func(s string) float64 { v, _ := strconv.ParseFloat(strings.TrimSpace(s), 64); return v }
-	q := &APIQuote{Currency: "CNY", Total: f(info.SumPremium), BusinessPremium: f(info.BusinessSumPremium), BusinessStandard: f(info.BizStandardTotal),
+	q := &APIQuote{Status: "quote", Currency: "CNY", Total: f(info.SumPremium), BusinessPremium: f(info.BusinessSumPremium), BusinessStandard: f(info.BizStandardTotal),
 		BusinessDiscount: f(info.BizDiscountPremium), DiscountRatio: info.SelfPricingRatio, CompelPremium: f(info.CompelSumPremium),
 		TaxPremium: f(info.TaxPremium), TaxLateCharge: f(info.TaxLateCharge), PremiumDiff: d.PremiumDiff, PlanType: info.PlanType,
 		InsureFlowCode: info.InsureFlowCode, QuotePriceID: info.QuotePriceID, ValidForS: info.OrderRemainTime, Skipped: skipped, Source: "quote-api", Lines: []QuoteLine{}}

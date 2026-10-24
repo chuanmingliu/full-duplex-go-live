@@ -75,16 +75,33 @@ func (t Tool) OpeningFor(output []byte) string {
 	if t.ResultOpening == "" {
 		return ""
 	}
-	if t.ResultOpeningStatus == "" {
+	if t.ResultOpeningStatus == "" || ResultStatus(output) == t.ResultOpeningStatus {
 		return t.ResultOpening
 	}
+	return ""
+}
+
+// ResultStatus classifies a tool's result: its own "status" when it has
+// one ("need", "error"), else "quote" when it carries a total or lines —
+// the lead service's quote has no status field, and the 17:30 call of
+// 10-24 said neither the posthook nor the readout for that reason — else
+// "ok"; unreadable output is "unreadable".
+func ResultStatus(output []byte) string {
 	var r struct {
-		Status string `json:"status"`
+		Status string          `json:"status"`
+		Total  float64         `json:"total"`
+		Lines  json.RawMessage `json:"lines"`
 	}
-	if json.Unmarshal(output, &r) != nil || r.Status != t.ResultOpeningStatus {
-		return ""
+	if json.Unmarshal(output, &r) != nil {
+		return "unreadable"
 	}
-	return t.ResultOpening
+	if r.Status != "" {
+		return r.Status
+	}
+	if r.Total > 0 || (len(r.Lines) > 2) {
+		return "quote"
+	}
+	return "ok"
 }
 
 // Definition is the tool as the chat model sees it (chat-completions form).

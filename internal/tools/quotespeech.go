@@ -102,13 +102,7 @@ func (qs QuoteSpeech) Readout(output []byte) string {
 
 // For says whether a result is one the posthook and template are for.
 func (qs QuoteSpeech) For(output []byte) bool {
-	if qs.PosthookStatus == "" {
-		return true
-	}
-	var r struct {
-		Status string `json:"status"`
-	}
-	return json.Unmarshal(output, &r) == nil && r.Status == qs.PosthookStatus
+	return qs.PosthookStatus == "" || ResultStatus(output) == qs.PosthookStatus
 }
 
 // FetchQuoteSpeech reads the config from the lead service.

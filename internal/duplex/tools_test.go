@@ -901,7 +901,13 @@ func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Reque
 	case <-ctx.Done():
 		return tools.Result{Err: ctx.Err()}
 	}
-	out, _ := json.Marshal(map[string]any{"status": s.status, "total": 3200, "memory_version": req.MemoryVersion})
+	// A quote, as the lead service sends it, has no status field: total and
+	// lines say what it is. A need has.
+	vars := map[string]any{"total": 3200, "lines": []any{map[string]any{"coverage": "交强险", "premium": 950}}, "memory_version": req.MemoryVersion}
+	if s.status != "quote" {
+		vars = map[string]any{"status": s.status, "memory_version": req.MemoryVersion}
+	}
+	out, _ := json.Marshal(vars)
 	return tools.Result{Output: out, Took: s.delay}
 }
 

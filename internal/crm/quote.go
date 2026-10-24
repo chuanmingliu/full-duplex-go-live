@@ -286,6 +286,9 @@ type QuoteLine struct {
 
 // Quote is the answer.
 type Quote struct {
+	// Status is "quote": the answer to a request that could run (a request
+	// that could not answers a Need with status "need").
+	Status        string      `json:"status,omitempty"`
 	Total         float64     `json:"total"`
 	Currency      string      `json:"currency"`
 	Lines         []QuoteLine `json:"lines"`
@@ -329,7 +332,7 @@ func toFloat(v any) (float64, bool) {
 
 // Compute prices a request under the rules.
 func (r *QuoteRules) Compute(req QuoteRequest) (*Quote, error) {
-	q := &Quote{Currency: r.Currency, Lines: []QuoteLine{}}
+	q := &Quote{Status: "quote", Currency: r.Currency, Lines: []QuoteLine{}}
 	if q.Currency == "" {
 		q.Currency = "CNY"
 	}

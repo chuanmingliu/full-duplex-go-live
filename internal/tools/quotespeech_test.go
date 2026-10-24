@@ -15,6 +15,11 @@ func TestTheDefaultQuoteSpeechReadsAQuoteOut(t *testing.T) {
 	if out != want {
 		t.Fatalf("readout %q\nwant    %q", out, want)
 	}
+	// The lead service's quote carries no status field: total and lines say
+	// what it is (the 17:30 call of 10-24 said nothing for want of this).
+	if out := qs.Readout([]byte(`{"total":11404.75,"currency":"CNY","lines":[{"coverage":"交强险","premium":950}],"skipped":["玻璃险"]}`)); !strings.Contains(out, "合计11405元") || !strings.Contains(out, "玻璃险暂时算不了") {
+		t.Fatalf("a status-less quote was not read out: %q", out)
+	}
 	if qs.Readout([]byte(`{"status":"need","missing":[]}`)) != "" {
 		t.Fatal("a need was read out as a quote")
 	}
