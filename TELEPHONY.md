@@ -1459,3 +1459,31 @@ held until the ack has been said. And the tool is not to be called on a bare "�
 read from the lead service at call start and written into the tool's
 description, so the model asks for them first; `need` stays the safety net.
 
+
+**The lines live on the panel (10-24).** The lead service's `quote-speech`
+config (`prehook`, `posthook`, `posthook_status`, and a Jinja2 `template`
+over the result — total, lines[].coverage/choice/premium, skipped) is read
+at call start when the tool has `speech: "quote-speech"`, and replaces the
+profile's lines. With a template the figures are read out from it right
+after the posthook, before the model's first token, and the model is told
+not to repeat them and to ask the customer's opinion in a sentence; without
+one the model reads the figures. The seed reads each coverage with its tier
+and premium, then 合计, then what was skipped. A template that does not
+render is refused on save. A quote is recognised by its `status`, else by
+its total and lines (the service's quote had no status field, and the
+17:30 call of 10-24 said nothing for want of it).
+
+**The default quotation is worked out while the phone rings (10-24).** A
+lead is known before the call, and the plan has a `default_selection`, so the
+lead service prices it the moment the dial goes out (`Prefetch` in
+`internal/crm/prefetch.go`, keyed by the originator's call id; a session
+not placed from a lead asks for one at its start with the tool's
+`prefetch` path, and the plan's `default_vars` stand in for the lead). When
+the customer asks the price the model calls `quote_total` with nothing
+chosen and the prefetched quote is read out at once — posthook and template,
+no questions. A second quotation — the customer wants another combination —
+is the only one that goes through the intake's questions (the lead's
+variables are reused, so only the combination and its tiers are asked), the
+async inquiry, the prehook while it runs, and the posthook and template
+when it is back. golive puts the call id on every tool request
+(`tools.Request.Call`).
