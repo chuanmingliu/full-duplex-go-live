@@ -633,14 +633,14 @@ func TestAQuoteGoesToTheBusinessServiceWhenConfigured(t *testing.T) {
 		t.Fatalf("config: %d %s", code, body)
 	}
 	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "sess_x", "arguments": map[string]any{},
-		"memory":         map[string]any{"quote": map[string]any{"交强险": true, "车损险": true, "三者险": "300万", "玻璃险": true}, "carNum": "浙A·12345", "vehicleAge": 2},
+		"memory":         map[string]any{"quote": map[string]any{"交强险": true, "车损险": true, "三者险": "300万", "发动机涉水险": true}, "carNum": "浙A·12345", "vehicleAge": 2},
 		"memory_version": 5}
 	var q APIQuote
 	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 {
 		t.Fatalf("quote: %d %s", code, body)
 	}
 	if q.Total != 8110.28 || q.BusinessPremium != 3873.03 || q.CompelPremium != 1100 || q.TaxPremium != 3137.25 || q.InsureFlowCode != "NEW" ||
-		q.MemoryVersion != 5 || q.Source != "quote-api" || len(q.Lines) != 4 || q.Lines[1].Choice != "3000000" || len(q.Skipped) != 1 || q.Skipped[0] != "玻璃险" ||
+		q.MemoryVersion != 5 || q.Source != "quote-api" || len(q.Lines) != 4 || q.Lines[1].Choice != "3000000" || len(q.Skipped) != 1 || q.Skipped[0] != "发动机涉水险" ||
 		q.PremiumDiff != "120.5" || len(q.Services) != 1 {
 		t.Fatalf("quote %+v", q)
 	}

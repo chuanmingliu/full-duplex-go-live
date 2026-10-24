@@ -293,6 +293,9 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 	rec.ComputeMS = time.Since(began).Milliseconds()
 	if q != nil {
 		rec.Total, rec.InsureFlowCode, rec.QuotePriceID = q.Total, q.InsureFlowCode, q.QuotePriceID
+		// What the intake left out (outside the plan, or unanswered) is
+		// named beside what the service has no code for.
+		q.Skipped = append(q.Skipped, req.Skipped...)
 	}
 	if err != nil {
 		rec.Error = err.Error()
