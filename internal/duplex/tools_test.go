@@ -985,7 +985,6 @@ func TestTheQuoteIsReadOutFromThePanelsTemplate(t *testing.T) {
 	}
 }
 
-
 // The default quotation was ready before the call: neither the prehook nor
 // the posthook is said — the figures are read out and the model carries on
 // (the owner, 22:29 on 10-24).

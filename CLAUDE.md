@@ -102,6 +102,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-17 18:11 | 1e35e09, **simulated** (`kb-busy-bargainer`), 155 s, **ended by the assistant's `end_call`** | 25 | 842 | 1154 (p95 1093) | 0 |
 | 10-23 09:43 | 059ae48, `call` from the metro platform, 20 s; an announcement cut the answer, became a turn, and the model hung up on it (ISS-052/053/054) | 1 | — | 834 | 0 |
 | 10-23 21:57 | 45c67de, `call` from the metro platform, 6 min; 16 announcements let go by, 0 cuts; first real quotation (9 calls); the evening (first token 609 from the request) | 19 | 1146 | 1356 (p95 1346) | 8 |
+| 10-24 22:39 | 4f20751, `call`, quiet line, 3.5 min; default quotation told directly (prefetched during ringing); second quotation asked no fields, 驾乘险 skipped (no code on the box; fixed), prehook dropped on a busy floor (fixed a4bad35) | 19 | 912 | 1162 (p90 1136) | 7 |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
