@@ -681,9 +681,12 @@ func (e *Engine) maybeDeliver() {
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
 		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" && task.Request.MemoryVersion == ver {
+			if tools.ResultIsDefault(task.Result.Output) {
+				opening = "" // the default quotation: ready before the call, no "算好了"
+			}
 			if readout := task.Tool.ReadoutFor(task.Result.Output); readout != "" {
 				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。不要重复任何数字或险种，只需用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
-			} else {
+			} else if opening != "" {
 				fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 			}
 		}
@@ -704,7 +707,11 @@ func (e *Engine) maybeDeliver() {
 	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
 		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" {
 			// The posthook from the cache, then the figures from the template
-			// (synthesized: they change), before the model's first token.
+			// (synthesized: they change), before the model's first token. The
+			// default quotation gets the figures alone.
+			if tools.ResultIsDefault(task.Result.Output) {
+				opening = ""
+			}
 			turn.Opening = opening + task.Tool.ReadoutFor(task.Result.Output)
 		}
 	}

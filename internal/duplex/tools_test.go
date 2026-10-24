@@ -889,10 +889,12 @@ func TestTheResultOpeningIsOnlyForItsStatus(t *testing.T) {
 	}
 }
 
-// statusQuote answers with a status, as the lead service does.
+// statusQuote answers with a status, as the lead service does; dflt marks
+// the result as the prefetched default quotation.
 type statusQuote struct {
 	delay  time.Duration
 	status string
+	dflt   bool
 }
 
 func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Request) tools.Result {
@@ -904,6 +906,9 @@ func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Reque
 	// A quote, as the lead service sends it, has no status field: total and
 	// lines say what it is. A need has.
 	vars := map[string]any{"total": 3200, "lines": []any{map[string]any{"coverage": "交强险", "premium": 950}}, "memory_version": req.MemoryVersion}
+	if s.dflt {
+		vars["default"] = true
+	}
 	if s.status != "quote" {
 		vars = map[string]any{"status": s.status, "memory_version": req.MemoryVersion}
 	}
@@ -978,4 +983,41 @@ func TestTheQuoteIsReadOutFromThePanelsTemplate(t *testing.T) {
 	if note := last[len(last)-1].Content; !strings.Contains(note, "不要重复任何数字") {
 		t.Fatalf("the model was not told the figures were read out: %q", note)
 	}
+}
+
+
+// The default quotation was ready before the call: neither the prehook nor
+// the posthook is said — the figures are read out and the model carries on
+// (the owner, 22:29 on 10-24).
+func TestTheDefaultQuotationGetsNeitherPrehookNorPosthook(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/configs/quote-speech" {
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = w.Write([]byte(`{"config":{"name":"quote-speech","version":2,"body":{"prehook":"马上给您算。","posthook":"算好了，","posthook_status":"quote","template":"一共{{ total | round | int }}元整。"}}}`))
+	}))
+	t.Cleanup(svc.Close)
+	opts := quoteConfig()
+	opts.Cfg.ToolsBaseURL = svc.URL
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Speech = "quote-speech"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: 10 * time.Millisecond, status: "quote", dflt: true})
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "报价出来了") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	said := c.saidAll()
+	if strings.Contains(said, "马上给您算") || strings.Contains(said, "算好了，") {
+		t.Fatalf("the default quotation was announced as a computation: %q", said)
+	}
+	if r, m := strings.Index(said, "一共3200元整"), strings.Index(said, "报价出来了"); r < 0 || m < 0 || r > m {
+		t.Fatalf("the figures were not read out first: %q", said)
+	}
+	_ = e
 }

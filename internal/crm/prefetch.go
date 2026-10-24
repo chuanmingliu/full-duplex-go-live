@@ -66,6 +66,13 @@ func (s *Service) Prefetch(call string, vars map[string]any) {
 		if err != nil {
 			p.err = err
 		} else {
+			// What the quotation ran on — the lead's variables with the plan's
+			// defaults under them — is what a second quotation reuses, so the
+			// customer is not asked for any of it (22:26 on 10-24: a call
+			// without a lead was asked the plate and the age again).
+			s.mu.Lock()
+			p.vars = copyVars(req.Vars)
+			s.mu.Unlock()
 			p.quote, p.err = s.Quote(req)
 			if n, isNeed := p.quote.(*Need); isNeed && n != nil {
 				p.err = fmt.Errorf("the default plan is missing %d field(s) for this lead: %s", len(n.Missing), missingNames(n))
@@ -159,16 +166,32 @@ func (s *Service) DefaultQuote(ctx context.Context, call string, vars map[string
 	if p.err != nil {
 		return nil, p.err
 	}
-	return p.quote, nil
+	// Marked as the default: golive says neither the prehook nor the
+	// posthook for it — the price was ready before the call, and the
+	// customer is simply told (the owner, 22:29 on 10-24).
+	raw, err := json.Marshal(p.quote)
+	if err != nil {
+		return p.quote, nil
+	}
+	var out map[string]any
+	if json.Unmarshal(raw, &out) != nil {
+		return p.quote, nil
+	}
+	out["default"] = true
+	out["prefetched_ms"] = p.took.Milliseconds()
+	return out, nil
 }
 
-// LeadVars are the variables the call's lead supplied, for a second
-// quotation: the customer is not asked again for what the lead knows.
+// LeadVars are the variables the call's default quotation ran on — the
+// lead's, with the plan's defaults under them — for a second quotation: the
+// customer is not asked again for what the lead knows.
 func (s *Service) LeadVars(call string) map[string]any {
 	p := s.prefetchFor(call)
 	if p == nil {
 		return nil
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return copyVars(p.vars)
 }
 

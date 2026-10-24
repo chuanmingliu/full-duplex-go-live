@@ -81,6 +81,16 @@ func (t Tool) OpeningFor(output []byte) string {
 	return ""
 }
 
+// ResultIsDefault says whether a result is the default quotation worked
+// out before the call ("default": true): nothing was computed on the call,
+// so neither the wait nor "it's ready" is said — the figures are.
+func ResultIsDefault(output []byte) bool {
+	var r struct {
+		Default bool `json:"default"`
+	}
+	return json.Unmarshal(output, &r) == nil && r.Default
+}
+
 // ResultStatus classifies a tool's result: its own "status" when it has
 // one ("need", "error"), else "quote" when it carries a total or lines —
 // the lead service's quote has no status field, and the 17:30 call of

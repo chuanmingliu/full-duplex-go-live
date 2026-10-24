@@ -1480,8 +1480,10 @@ lead service prices it the moment the dial goes out (`Prefetch` in
 not placed from a lead asks for one at its start with the tool's
 `prefetch` path, and the plan's `default_vars` stand in for the lead). When
 the customer asks the price the model calls `quote_total` with nothing
-chosen and the prefetched quote is read out at once — posthook and template,
-no questions. A second quotation — the customer wants another combination —
+chosen and the prefetched quote is read out at once — the template's
+figures alone: the result is marked `default`, and neither the prehook nor
+the posthook is said for a price that was ready before the call (the owner,
+22:29 on 10-24). No questions. A second quotation — the customer wants another combination —
 is the only one that goes through the intake's questions (the lead's
 variables are reused, so only the combination and its tiers are asked), the
 async inquiry, the prehook while it runs, and the posthook and template

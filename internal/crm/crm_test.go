@@ -829,4 +829,23 @@ func TestTheDefaultQuotationIsPrefetchedForTheCall(t *testing.T) {
 	if code, body := fx.do("POST", "/api/tools/quote", call, &q2); code != 200 || q2.Status != "quote" || len(q2.Lines) != 3 {
 		t.Fatalf("second quotation: %d %s", code, body)
 	}
+	// The default is marked as such, so golive says neither the wait nor
+	// "算好了" for it.
+	call["memory"] = map[string]any{}
+	var dq map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &dq); code != 200 || dq["default"] != true {
+		t.Fatalf("default not marked: %d %s", code, body)
+	}
+	// A call without a lead (the box's redial): the prefetch runs on the
+	// plan's default_vars, and a second quotation reuses them too — the
+	// 22:26 call of 10-24 was asked the plate and the age again.
+	call2 := map[string]any{"tool": "quote_total", "call_id": "c2", "session": "s2", "call": "out-nolead-1", "arguments": map[string]any{}, "memory": map[string]any{}, "memory_version": 0}
+	if code, body := fx.do("POST", "/api/tools/quote", call2, &q); code != 200 || q.Status != "quote" {
+		t.Fatalf("default without a lead: %d %s", code, body)
+	}
+	call2["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "三者险": "300万", "座位险": true}}
+	call2["memory_version"] = 1
+	if code, body := fx.do("POST", "/api/tools/quote", call2, &q2); code != 200 || q2.Status != "quote" || len(q2.Lines) != 3 {
+		t.Fatalf("second quotation without a lead asked questions: %d %s", code, body)
+	}
 }

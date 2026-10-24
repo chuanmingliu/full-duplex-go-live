@@ -11,6 +11,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // This file is the think channel: delegation in both of gpt-live-1's modes,
@@ -775,7 +776,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		announce := false
 		for _, t := range ts.deliveries {
 			if t.ID == p.scriptedTask {
-				announce = t.Result.Err == nil && t.Tool.OpeningFor(t.Result.Output) != ""
+				announce = t.Result.Err == nil && t.Tool.OpeningFor(t.Result.Output) != "" && !tools.ResultIsDefault(t.Result.Output)
 			}
 		}
 		if !announce {
