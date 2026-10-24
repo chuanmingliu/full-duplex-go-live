@@ -133,7 +133,7 @@ sim-bundle:
 BUNDLE := dist/golive-telephony
 bundle:
 	@rm -rf $(BUNDLE) && mkdir -p $(BUNDLE)/bin $(BUNDLE)/configs $(BUNDLE)/scripts
-	@for c in golive golivebench golivefdb goliveturn golivectl llmprobe ttsprobe echoprobe journal crm edge desk; do \
+	@for c in golive golivebench golivefdb goliveturn golivectl llmprobe ttsprobe echoprobe journal crm edge desk quotesvc; do \
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" \
 			-o $(BUNDLE)/bin/$$c-linux-amd64 ./cmd/$$c || exit 1; \
 	done

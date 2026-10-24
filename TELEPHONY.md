@@ -1487,3 +1487,35 @@ variables are reused, so only the combination and its tiers are asked), the
 async inquiry, the prehook while it runs, and the posthook and template
 when it is back. golive puts the call id on every tool request
 (`tools.Request.Call`).
+
+## The quotation service on the box
+
+`cmd/quotesvc` (`internal/quotesvc`) is a vehicle quotation service with the
+business's own interface — the asynchronous inquiry
+(`/intranet/vehicle/innerProcess/vehicleApplyInquiryPriceAsync`, "ok" at
+once) and the result query
+(`/intranet/vehicle/simpleProcess/queryLastQuoteDetailByPhone`, the latest
+quote for a phone and a plate) — run on the box at `127.0.0.1:8793` so the
+whole voice path is exercised against a service that takes real seconds
+(`-compute-ms 2500 -jitter-ms 2000`) before the business's intranet
+service is reachable. When it is, `quote-api`'s `base_url` moves to it and
+nothing else changes.
+
+Pricing is the placeholder table (`~/golive-quotesvc/rating.json`, seeded
+from `quotesvc.DefaultRating`: the same figures as `quote-rules` by the
+document's coverage codes, compulsory and tax by seat band) over a vehicle
+table (`vehicles.json`: plate → price, age, seats, claims) that lives on
+the box only. An unknown plate is a failed quote (`result: "1"`), which the
+assistant explains. Every inquiry and quote is appended to `quotes.jsonl`
+and the latest quote per phone+plate is rebuilt from it at start.
+
+```bash
+scripts/phone-brain.sh quotesvc vehicle '{"plate":"…","price":700000,"age":5,"seats":5,"ncd":0}'
+scripts/phone-brain.sh quotesvc start          # 127.0.0.1:8793; QUOTESVC_COMPUTE_MS / QUOTESVC_JITTER_MS
+scripts/phone-brain.sh quotesvc probe          # one inquiry for the first vehicle, polled to its quote
+scripts/phone-brain.sh quotesvc use            # quote-api base_url → this service (the next config version)
+```
+
+For the test line the plan's `default_vars` carry the test plate as `carNum`
+and `quote-api` a `default_phone`, so the default quotation prefetched while
+the phone rings goes through the service like a lead's would.

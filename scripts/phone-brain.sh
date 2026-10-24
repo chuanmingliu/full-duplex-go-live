@@ -298,6 +298,27 @@ capi() {
   curl -sS -m 60 -X "$method" -H @<(printf 'Authorization: Bearer %s\nX-Operator: %s\n' "$(cat "$CRM_DIR/api.token")" "${USER:-box}") "$@" "$CRM_URL$path"
 }
 
+# The quotation service (internal/quotesvc): the business's interface, run
+# here so quotes take real seconds; the lead service's quote-api base_url
+# points at it (http://127.0.0.1:$QUOTESVC_PORT/intranet).
+QUOTESVC_PORT="${QUOTESVC_PORT:-8793}"
+QUOTESVC_DIR="${QUOTESVC_DIR:-$HOME/golive-quotesvc}"
+QUOTESVC_ADDR="${QUOTESVC_ADDR:-127.0.0.1:$QUOTESVC_PORT}"
+QBIN="./bin/quotesvc-linux-$ARCH"; QPID="$STATE.quotesvc.pid"; QLOG="quotesvc.out"
+qrunning() { [ -f "$QPID" ] && kill -0 "$(cat "$QPID")" 2>/dev/null; }
+qstop() { if qrunning; then kill "$(cat "$QPID")" 2>/dev/null; sleep 0.5; fi; rm -f "$QPID"; }
+qstart() {
+  chmod +x "$QBIN" 2>/dev/null
+  [ -x "$QBIN" ] || { say "no binary at $QBIN"; return 1; }
+  qstop
+  mkdir -p "$QUOTESVC_DIR" && chmod 700 "$QUOTESVC_DIR"
+  setsid nohup "$QBIN" -addr "$QUOTESVC_ADDR" -dir "$QUOTESVC_DIR" -compute-ms "${QUOTESVC_COMPUTE_MS:-2500}" -jitter-ms "${QUOTESVC_JITTER_MS:-2000}" >> "$QLOG" 2>&1 < /dev/null &
+  echo $! > "$QPID"
+  sleep 1
+  if qrunning; then say "the quotation service is up on $QUOTESVC_ADDR (pid $(cat "$QPID")); data: $QUOTESVC_DIR; $(curl -s -m 3 "http://$QUOTESVC_ADDR/healthz" | cut -c1-120)"
+  else say "the quotation service did not start; see $QLOG"; tail -3 "$QLOG"; return 1; fi
+}
+
 # The desk is its own process and is left running across a restart of golive.
 KBIN="./bin/desk-linux-$ARCH"; KPID="$STATE.desk.pid"; KLOG="desk.out"
 krunning() { [ -f "$KPID" ] && kill -0 "$(cat "$KPID")" 2>/dev/null; }
@@ -900,6 +921,46 @@ desk)
   esac
   ;;
 
+quotesvc)
+  # The quotation service (the business's two-API interface, run here).
+  #   quotesvc start | stop | status
+  #   quotesvc vehicle 'JSON'   add a vehicle: {"plate":"…","price":700000,"age":5,"seats":5,"ncd":0}
+  #   quotesvc probe            fire one inquiry for the first vehicle and poll for the quote
+  #   quotesvc use              point the lead service's quote-api at this service (saves the next config version)
+  case "${2:-status}" in
+    start|restart) touch "$STATE.quotesvc"; qstart || exit 1 ;;
+    stop) rm -f "$STATE.quotesvc"; qstop; say "the quotation service is stopped" ;;
+    status)
+      if qrunning; then say "the quotation service is up on $QUOTESVC_ADDR (pid $(cat "$QPID")): $(curl -s -m 3 "http://$QUOTESVC_ADDR/healthz" | cut -c1-160)"
+      else say "the quotation service is not running"; fi ;;
+    vehicle)
+      [ -n "${3:-}" ] || { say "quotesvc vehicle 'JSON'"; exit 2; }
+      chmod +x "$QBIN" 2>/dev/null; "$QBIN" -dir "$QUOTESVC_DIR" -add-vehicle "$3" && say "restart the service to read the table: scripts/phone-brain.sh quotesvc restart" ;;
+    probe)
+      plate="$(python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); print(v[0]["plate"] if v else "")' "$QUOTESVC_DIR/vehicles.json" 2>/dev/null)"
+      [ -n "$plate" ] || { say "no vehicle in $QUOTESVC_DIR/vehicles.json: quotesvc vehicle 'JSON' first"; exit 1; }
+      body="$(python3 -c 'import json,sys; print(json.dumps({"phone":"13800000000","vehicleNo":sys.argv[1],"isInsureBusinessInsurance":True,"isInsureCompelInsurance":True,"coverageList":[{"coverageCode":"951","coverageName":"机动车损失保险","baseRiderType":"0","coverageType":"0","isNonDeductible":"1","sumInsured":"1"},{"coverageCode":"952","coverageName":"第三者责任险","baseRiderType":"0","coverageType":"2","isNonDeductible":"1","sumInsured":"2000000"}]}))' "$plate")"
+      t0=$(date +%s%N)
+      curl -s -m 5 -H 'Content-Type: application/json' -d "$body" "http://$QUOTESVC_ADDR/intranet/vehicle/innerProcess/vehicleApplyInquiryPriceAsync"; echo
+      for i in $(seq 1 30); do
+        sleep 0.5
+        out="$(curl -s -m 5 -X POST "http://$QUOTESVC_ADDR/intranet/vehicle/simpleProcess/queryLastQuoteDetailByPhone?phone=13800000000&vehicleNo=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$plate")")"
+        if echo "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; i=d["quotePriceInfos"]; sys.exit(0 if i and i[0].get("sumPreimum") else 1)' 2>/dev/null; then
+          echo "$out" | python3 -c 'import json,sys; i=json.load(sys.stdin)["data"]["quotePriceInfos"][0]; print("quote", i["quotePriceId"], "result", i["result"], "total", i["sumPreimum"], "business", i.get("businessSumPreimum"), "compel", i.get("compelSumPreimum"), "tax", i.get("taxPreimum"), "lines", len(i.get("coverageList",[])))'
+          say "answered in $(( ($(date +%s%N) - t0) / 1000000 )) ms"; exit 0
+        fi
+      done
+      say "no quote after 15 s"; exit 1 ;;
+    use)
+      capi GET "/api/configs/quote-api" | python3 -c "
+import json,sys
+c=json.load(sys.stdin); c=c.get('config') or c; b=c['body']
+b['base_url']='http://$QUOTESVC_ADDR/intranet'
+json.dump(b, open('/tmp/quote-api.next.json','w'), ensure_ascii=False, indent=1)
+print('quote-api v%s -> base_url %s' % (c.get('version'), b['base_url']))" || exit 1
+      "$0" crm config quote-api /tmp/quote-api.next.json "quotes go to the quotation service on this box" ;;
+    *) say "quotesvc start|stop|status|vehicle 'JSON'|probe|use"; exit 2 ;;
+  esac ;;
 crm)
   # The lead service: templates, rendering, and calls on rendered prompts.
   #   crm start | stop | status | verify
