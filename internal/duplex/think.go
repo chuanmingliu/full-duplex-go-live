@@ -784,8 +784,19 @@ func (e *Engine) sayAck(p *pendingResponse) {
 			return
 		}
 	}
-	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.hangingUp() {
-		e.log.Info("tools: the ack's moment passed (the caller or the assistant is speaking); not saying it", "task", p.scriptedTask)
+	if e.hangingUp() {
+		return
+	}
+	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() {
+		// Somebody is speaking — the model's own sentence, as often as not
+		// ("好的，我帮您算一下" on the 22:39 call of 10-24, and the ack was
+		// dropped). The ack waits for the floor, as long as the task runs.
+		if ts.tasks[p.scriptedTask] != nil {
+			ts.ackPending[p.scriptedTask] = true
+			time.AfterFunc(150*time.Millisecond, func() { e.post(func() { e.sayAck(p) }) })
+			return
+		}
+		e.log.Info("tools: the task finished while its ack waited for the floor; not saying it", "task", p.scriptedTask)
 		return
 	}
 	turn := e.tracker.Begin("", false)

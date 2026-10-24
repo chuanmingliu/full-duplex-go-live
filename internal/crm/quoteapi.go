@@ -84,7 +84,11 @@ const DefaultQuoteAPI = `{
     "三者险": {"code": "952", "name": "第三者责任险", "base_rider_type": "0", "coverage_type": "2", "sum_insured": "2000000", "non_deductible": true},
     "司机险": {"code": "953", "name": "司机责任险", "base_rider_type": "0", "coverage_type": "2", "sum_insured": "20000"},
     "乘客险": {"code": "954", "name": "乘客责任险", "base_rider_type": "0", "coverage_type": "2", "sum_insured": "20000"},
-    "座位险": {"code": "954", "name": "乘客责任险", "base_rider_type": "0", "coverage_type": "2", "sum_insured": "20000"}
+    "座位险": {"code": "954", "name": "乘客责任险", "base_rider_type": "0", "coverage_type": "2", "sum_insured": "20000"},
+    "划痕险": {"code": "955", "name": "车身划痕损失险", "base_rider_type": "1", "coverage_type": "0", "sum_insured": "2000"},
+    "玻璃险": {"code": "956", "name": "玻璃单独破碎险", "base_rider_type": "1", "coverage_type": "0", "sum_insured": "1"},
+    "医保外用药": {"code": "957", "name": "医保外用药责任险", "base_rider_type": "1", "coverage_type": "0", "sum_insured": "10000"},
+    "驾乘险": {"code": "958", "name": "驾乘人员意外险", "base_rider_type": "0", "coverage_type": "2", "sum_insured": "300000"}
   },
   "poll_every_ms": 1500,
   "timeout_ms": 90000
