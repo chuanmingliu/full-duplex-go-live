@@ -980,7 +980,7 @@ func TestTheQuoteIsReadOutFromThePanelsTemplate(t *testing.T) {
 	llm.mu.Lock()
 	defer llm.mu.Unlock()
 	last := llm.requests[len(llm.requests)-1].Messages
-	if note := last[len(last)-1].Content; !strings.Contains(note, "不要重复任何数字") {
+	if note := last[len(last)-1].Content; !strings.Contains(note, "不得出现任何数字") || strings.Contains(note, "报总价和关键构成") {
 		t.Fatalf("the model was not told the figures were read out: %q", note)
 	}
 }

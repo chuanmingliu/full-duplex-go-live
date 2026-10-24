@@ -680,19 +680,21 @@ func (e *Engine) maybeDeliver() {
 		fmt.Fprintf(&note, "，但失败了：%s。请告诉用户暂时算不出来，并说明会稍后再试或请人工跟进。", task.Result.Err.Error())
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
+		readOut := false
 		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" && task.Request.MemoryVersion == ver {
 			if tools.ResultIsDefault(task.Result.Output) {
 				opening = "" // the default quotation: ready before the call, no "算好了"
 			}
 			if readout := task.Tool.ReadoutFor(task.Result.Output); readout != "" {
 				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
+				readOut = true
 			} else if opening != "" {
 				fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 			}
 		}
 		if task.Request.MemoryVersion != ver {
 			fmt.Fprintf(&note, "\n注意：该结果基于工作记忆 v%d 计算，而当前工作记忆已是 v%d（方案在计算期间有改动）。请先告知结果对应的是之前的方案，并询问是否按最新方案重新计算。", task.Request.MemoryVersion, ver)
-		} else {
+		} else if !readOut {
 			note.WriteString("\n请现在自然地把结果告诉用户，简洁，报总价和关键构成即可。")
 		}
 	}
