@@ -1196,12 +1196,13 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
 		return
 	}
-	if e.skipOpener {
+	if time.Now().Before(e.skipOpenerUntil) {
 		// The opener before this one turned out to be mid-sentence and
-		// became a backchannel; a second 嗯 on the continuation is the tic
-		// the owner heard (23:36 on 10-25). The answer to the whole sentence
-		// begins when it is ready.
-		e.skipOpener = false
+		// became a backchannel moments ago; a second 嗯 on a fragment that
+		// followed at once is the tic the owner heard (23:36 on 10-25). The
+		// answer begins when it is ready. A continuation that ran longer
+		// opens as usual, with a different phrase.
+		e.skipOpenerUntil = time.Time{}
 		e.log.Debug("speak: no opener on the continuation of a sentence", "turn", turn.ID)
 		return
 	}

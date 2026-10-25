@@ -196,9 +196,12 @@ type Engine struct {
 	lastOpener string
 	// recentOpeners are the last three openers said, not to be said again.
 	recentOpeners []string
-	// skipOpener: the last opener became a backchannel (the caller went on
-	// mid-sentence); the next turn opens without one.
-	skipOpener bool
+	// skipOpenerUntil: the last opener became a backchannel (the caller went
+	// on mid-sentence); a turn that closes before this moment opens without
+	// one — 嗯, 行, 好的 on three fragments of one sentence is a tic — while a
+	// continuation that was a real stretch of speech opens normally, with a
+	// different phrase.
+	skipOpenerUntil time.Time
 	// fillerSinceAnswer counts holding fillers spoken since the caller last
 	// actually heard an answer. Above zero, another one is noise.
 	fillerSinceAnswer int
@@ -1801,7 +1804,7 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 			pipe.Abort()
 		}
 		e.gen.Bump()
-		e.skipOpener = true
+		e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 		return
 	}
 	switch e.policy() {
@@ -1823,6 +1826,10 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 // goes on is still read as continuing their sentence rather than
 // interrupting the answer.
 const openerBackchannelGraceMS = 300
+
+// openerSkipAfterBackchannel is how long after an opener became a
+// backchannel the next turn goes without one.
+const openerSkipAfterBackchannel = 1500 * time.Millisecond
 
 // resumedWithinOpener says whether the caller's open utterance began within
 // the opener's playing time (plus a breath) of the opener's start. The
