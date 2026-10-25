@@ -110,6 +110,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-25 12:45 | ff9f0f6, `call`, quiet line, 4 min; quotation flow as specified (prefetch 3.5 s, default direct, prehook in place of the model, posthook + readout ×2, no figure repeated); two focus faults split/cut answers (ISS-055/056) | 19 | 886 | 1199 (p95 1055) | 5 |
 | 10-25 20:35 | 675c7af, `call`, quiet line, 5.5 min, the evening; ISS-055/056 rules on: 0 quiet closes, 6 real barge-ins yielded; the model talked through the calling turn (default read 4.6 s late, one prehook lost) → calling-turn words end at the clause in flight | 29 | 1013 | 1274 (p95 1177) | 16 |
 | 10-25 21:05–22:06 | **bench**, 20 turns a run, same hour: d23fcb2 token race 888/1028; clause race 891/1118; model-chosen openers 733/1031; **engine opener at the pause (af3baab, de62d5f) 380/380**, content 902/1076; baselines 881/1127, 850/1077 | 20 each | | | |
+| 10-25 22:12 | de62d5f, **simulated** (`cooperative`), 90 s, **opener on**: 9 of 9 answers opened at the pause (first audio 380 from last sound on 8, 522 on 1); the answer's own first word 902–1218, p50 ~1040 | 9 | 380 | 522 | 0 (content: 1 over 1200) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
