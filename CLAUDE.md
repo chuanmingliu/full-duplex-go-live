@@ -104,6 +104,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-23 21:57 | 45c67de, `call` from the metro platform, 6 min; 16 announcements let go by, 0 cuts; first real quotation (9 calls); the evening (first token 609 from the request) | 19 | 1146 | 1356 (p95 1346) | 8 |
 | 10-24 22:39 | 4f20751, `call`, quiet line, 3.5 min; default quotation told directly (prefetched during ringing); second quotation asked no fields, 驾乘险 skipped (no code on the box; fixed), prehook dropped on a busy floor (fixed a4bad35) | 19 | 912 | 1162 (p90 1136) | 7 |
 | 10-25 12:45 | ff9f0f6, `call`, quiet line, 4 min; quotation flow as specified (prefetch 3.5 s, default direct, prehook in place of the model, posthook + readout ×2, no figure repeated); two focus faults split/cut answers (ISS-055/056) | 19 | 886 | 1199 (p95 1055) | 5 |
+| 10-25 20:35 | 675c7af, `call`, quiet line, 5.5 min, the evening; ISS-055/056 rules on: 0 quiet closes, 6 real barge-ins yielded; the model talked through the calling turn (default read 4.6 s late, one prehook lost) → calling-turn words end at the clause in flight | 29 | 1013 | 1274 (p95 1177) | 16 |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95

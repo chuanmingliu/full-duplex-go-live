@@ -265,6 +265,17 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			wait = append(wait, c)
 		}
 	}
+	if p.scripted != "" {
+		// The model was told to say nothing in the turn that calls the tool;
+		// when it talks anyway ("好的，我帮您看一下基本方案", 4.2 s on the 20:35
+		// call of 10-25, with the default quotation ready at once behind it),
+		// the clause in flight is the last of it: the script — the ack, or
+		// the result itself — follows at the clause's end, not the sentence's.
+		if pipe := e.speech.Load(); pipe != nil && pipe.turn == job.turn {
+			pipe.SoftStop()
+			e.log.Info("tools: the model's words in the calling turn end at the clause in flight; the script follows", "turn", job.turn.ID, "task", p.scriptedTask)
+		}
+	}
 	if len(wait) == 0 {
 		if e.hangingUp() {
 			// The model has said goodbye and asked to hang up. Resuming it

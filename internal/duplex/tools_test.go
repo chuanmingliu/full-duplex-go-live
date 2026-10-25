@@ -130,7 +130,9 @@ func quoteConfig() Options {
 
 func startQuoteEngine(t *testing.T, opts Options, deps Deps, exec tools.Executor) *Engine {
 	t.Helper()
-	deps.TTS = mock.NewTTS()
+	if deps.TTS == nil {
+		deps.TTS = mock.NewTTS()
+	}
 	opts.ClientRate = opts.Cfg.ClientRate
 	opts.SessionID = "test"
 	e := New(opts, deps)
@@ -1019,4 +1021,61 @@ func TestTheDefaultQuotationGetsNeitherPrehookNorPosthook(t *testing.T) {
 		t.Fatalf("the figures were not read out first: %q", said)
 	}
 	_ = e
+}
+
+
+// talkativeQuoteLLM talks through the turn that calls the tool — three
+// clauses, against the instructions — as the real model did on the 20:35
+// call of 10-25 (4.2 s before the ready default was read out).
+type talkativeQuoteLLM struct{ quoteLLM }
+
+func (l *talkativeQuoteLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	last := req.Messages[len(req.Messages)-1]
+	if !strings.Contains(last.Content, "多少钱") || last.Role == provider.RoleSystem {
+		return l.quoteLLM.Stream(ctx, req)
+	}
+	l.mu.Lock()
+	l.requests = append(l.requests, req)
+	l.calls++
+	id := fmt.Sprintf("call_%d", l.calls)
+	l.mu.Unlock()
+	out := make(chan provider.LLMDelta, 8)
+	go func() {
+		defer close(out)
+		time.Sleep(150 * time.Millisecond)
+		out <- provider.LLMDelta{Text: "好的，我帮您看一下基本方案，这个方案是按您的车辆信息来算的，您稍微等一下就好。"}
+		out <- provider.LLMDelta{ToolCall: &provider.ToolCall{ID: id, Name: "quote_total", Arguments: `{}`}}
+	}()
+	return out, nil
+}
+
+// The model's words in the turn that calls the tool end at the clause in
+// flight: the script (the ack, or a result already in) follows at once
+// instead of after the whole sentence.
+func TestTheModelsWordsInTheCallingTurnEndAtTheClauseInFlight(t *testing.T) {
+	opts := quoteConfig()
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpening = "保费给您计算好了，"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpeningStatus = "quote"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	tts := mock.NewTTS()
+	tts.FirstByteDelay = 250 * time.Millisecond // a vendor's first audio: the later clauses are not yet asked for when the call lands
+	llm := &talkativeQuoteLLM{}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, TTS: tts}, &statusQuote{delay: 1500 * time.Millisecond, status: "quote"})
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "三千二百") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	said := c.saidAll()
+	if !strings.Contains(said, "请您稍等") || !strings.Contains(said, "保费给您计算好了") {
+		t.Fatalf("the script was not said: %q", said)
+	}
+	if strings.Contains(said, "您稍微等一下就好") {
+		t.Fatalf("the model's sentence was said to its end before the script: %q", said)
+	}
 }
