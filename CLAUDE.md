@@ -115,6 +115,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-25 21:05–22:06 | **bench**, 20 turns a run, same hour: d23fcb2 token race 888/1028; clause race 891/1118; model-chosen openers 733/1031; **engine opener at the pause (af3baab, de62d5f) 380/380**, content 902/1076; baselines 881/1127, 850/1077 | 20 each | | | |
 | 10-25 22:12 | de62d5f, **simulated** (`cooperative`), 90 s, **opener on**: 9 of 9 answers opened at the pause (first audio 380 from last sound on 8, 522 on 1); the answer's own first word 902–1218, p50 ~1040 | 9 | 380 | 522 | 0 (content: 1 over 1200) |
 | 10-25 22:42 | 1f853df, **simulated** (`kb-coverage-nerd`), 4 min, opener on and trimmed: first audio p50 380 / p95 380 / max 444; **the answer's own first word p50 887 / p90 990 / p95 990 / max 1054** | 32 | 380 (content 887) | 444 (content 1054, p95 990) | 0 (content: 2 over 1000) |
+| 10-25 22:52, 23:00 | 1f853df / 8166f1b (two openers), **simulated** (`kb-claims-skeptic`, `kb-process-struggler`): first audio 380 / 380 / 451 and 380 / 380 / 383; content 841 / 990 / 1069 and 890 / 992 / 1013. **Pooled, 3 calls, 105 turns: first audio p95 380, content p95 ~990** | 38 + 35 | 380 | 451 | 0 (content: 5 over 1000) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
