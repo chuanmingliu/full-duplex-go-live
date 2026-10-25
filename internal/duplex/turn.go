@@ -96,8 +96,9 @@ type Turn struct {
 	Scripted bool
 	Opening  string
 	// Opened is the opener the engine said for this turn at the pause, before
-	// the model's first clause; the pipe says it once.
-	Opened string
+	// the model's first clause; the pipe says it once. OpenedMS is its audio.
+	Opened   string
+	OpenedMS int64
 
 	mu sync.Mutex
 	// committed, dead, held and commitCh implement the rule that a turn begun
@@ -117,6 +118,7 @@ type Turn struct {
 	firstSegment    time.Time
 	firstAudio      time.Time
 	firstAudioOut   time.Time
+	firstContent    time.Time
 	completedAt     time.Time
 }
 
@@ -131,7 +133,10 @@ type Timings struct {
 	FirstSegment    time.Time
 	FirstAudio      time.Time
 	FirstAudioOut   time.Time
-	CompletedAt     time.Time
+	// FirstContent is when the first segment of the answer itself — not the
+	// opener said at the pause — was ready to play.
+	FirstContent time.Time
+	CompletedAt  time.Time
 }
 
 // Timings returns the turn's milestones.
@@ -148,6 +153,7 @@ func (t *Turn) Timings() Timings {
 		FirstSegment:    t.firstSegment,
 		FirstAudio:      t.firstAudio,
 		FirstAudioOut:   t.firstAudioOut,
+		FirstContent:    t.firstContent,
 		CompletedAt:     t.completedAt,
 	}
 }
@@ -280,6 +286,10 @@ func (t *Turn) MarkFirstSegment() { t.stampOnce(&t.firstSegment) }
 
 // MarkFirstAudio records the first synthesized audio for this turn.
 func (t *Turn) MarkFirstAudio() { t.stampOnce(&t.firstAudio) }
+
+// MarkFirstContent records when the answer's own first segment (after any
+// opener) was ready.
+func (t *Turn) MarkFirstContent() { t.stampOnce(&t.firstContent) }
 
 // MarkCompleted records when the turn finished, and reports whether this call
 // was the one that finished it. A turn can be handed to both completion paths —

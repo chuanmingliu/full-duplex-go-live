@@ -1206,6 +1206,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 		return
 	}
 	turn.Opened = phrase
+	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
 	turn.MarkFirstSegment()
 	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
 	begin, body, mark := seg, seg, seg

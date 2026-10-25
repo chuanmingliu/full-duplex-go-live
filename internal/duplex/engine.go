@@ -261,7 +261,8 @@ type Engine struct {
 	ttsMu     sync.Mutex
 	ttsStream provider.TTSStream
 
-	latencies []int64
+	latencies        []int64
+	contentLatencies []int64
 	// specHeld and specAbandoned count this session's guesses by outcome, for
 	// the summary at close. Loop goroutine only.
 	specHeld      int
@@ -1203,6 +1204,7 @@ func (p *speechPipe) speak(text string) bool {
 		p.e.log.Debug("speak: cutting the filler short; the answer is ready",
 			"turn", p.turn.ID)
 	}
+	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(Segment{
 		Kind:     SegBegin,
 		Gen:      p.turn.Generation,
@@ -1334,6 +1336,7 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	begin.Kind, begin.Text = SegBegin, text
 	body.Kind, body.PCM = SegAudio, pcm
 	mark.Kind, mark.Text = SegMark, text
+	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(begin)
 	p.turn.MarkFirstAudio()
 	p.e.player.Enqueue(body)
@@ -1948,6 +1951,16 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	}
 	e.deps.Emit(ev)
 
+	// With an opener said at the pause, the first audio is the opener; the
+	// answer's own first word follows when it is ready, or when the opener
+	// ends, whichever is later.
+	contentMS := ev.FirstAudioOutMS
+	if turn.Opened != "" {
+		contentMS = ms(tm.FirstContent)
+		if end := ev.FirstAudioOutMS + turn.OpenedMS; end > contentMS {
+			contentMS = end
+		}
+	}
 	if !tm.SpeechEndAt.IsZero() {
 		metrics.Default().ObserveTurn(ev.FirstAudioOutMS)
 	}
@@ -1956,12 +1969,17 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	// figures describe nothing anyone experienced as waiting.
 	if !truncated && !tm.FirstAudioOut.IsZero() && !tm.SpeechEndAt.IsZero() {
 		e.latencies = append(e.latencies, ev.FirstAudioOutMS)
+		if turn.Opened != "" {
+			e.contentLatencies = append(e.contentLatencies, contentMS)
+		}
 	}
 	// INFO, not DEBUG: the response latency is the one number worth seeing in a
 	// default-level log.
 	e.log.Info("turn: response latency",
 		"turn", turn.ID,
 		"first_audio_out_ms", ev.FirstAudioOutMS,
+		"first_content_ms", contentMS,
+		"opener_ms", turn.OpenedMS,
 		"end_silence_ms", ev.EndSilenceMS,
 		"asr_final_ms", ev.ASRFinalMS,
 		"turn_start_ms", ev.TurnStartMS,
@@ -2002,6 +2020,13 @@ func (e *Engine) latencySummary() {
 			"p50_ms", at(0.5),
 			"p95_ms", at(0.95),
 			"max_ms", v[len(v)-1])
+	}
+	if len(e.contentLatencies) > 0 {
+		// The turns opened from the cache: when the answer itself began.
+		v := append([]int64(nil), e.contentLatencies...)
+		sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
+		at := func(q float64) int64 { return v[int(q*float64(len(v)-1))] }
+		attrs = append(attrs, "opened_turns", len(v), "content_p50_ms", at(0.5), "content_p95_ms", at(0.95))
 	}
 	e.log.Info("session: response latency summary", attrs...)
 }
