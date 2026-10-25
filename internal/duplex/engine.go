@@ -1352,7 +1352,7 @@ func (e *Engine) ttsRate() int { return SynthesisRate(e.opts.Cfg, e.opts.ClientR
 func (e *Engine) phraseKey(text string) PhraseKey {
 	name := ""
 	if e.deps.TTS != nil {
-		name = e.deps.TTS.Name()
+		name = provider.VoiceName(e.deps.TTS)
 	}
 	return PhraseKey{
 		Provider: name,

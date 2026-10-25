@@ -899,6 +899,19 @@
    "symptom": "12:46:34: 'the caller's voice has been quiet though the line has not; taking the turn' with caller_quiet 420, others_ms 100, line_silence 0. The caller's question continued 200 ms later: its first half was answered (557 ms), the answer was cut by the second half, and the second half (garbled) was answered as a sentence of its own.",
    "cause": "The quiet close needed only othersMS > 0 as evidence that something other than the caller kept the gate open.",
    "fix": "The other voice must fill half the quiet window (othersMS >= focus_quiet_close_ms/2). Test TestTheQuietCloseNeedsMoreThanAFlickerOfAnotherVoice."
+  },
+  {
+   "id": "ISS-057",
+   "title": "Warmed phrases were never played on their first use",
+   "area": "speech",
+   "status": "fixed",
+   "commit": "pending",
+   "found": "2026-10-25",
+   "found_on": "bench D of the opener",
+   "found_call": "out-mvnta09v-1ptf",
+   "symptom": "The 20:35 call: the prehook (warmed at startup) was synthesized on its first use (item_28, 208 ms to first audio) and played from the cache only the second time. Bench D: 'no opener in the cache yet' on 20 of 24 turns though the openers were warmed.",
+   "cause": "WarmPhrases keyed on the bare provider's name (OpenTTS(cfg.TTS): 'minimax'); sessions speak through the pool and the fallback wrapper, whose Name() is 'minimax+fish'. Different key, no hit.",
+   "fix": "provider.VoiceName unwraps to the synthesizer whose voice is heard (a fallback's primary); the cache keys on it at warm time and in sessions. Test TestVoiceNameIsThePrimarys."
   }
  ]
 }

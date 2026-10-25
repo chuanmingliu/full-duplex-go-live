@@ -263,7 +263,7 @@ func warmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts [
 	want := SynthesisRate(cfg, clientRate)
 	key := func(text string) PhraseKey {
 		return PhraseKey{
-			Provider: tts.Name(), Voice: voice, Speed: cfg.Speed,
+			Provider: provider.VoiceName(tts), Voice: voice, Speed: cfg.Speed,
 			Language: language, Rate: want, Text: text,
 		}
 	}

@@ -147,3 +147,16 @@ func TestFallbackWithoutASecondVendorIsThePrimary(t *testing.T) {
 		t.Fatalf("heard %v", from)
 	}
 }
+
+// The phrase cache keys on the voice heard, so a fallback's name is its
+// primary's for that purpose.
+func TestVoiceNameIsThePrimarys(t *testing.T) {
+	primary := &fakeTTS{name: "minimax"}
+	f := FallbackTTS(primary, &fakeTTS{name: "fish"}, 320*time.Millisecond, nil)
+	if f.Name() != "minimax+fish" || VoiceName(f) != "minimax" {
+		t.Fatalf("Name %q, VoiceName %q", f.Name(), VoiceName(f))
+	}
+	if VoiceName(primary) != "minimax" {
+		t.Fatal("a bare provider is its own voice")
+	}
+}

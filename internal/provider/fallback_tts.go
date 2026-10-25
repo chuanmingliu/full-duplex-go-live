@@ -57,6 +57,26 @@ type fallbackTTS struct {
 
 func (f *fallbackTTS) Name() string { return f.primary.Name() + "+" + f.second.Name() }
 
+// Primary is the synthesizer whose voice the caller hears unless it stalls.
+func (f *fallbackTTS) Primary() TTS { return f.primary }
+
+// VoiceName is the name of the synthesizer whose voice a TTS speaks in: a
+// fallback's primary, a hedge's inner, the provider itself otherwise. It is
+// what the phrase cache keys on, so that phrases warmed on the bare provider
+// at startup are found by sessions speaking through the wrappers — until
+// 10-25 the warm key said "minimax" and every session's "minimax+fish", and
+// no warmed phrase was ever played on its first use.
+func VoiceName(t TTS) string {
+	for t != nil {
+		p, ok := t.(interface{ Primary() TTS })
+		if !ok {
+			return t.Name()
+		}
+		t = p.Primary()
+	}
+	return ""
+}
+
 func (f *fallbackTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error) {
 	p, err := f.primary.Open(ctx, opts)
 	if err != nil {
