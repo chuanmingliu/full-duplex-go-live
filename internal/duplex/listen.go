@@ -1205,6 +1205,12 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if err != nil || len(pcm) == 0 {
 		return
 	}
+	// The synthesizer renders the opener's comma as a pause of several hundred
+	// milliseconds (好的， came back as 660–700 ms of audio for ~350 of voice);
+	// the answer follows at once, so the pause is cut to 80 ms — otherwise the
+	// opener's length, not the model, decided when the answer began (bench H
+	// of 10-25: every content figure exactly 380 + the opener's length).
+	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, 80)
 	turn.Opened = phrase
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
 	turn.MarkFirstSegment()
