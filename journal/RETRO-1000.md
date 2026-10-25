@@ -215,3 +215,27 @@ p95 969**; a simulated conversation through the PBX (kb-coverage-nerd, 32
 turns, 22:42): first audio 380/380/444, **content 887 / 990 / 1054**. Both
 figures under 1000 at p95, the evening hour, on the phone path; the one
 thing missing is a person on the line.
+
+## 8. The archive pass (§6), run 10-25 23:08
+
+`~/golive-archive/calls/*/call.json`, every real call since 10-11, turns not
+interrupted, caller's last sound → first audio (`total_ms`); 72 calls, 825
+turns, all builds mixed:
+
+- **p50 934, p90 1271, p95 1343; 302 of 825 (36%) over 1000, 114 over 1200.**
+- Turns opened from the phrase cache by chance: n=96, p50 711, p95 1177, 16
+  over 1000. Synthesized: n=729, p50 948, p95 1356.
+- **Of the 302 turns over 1000, 284 (94%) had the chat model's first token
+  at 350 ms or later; 31 had the synthesizer's first audio at 300 or later;
+  13 had neither** (a long first clause, or a patience wait). Section 2's
+  "~55% the chat model" was an undercount: on the archive it is nearly all
+  of them.
+- Patience waits (pause > 400): 70 of 825, 8.5%. Pause p50 and p90: 380.
+- Chat model first token p50 450, p90 665, p95 734; synthesizer first audio
+  p50 189, p90 252, p95 305.
+- By hour: 12h p95 1140 and 18h p95 1006 are the best hours; 23h p95 1594
+  the worst (n=144); 21h–22h p95 1307–1346 (n=133, 176).
+
+So the content figure is the chat model's first token, almost alone. The
+opener (§7) takes the first audio off that path; what remains on it is a
+vendor's tail that no setting here reaches — lever 3.3, the owner's.
