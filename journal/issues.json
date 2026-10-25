@@ -905,7 +905,7 @@
    "title": "Warmed phrases were never played on their first use",
    "area": "speech",
    "status": "fixed",
-   "commit": "pending",
+   "commit": "807055b",
    "found": "2026-10-25",
    "found_on": "bench D of the opener",
    "found_call": "out-mvnta09v-1ptf",
