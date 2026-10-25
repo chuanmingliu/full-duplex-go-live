@@ -893,7 +893,7 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		s.reply(p, live.NewError("server_error", "llm_unavailable", err.Error(), eventID))
 		return err
 	}
-	llm = provider.HedgeLLM(llm, s.cfg.LLMHedge, time.Duration(s.cfg.LLMHedgeAfterMS)*time.Millisecond, s.log)
+	llm = provider.HedgeLLMOnClause(llm, s.cfg.LLMHedge, time.Duration(s.cfg.LLMHedgeAfterMS)*time.Millisecond, s.cfg.LLMHedgeClauseChars, s.log)
 	tts, err := provider.OpenTTS(ttsName)
 	if err != nil {
 		s.reply(p, live.NewError("server_error", "tts_unavailable", err.Error(), eventID))

@@ -12,6 +12,8 @@ import (
 // scriptedLLM answers its nth request the way the nth script says.
 type scriptedLLM struct {
 	scripts []hedgeScript
+	// slow, when set, is the gap between words (5 ms otherwise).
+	slow time.Duration
 
 	mu        sync.Mutex
 	calls     int
@@ -72,11 +74,15 @@ func (s *scriptedLLM) Stream(ctx context.Context, _ LLMRequest) (<-chan LLMDelta
 			send(LLMDelta{Err: sc.midErr})
 			return
 		}
+		gap := 5 * time.Millisecond
+		if s.slow > 0 {
+			gap = s.slow
+		}
 		for _, w := range sc.words {
 			if !send(LLMDelta{Text: w}) {
 				return
 			}
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(gap)
 		}
 	}()
 	return out, nil
@@ -353,5 +359,50 @@ func TestEveryCopyRunsToItsEndWhenAskedTo(t *testing.T) {
 	defer inner.mu.Unlock()
 	if inner.finished != 4 || inner.cancelled != 0 {
 		t.Errorf("%d of 4 copies finished and %d were cancelled", inner.finished, inner.cancelled)
+	}
+}
+
+// Raced on the first clause, the completion is the copy that reaches the
+// clause first, not the one that produced a token first and then trickled
+// (RETRO-1000, lever 3.2: two measured first clauses of 622 and 701 ms were
+// first-token winners).
+func TestHedgeOnTheClausePicksTheCopyThatReachesIt(t *testing.T) {
+	trickle := &scriptedLLM{scripts: []hedgeScript{
+		// Copy 1: a token at 20 ms, then one character every 60 ms.
+		{wait: 20 * time.Millisecond, words: []string{"好", "的", "，", "我", "帮", "您", "看"}},
+		// Copy 2: the first token at 80 ms, the clause whole with it.
+		{wait: 80 * time.Millisecond, words: []string{"好的，我帮您看一下。"}},
+	}}
+	trickle.slow = 60 * time.Millisecond
+	ch, err := HedgeLLMOnClause(trickle, 2, 0, 4, nil).Stream(context.Background(), LLMRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _, first := collect(t, ch)
+	if text != "好的，我帮您看一下。" {
+		t.Fatalf("the completion is %q; wanted the copy that reached the clause first", text)
+	}
+	if first > 200*time.Millisecond {
+		t.Fatalf("the first word took %v", first)
+	}
+	// And on the first token, the trickling copy wins, as before.
+	trickle2 := &scriptedLLM{scripts: trickle.scripts, slow: 60 * time.Millisecond}
+	ch, _ = HedgeLLM(trickle2, 2, 0, nil).Stream(context.Background(), LLMRequest{})
+	text, _, _ = collect(t, ch)
+	if text != "好的，我帮您看" {
+		t.Fatalf("on the first token the completion is %q; wanted the trickling copy's", text)
+	}
+}
+
+// A short answer that ends before the clause is a lead all the same.
+func TestHedgeOnTheClauseTakesAnAnswerThatEndsShort(t *testing.T) {
+	short := &scriptedLLM{scripts: []hedgeScript{
+		{wait: 20 * time.Millisecond, words: []string{"好。"}},
+		{wait: 300 * time.Millisecond, words: []string{"好的，没问题。"}},
+	}}
+	ch, _ := HedgeLLMOnClause(short, 2, 0, 4, nil).Stream(context.Background(), LLMRequest{})
+	text, _, first := collect(t, ch)
+	if text != "好。" || first > 200*time.Millisecond {
+		t.Fatalf("got %q after %v; wanted the short answer at once", text, first)
 	}
 }

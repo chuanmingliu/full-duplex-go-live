@@ -27,19 +27,30 @@ import (
 //
 // copies < 2 returns inner unchanged.
 func HedgeLLM(inner LLM, copies int, after time.Duration, log *slog.Logger) LLM {
+	return HedgeLLMOnClause(inner, copies, after, 0, log)
+}
+
+// HedgeLLMOnClause is HedgeLLM with the race decided on the first clause:
+// a copy wins once it has produced clauseChars characters of text (or a tool
+// call, or has ended), not at its first token. clauseChars <= 1 is the
+// first-token race.
+func HedgeLLMOnClause(inner LLM, copies int, after time.Duration, clauseChars int, log *slog.Logger) LLM {
 	if copies < 2 || inner == nil {
 		return inner
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &hedgedLLM{inner: inner, copies: copies, after: after, log: log, lane: ReserveLanes(copies)}
+	return &hedgedLLM{inner: inner, copies: copies, after: after, clause: clauseChars, log: log, lane: ReserveLanes(copies)}
 }
 
 type hedgedLLM struct {
 	inner  LLM
 	copies int
 	after  time.Duration
+	// clause is how many characters a copy must have produced to win; 0 or 1
+	// is the first token.
+	clause int
 	log    *slog.Logger
 	// lane is the first of this wrapper's lanes in the provider's pool: copy n
 	// of every completion goes to lane+n. See WithLane.
@@ -165,18 +176,28 @@ func (h *hedgedLLM) Stream(ctx context.Context, req LLMRequest) (<-chan LLMDelta
 					return
 				}
 				// What counts as speaking first is output: a word, or a call.
-				// A provider may open with deltas that carry neither.
+				// A provider may open with deltas that carry neither. On the
+				// clause race, enough words for the synthesizer's first
+				// segment; a call wins at once either way.
 				var said []LLMDelta
+				chars := 0
 				for d := range ch {
 					if d.Err != nil {
 						leads <- hedgeLead{n: n, err: d.Err}
 						return
 					}
 					said = append(said, d)
-					if d.Text != "" || d.ToolCall != nil {
+					chars += len([]rune(d.Text))
+					if d.ToolCall != nil || (chars > 0 && chars >= h.clause) {
 						leads <- hedgeLead{n: n, ch: ch, said: said}
 						return
 					}
+				}
+				if chars > 0 {
+					// Ended before the clause: a short answer, whole. It is
+					// as good a lead as any — nothing more is coming.
+					leads <- hedgeLead{n: n, ch: ch, said: said}
+					return
 				}
 				if len(said) == 0 {
 					leads <- hedgeLead{n: n, err: errHedgeEmpty}
@@ -263,7 +284,7 @@ func (h *hedgedLLM) Stream(ctx context.Context, req LLMRequest) (<-chan LLMDelta
 				if len(cancels) > 1 {
 					h.log.Debug("llm hedge: a copy answered first",
 						"copy", lead.n+1, "of", len(cancels),
-						"ms", time.Since(started).Milliseconds())
+						"ms", time.Since(started).Milliseconds(), "on", map[bool]string{true: "clause", false: "token"}[h.clause > 1])
 				}
 				for _, d := range lead.said {
 					if !send(d) {

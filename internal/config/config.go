@@ -202,6 +202,15 @@ type Config struct {
 	// latency this buys; a figure near the model's usual time to first token
 	// spends the extra request only on the slow turns.
 	LLMHedgeAfterMS int `json:"llm_hedge_after_ms"`
+	// LLMHedgeClauseChars, above 0, decides the race on the first clause
+	// rather than the first token: a copy wins once it has produced this many
+	// characters (or a tool call, or ended). The synthesizer needs a clause
+	// of stream_first_chunk_chars, and a copy quick to its first token is not
+	// always quick to its fourth — two measured first clauses of 622 and 701
+	// ms were first-token winners that then trickled (RETRO-1000, lever 3.2).
+	// The price: every copy streams until one reaches the clause, a few
+	// characters more of the losers' tokens.
+	LLMHedgeClauseChars int `json:"llm_hedge_clause_chars"`
 	// TTSHedge, at 2, gives each session a second synthesis connection and
 	// asks both for the first segment of every answer, playing whichever
 	// produces audio first. The synthesizer's first audio is ~180 ms at the
@@ -887,6 +896,7 @@ func (c *Config) applyEnv() {
 	setString(&c.BackendModel, "GOLIVE_BACKEND_MODEL")
 	setInt(&c.LLMHedge, "GOLIVE_LLM_HEDGE")
 	setInt(&c.LLMHedgeAfterMS, "GOLIVE_LLM_HEDGE_AFTER_MS")
+	setInt(&c.LLMHedgeClauseChars, "GOLIVE_LLM_HEDGE_CLAUSE_CHARS")
 	setInt(&c.TTSHedge, "GOLIVE_TTS_HEDGE")
 	setInt(&c.TTSHedgeRPM, "GOLIVE_TTS_HEDGE_RPM")
 	setInt(&c.TTSHedgeAfterMS, "GOLIVE_TTS_HEDGE_AFTER_MS")
