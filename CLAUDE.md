@@ -27,7 +27,10 @@ against `-target` (`JOURNAL_TARGET_MS` in `phone-brain.sh`), **1000 since
 the phrase cache at the pause** (`duplex.opener`, RETRO-1000 §7): first audio
 is the opener, 380 ms at p95 on the bench; the answer's own first word is
 reported beside it (`first_content_ms`, `content_p95_ms` in the summary) and
-is where it was (~900 p50, ~1080 p95). Quote both.
+was ~900 p50 / ~1080 p95 until the opener's rendered pause was trimmed
+(1f853df): then **p50 880–887, p95 969–990** on the bench (n=22) and on a
+simulated conversation through the PBX (n=32). Quote both; a real call with a
+person on the line on this build is still owed.
 
 Two definitions are in use. **The headline is always the first, caller's
 last sound → first audio** (the owner settled it on 10-16: it is what the
@@ -111,6 +114,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-25 20:35 | 675c7af, `call`, quiet line, 5.5 min, the evening; ISS-055/056 rules on: 0 quiet closes, 6 real barge-ins yielded; the model talked through the calling turn (default read 4.6 s late, one prehook lost) → calling-turn words end at the clause in flight | 29 | 1013 | 1274 (p95 1177) | 16 |
 | 10-25 21:05–22:06 | **bench**, 20 turns a run, same hour: d23fcb2 token race 888/1028; clause race 891/1118; model-chosen openers 733/1031; **engine opener at the pause (af3baab, de62d5f) 380/380**, content 902/1076; baselines 881/1127, 850/1077 | 20 each | | | |
 | 10-25 22:12 | de62d5f, **simulated** (`cooperative`), 90 s, **opener on**: 9 of 9 answers opened at the pause (first audio 380 from last sound on 8, 522 on 1); the answer's own first word 902–1218, p50 ~1040 | 9 | 380 | 522 | 0 (content: 1 over 1200) |
+| 10-25 22:42 | 1f853df, **simulated** (`kb-coverage-nerd`), 4 min, opener on and trimmed: first audio p50 380 / p95 380 / max 444; **the answer's own first word p50 887 / p90 990 / p95 990 / max 1054** | 32 | 380 (content 887) | 444 (content 1054, p95 990) | 0 (content: 2 over 1000) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95

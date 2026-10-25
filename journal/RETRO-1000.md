@@ -206,3 +206,12 @@ opener makes a synthesizer stall a pause after a word instead of dead air.
 Open: the owner's choice of phrases (three now; one neutral 嗯 may suit a
 question better than 好的), and a real call — the bench's turns are five
 fixed sentences, not a conversation.
+
+Later the same night: the opener's rendered pause (the synthesizer makes
+~300 ms of silence of a trailing comma) was found to decide when the answer
+began — every content figure on run H was 380 + the opener's length. Cut to
+80 ms (1f853df): run I, 22 turns, first audio 380/380, **content p50 880 /
+p95 969**; a simulated conversation through the PBX (kb-coverage-nerd, 32
+turns, 22:42): first audio 380/380/444, **content 887 / 990 / 1054**. Both
+figures under 1000 at p95, the evening hour, on the phone path; the one
+thing missing is a person on the line.
