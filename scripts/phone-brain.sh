@@ -101,7 +101,7 @@ lan_ip() {
   [ -n "$dev" ] && ip -o -4 addr show dev "$dev" 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}'
 }
 JOURNAL_PORT="${JOURNAL_PORT:-8790}"
-JOURNAL_TARGET_MS="${JOURNAL_TARGET_MS:-1200}"   # the latency goal the journal counts against (1000 from 10-22 once the owner says so)
+JOURNAL_TARGET_MS="${JOURNAL_TARGET_MS:-1000}"   # the latency goal the journal counts against (1000 since 10-25: the owner's /goal)
 if [ -z "${JOURNAL_ADDR:-}" ]; then _ip="$(lan_ip)"; JOURNAL_ADDR="${_ip:-127.0.0.1}:$JOURNAL_PORT"; fi
 JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
 # Where finished calls are kept for good: recording, conversation, measurements

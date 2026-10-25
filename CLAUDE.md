@@ -22,8 +22,12 @@ optimise; everything else is in service of it. **On 10-22 the owner moved the
 aim to 1000 ms at p95**: `journal/RETRO-1000.md` is the retrospective over
 every turn so far and the ranked levers (decision 15: open every answer from
 the phrase cache; race the copies on the first clause). The journal counts
-against `-target` (`JOURNAL_TARGET_MS` in `phone-brain.sh`), 1200 until the
-owner says 1000.
+against `-target` (`JOURNAL_TARGET_MS` in `phone-brain.sh`), **1000 since
+10-25** (the owner: `/goal 1000 ms`). **Since de62d5f the answer opens from
+the phrase cache at the pause** (`duplex.opener`, RETRO-1000 §7): first audio
+is the opener, 380 ms at p95 on the bench; the answer's own first word is
+reported beside it (`first_content_ms`, `content_p95_ms` in the summary) and
+is where it was (~900 p50, ~1080 p95). Quote both.
 
 Two definitions are in use. **The headline is always the first, caller's
 last sound → first audio** (the owner settled it on 10-16: it is what the
@@ -105,6 +109,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-24 22:39 | 4f20751, `call`, quiet line, 3.5 min; default quotation told directly (prefetched during ringing); second quotation asked no fields, 驾乘险 skipped (no code on the box; fixed), prehook dropped on a busy floor (fixed a4bad35) | 19 | 912 | 1162 (p90 1136) | 7 |
 | 10-25 12:45 | ff9f0f6, `call`, quiet line, 4 min; quotation flow as specified (prefetch 3.5 s, default direct, prehook in place of the model, posthook + readout ×2, no figure repeated); two focus faults split/cut answers (ISS-055/056) | 19 | 886 | 1199 (p95 1055) | 5 |
 | 10-25 20:35 | 675c7af, `call`, quiet line, 5.5 min, the evening; ISS-055/056 rules on: 0 quiet closes, 6 real barge-ins yielded; the model talked through the calling turn (default read 4.6 s late, one prehook lost) → calling-turn words end at the clause in flight | 29 | 1013 | 1274 (p95 1177) | 16 |
+| 10-25 21:05–22:06 | **bench**, 20 turns a run, same hour: d23fcb2 token race 888/1028; clause race 891/1118; model-chosen openers 733/1031; **engine opener at the pause (af3baab, de62d5f) 380/380**, content 902/1076; baselines 881/1127, 850/1077 | 20 each | | | |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95

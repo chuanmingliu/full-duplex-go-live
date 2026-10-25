@@ -178,3 +178,31 @@ how often the cache-opened turns beat 1000, the patience-wait count and
 what each cost, and the hour effect as a curve. Run it when the box is
 linked; its output goes into the journal's Benchmarks tab as an L3 record
 per build with `-source phone`.
+
+## 7. What happened on 10-25 (the owner set the goal: `/goal 1000`)
+
+Measured on the box bench, 20 turns a run, 21:05–22:06, same chat-model hour,
+caller's last sound → first audio:
+
+| run | what | p50 | p95 | notes |
+| --- | --- | ---: | ---: | --- |
+| A | d23fcb2, first-token race (as deployed) | 888 | 1028 | first token 265 + clause wait 108 |
+| B | same, **first-clause race** (3.2, `llm_hedge_clause_chars: 4`) | 891 | 1118 | lead 314 + clause wait 31: −28 ms at the median; the p95 is one turn at n=20 |
+| C | openers **chosen by the model** (3.1 as proposed: a prompt line) | 733 | 1031 | 17 of 22 turns from the cache, synthesizer term 0 — and the p95 unmoved: the opener still waited for the model's first clause |
+| D | openers **said by the engine at the pause** (`opener: true`), warm key broken | 897 | 1104 | 4 of 24 opened: ISS-057, the warmed phrases keyed under the wrong provider name — every warmed phrase since 10-11 (greeting, prehook) was synthesized on its first use |
+| D2 | the same, ISS-057 fixed (af3baab) | **380** | **380** | 22 of 22 opened at the pause; the model's own 好的 dropped once |
+| E/E2 | baseline again, same minutes | 881 / 850 | 1127 / 1077 | |
+| F | de62d5f, the profile as deployed (opener on) | **380** | **380** | max 422; **the answer's own first word p50 902 / p95 1076** (`first_content_ms`) |
+
+So: the headline figure, as the owner defined it (first audio), is at the pause
+and the pause is now the whole of it — 380 at p95, and `min_silence_ms` is
+again a lever (300 would give 300). What the caller hears is an acknowledgement
+at the pause and the answer ~500 ms later, where it always was; the content
+figure is reported beside the headline from now on (`first_content_ms`,
+`content_p95_ms`) so nobody mistakes one for the other. The content figure
+still has the chat model's tail in it; levers 3.2–3.5 apply to it, and the
+opener makes a synthesizer stall a pause after a word instead of dead air.
+
+Open: the owner's choice of phrases (three now; one neutral 嗯 may suit a
+question better than 好的), and a real call — the bench's turns are five
+fixed sentences, not a conversation.

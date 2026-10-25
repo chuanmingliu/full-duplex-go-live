@@ -864,6 +864,35 @@ with words already said on them. Such a turn's first audio does not wait on
 the synthesizer at all (`speak: segment played from the phrase cache`). The
 cache is the process's, so it carries from call to call until a restart.
 
+## The answer opens at the pause: the opener
+
+Since de62d5f (10-25) the telephony profile has `duplex.opener: true`: the
+moment the caller's turn is judged over (the 380 ms pause), the engine says
+one of `duplex.opener_phrases` (好的，/ 嗯，/ 明白，; never the same twice
+running) from the phrase cache, before the chat model's first clause is in.
+The model's answer follows; if its own first clause begins with the same
+words they are said once (`speak: the model's opener was already said at the
+pause`). The phrases are warmed into the cache at startup with the greeting
+and the quotation's prehook (`phrase cache warmed phrases=6`).
+
+What it buys, and what it does not: the caller hears a word at the pause
+instead of ~500 ms after it — first audio is 380 ms at p95 on the bench
+(RETRO-1000 §7) — and a synthesizer stall becomes a pause after a word
+rather than dead air. The answer's own first word arrives where it did
+(~900 p50, ~1080 p95), so the log says both: `turn: response latency` has
+`first_audio_out_ms` (the opener) and `first_content_ms` (the answer, when
+it was ready or when the opener ended), and the session summary adds
+`content_p50_ms`/`content_p95_ms` over the opened turns. Quote both; the
+headline is the first by the owner's definition, the second is what the
+chat-model levers still work on.
+
+Off: `"opener": false`. Not said when the answer's audio is already in hand
+at the pause, when the assistant is speaking (a result being read), on a
+scripted turn (the prehook), or while the call is ending. ISS-057 was found
+building this: warmed phrases were keyed under the bare provider's name and
+sessions looked under the fallback wrapper's, so no warmed phrase had ever
+played on its first use; `provider.VoiceName` keys both the same way.
+
 ## A line that is never quiet, and a line that returns the assistant's voice
 
 Two things a phone line does that a headset does not. Both were read off the
