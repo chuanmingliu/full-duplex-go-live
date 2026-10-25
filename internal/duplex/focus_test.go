@@ -733,10 +733,121 @@ func TestTheQuietCloseDoesNotAnswerAnUtteranceThatIsMostlyAnotherVoice(t *testin
 	if got := c.count(live.ServerDelegationCreated); got != turns {
 		t.Fatalf("a turn was made of an utterance that was mostly another voice (%d → %d)", turns, got)
 	}
-	if !strings.Contains(logs.String(), "mostly another voice at the quiet close") {
-		t.Fatalf("the quiet close did not judge the utterance's voice")
+	// Let go either at the quiet close, or never taken up at all now that a
+	// join over the assistant's floor needs the caller to be most of the
+	// sound (ISS-055).
+	if l := logs.String(); !strings.Contains(l, "mostly another voice at the quiet close") && !strings.Contains(l, `why="another voice"`) {
+		t.Fatalf("the utterance's voice was not judged")
 	}
 	if e.focus.quietCloses != 0 {
 		t.Fatalf("quiet closes %d; wanted 0", e.focus.quietCloses)
+	}
+}
+
+// An utterance another voice opened over the answer, with 200 ms of the
+// caller in a second of it, is not taken up on the caller's 160 ms alone:
+// over the assistant's floor the caller has to be at least as present as the
+// rest of the sound (or speak for 400 ms). The 12:45 call of 10-25: taken up
+// on 200 of 980 ms, the answer cut, the utterance let go 40 ms later as
+// mostly another voice's, and the caller asked whether anyone was there
+// (ISS-055).
+func TestAJoinOverTheAnswerNeedsTheCallerToBeMostOfTheSound(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.AllowBargeIn = true
+	cfg.opts.Cfg.Duplex.OnNewQuery = "cut"
+	cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 600
+	cfg.opts.Cfg.Duplex.FocusQuietCloseMS = 420
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊本次列车开往")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 40 * time.Millisecond
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	// The caller's enrolment utterance; then the announcement over the
+	// answer with 200 ms of the caller inside it.
+	scorer := newFakeScorer(func(atMS int64) int {
+		switch {
+		case atMS < 1000:
+			return 0
+		case atMS >= 1500 && atMS < 1700:
+			return 0
+		}
+		return 1
+	}, 150*time.Millisecond)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit, Log: logger}, scorer)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	speak(e, rate, 600)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 250 })
+	speak(e, rate, 1200)
+	pause(e, rate, 1500)
+	if cut := c.count(live.ExtAudioTruncated); cut != 0 {
+		t.Fatalf("the answer was cut %d time(s) by a sound that was mostly another voice with 200 ms of the caller in it", cut)
+	}
+	if strings.Contains(logs.String(), "the caller's voice joined the utterance") {
+		t.Fatalf("200 ms of the caller in a second of another voice was taken up as the caller joining")
+	}
+}
+
+// The quiet close needs the other voice to fill half its window; a 100 ms
+// flicker of another label inside the caller's own thinking pause is not a
+// line that is not quiet. The 12:45 call of 10-25: a question closed in the
+// pause before its second half on 100 ms of other labels, the half answered,
+// the answer cut by the rest, the rest answered on its own (ISS-056).
+func TestTheQuietCloseNeedsMoreThanAFlickerOfAnotherVoice(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.FocusQuietCloseMS = 420
+	cfg.opts.Cfg.Duplex.SemanticEndpointing = true
+	cfg.opts.Cfg.Duplex.PatientSilenceMS = 900
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊就是那个保险多少钱")
+	asr.fullStop = true
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	// The caller throughout, except a 100 ms flicker of another voice in
+	// their thinking pause (scheduled once the clock is known).
+	var flickerAt atomic.Int64
+	scorer := newFakeScorer(func(atMS int64) int {
+		if f := flickerAt.Load(); f > 0 && atMS >= f && atMS < f+100 {
+			return 1
+		}
+		return 0
+	}, 60*time.Millisecond)
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, scorer)
+
+	speak(e, rate, 600)
+	pause(e, rate, 1200)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 100 })
+	listenThrough(t, e, rate)
+	turnsBefore := c.count(live.ExtSpeechStopped)
+	closesBefore := e.focus.quietCloses
+
+	speak(e, rate, 340) // 就是
+	pause(e, rate, 60)
+	flickerAt.Store(e.inputMS.Load())
+	speak(e, rate, 100)  // the flicker
+	pause(e, rate, 440)  // the rest of the thinking pause
+	speak(e, rate, 1100) // 那个保险多少钱
+	pause(e, rate, 1200)
+
+	waitFor(t, "the second turn to be answered", 4*time.Second, func() bool {
+		return c.count(live.ExtSpeechStopped) > turnsBefore
+	})
+	time.Sleep(300 * time.Millisecond)
+	if n := e.focus.quietCloses - closesBefore; n != 0 {
+		t.Errorf("quiet closes %d on a flicker of another voice; wanted none", n)
+	}
+	if n := c.count(live.ExtSpeechStopped) - turnsBefore; n != 1 {
+		t.Fatalf("the caller's one sentence was taken as %d turns", n)
 	}
 }

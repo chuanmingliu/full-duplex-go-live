@@ -338,6 +338,19 @@ func (e *Engine) focusBargeInWait() time.Duration {
 // up to focus_barge_in_wait_ms from the hold's start, after which the words
 // decide as they did before. In observe mode the verdict is logged and the
 // words decide.
+// callerSpeaksOver says whether the caller's own voice, by the labels over
+// a sound heard while the assistant holds the floor, amounts to the caller
+// speaking: 160 ms of it when the caller is at least as present in the sound
+// as everybody else, or 400 ms regardless. The share matters: on the 12:45
+// call of 10-25 an utterance another voice opened had 200 ms of the caller
+// in 980 ms, was taken up on the 160 ms rule, cut the answer, and 40 ms
+// later was let go at the quiet close as mostly another voice's — the caller
+// heard the answer stop and nothing follow (ISS-055).
+func callerSpeaksOver(a focus.Attribution) bool {
+	primaryMS := int64(a.Primary * float64(a.VoicedMS))
+	return primaryMS >= 400 || (primaryMS >= 160 && a.Primary >= a.Others)
+}
+
 func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 	h, fs := e.hold, e.focus
 	if h == nil || fs == nil || e.focusBargeInWait() == 0 {
@@ -352,7 +365,7 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 	switch {
 	case !a.Known:
 		why = "no primary speaker known yet"
-	case primaryMS >= 160:
+	case callerSpeaksOver(a):
 		why = "the caller's voice"
 	case a.Coverage < 0.6:
 		verdict, why = bargeInWait, "labels not in yet"
@@ -365,7 +378,7 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 	}
 	if h.kept {
 		// Already let go by: only the caller's own voice changes that.
-		if primaryMS < 160 {
+		if !callerSpeaksOver(a) {
 			return bargeInKeep
 		}
 	} else if verdict == bargeInWait && waited >= e.focusBargeInWait() {
@@ -376,7 +389,7 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 		// 09:43 call of 10-23 a station announcement over the answer was 92%
 		// another voice, 100 ms the caller's — 3 points short of the veto
 		// share — and the answer was cut on it (ISS-052).
-		if a.Known && a.Coverage >= 0.6 && primaryMS < 160 && a.Others >= 0.5 {
+		if a.Known && a.Coverage >= 0.6 && !callerSpeaksOver(a) && a.Others >= 0.5 {
 			verdict, why = bargeInKeep, why+"; waited out, mostly another voice"
 		} else {
 			verdict, why = bargeInYield, why+"; waited out"
@@ -565,7 +578,7 @@ func (e *Engine) judgeUtteranceFocus() {
 	}
 	primaryMS := int64(a.Primary * float64(a.VoicedMS))
 	switch {
-	case primaryMS >= 160:
+	case primaryMS >= 160 && (!e.speaking.Load() || e.uttVerdict != uttIgnored || callerSpeaksOver(a)):
 		if e.uttVerdict == uttIgnored {
 			if e.uttQuietIgnored {
 				// Already taken up once and let go at the quiet close as
@@ -621,7 +634,13 @@ func (e *Engine) maybeCloseOnCallerQuiet() {
 	// 7 of a call's 8 turns on 10-21, others_ms=0 on every one — and a caller
 	// talking over the assistant was cut off at the same mark, because the
 	// masked echo window made their own voice count for nothing.
-	if othersMS == 0 {
+	// And the evidence must amount to something: 100 ms of another voice's
+	// labels in a 420 ms window is a flicker, not a line that is not quiet. On
+	// the 12:45 call of 10-25 that flicker closed a caller's question in the
+	// pause before its second half; the half was answered, the answer was cut
+	// by the rest of the sentence, and the rest was answered as a sentence of
+	// its own (ISS-056). The other voice has to fill half the window.
+	if othersMS < quiet/2 {
 		return
 	}
 	// And the turn it takes must be the caller's. An utterance another voice
