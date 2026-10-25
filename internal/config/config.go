@@ -809,7 +809,7 @@ func Default() Config {
 			// starts with, which with an empty list is the first word.
 			UserBackchannelHoldMS:      600,
 			Opener:                     false,
-			OpenerPhrases:              []string{"好的，", "嗯，", "明白，"},
+			OpenerPhrases:              []string{"好的，", "嗯，"},
 			HoldingFiller:              false,
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},

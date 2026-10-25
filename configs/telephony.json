@@ -98,7 +98,7 @@
     "phrase_cache": true,
     "phrase_cache_learn_chars": 12,
     "opener": true,
-    "opener_phrases": ["好的，", "嗯，", "明白，"],
+    "opener_phrases": ["好的，", "嗯，"],
     "client_delegation": "always",
     "settled_close_ms": 600,
     "backend_prefix_warm_start": true,
