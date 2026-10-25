@@ -206,3 +206,26 @@ func setOf(words ...string) map[string]bool {
 	}
 	return m
 }
+
+// ReadsAsQuestion says whether a caller's words read as a question: a
+// question mark, a sentence-final 吗/呢, or an interrogative (多少, 怎么, 什么,
+// 哪, 几, 能不能, 可以吗, 是不是, 有没有). It is for choosing how an answer
+// opens, not for ending turns, so it errs toward "question".
+func ReadsAsQuestion(text string) bool {
+	t := strings.TrimRight(strings.TrimSpace(text), "。，！!,. ")
+	if t == "" {
+		return false
+	}
+	if strings.ContainsAny(t, "？?") {
+		return true
+	}
+	if strings.HasSuffix(t, "吗") || strings.HasSuffix(t, "呢") || strings.HasSuffix(t, "吧") {
+		return true
+	}
+	for _, w := range []string{"多少", "怎么", "怎样", "什么", "哪", "几", "能不能", "可不可以", "是不是", "有没有", "行不行", "为什么", "多久", "多长"} {
+		if strings.Contains(t, w) {
+			return true
+		}
+	}
+	return false
+}

@@ -194,6 +194,11 @@ type Engine struct {
 	lastAck    string
 	lastFiller string
 	lastOpener string
+	// recentOpeners are the last three openers said, not to be said again.
+	recentOpeners []string
+	// skipOpener: the last opener became a backchannel (the caller went on
+	// mid-sentence); the next turn opens without one.
+	skipOpener bool
 	// fillerSinceAnswer counts holding fillers spoken since the caller last
 	// actually heard an answer. Above zero, another one is noise.
 	fillerSinceAnswer int
@@ -1120,9 +1125,15 @@ func (p *speechPipe) speak(text string) bool {
 		// The engine said an opener at the pause; the model's own, if it is
 		// the same words, is said once.
 		p.openedDone = true
-		if trimmed, ok := withoutOpener(text, opened); ok {
-			p.e.log.Debug("speak: the model's opener was already said at the pause", "turn", p.turn.ID, "opener", opened)
-			text = trimmed
+		// Its own opener, or any of the pool's (嗯，好的，… after the engine's
+		// 嗯， is the tic the owner heard): one is enough.
+		d := p.e.opts.Cfg.Duplex
+		for _, o := range append(append([]string{opened}, d.OpenerPhrases...), d.OpenerQuestionPhrases...) {
+			if trimmed, ok := withoutOpener(text, o); ok {
+				p.e.log.Debug("speak: the model's opener was already said at the pause", "turn", p.turn.ID, "opener", opened, "model", o)
+				text = trimmed
+				break
+			}
 		}
 	}
 	if text == "" {
@@ -1773,6 +1784,26 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 		e.log.Info("hangup: a sound over the farewell; not yielding", "barge_in", bargeIn)
 		return
 	}
+	if t := e.tracker.Current(); t != nil && t.Opened != "" && !t.OpenedAt.IsZero() &&
+		e.resumedWithinOpener(t) {
+		// The caller went on within a breath of the opener: the pause was a
+		// pause inside their sentence, and the opener was, in effect, an 嗯
+		// of listening. It finishes (it is one word), the answer prepared
+		// for the half-sentence is dropped without a sound, and the
+		// continuation gets no second opener. Before this, the half-said
+		// opener was cut and the next fragment got a fresh one — eight times
+		// on the 22:52 call of 10-25, which the owner heard as rushing.
+		e.log.Info("speak: the opener became a backchannel; the caller went on",
+			"turn", t.ID, "opener_ms", t.OpenedMS, "after_ms", time.Since(t.OpenedAt).Milliseconds())
+		e.player.GraceFinishSegment(t.ID)
+		e.cancelBackend()
+		if pipe := e.speech.Load(); pipe != nil {
+			pipe.Abort()
+		}
+		e.gen.Bump()
+		e.skipOpener = true
+		return
+	}
 	switch e.policy() {
 	case "queue":
 		e.log.Debug("new query while answering: queueing behind the current answer",
@@ -1786,6 +1817,25 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 			"barge_in", bargeIn, "speaking", e.speaking.Load())
 		e.interrupt()
 	}
+}
+
+// openerBackchannelGraceMS is how long after the opener's end a caller who
+// goes on is still read as continuing their sentence rather than
+// interrupting the answer.
+const openerBackchannelGraceMS = 300
+
+// resumedWithinOpener says whether the caller's open utterance began within
+// the opener's playing time (plus a breath) of the opener's start. The
+// judgement that yields the floor comes hundreds of milliseconds after the
+// caller resumed (the hold waits for words), so the moment that matters is
+// when they resumed, not when the floor is yielded.
+func (e *Engine) resumedWithinOpener(t *Turn) bool {
+	sinceResume := time.Duration(e.inputMS.Load()-e.utterStartMS) * time.Millisecond
+	if !e.userOpen || sinceResume < 0 {
+		sinceResume = 0
+	}
+	gap := time.Since(t.OpenedAt) - sinceResume
+	return gap < time.Duration(t.OpenedMS+openerBackchannelGraceMS)*time.Millisecond
 }
 
 // softInterrupt stops generating further sentences but lets the one already

@@ -84,3 +84,16 @@ func BenchmarkClassify(b *testing.B) {
 		Classify(text)
 	}
 }
+
+func TestReadsAsQuestion(t *testing.T) {
+	for _, q := range []string{"这个最低保要多少钱？", "三者险能调吗", "你们怎么收费", "有没有优惠", "这个呢"} {
+		if !ReadsAsQuestion(q) {
+			t.Errorf("%q should read as a question", q)
+		}
+	}
+	for _, s := range []string{"好的，谢谢。", "三者险调到三百万。", "我再想想", ""} {
+		if ReadsAsQuestion(s) {
+			t.Errorf("%q should not read as a question", s)
+		}
+	}
+}

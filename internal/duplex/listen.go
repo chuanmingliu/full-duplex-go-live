@@ -3,6 +3,7 @@ package duplex
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -1195,7 +1196,22 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
 		return
 	}
-	phrase := e.pickPhrase(d.OpenerPhrases, &e.lastOpener)
+	if e.skipOpener {
+		// The opener before this one turned out to be mid-sentence and
+		// became a backchannel; a second 嗯 on the continuation is the tic
+		// the owner heard (23:36 on 10-25). The answer to the whole sentence
+		// begins when it is ready.
+		e.skipOpener = false
+		e.log.Debug("speak: no opener on the continuation of a sentence", "turn", turn.ID)
+		return
+	}
+	phrase := turn.OpenerPlanned
+	if phrase == "" {
+		phrase = e.planOpener(turn)
+	}
+	if phrase == "" {
+		return
+	}
 	cached, ok := Phrases().Get(e.phraseKey(phrase))
 	if !ok {
 		e.log.Debug("speak: no opener in the cache yet", "text", phrase)
@@ -1212,6 +1228,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	// of 10-25: every content figure exactly 380 + the opener's length).
 	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, 80)
 	turn.Opened = phrase
+	turn.OpenedAt = time.Now()
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
 	turn.MarkFirstSegment()
 	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
@@ -1226,4 +1243,52 @@ func (e *Engine) sayOpener(turn *Turn) {
 	turn.AppendResponse(phrase)
 	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "turn", turn.ID, "text", phrase,
 		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
+}
+
+// planOpener chooses the opener for a turn's answer from the pool that fits
+// how the caller's words read — a question gets 嗯，/这个呀，/我看一下，…, a
+// statement 好的，/明白，/行，… — never one said in the last three turns, and
+// records it on the turn so the model is told to continue from it.
+func (e *Engine) planOpener(turn *Turn) string {
+	d := e.opts.Cfg.Duplex
+	if !d.Opener || turn == nil || turn.OpenerPlanned != "" {
+		return turn.OpenerPlanned
+	}
+	pool := d.OpenerPhrases
+	if endpoint.ReadsAsQuestion(turn.Transcript) && len(d.OpenerQuestionPhrases) > 0 {
+		pool = d.OpenerQuestionPhrases
+	}
+	var fresh []string
+	for _, p := range pool {
+		recent := false
+		for _, r := range e.recentOpeners {
+			if r == p {
+				recent = true
+				break
+			}
+		}
+		if !recent {
+			fresh = append(fresh, p)
+		}
+	}
+	if len(fresh) == 0 {
+		fresh = pool
+	}
+	if len(fresh) == 0 {
+		return ""
+	}
+	phrase := fresh[rand.Intn(len(fresh))]
+	e.recentOpeners = append(e.recentOpeners, phrase)
+	if len(e.recentOpeners) > 3 {
+		e.recentOpeners = e.recentOpeners[len(e.recentOpeners)-3:]
+	}
+	turn.OpenerPlanned = phrase
+	return phrase
+}
+
+// openerNote tells the model the opener the engine says for this turn, so
+// its first clause continues the sentence from it instead of starting one
+// of its own beside it.
+func openerNote(phrase string) string {
+	return fmt.Sprintf("【系统提示】这句回答的开头“%s”已由系统替你说出。请从这个开头之后自然地接着说下去，让语气连贯；不要再说这个开头，也不要再加“好的”“嗯”之类的语气词。", phrase)
 }

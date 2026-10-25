@@ -886,6 +886,28 @@ it was ready or when the opener ended), and the session summary adds
 headline is the first by the owner's definition, the second is what the
 chat-model levers still work on.
 
+**Not a word every time, and not in the caller's mouth (10-25 23:36, the
+owner: two phrases were "too mechanical", and the assistant was "too rush to
+answer").** Three rules since 8166f1b's successor:
+
+- *Variety that fits.* The opener is chosen when the answer is begun, from
+  `opener_phrases` for a turn that reads as a statement (好的，/嗯，/明白，/好，/
+  行，/嗯嗯，/对，) or `opener_question_phrases` for one that reads as a
+  question (嗯，/嗯嗯，/好的，/这个嘛，/是这样，/好，; `endpoint.ReadsAsQuestion`),
+  never one said in the last three turns. All of them work as an 嗯 of
+  listening too — see the third rule.
+- *A smooth join.* The model is told, after the caller's words, which opener
+  the engine says for this turn and asked to continue the sentence from it
+  (`openerNote`); its own opener, or any from the pools, at the start of its
+  first clause is dropped so nothing is said twice.
+- *A pause inside a sentence.* When the caller goes on within the opener's
+  playing time plus 300 ms of its start (`resumedWithinOpener`), the pause
+  was theirs, not the turn's end: the opener finishes as a backchannel, the
+  answer prepared for the half-sentence is dropped with no sound, the floor
+  is not "cut", and the continuation gets no second opener (`skipOpener`).
+  On the 22:52 simulated call the old behaviour — opener, cut, opener —
+  happened eight times in four minutes.
+
 Off: `"opener": false`. Not said when the answer's audio is already in hand
 at the pause, when the assistant is speaking (a result being read), on a
 scripted turn (the prehook), or while the call is ending. ISS-057 was found

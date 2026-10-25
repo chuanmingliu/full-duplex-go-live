@@ -99,6 +99,11 @@ type Turn struct {
 	// the model's first clause; the pipe says it once. OpenedMS is its audio.
 	Opened   string
 	OpenedMS int64
+	// OpenerPlanned is the opener chosen when the answer was begun (so the
+	// model can be told to continue from it); said at the pause by sayOpener.
+	OpenerPlanned string
+	// OpenedAt is when the opener was queued.
+	OpenedAt time.Time
 
 	mu sync.Mutex
 	// committed, dead, held and commitCh implement the rule that a turn begun

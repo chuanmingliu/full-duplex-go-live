@@ -185,6 +185,9 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 		e.ensureUserRecorded(prev)
 	}
 
+	if turn.Transcript != "" && !turn.Scripted {
+		e.planOpener(turn)
+	}
 	e.delegatedAt = time.Now()
 	e.delegatedTurn = turn
 	e.filled = false
@@ -361,6 +364,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	msgs = append(msgs, e.history...)
 	if turn != nil && turn.Transcript != "" && !e.recordedUser[turn.ID] {
 		msgs = appendUserMessage(msgs, turn.Transcript)
+	}
+	if turn != nil && turn.OpenerPlanned != "" && !front {
+		// After the user's words, so everything before stays in the
+		// provider's prefix cache.
+		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: openerNote(turn.OpenerPlanned)})
 	}
 	return msgs
 }

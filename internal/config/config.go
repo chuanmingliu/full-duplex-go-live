@@ -358,9 +358,14 @@ type DuplexConfig struct {
 	// changes — every answer begins with an acknowledgement — so it is off
 	// unless the owner says otherwise.
 	Opener bool `json:"opener"`
-	// OpenerPhrases are the openers, said in turn, never the same twice
-	// running; warmed into the phrase cache at session open.
-	OpenerPhrases []string `json:"opener_phrases"`
+	// OpenerPhrases are the openers for a turn that reads as a statement
+	// (an answer, an objection, a yes); OpenerQuestionPhrases for one that
+	// reads as a question. One is chosen when the answer is begun, never
+	// one said in the last three turns, so the assistant does not say the
+	// same word every time (the owner, 10-25 23:36: two phrases were "too
+	// mechanical"); all are warmed into the phrase cache at session open.
+	OpenerPhrases         []string `json:"opener_phrases"`
+	OpenerQuestionPhrases []string `json:"opener_question_phrases"`
 
 	// HoldingFiller keeps the conversation alive while the backend works.
 	//
@@ -809,7 +814,8 @@ func Default() Config {
 			// starts with, which with an empty list is the first word.
 			UserBackchannelHoldMS:      600,
 			Opener:                     false,
-			OpenerPhrases:              []string{"好的，", "嗯，"},
+			OpenerPhrases:              []string{"好的，", "嗯，", "明白，", "好，", "行，", "嗯嗯，", "对，"},
+			OpenerQuestionPhrases:      []string{"嗯，", "嗯嗯，", "好的，", "这个嘛，", "是这样，", "好，"},
 			HoldingFiller:              false,
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
