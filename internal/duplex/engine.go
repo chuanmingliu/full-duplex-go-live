@@ -193,6 +193,7 @@ type Engine struct {
 	// lastAck and lastFiller keep a phrase from being chosen twice running.
 	lastAck    string
 	lastFiller string
+	lastOpener string
 	// fillerSinceAnswer counts holding fillers spoken since the caller last
 	// actually heard an answer. Above zero, another one is noise.
 	fillerSinceAnswer int
@@ -857,8 +858,10 @@ func (e *Engine) onTick() {
 // speechPipe converts a stream of text deltas into paced audio. One pipe is
 // alive at a time; starting a new one aborts the old.
 type speechPipe struct {
-	e    *Engine
-	turn *Turn
+	// openedDone: the first segment has been checked against Turn.Opened.
+	openedDone bool
+	e          *Engine
+	turn       *Turn
 	// begun is set once the pipe has asked for its first synthesis. That one
 	// is the one a caller waits on in silence; see provider.WithUrgent.
 	begun  bool
@@ -1112,6 +1115,15 @@ func (p *speechPipe) current() bool {
 // when the turn has been superseded and the pipe should stop.
 func (p *speechPipe) speak(text string) bool {
 	text = strings.TrimSpace(text)
+	if opened := p.turn.Opened; opened != "" && !p.openedDone {
+		// The engine said an opener at the pause; the model's own, if it is
+		// the same words, is said once.
+		p.openedDone = true
+		if trimmed, ok := withoutOpener(text, opened); ok {
+			p.e.log.Debug("speak: the model's opener was already said at the pause", "turn", p.turn.ID, "opener", opened)
+			text = trimmed
+		}
+	}
 	if text == "" {
 		return true
 	}
@@ -2403,4 +2415,19 @@ func rawJSON(v any) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return data
+}
+
+// withoutOpener strips an opener the engine has already said from the start
+// of the model's first clause, punctuation aside: "好的，" against "好的，没问题"
+// leaves "没问题"; against "好的。" leaves nothing. Not a prefix: unchanged.
+func withoutOpener(text, opener string) (string, bool) {
+	strip := func(s string) string {
+		return strings.TrimRight(strings.TrimSpace(s), "，。！？、,.!? ")
+	}
+	core := strip(opener)
+	if core == "" || !strings.HasPrefix(text, core) {
+		return text, false
+	}
+	rest := strings.TrimLeft(text[len(core):], "，。！？、,.!? ")
+	return rest, true
 }

@@ -346,6 +346,22 @@ type DuplexConfig struct {
 	// stopping for nothing, so the timeout fails toward yielding.
 	UserBackchannelHoldMS int `json:"user_backchannel_hold_ms"`
 
+	// Opener, when on, has the engine open every answer with one of
+	// OpenerPhrases from the phrase cache the moment the caller's turn is
+	// judged over, before the chat model's first clause is in: the caller
+	// hears a word at the pause instead of at the model's and the
+	// synthesizer's pleasure (RETRO-1000, lever 3.1, as the engine's doing
+	// rather than the model's — bench C of 10-25: openers chosen by the model
+	// moved the median 155 ms and the p95 not at all, because the opener
+	// still waited for the model to choose it). A first clause of the model's
+	// that begins with the same words is said once. The assistant's voice
+	// changes — every answer begins with an acknowledgement — so it is off
+	// unless the owner says otherwise.
+	Opener bool `json:"opener"`
+	// OpenerPhrases are the openers, said in turn, never the same twice
+	// running; warmed into the phrase cache at session open.
+	OpenerPhrases []string `json:"opener_phrases"`
+
 	// HoldingFiller keeps the conversation alive while the backend works.
 	//
 	// This is the behaviour that makes a delegating voice agent bearable: the
@@ -792,6 +808,8 @@ func Default() Config {
 			// interruption releases it on the first word that no candidate
 			// starts with, which with an empty list is the first word.
 			UserBackchannelHoldMS:      600,
+			Opener:                     false,
+			OpenerPhrases:              []string{"好的，", "嗯，", "明白，"},
 			HoldingFiller:              false,
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},

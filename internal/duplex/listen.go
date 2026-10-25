@@ -1099,6 +1099,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 			// The guess held: the audio already flowing is correct, and the
 			// final transcript costs nothing. This is the whole point of
 			// speculating.
+			e.sayOpener(spec)
 			e.tracker.Commit(spec.ID, spec.Revision)
 			e.specTurn = nil
 			e.commitTurn(spec)
@@ -1119,6 +1120,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		e.specAbandoned++
 		metrics.Default().SpeculationAbandoned()
 		if revised != nil {
+			e.sayOpener(revised)
 			e.commitTurn(revised)
 			e.beginGeneration(revised, "revision", true)
 			return
@@ -1131,6 +1133,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 	}
 	turn := e.tracker.Begin(text, false)
 	turn.MarkTranscriptFinal()
+	e.sayOpener(turn)
 	e.commitTurn(turn)
 	// A turn that waited for the final transcript pays the backend's whole
 	// time-to-first-token where a speculative one would have spent it during
@@ -1176,4 +1179,44 @@ func (e *Engine) writeASR(samples []float32) {
 	if err := e.asrRun.stream.Write(audio.EncodePCM16(samples)); err != nil {
 		e.log.Warn("asr write failed", "err", err)
 	}
+}
+
+// sayOpener opens the answer to a turn just judged over with a word from the
+// phrase cache, before the chat model's first clause is in — if the answer
+// has produced no audio yet, and nothing is being said. The opener is the
+// turn's first audio; the pipe says the model's own opener once if it is the
+// same words (Turn.Opened). Loop goroutine, before the turn is committed, so
+// the pipe's first segment — held until the commit — queues behind it.
+func (e *Engine) sayOpener(turn *Turn) {
+	d := e.opts.Cfg.Duplex
+	if !d.Opener || len(d.OpenerPhrases) == 0 || turn == nil || turn.Scripted || e.hangingUp() {
+		return
+	}
+	if !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
+		return
+	}
+	phrase := e.pickPhrase(d.OpenerPhrases, &e.lastOpener)
+	cached, ok := Phrases().Get(e.phraseKey(phrase))
+	if !ok {
+		e.log.Debug("speak: no opener in the cache yet", "text", phrase)
+		return
+	}
+	pcm, err := audio.ResamplePCM16(cached.PCM, cached.Rate, e.opts.ClientRate)
+	if err != nil || len(pcm) == 0 {
+		return
+	}
+	turn.Opened = phrase
+	turn.MarkFirstSegment()
+	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
+	begin, body, mark := seg, seg, seg
+	begin.Kind, begin.Text = SegBegin, phrase
+	body.Kind, body.PCM = SegAudio, pcm
+	mark.Kind, mark.Text = SegMark, phrase
+	e.player.Enqueue(begin)
+	turn.MarkFirstAudio()
+	e.player.Enqueue(body)
+	e.player.Enqueue(mark)
+	turn.AppendResponse(phrase)
+	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "turn", turn.ID, "text", phrase,
+		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
 }

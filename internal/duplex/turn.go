@@ -95,6 +95,9 @@ type Turn struct {
 	// model's first token (a result's opening).
 	Scripted bool
 	Opening  string
+	// Opened is the opener the engine said for this turn at the pause, before
+	// the model's first clause; the pipe says it once.
+	Opened string
 
 	mu sync.Mutex
 	// committed, dead, held and commitCh implement the rule that a turn begun

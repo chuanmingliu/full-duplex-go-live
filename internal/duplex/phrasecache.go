@@ -215,6 +215,9 @@ func WarmPhrases(ctx context.Context, cfg config.Config, tts provider.TTS, log *
 	if cfg.Duplex.HoldingFiller {
 		texts = append(texts, cfg.Duplex.HoldingFillerPhrases...)
 	}
+	if cfg.Duplex.Opener {
+		texts = append(texts, cfg.Duplex.OpenerPhrases...)
+	}
 	for _, t := range cfg.Tools {
 		if t.Ack != "" {
 			texts = append(texts, segmentWhole(cfg, t.Ack)...)

@@ -1023,7 +1023,6 @@ func TestTheDefaultQuotationGetsNeitherPrehookNorPosthook(t *testing.T) {
 	_ = e
 }
 
-
 // talkativeQuoteLLM talks through the turn that calls the tool — three
 // clauses, against the instructions — as the real model did on the 20:35
 // call of 10-25 (4.2 s before the ready default was read out).
