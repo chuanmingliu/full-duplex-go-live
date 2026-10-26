@@ -912,6 +912,19 @@
    "symptom": "The 20:35 call: the prehook (warmed at startup) was synthesized on its first use (item_28, 208 ms to first audio) and played from the cache only the second time. Bench D: 'no opener in the cache yet' on 20 of 24 turns though the openers were warmed.",
    "cause": "WarmPhrases keyed on the bare provider's name (OpenTTS(cfg.TTS): 'minimax'); sessions speak through the pool and the fallback wrapper, whose Name() is 'minimax+fish'. Different key, no hit.",
    "fix": "provider.VoiceName unwraps to the synthesizer whose voice is heard (a fallback's primary); the cache keys on it at warm time and in sessions. Test TestVoiceNameIsThePrimarys."
+  },
+  {
+   "id": "ISS-058",
+   "title": "Two of the caller's own utterances dropped as 'mostly another voice' on a quiet line",
+   "area": "focus",
+   "status": "fixed",
+   "commit": "pending",
+   "found": "2026-10-26",
+   "found_on": "the 09:04 call",
+   "found_call": "out-mvok0t18-qqm0",
+   "symptom": "09:05:24 and 09:05:29: the owner, alone on a quiet line, spoke 940 and 1240 ms; the labels gave 27% and 44% of the voiced time to the caller; the quiet close let both go ('mostly another voice at the quiet close', ISS-053's rule) — no turn, no answer; the owner asked 能听到吗 at 09:05:33.",
+   "cause": "The ISS-053 rule dropped any utterance under 50% the caller's. Its case was 8% (a station announcement); 27–44% is a mis-scored caller.",
+   "fix": "quietCloseIgnoreShare 0.25: an utterance with a quarter or more of the caller's voice is answered. Test TestTheQuietCloseAnswersAnUtteranceWithAQuarterOfTheCaller. Open: why the scorer gave the owner's voice to 'another' on this call (enrolment on 2 utterances; the handset?) — the labels of this call are worth a look on the box."
   }
  ]
 }

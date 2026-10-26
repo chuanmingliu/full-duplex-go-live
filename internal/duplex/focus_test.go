@@ -851,3 +851,51 @@ func TestTheQuietCloseNeedsMoreThanAFlickerOfAnotherVoice(t *testing.T) {
 		t.Fatalf("the caller's one sentence was taken as %d turns", n)
 	}
 }
+
+// An utterance the labels call 40% the caller's on a free floor is the
+// caller's to answer: on the 09:04 call of 10-26 two of the owner's own
+// sentences, labelled 27% and 44% theirs on a quiet line, were let go at the
+// quiet close as "mostly another voice" and went unanswered until the owner
+// asked whether anyone was there (ISS-058). ISS-053's announcement was 8%.
+func TestTheQuietCloseAnswersAnUtteranceWithAQuarterOfTheCaller(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Focus = "veto"
+	cfg.opts.Cfg.Duplex.FocusQuietCloseMS = 420
+	rate := cfg.opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("多少钱啊这个保险多少钱啊这个那个这个那个这个那个")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.DelayPerRune = 2 * time.Millisecond
+	// The caller for 800 ms (enrolment); silence; then 2 s in which the
+	// labels alternate — 40% the caller's, 60% another's — as a mis-scored
+	// caller alone looks; the line goes on (another label) for the quiet close.
+	scorer := newFakeScorer(func(atMS int64) int {
+		switch {
+		case atMS < 800:
+			return 0
+		case atMS >= 3000 && atMS < 5000:
+			if (atMS/200)%5 < 2 {
+				return 0
+			}
+			return 1
+		}
+		return 1
+	}, 60*time.Millisecond)
+	e := startFocusedEngine(t, cfg.opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, scorer)
+	speak(e, rate, 800)
+	pause(e, rate, 700)
+	waitFor(t, "the caller to be answered", 5*time.Second, func() bool { return c.audioMS() > 0 })
+	pause(e, rate, 1500) // audio now at 3000 ms
+	turns := c.count(live.ServerDelegationCreated)
+	for i := 0; i < 20; i++ { // 2 s of the mixed utterance
+		speak(e, rate, 100)
+	}
+	for i := 0; i < 8; i++ { // the line stays "voiced" another 800 ms, labelled other: the quiet close's case
+		speak(e, rate, 100)
+	}
+	pause(e, rate, 1200)
+	if got := c.count(live.ServerDelegationCreated); got == turns {
+		t.Fatalf("an utterance with 40%% of the caller's voice was let go unanswered")
+	}
+}

@@ -608,6 +608,11 @@ func (e *Engine) judgeUtteranceFocus() {
 // answer the engine had ready in 625. The labels lag the audio by tens of
 // milliseconds here (a target-speaker service), so the pause is judged on
 // the labelled range only.
+// quietCloseIgnoreShare is the caller's share of the voiced time below which
+// an utterance is let go at the quiet close as another voice's (ISS-053: 0.08
+// on a station announcement; ISS-058: 0.27 and 0.44 were the caller alone).
+const quietCloseIgnoreShare = 0.25
+
 func (e *Engine) maybeCloseOnCallerQuiet() {
 	fs := e.focus
 	quiet := int64(e.opts.Cfg.Duplex.FocusQuietCloseMS)
@@ -649,7 +654,13 @@ func (e *Engine) maybeCloseOnCallerQuiet() {
 	// the other voice's words; answered, the model read seven garbled
 	// characters as a refusal and hung up (ISS-053). Mostly not the caller's:
 	// let it go by, as an utterance judged another voice's is.
-	if a := fs.tracker.AttributeOver(e.utterStartMS, to); a.Known && a.Coverage >= 0.6 && a.VoicedMS > 0 && a.Primary < 0.5 {
+	// "Mostly" means nearly all: on the 09:04 call of 10-26, alone on a quiet
+	// line, two of the owner's own utterances were labelled 27% and 44% theirs
+	// and dropped here, unanswered, until "能听到吗" (ISS-058). An utterance
+	// with a quarter or more of the caller's voice in it is answered; the
+	// cost of answering a stray sound is a sentence, the cost of ignoring a
+	// question is the call.
+	if a := fs.tracker.AttributeOver(e.utterStartMS, to); a.Known && a.Coverage >= 0.6 && a.VoicedMS > 0 && a.Primary < quietCloseIgnoreShare {
 		e.uttQuietIgnored = true
 		e.ignoreUtterance("mostly another voice at the quiet close", a, to-e.utterStartMS)
 		return

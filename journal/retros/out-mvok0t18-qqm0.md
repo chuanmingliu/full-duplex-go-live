@@ -22,3 +22,13 @@ Both figures under 1000 at p95 on a live daytime call — on seven turns,
 which is a p95 of one turn. With a quick model the opener's own length is
 now what sets the content figure; 这个嘛， (630 ms) is the one to drop or
 shorten if the content figure matters more than the variety.
+
+## The silence (the owner: "a short silence before I asked are you still there")
+
+09:05:24 and 09:05:29: two utterances of the owner's (940 and 1240 ms) were
+labelled 27% and 44% the caller's and let go at the quiet close as "mostly
+another voice" (ISS-053's rule, written for an announcement that was 8% the
+caller's) — no turn, no answer, ~8 s of nothing until 能听到吗 at 09:05:33.
+ISS-058: the quiet close now lets an utterance go only under 25% of the
+caller's voice. Why the scorer mis-labelled the owner alone on a quiet line
+is open (the enrolment rested on two utterances).
