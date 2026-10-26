@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/jinja"
@@ -73,6 +74,11 @@ type Service struct {
 	prefetches map[string]*prefetched
 	// prequotes are quotations priced ahead or kept, by selection (prequote.go).
 	prequotes map[string]*prequoted
+	// apiGate admits one inquiry to the business service at a time;
+	// apiDemand counts callers' asks waiting for it, which go ahead of the
+	// quotations priced ahead (prequote.go).
+	apiGate   chan struct{}
+	apiDemand atomic.Int32
 }
 
 const tokenFile = "api.token"
@@ -327,6 +333,12 @@ func (s *Service) quoteAPI() (*QuoteAPI, *ConfigVersion) {
 
 // quoteViaAPI asks the business's quotation service and records the answer.
 func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest) (any, error) {
+	// One inquiry at a time: the service answers "the latest quote for this
+	// phone", so two in flight for the same vehicle read each other's result
+	// (the 11:53 probe on 10-26: neighbours priced two at a time came back in
+	// identical pairs). A caller's own ask goes next; the neighbours wait.
+	s.takeAPITurn(req.prequote)
+	defer s.releaseAPITurn()
 	began := time.Now()
 	rec := &QuoteRecord{At: began, Call: req.Call, MemoryVersion: req.MemoryVersion, Source: "quote-api", APIVersion: v.Version, Prequote: req.prequote}
 	for name, choice := range req.Config {
@@ -355,6 +367,44 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 		return nil, err
 	}
 	return q, nil
+}
+
+// takeAPITurn waits for the business service to be free. A quotation priced
+// ahead also waits until no caller's ask is waiting.
+func (s *Service) takeAPITurn(ahead bool) {
+	s.mu.Lock()
+	if s.apiGate == nil {
+		s.apiGate = make(chan struct{}, 1)
+	}
+	gate := s.apiGate
+	s.mu.Unlock()
+	if !ahead {
+		s.apiDemand.Add(1)
+		defer s.apiDemand.Add(-1)
+		gate <- struct{}{}
+		return
+	}
+	for {
+		for s.apiDemand.Load() > 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		select {
+		case gate <- struct{}{}:
+			if s.apiDemand.Load() == 0 {
+				return
+			}
+			<-gate // a caller arrived meanwhile; let them through first
+			time.Sleep(50 * time.Millisecond)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (s *Service) releaseAPITurn() {
+	s.mu.Lock()
+	gate := s.apiGate
+	s.mu.Unlock()
+	<-gate
 }
 
 // quoteViaRules prices under the placeholder rules.

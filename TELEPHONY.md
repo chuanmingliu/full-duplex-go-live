@@ -1552,8 +1552,10 @@ when it is back. golive puts the call id on every tool request
 too (10-26, the owner's idea).** Once the default quotation is in, the lead
 service prices its single changes — every other tier of a coverage that has
 tiers (三者险 100/300/500万, 驾乘险 30/50/80万), each coverage of the plan added,
-each one dropped — two at a time in the background (`prequoteNeighbours`,
-`internal/crm/prequote.go`), and keeps them. A second quotation whose
+each one dropped — in the background, one inquiry at a time (the service
+answers "the latest quote for this phone", so two in flight read each
+other's result; a caller's own ask goes ahead of the queue: `takeAPITurn`),
+and keeps them (`prequoteNeighbours`, `internal/crm/prequote.go`). A second quotation whose
 selection and variables match one is answered from the cache at once
 (`prequoted: true` in the answer; `cached: true` for one asked earlier in
 the call) instead of through the business service's 3.5–4 s; the cache key
@@ -1563,7 +1565,7 @@ version misses and is priced. A quotation priced on demand is kept the same
 way. Each one is a real quotation through the same path, recorded as
 `quote.computed` with `prequote: true`. The plan says how many and which:
 `"prequote": {"max": 8, "keep": ["交强险"]}` (max 0 turns it off; `keep` is
-never dropped in a variant; `concurrency`, 2). A kept quotation answers for
+never dropped in a variant; `concurrency`, 1). A kept quotation answers for
 the service's `valid_for_s`, else 30 minutes.
 
 ## The quotation service on the box

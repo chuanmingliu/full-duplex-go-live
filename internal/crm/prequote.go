@@ -30,8 +30,8 @@ import (
 // single changes to the default selection — every other tier of a coverage
 // that has tiers, each coverage of the plan added, each one dropped — tiers
 // first, then additions, then removals, capped by max (8 unless the plan
-// says otherwise; 0 turns it off). Two at a time, so the business service
-// is not flooded while the call is starting.
+// says otherwise; 0 turns it off). One at a time through the business
+// service, and a caller's own ask goes first (takeAPITurn in service.go).
 
 // PrequotePolicy is the plan's say on quotations priced ahead.
 type PrequotePolicy struct {
@@ -40,7 +40,10 @@ type PrequotePolicy struct {
 	Max *int `json:"max,omitempty"`
 	// Keep names coverages never dropped in a variant (交强险 is compulsory).
 	Keep []string `json:"keep,omitempty"`
-	// Concurrency is how many run at once; 2 unless said.
+	// Concurrency is how many are started at once; 1 unless said. Through
+	// the business service they run one at a time whatever this says
+	// (service.go, takeAPITurn: its answer is "the latest quote for this
+	// phone"); the rules can take more.
 	Concurrency int `json:"concurrency,omitempty"`
 }
 
@@ -59,7 +62,7 @@ func (p PrequotePolicy) max() int {
 
 func (p PrequotePolicy) concurrency() int {
 	if p.Concurrency <= 0 {
-		return 2
+		return 1
 	}
 	return p.Concurrency
 }
@@ -180,8 +183,8 @@ func (s *Service) forgetPrequote(key string) {
 	s.mu.Unlock()
 }
 
-// prequoteNeighbours prices the single changes to a default request, two
-// at a time, in the background. Called once the default quotation is in.
+// prequoteNeighbours prices the single changes to a default request, in
+// the background. Called once the default quotation is in.
 func (s *Service) prequoteNeighbours(call string, def QuoteRequest) {
 	v, err := s.configs.Get(QuotePlansName, 0)
 	if err != nil {

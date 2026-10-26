@@ -143,7 +143,7 @@ type fixture struct {
 	svc      *Service
 	api      *httptest.Server
 	dir      string
-	logs     *bytes.Buffer
+	logs     *safeBuffer
 	mu       sync.Mutex
 	dials    []map[string]string
 	sessions int
@@ -152,9 +152,29 @@ type fixture struct {
 
 const lockedNumber = "00000001234"
 
+// safeBuffer is the fixture's log: a service reopened in a test gets a
+// handler of its own over it, and quotations priced ahead log from the
+// background, so writes are locked.
+type safeBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	fx := &fixture{t: t, dir: filepath.Join(t.TempDir(), "crm"), logs: &bytes.Buffer{}}
+	fx := &fixture{t: t, dir: filepath.Join(t.TempDir(), "crm"), logs: &safeBuffer{}}
 	originator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
@@ -947,4 +967,36 @@ func TestThePrequoteVariantsAreTheSingleChanges(t *testing.T) {
 	if n := len(plan.prequoteVariants(def)); n != 0 {
 		t.Fatalf("max 0 should price nothing, got %d", n)
 	}
+}
+
+// Inquiries to the business service go one at a time (its answer is "the
+// latest quote for this phone"), and a caller's ask goes ahead of the
+// quotations priced ahead that are waiting.
+func TestInquiriesAreOneAtATimeAndCallersGoFirst(t *testing.T) {
+	s := &Service{}
+	s.takeAPITurn(false) // the service is busy with someone's ask
+	order := make(chan string, 2)
+	go func() { s.takeAPITurn(true); order <- "ahead" }()
+	time.Sleep(150 * time.Millisecond) // the neighbour is waiting
+	go func() { s.takeAPITurn(false); order <- "caller" }()
+	time.Sleep(150 * time.Millisecond)
+	select {
+	case who := <-order:
+		t.Fatalf("%s got the service while it was busy", who)
+	default:
+	}
+	s.releaseAPITurn()
+	if who := <-order; who != "caller" {
+		t.Fatalf("%s went first; the caller's ask should", who)
+	}
+	select {
+	case who := <-order:
+		t.Fatalf("%s got in beside the caller", who)
+	case <-time.After(200 * time.Millisecond):
+	}
+	s.releaseAPITurn()
+	if who := <-order; who != "ahead" {
+		t.Fatalf("%s got the service after the caller, want the neighbour", who)
+	}
+	s.releaseAPITurn()
 }
