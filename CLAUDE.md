@@ -29,8 +29,9 @@ is the opener, 380 ms at p95 on the bench; the answer's own first word is
 reported beside it (`first_content_ms`, `content_p95_ms` in the summary) and
 was ~900 p50 / ~1080 p95 until the opener's rendered pause was trimmed
 (1f853df): then **p50 880–887, p95 969–990** on the bench (n=22) and on a
-simulated conversation through the PBX (n=32). Quote both; a real call with a
-person on the line on this build is still owed.
+simulated conversation through the PBX (n=32). Quote both. Live calls on the opener: 10-25 23:31
+(8166f1b, the slow hour) first audio p95 381, content p95 1150; 10-26 09:04
+(a76c87e, daytime, 7 turns) first audio 380, content p95 910.
 
 Two definitions are in use. **The headline is always the first, caller's
 last sound → first audio** (the owner settled it on 10-16: it is what the
@@ -118,6 +119,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-25 22:52, 23:00 | 1f853df / 8166f1b (two openers), **simulated** (`kb-claims-skeptic`, `kb-process-struggler`): first audio 380 / 380 / 451 and 380 / 380 / 383; content 841 / 990 / 1069 and 890 / 992 / 1013. **Pooled, 3 calls, 105 turns: first audio p95 380, content p95 ~990** | 38 + 35 | 380 | 451 | 0 (content: 5 over 1000) |
 | 10-25 23:31 | 8166f1b, **`call`, the owner on the line**, 3 min, the slow hour; opener on: **first audio p50 380 / p95 381** / max 820; the answer's own first word p50 890 / p90 1048 / **p95 1150** / max 1353 (7 over 1000, all with the model's first token 493–723 after the close); 13 of 25 answers cut by the caller | 25 | 380 (content 890) | 820 (content 1353, p95 1150) | 0 (content: 2 over 1200) |
 | 10-26 00:00 | 9381303, **simulated** (`kb-claims-skeptic`), the owner's "too rush" scenario, opener v2 (varied, model-continued, backchannel on a mid-sentence pause): 18 openers of 6 kinds, 10 became backchannels with no cut; continuation turns without an opener paid the model's wait (first audio p95 1175, content p95 1640 at midnight) → skip only on fragments within 1.5 s | 19 | 453 | 1218 | — |
+| 10-26 09:04 | a76c87e, **`call`, the owner on the line, daytime**, 90 s; six different openers, 1 duplicate dropped: **first audio 380 on all 7; the answer's own first word p50 880 / p95 910 / max 1010** (model quick, 123–287; content = 380 + the opener's 470–630) | 7 | 380 (content 880) | 380 (content 1010, p95 910) | 0 (content: 1 over 1000) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
