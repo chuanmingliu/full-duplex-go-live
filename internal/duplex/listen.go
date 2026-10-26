@@ -1060,7 +1060,20 @@ func (e *Engine) abandonSpeculation(reason string) {
 	e.forgetDelegation(delegationIDOf(spec))
 	e.cancelBackend()
 	if e.tracker.IsCurrent(spec) {
-		e.abortSpeech()
+		if spec.Opened != "" {
+			// The opener was said at the base pause and the caller went on:
+			// it finishes as an 嗯 of listening (one word), the rest of the
+			// guess is dropped without a sound, and the fragment that follows
+			// within 1.5 s gets no second opener.
+			e.player.GraceFinishSegment(spec.ID)
+			if pipe := e.speech.Load(); pipe != nil {
+				pipe.Abort()
+			}
+			e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
+			e.log.Info("speak: the opener became a backchannel; the caller went on", "turn", spec.ID, "opener_ms", spec.OpenedMS, "reason", reason)
+		} else {
+			e.abortSpeech()
+		}
 		e.tracker.Abandon()
 	}
 	if e.delegatedTurn == spec {
@@ -1115,12 +1128,25 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		spec.kill()
 		e.forgetDelegation(delegationIDOf(spec))
 		e.cancelBackend()
-		e.abortSpeech()
+		if spec.Opened != "" {
+			// The opener said at the pause stands; only the guessed answer
+			// behind it is dropped, and the revised one follows the opener.
+			e.player.GraceFinishSegment(spec.ID)
+			if pipe := e.speech.Load(); pipe != nil {
+				pipe.Abort()
+			}
+		} else {
+			e.abortSpeech()
+		}
 		revised := e.tracker.Revise(spec.ID, text, true)
 		e.specTurn = nil
 		e.specAbandoned++
 		metrics.Default().SpeculationAbandoned()
 		if revised != nil {
+			if spec.Opened != "" {
+				// Said already, at the pause; the revised answer follows it.
+				revised.Opened, revised.OpenedMS, revised.OpenedAt, revised.OpenerPlanned = spec.Opened, spec.OpenedMS, spec.OpenedAt, spec.Opened
+			}
 			e.sayOpener(revised)
 			e.commitTurn(revised)
 			e.beginGeneration(revised, "revision", true)
@@ -1196,7 +1222,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if !d.Opener || len(d.OpenerPhrases) == 0 || turn == nil || turn.Scripted || e.hangingUp() {
 		return
 	}
-	if !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
+	if turn.Opened != "" || !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
 		return
 	}
 	if time.Now().Before(e.skipOpenerUntil) {
@@ -1305,4 +1331,26 @@ func (e *Engine) planOpener(turn *Turn) string {
 // of its own beside it.
 func openerNote(phrase string) string {
 	return fmt.Sprintf("【系统提示】这句回答的开头“%s”已由系统替你说出。请从这个开头之后自然地接着说下去，让语气连贯；不要再说这个开头，也不要再加“好的”“嗯”之类的语气词。", phrase)
+}
+
+// maybeOpenDuringPatience says the opener at the base pause even when the
+// turn is being given longer because the words read as unfinished: a
+// listener's 嗯 at a pause is what a person does while the other is still
+// thinking, and if the caller goes on it becomes exactly that (the backchannel
+// rule). The answer itself still waits for the turn to be judged over. On
+// the 09:31 call of 10-26 the two turns over 1000 on the content figure were
+// 600 ms patience waits; this takes the opener's length off them.
+func (e *Engine) maybeOpenDuringPatience() {
+	d := e.opts.Cfg.Duplex
+	if !d.Opener || e.patience <= 0 || !e.userOpen {
+		return
+	}
+	spec := e.liveSpeculation()
+	if spec == nil || spec.Opened != "" || spec.OpenerPlanned == "" {
+		return
+	}
+	if float64(e.opts.Cfg.VAD.MinSilenceMS) > e.vad.TrailingSilenceMS() {
+		return
+	}
+	e.sayOpener(spec)
 }

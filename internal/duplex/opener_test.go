@@ -178,7 +178,6 @@ func TestTheModelIsToldTheOpener(t *testing.T) {
 	}
 }
 
-
 // The model's opening 嗯嗯，好的， after the engine's 嗯， leaves nothing of
 // either; a clause that opens with its own words is untouched.
 func TestStripOpenersTakesEveryLeadingOpener(t *testing.T) {
@@ -196,5 +195,47 @@ func TestStripOpenersTakesEveryLeadingOpener(t *testing.T) {
 		if got != tc.want || n != tc.n {
 			t.Errorf("stripOpeners(%q, %q) = %q, %d; want %q, %d", tc.text, tc.opened, got, n, tc.want, tc.n)
 		}
+	}
+}
+
+// A turn given longer because its words read as unfinished still gets its
+// opener at the base pause — a listener's 嗯 — while the answer itself waits
+// for the turn to be judged over. The two turns over 1000 on the 09:31 call
+// of 10-26 were 600 ms patience waits.
+func TestTheOpenerIsSaidAtTheBasePauseDuringAPatienceWait(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"嗯，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"嗯，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	cfg.opts.Cfg.Duplex.SemanticEndpointing = true
+	cfg.opts.Cfg.Duplex.PatientSilenceMS = 1000
+	cfg.opts.Cfg.Duplex.SpeculateWhilePatient = true
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil)
+	c := newCollector(rate)
+	asr := newTrailingASR("就是") // reads as unfinished: the turn waits 1000 ms
+	asr.fullStop = true
+	llm := mock.NewLLM()
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit})
+	speak(e, rate, 600)
+	stopped := time.Now()
+	// 650 ms of silence: past the base pause (400), inside the patience wait.
+	pause(e, rate, 650)
+	first := c.firstAudioAt()
+	if first.IsZero() || first.Sub(stopped) > 620*time.Millisecond {
+		t.Fatalf("the opener was not said at the base pause during the patience wait (first audio at %v)", first.Sub(stopped))
+	}
+	if strings.Contains(c.allOutput(), "我听到你说") {
+		t.Fatalf("the answer began before the turn was judged over: %q", c.allOutput())
+	}
+	pause(e, rate, 900)
+	waitFor(t, "the answer", 4*time.Second, func() bool { return strings.Contains(c.allOutput(), "我听到你说") })
+	if n := strings.Count(c.allOutput(), "嗯"); n != 1 {
+		t.Fatalf("the opener was said %d times: %q", n, c.allOutput())
 	}
 }

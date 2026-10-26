@@ -908,6 +908,13 @@ answer").** Three rules since 8166f1b's successor:
   On the 22:52 simulated call the old behaviour — opener, cut, opener —
   happened eight times in four minutes.
 
+- *A pause inside a wait.* When the words read as unfinished and the turn is
+  given `patient_silence_ms`, the opener is still said at the base pause
+  (`maybeOpenDuringPatience`): a listener's 嗯 while the other is thinking.
+  The answer waits for the turn to be judged over; if the caller goes on,
+  the opener was a backchannel (above). The two turns over 1000 on the 09:31
+  call of 10-26 were 600 ms patience waits.
+
 Off: `"opener": false`. Not said when the answer's audio is already in hand
 at the pause, when the assistant is speaking (a result being read), on a
 scripted turn (the prehook), or while the call is ending. ISS-057 was found

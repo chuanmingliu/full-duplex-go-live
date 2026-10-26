@@ -724,6 +724,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	e.maybeSpeculate()
 	e.maybeSettle()
 	e.maybeCloseOnCallerQuiet()
+	e.maybeOpenDuringPatience()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {
@@ -2510,7 +2511,6 @@ func withoutOpener(text, opener string) (string, bool) {
 	rest := strings.TrimLeft(text[len(core):], "，。！？、,.!? ")
 	return rest, true
 }
-
 
 // stripOpeners drops the openers at the start of the model's first clause —
 // its own, or any of the pools' — longest first (嗯嗯 before 嗯) and again
