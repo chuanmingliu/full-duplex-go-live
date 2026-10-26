@@ -240,24 +240,23 @@ So the content figure is the chat model's first token, almost alone. The
 opener (§7) takes the first audio off that path; what remains on it is a
 vendor's tail that no setting here reaches — lever 3.3, the owner's.
 
-## 9. Met on a live call, 10-26 10:46 (9158f10)
+## 9. The 10:46 call (9158f10): first reported as met, it was not
 
-Call out-mvonnls7-8wwz, the owner on the line, daytime, quiet, 5 min 20 s,
-18 answered turns with a pause: **first audio p95 0 (max 39), the answer's own
-first word p50 557 / p95 689 / max 901; 0 of 18 over 1000**
-(`journal/retros/out-mvonnls7-8wwz.md`).
+Call out-mvonnls7-8wwz, the owner on the line, daytime, quiet, 18 answered
+turns. The first report read `first_content_ms` straight from the log —
+which counts from the turn's close — without the pause: 557 / 689. From the
+caller's last sound: **first audio p95 380 (max 419), content p50 937 / p95
+1069 / max 1281, 5 of 18 over 1000.** Corrected the same evening
+(`journal/retros/out-mvonnls7-8wwz.md`). The log's two figures are always
+from the close; `end_silence_ms` is the pause to add back.
 
-What made the difference from 09:31 (p95 1077 on 25 turns): the 600 ms
-patience waits now carry the opener at the base pause (2bf836a), a
-backchanneled opener ends its turn so the continuation opens too (ed45794,
-9158f10), and on 16 of 18 turns the model's first clause was ready before the
-opener had finished — the content figure *is* the opener's length (440–650),
-so the chat model's first token (316–537 this hour) is no longer on the
-caller's path at all when the hour is good. In a slow hour it still is; the
-margin at p95 is ~300 ms.
+What the call does show: on 14 of 18 turns the content figure is exactly
+pause + the opener's length, i.e. the chat model's clause was ready before
+the opener finished and **the opener's own rendered length (440–650 ms, p95
+at the 650 cap) is what binds** in a good hour. 380 + 650 = 1030 is a floor
+no vendor sets. So the opener's tail is now 80 ms (was 120) and its cap 540
+(was 650): a 920 floor, ~850 typical. In a slow hour the clause is late
+regardless (lever 3.3).
 
-The call also showed the next thing to fix, which is not latency of the turn
-but of the quotation: 8 s to a changed figure (two model steps around
-`update_memory`; now one call, the change folded into memory by the engine)
-and a readout cut by the caller that was never repeated (now kept beside the
-working memory with what was heard). Same retro.
+The quotation faults of the same call (8 s to a changed figure; a cut
+readout never repeated) are fixed in the same retro.

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +66,15 @@ func TestTheAnswerOpensFromTheCacheAtThePause(t *testing.T) {
 	}
 	if d := first.Sub(closed); d > 800*time.Millisecond {
 		t.Fatalf("first audio %v after the caller stopped; wanted it at the pause (~400 ms), before the model's 700 ms", d)
+	}
+	// The opener's audio is capped: the answer's first word waits for its
+	// end, so its length is on the caller's path (the 10:46 call of 10-26).
+	m := regexp.MustCompile(`opened the answer from the phrase cache at the pause.*audio_ms=(\d+)`).FindStringSubmatch(logs.String())
+	if m == nil {
+		t.Fatal("the opener's length was not logged")
+	}
+	if n, _ := strconv.Atoi(m[1]); n > openerMaxMS {
+		t.Fatalf("the opener ran %d ms, over the %d cap", n, openerMaxMS)
 	}
 }
 

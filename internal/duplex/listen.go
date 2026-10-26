@@ -1212,8 +1212,17 @@ func (e *Engine) writeASR(samples []float32) {
 	}
 }
 
-// openerMaxMS caps an opener's audio.
-const openerMaxMS = 650
+// openerMaxMS caps an opener's audio. The answer's own first word cannot
+// start before the opener ends, so from the caller's last sound the content
+// figure is at least the pause plus this: at 650 it was 1030 on every turn
+// that drew a long opener (the 10:46 call of 10-26: content p95 1069 from
+// the last sound, the opener binding on 14 of 18 turns, p95 of its length
+// 650). At 540 the floor is 920.
+const openerMaxMS = 540
+
+// openerTailMS is how much of the rendered pause after the opener's word is
+// kept: the gap the caller hears between the opener and the answer.
+const openerTailMS = 80
 
 // openerContinuationMS: a continuation at least this long after a
 // backchanneled opener is a real stretch of speech and opens as usual; a
@@ -1266,10 +1275,11 @@ func (e *Engine) sayOpener(turn *Turn) {
 	}
 	// The synthesizer renders the opener's comma as a pause of several hundred
 	// milliseconds (好的， came back as 660–700 ms of audio for ~350 of voice);
-	// the answer follows at once, so the pause is cut to 80 ms — otherwise the
+	// the answer follows at once, so the pause is cut short — otherwise the
 	// opener's length, not the model, decided when the answer began (bench H
-	// of 10-25: every content figure exactly 380 + the opener's length).
-	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, 120)
+	// of 10-25: every content figure exactly 380 + the opener's length; the
+	// 10:46 call of 10-26 again, with 120 ms kept).
+	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, openerTailMS)
 	// A one-word opener is 400–500 ms of voice; a faint tail above the trim's
 	// floor once left one at 1000 ms (the 09:16 call of 10-26), which then set
 	// when the answer began. Capped, with a short fade so the cut is not heard.

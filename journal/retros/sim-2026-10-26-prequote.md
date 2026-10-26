@@ -10,7 +10,7 @@ a tier changed → the difference). On the box under
 
 ## Run 1: sim-prequote-hit, out-mvouebz7-9qxa, 13:55 (dafc8f8 / f61ad6a)
 
-- 7 turns, 5 opened; content p50/p95 590.
+- 7 turns, 5 opened; content p50/p95 590 from the close (970 from the last sound).
 - The default: asked at +9 s, answered in 1 ms from the prefetch, no ack,
   read directly. ✓ (the 12:42 fault is gone)
 - The neighbours: 8 priced one at a time from 13:55:12 to 13:55:39, distinct
@@ -30,8 +30,8 @@ a tier changed → the difference). On the box under
 
 ## Runs 2–4 on 5b1c42f (golive + lead service), 14:14–14:22
 
-**sim-prequote-hit, out-mvov38lh-t62u, 14:14.** 6 turns, content p50 552 /
-p95 650. Default: 0 ms from the prefetch, no ack, read directly; the
+**sim-prequote-hit, out-mvov38lh-t62u, 14:14.** 6 turns, content from the
+last sound p50 932 / p95 1100 (552 / 650 from the close). Default: 0 ms from the prefetch, no ack, read directly; the
 memory's plan set to the 4 coverages on delivery. "三者险 → 300万": the
 fold made the plan 4 coverages with the change; **cache hit, 0 ms, total
 10524.8** (the neighbour priced at 13:55+6 s of the call). "再加驾乘险 50万":
@@ -39,8 +39,8 @@ two changes from the default, a miss, priced once in 4.0 s as the full
 6-line plan (10758.8). The recap on request came from memory (no tool
 call). 1 answer cut by the customer.
 
-**sim-prequote-interrupt, out-mvov652k-2xdv, 14:16.** 5 turns, content p50
-490 / p95 529. Default 0 ms direct; "→ 500万" **cache hit, 0 ms, 10884.8**.
+**sim-prequote-interrupt, out-mvov652k-2xdv, 14:16.** 5 turns, content from
+the last sound p50 909 / p95 1030 (490 / 529 from the close). Default 0 ms direct; "→ 500万" **cache hit, 0 ms, 10884.8**.
 The simulated customer did not manage to interrupt the readout (no
 truncation), so the cut-readout memory note (`noteReadoutCut`) was not
 exercised; a scripted barge-in (the simulator's `actions`) would be needed.

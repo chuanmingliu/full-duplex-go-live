@@ -2,19 +2,21 @@
 
 A real call, the owner on the line, quiet, 5 min 20 s: the first live sample
 on the opener's third round (patience opener, backchannelled openers end
-their turn). **The goal is met on this call.**
+their turn). **First reported as met; it is not** — the figures were first
+read from the log's `first_audio_out_ms`/`first_content_ms`, which count
+from the turn's close, without the 380 ms pause that `call-latency.sh` adds
+back. Corrected 22:15 the same day.
 
 ## From the caller's last sound
 
-- **First audio**: p50 0, p95 0, max 39 — 18 of 18 answered turns opened at
-  the pause from the cache (the latency log stamps the opener at the
-  endpoint; 380 ms of pause precede it as before).
-- **The answer's own first word** (`first_content_ms`): **p50 557, p95 689,
-  max 901**; 0 of 18 over 1000. On 16 of the 18 turns the content figure
-  equals the opener's length (440–650): the model's first clause was
-  synthesized before the opener finished, so the opener is now the whole
-  of the wait. The two others: 642 (opener 440 + 200) and 901 (a turn
-  that went to the tool first).
+- **First audio**: p50 380, p95 380, max 419 — 18 of 18 answered turns
+  opened at the pause from the cache.
+- **The answer's own first word**: **p50 937, p95 1069, max 1281; 5 of 18
+  over 1000.** On 14 of the 18 turns the content figure is exactly the
+  pause plus the opener's length (440–650): the model's first clause was
+  ready before the opener finished, so the opener's own length is the
+  whole of the wait after the pause — and at the 650 cap that is 1030.
+  (Raw log figures, from the close: content p50 557 / p95 689.)
 - Chat model first token 316–537 ms on the turns sampled; backend complete
   536–1061 ms. 8 hedged lanes, the first copy answered on lanes 1–8 in turn.
 - 22 speculations held, 7 abandoned (the owner's mid-thought pauses), 10
@@ -63,5 +65,8 @@ key changes would overlap it with the filler; left for the owner's call.
 
 ## Against the goal
 
-First audio p95 0 / content **p95 689** on 18 live turns with a person on the
-line, daytime, same build as the simulated round (932 / 1041). Met.
+From the caller's last sound: first audio p95 380, content **p95 1069** on
+18 live turns, daytime. Not met. What binds now is not a vendor but the
+opener's rendered length: 380 + opener (p95 650). Changed after this call:
+the opener's tail is 80 ms (was 120) and its cap 540 (was 650), a floor of
+920; in a good hour the clause is ready inside that on most turns.
