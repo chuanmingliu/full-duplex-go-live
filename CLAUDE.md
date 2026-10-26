@@ -620,7 +620,11 @@ before calling (`internal/tools/quotespeech.go`, `quoteplan.go`). **The
 default quotation is prefetched while the phone rings** (`crm/prefetch.go`,
 the plan's `default_selection`; `default_vars` for a call without a lead):
 `quote_total` with nothing chosen returns it at once; only a second
-quotation goes through the questions, the async inquiry and the prehook. **The quotation service** (`cmd/quotesvc`, port 8793, "The quotation
+quotation goes through the questions, the async inquiry and the prehook.
+**Its single changes are priced ahead as well** (`crm/prequote.go`, 10-26:
+other tiers, a coverage added or dropped, 8 by default, the plan's
+`prequote`), so a second quotation that lands on one is answered from the
+cache instead of the service's 3.5–4 s; on-demand quotations are kept too. **The quotation service** (`cmd/quotesvc`, port 8793, "The quotation
 service on the box" in `TELEPHONY.md`) speaks the business's two-API
 interface with the placeholder rating over a vehicle table kept on the box;
 `quote-api`'s `base_url` points at it (`phone-brain.sh quotesvc use`) until

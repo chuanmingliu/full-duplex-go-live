@@ -71,6 +71,8 @@ type Service struct {
 	greeting string
 	// prefetches are the default quotations by call id (prefetch.go).
 	prefetches map[string]*prefetched
+	// prequotes are quotations priced ahead or kept, by selection (prequote.go).
+	prequotes map[string]*prequoted
 }
 
 const tokenFile = "api.token"
@@ -197,7 +199,8 @@ func Open(cfg Config) (*Service, error) {
 // handling of a slow answer can be exercised.
 func (s *Service) Quote(req QuoteRequest) (any, error) {
 	// The intake: no quotation on a plan with a must field missing.
-	if need, skipped := s.intake(req); need != nil {
+	need, skipped, plan, planned := s.intake(req)
+	if need != nil {
 		return need, nil
 	} else if len(skipped) > 0 {
 		// The caller could not answer for these; they are left out of the
@@ -207,6 +210,48 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 		}
 		req.Skipped = append(req.Skipped, skipped...)
 	}
+	// The same selection on the same variables, priced already — ahead of
+	// the ask, or for an earlier ask — is answered from the cache.
+	var kept *prequoted
+	if planned && req.Call != "" {
+		key := selectionKey(req.Call, s.pricingVersion(req), plan, req.Config, req.Vars)
+		p, claimed := s.prequoteFor(key, true)
+		if !claimed {
+			select {
+			case <-p.done:
+			case <-time.After(60 * time.Second):
+				return nil, errors.New("the quotation is still being worked out")
+			}
+			if p.err == nil && p.quote != nil && p.fresh() {
+				s.log.Info("crm: quotation answered from the cache", "call", req.Call, "ahead", p.ahead, "priced_ms", p.took.Milliseconds(), "waited_ms", time.Since(p.started).Milliseconds())
+				return markPrequoted(p.quote, p, req.MemoryVersion), nil
+			}
+			// It failed for whoever asked first, or has expired; price it afresh.
+			s.forgetPrequote(key)
+			p, _ = s.prequoteFor(key, true)
+		}
+		p.ahead = req.prequote
+		kept = p
+		defer func() {
+			if kept.quote == nil {
+				s.forgetPrequote(key)
+			}
+			kept.took = time.Since(kept.started)
+			close(kept.done)
+		}()
+	}
+	q, err := s.quoteNow(req)
+	if kept != nil && err == nil {
+		if _, isNeed := q.(*Need); !isNeed && q != nil {
+			kept.quote = q
+		}
+	}
+	return q, err
+}
+
+// quoteNow prices a request that passed the intake, by the service or the
+// rules.
+func (s *Service) quoteNow(req QuoteRequest) (any, error) {
 	if api, v := s.quoteAPI(); api != nil {
 		return s.quoteViaAPI(api, v, req)
 	}
@@ -217,15 +262,16 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 	return q, err
 }
 
-// intake checks the request against the quote plan it runs on.
-func (s *Service) intake(req QuoteRequest) (*Need, []string) {
+// intake checks the request against the quote plan it runs on, and says
+// which plan that was.
+func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
 	v, err := s.configs.Get(QuotePlansName, 0)
 	if err != nil {
-		return nil, nil
+		return nil, nil, QuotePlan{}, false
 	}
 	plans, err := ParseQuotePlans(v.Body)
 	if err != nil {
-		return nil, nil
+		return nil, nil, QuotePlan{}, false
 	}
 	name, plan := plans.plan(req.Vars)
 	plan.NormalizeCoverages(req.Config)
@@ -257,7 +303,7 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string) {
 		source = "api"
 	}
 	need, skipped := plan.Check(name, source, req.Config, req.Vars)
-	return need, append(skipped, outside...)
+	return need, append(skipped, outside...), plan, true
 }
 
 // quoteAPI is the service's config when it names a service to call.
@@ -282,7 +328,7 @@ func (s *Service) quoteAPI() (*QuoteAPI, *ConfigVersion) {
 // quoteViaAPI asks the business's quotation service and records the answer.
 func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest) (any, error) {
 	began := time.Now()
-	rec := &QuoteRecord{At: began, Call: req.Call, MemoryVersion: req.MemoryVersion, Source: "quote-api", APIVersion: v.Version}
+	rec := &QuoteRecord{At: began, Call: req.Call, MemoryVersion: req.MemoryVersion, Source: "quote-api", APIVersion: v.Version, Prequote: req.prequote}
 	for name, choice := range req.Config {
 		if selected(choice) {
 			rec.Coverages = append(rec.Coverages, name)
@@ -304,7 +350,7 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 		s.log.Warn("crm: a quote was not recorded", "err", lerr)
 	}
 	s.log.Info("crm: quote via the service", "call", req.Call, "coverages", len(rec.Coverages), "total", rec.Total, "api", v.Version,
-		"ms", rec.ComputeMS, "flow", rec.InsureFlowCode, "err", rec.Error)
+		"ms", rec.ComputeMS, "flow", rec.InsureFlowCode, "ahead", req.prequote, "err", rec.Error)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +372,7 @@ func (s *Service) quoteViaRules(req QuoteRequest) (*Quote, error) {
 		time.Sleep(time.Duration(rules.SimulateDelayMS) * time.Millisecond)
 	}
 	q, err := rules.Compute(req)
-	rec := &QuoteRecord{At: began, Call: req.Call, RulesVersion: v.Version, MemoryVersion: req.MemoryVersion, ComputeMS: time.Since(began).Milliseconds(), Source: "rules"}
+	rec := &QuoteRecord{At: began, Call: req.Call, RulesVersion: v.Version, MemoryVersion: req.MemoryVersion, ComputeMS: time.Since(began).Milliseconds(), Source: "rules", Prequote: req.prequote}
 	for name, choice := range req.Config {
 		if b, ok := choice.(bool); ok && !b {
 			continue
@@ -344,7 +390,7 @@ func (s *Service) quoteViaRules(req QuoteRequest) (*Quote, error) {
 	if _, lerr := s.events.Append(Event{By: "tool", Type: "quote.computed", Ref: req.Call, Quote: rec}); lerr != nil {
 		s.log.Warn("crm: a quote was not recorded", "err", lerr)
 	}
-	s.log.Info("crm: quote", "call", req.Call, "coverages", len(rec.Coverages), "total", rec.Total, "rules", v.Version, "ms", rec.ComputeMS, "err", rec.Error)
+	s.log.Info("crm: quote", "call", req.Call, "coverages", len(rec.Coverages), "total", rec.Total, "rules", v.Version, "ms", rec.ComputeMS, "ahead", req.prequote, "err", rec.Error)
 	return q, err
 }
 

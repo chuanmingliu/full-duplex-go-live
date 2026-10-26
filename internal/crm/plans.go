@@ -52,6 +52,9 @@ type QuotePlan struct {
 	// lead (the box's redial of a kept prompt).
 	DefaultSelection map[string]any `json:"default_selection,omitempty"`
 	DefaultVars      map[string]any `json:"default_vars,omitempty"`
+	// Prequote says which single changes to the default selection are priced
+	// ahead of being asked for, and how many (prequote.go).
+	Prequote PrequotePolicy `json:"prequote,omitempty"`
 }
 
 // PlanField is one variable the quotation reads.
@@ -91,6 +94,7 @@ const DefaultQuotePlans = `{
       },
       "default_selection": {"交强险": true, "车损险": true, "三者险": "200万", "座位险": true},
       "default_vars": {"vehiclePrice": 150000, "vehicleAge": 3, "ncd": 0, "seats": 5},
+      "prequote": {"max": 8, "keep": ["交强险"]},
       "coverage_aliases": {
         "交强": "交强险", "机动车交通事故责任强制保险": "交强险",
         "车损": "车损险", "机动车损失险": "车损险", "机动车损失保险": "车损险",

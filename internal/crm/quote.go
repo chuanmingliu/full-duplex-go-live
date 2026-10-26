@@ -213,6 +213,9 @@ type QuoteRequest struct {
 	// Skipped are coverages the intake left out (the customer could not
 	// answer for them, or they are outside the plan); echoed in the answer.
 	Skipped []string `json:"-"`
+	// prequote marks a request the service made itself, ahead of a caller's
+	// ask (prequote.go); recorded as such.
+	prequote bool
 }
 
 // toolCall is the shape golive's tool executor posts (internal/tools
@@ -473,6 +476,8 @@ type QuoteRecord struct {
 	MemoryVersion int       `json:"memory_version,omitempty"`
 	ComputeMS     int64     `json:"compute_ms"`
 	Error         string    `json:"error,omitempty"`
+	// Prequote marks a quotation priced ahead of being asked for.
+	Prequote bool `json:"prequote,omitempty"`
 	// Source is "rules" or "quote-api"; for the service, its config version
 	// and the flow code and quote id it answered with.
 	Source         string `json:"source,omitempty"`

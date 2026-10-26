@@ -671,6 +671,9 @@ func TestAQuoteGoesToTheBusinessServiceWhenConfigured(t *testing.T) {
 	fake.mu.Lock()
 	fake.fail, fake.queries, fake.readyAt = true, 0, 2
 	fake.mu.Unlock()
+	// (Another combination: the one just priced is kept and would be answered
+	// from the cache, prequote.go.)
+	call["memory"].(map[string]any)["quote"].(map[string]any)["三者险"] = "500万"
 	if code, body := fx.do("POST", "/api/tools/quote", call, nil); code != 422 || !strings.Contains(body, "车辆信息有误") {
 		t.Fatalf("failed quote: %d %s", code, body)
 	}
@@ -847,5 +850,101 @@ func TestTheDefaultQuotationIsPrefetchedForTheCall(t *testing.T) {
 	call2["memory_version"] = 1
 	if code, body := fx.do("POST", "/api/tools/quote", call2, &q2); code != 200 || q2.Status != "quote" || len(q2.Lines) != 3 {
 		t.Fatalf("second quotation without a lead asked questions: %d %s", code, body)
+	}
+}
+
+// The default quotation's neighbours — another 三者险 tier, 驾乘险 added, a
+// coverage dropped — are priced while the phone rings and kept; a second
+// quotation that lands on one is answered from the cache, marked as priced
+// ahead, with the asker's memory version on it (the owner, 11:45 on 10-26).
+func TestTheNeighboursOfTheDefaultQuotationArePricedAhead(t *testing.T) {
+	fx := newFixture(t)
+	if code, body := fx.do("POST", "/api/quote/prefetch", map[string]any{"call": "out-lead-9", "vars": map[string]any{"vehiclePrice": 300000, "vehicleAge": 2, "ncd": 1, "seats": 7, "carNum": "test"}}, nil); code != 202 {
+		t.Fatalf("prefetch: %d %s", code, body)
+	}
+	// Eight variants, two at a time, through the rules: wait for them.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		fx.svc.mu.Lock()
+		n := len(fx.svc.prequotes)
+		fx.svc.mu.Unlock()
+		if n >= 9 || time.Now().After(deadline) { // the default itself and its eight neighbours
+			if n < 9 {
+				t.Fatalf("only %d quotations kept", n)
+			}
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// 三者险 at 500万 over the default: a neighbour, so it is already priced.
+	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "s1", "call": "out-lead-9",
+		"arguments": map[string]any{}, "memory": map[string]any{"quote": map[string]any{"交强险": true, "车损险": true, "三者险": "500万", "座位险": true}}, "memory_version": 2}
+	var hit map[string]any
+	began := time.Now()
+	if code, body := fx.do("POST", "/api/tools/quote", call, &hit); code != 200 || hit["status"] != "quote" {
+		t.Fatalf("neighbour: %d %s", code, body)
+	}
+	if hit["prequoted"] != true || hit["memory_version"] != float64(2) {
+		t.Fatalf("not answered from the quotations priced ahead: %v", hit)
+	}
+	if time.Since(began) > time.Second {
+		t.Fatalf("the cached answer took %s", time.Since(began))
+	}
+	// A combination two changes away is priced now — and kept, so the same
+	// ask again is a cache hit marked as such.
+	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "三者险": "500万", "驾乘险": "50万"}}
+	var miss, again map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &miss); code != 200 || miss["status"] != "quote" || miss["prequoted"] == true || miss["cached"] == true {
+		t.Fatalf("two changes away should be priced afresh: %d %s", code, body)
+	}
+	if code, body := fx.do("POST", "/api/tools/quote", call, &again); code != 200 || again["cached"] != true {
+		t.Fatalf("the same ask again was not from the cache: %d %s", code, body)
+	}
+	// A changed variable misses: the price depends on it.
+	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "车损险": true, "三者险": "500万", "座位险": true}, "vehicleAge": 6}
+	var other map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &other); code != 200 || other["prequoted"] == true || other["cached"] == true {
+		t.Fatalf("a changed variable hit the cache: %d %s", code, body)
+	}
+	// The records say which were priced ahead.
+	events, _ := os.ReadFile(filepath.Join(fx.dir, logFile))
+	if ahead := strings.Count(string(events), `"prequote":true`); ahead != 8 {
+		t.Fatalf("%d quotations recorded as priced ahead, want 8", ahead)
+	}
+}
+
+// Which neighbours: other tiers first, then coverages added, then dropped
+// (never one the plan keeps), capped by the plan's max.
+func TestThePrequoteVariantsAreTheSingleChanges(t *testing.T) {
+	plans, err := ParseQuotePlans([]byte(DefaultQuotePlans))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := plans.Plans["standard"]
+	def := plan.DefaultSelection
+	max := 20
+	plan.Prequote.Max = &max
+	vs := plan.prequoteVariants(def)
+	var got []string
+	for _, v := range vs {
+		got = append(got, selectionKey("", "", plan, v, nil))
+	}
+	want := []string{
+		"||三者险=100万;交强险;座位险;车损险;|", "||三者险=300万;交强险;座位险;车损险;|", "||三者险=500万;交强险;座位险;车损险;|",
+		"||三者险=200万;交强险;座位险;车损险;驾乘险=30万;|", "||三者险=200万;交强险;座位险;车损险;驾乘险=50万;|", "||三者险=200万;交强险;座位险;车损险;驾乘险=80万;|",
+		"||三者险=200万;交强险;划痕险;座位险;车损险;|", "||三者险=200万;交强险;座位险;玻璃险;车损险;|",
+		"||三者险=200万;交强险;座位险;|", "||交强险;座位险;车损险;|", "||三者险=200万;交强险;车损险;|",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("variants:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	eight := plans.Plans["standard"].prequoteVariants(def)
+	if len(eight) != 8 {
+		t.Fatalf("the seed's max is 8, got %d", len(eight))
+	}
+	zero := 0
+	plan.Prequote.Max = &zero
+	if n := len(plan.prequoteVariants(def)); n != 0 {
+		t.Fatalf("max 0 should price nothing, got %d", n)
 	}
 }

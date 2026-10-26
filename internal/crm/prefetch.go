@@ -81,6 +81,11 @@ func (s *Service) Prefetch(call string, vars map[string]any) {
 		}
 		p.took = time.Since(p.started)
 		s.log.Info("crm: default quotation prefetched", "call", call, "ms", p.took.Milliseconds(), "err", errString(p.err), "vars", len(p.vars))
+		if p.err == nil {
+			// The combinations the caller is likely to ask for next, priced
+			// now too (prequote.go).
+			s.prequoteNeighbours(call, req)
+		}
 	}()
 }
 
