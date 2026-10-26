@@ -1796,12 +1796,12 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 		// on the 22:52 call of 10-25, which the owner heard as rushing.
 		e.log.Info("speak: the opener became a backchannel; the caller went on",
 			"turn", t.ID, "opener_ms", t.OpenedMS, "after_ms", time.Since(t.OpenedAt).Milliseconds())
-		e.player.GraceFinishSegment(t.ID)
 		e.cancelBackend()
 		if pipe := e.speech.Load(); pipe != nil {
 			pipe.Abort()
 		}
 		e.gen.Bump()
+		e.player.FinishOpenerAsBackchannel(t.ID)
 		e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 		return
 	}

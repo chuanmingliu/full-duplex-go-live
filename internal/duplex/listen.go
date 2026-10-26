@@ -1065,10 +1065,10 @@ func (e *Engine) abandonSpeculation(reason string) {
 			// it finishes as an 嗯 of listening (one word), the rest of the
 			// guess is dropped without a sound, and the fragment that follows
 			// within 1.5 s gets no second opener.
-			e.player.GraceFinishSegment(spec.ID)
 			if pipe := e.speech.Load(); pipe != nil {
 				pipe.Abort()
 			}
+			e.player.FinishOpenerAsBackchannel(spec.ID)
 			e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 			e.log.Info("speak: the opener became a backchannel; the caller went on", "turn", spec.ID, "opener_ms", spec.OpenedMS, "reason", reason)
 		} else {
@@ -1131,7 +1131,11 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		if spec.Opened != "" {
 			// The opener said at the pause stands; only the guessed answer
 			// behind it is dropped, and the revised one follows the opener.
-			e.player.GraceFinishSegment(spec.ID)
+			// No Interrupt (it would cut the word) and no grace (the
+			// revised answer shares the turn id and must not be dropped at
+			// the opener's mark): the guessed content is cancelled at the
+			// pipe, what was queued of it is stale once Revise bumps the
+			// generation, and the opener plays out.
 			if pipe := e.speech.Load(); pipe != nil {
 				pipe.Abort()
 			}

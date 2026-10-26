@@ -273,6 +273,38 @@ func (p *Player) GraceFinishSegment(turnID string) {
 	p.mu.Unlock()
 }
 
+// FinishOpenerAsBackchannel keeps only what turnID is saying this instant —
+// its opener — and lets the turn go: anything queued behind it is dropped,
+// and if the opener has already played out the turn ends now, so the floor
+// reads free for the next turn's opener. The caller went on inside the
+// opener's breath; the word stands as an 嗯 of listening and nothing of the
+// guessed answer follows it. Before this, a turn whose opener had finished
+// kept the player "active" with nothing to play, and the next turn — the
+// continuation the caller finished — opened with nothing (the 10:07
+// simulated call of 10-26: eleven such turns). No truncation is reported:
+// the whole of what was said was heard.
+func (p *Player) FinishOpenerAsBackchannel(turnID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	kept := p.queue[:0]
+	for _, q := range p.queue {
+		if q.TurnID != turnID {
+			kept = append(kept, q)
+		}
+	}
+	p.queue = kept
+	if p.activeTurn != turnID {
+		return
+	}
+	if p.speaking {
+		// The opener is still in the air: finish it, then go.
+		p.graceTurn = turnID
+		p.graceMarks = 1
+		return
+	}
+	p.resetTurnLocked()
+}
+
 // Enqueue adds an item to the speak channel, and reports whether it was
 // accepted.
 //
