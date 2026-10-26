@@ -139,9 +139,9 @@ func (t Tool) Timeout() time.Duration {
 
 // Request is what a tool's service is sent.
 type Request struct {
-	Tool      string          `json:"tool"`
-	CallID    string          `json:"call_id"`
-	Session   string          `json:"session"`
+	Tool    string `json:"tool"`
+	CallID  string `json:"call_id"`
+	Session string `json:"session"`
 	// Call is the telephone call the session is the agent for, when known:
 	// the lead service keys the prefetched default quotation by it.
 	Call      string          `json:"call,omitempty"`

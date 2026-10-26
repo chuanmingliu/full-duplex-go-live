@@ -76,6 +76,19 @@ type toolState struct {
 	ackPending map[string]bool
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
+	// lastResult is the latest result read out to the caller, kept beside
+	// the working memory so the model still has the figures once the
+	// result note has left a trimmed history (10:48 on 10-26: the second
+	// quotation's note was trimmed within four seconds of its delivery and
+	// the next turn had no total to give).
+	lastResult *tools.Task
+	// lastResultTurn is the turn that read lastResult out; lastResultHeard
+	// is what the caller heard of it when that turn was cut short (10:48 on
+	// 10-26: the second quotation's readout was cut 4.7 s in and the total
+	// was never said again).
+	lastResultTurn  string
+	lastResultCut   bool
+	lastResultHeard string
 	// stats
 	calls, async, delivered, dropped, superseded int
 }
@@ -219,7 +232,65 @@ func (e *Engine) memoryBlock() string {
 		}
 		b.WriteString("结果出来后会自动告诉你，到时再向用户报告；用户若问起，如实说还在计算。")
 	}
+	if t := ts.lastResult; t != nil {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "【最近一次报价结果】基于工作记忆 v%d：%s", t.Request.MemoryVersion, lastResultLine(t))
+		if ts.lastResultCut {
+			fmt.Fprintf(&b, "\n这段报价念到“%s”时被客户打断，客户很可能没听到总价；客户再问价格或方案时，先把总价和改动的险种复述一遍，不必再调用工具。", ts.lastResultHeard)
+		} else {
+			b.WriteString("\n已完整念给客户。")
+		}
+	}
 	return b.String()
+}
+
+// lastResultLine is a delivered result in the words the caller heard — the
+// template's readout when the tool has one, the raw output otherwise.
+func lastResultLine(t *tools.Task) string {
+	if s := t.Tool.ReadoutFor(t.Result.Output); s != "" {
+		return s
+	}
+	return string(t.Result.Output)
+}
+
+// recordConfigChange applies the quote tool's `config` argument to the
+// working memory before the task takes its snapshot, so a change to one
+// item of the plan is a single call: quote_total with the change. On the
+// 10:46 call of 10-26 the model recorded the change with update_memory and
+// called the tool only after its own sentence had played: 3.3 s of the
+// 8.2 s the caller waited for the figure.
+func (e *Engine) recordConfigChange(c provider.ToolCall) {
+	var args struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil || len(args.Config) == 0 {
+		return
+	}
+	// Nothing new leaves the version alone, so a repeated call still folds.
+	snap, _ := e.tools.memory.Snapshot()
+	var mem struct {
+		Quote map[string]any `json:"quote"`
+	}
+	_ = json.Unmarshal(snap, &mem)
+	same := true
+	for k, v := range args.Config {
+		if cur, ok := mem.Quote[k]; !ok || fmt.Sprint(cur) != fmt.Sprint(v) {
+			same = false
+			break
+		}
+	}
+	if same {
+		return
+	}
+	patch, _ := json.Marshal(map[string]any{"quote": args.Config})
+	v, err := e.tools.memory.Patch(patch)
+	if err != nil {
+		return
+	}
+	e.log.Info("tools: the plan change in the call's config is recorded", "version", v, "keys", patchKeys(patch))
+	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: patch})
 }
 
 // isServerTool says whether a call is one the engine carries out.
@@ -584,6 +655,9 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 // submitTask starts an async tool and answers the model at once.
 func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string) {
 	ts := e.tools
+	if ts.memory != nil {
+		e.recordConfigChange(c)
+	}
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
 		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)
@@ -717,6 +791,9 @@ func (e *Engine) maybeDeliver() {
 	turn := e.tracker.Begin("", false)
 	e.specTurn = nil
 	e.commitTurn(turn)
+	if task.Result.Err == nil && task.Tool.OpeningFor(task.Result.Output) != "" {
+		ts.lastResult, ts.lastResultTurn, ts.lastResultCut, ts.lastResultHeard = task, turn.ID, false, ""
+	}
 	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
 		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" {
 			// The posthook from the cache, then the figures from the template
@@ -729,6 +806,18 @@ func (e *Engine) maybeDeliver() {
 		}
 	}
 	e.beginGeneration(turn, "task_result", false)
+}
+
+// noteReadoutCut remembers that the turn reading a result out was cut
+// short, and what the caller heard of it, so the memory block can say the
+// total may not have been heard.
+func (e *Engine) noteReadoutCut(turnID, heard string) {
+	ts := e.tools
+	if ts == nil || ts.lastResult == nil || ts.lastResultTurn != turnID {
+		return
+	}
+	ts.lastResultCut, ts.lastResultHeard = true, strings.TrimSpace(heard)
+	e.log.Info("tools: the readout was cut short; the figures stay beside the memory", "task", ts.lastResult.ID, "heard_chars", len([]rune(heard)))
 }
 
 // closeTools cancels what is in flight and says what happened.

@@ -1078,3 +1078,103 @@ func TestTheModelsWordsInTheCallingTurnEndAtTheClauseInFlight(t *testing.T) {
 		t.Fatalf("the model's sentence was said to its end before the script: %q", said)
 	}
 }
+
+// changeLLM answers a change to the plan with one call: the quote tool, the
+// change in its config.
+type changeLLM struct{ quoteLLM }
+
+func (l *changeLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	last := req.Messages[len(req.Messages)-1]
+	if strings.Contains(last.Content, "改成") && last.Role == provider.RoleUser {
+		l.mu.Lock()
+		l.requests = append(l.requests, req)
+		l.calls++
+		id := fmt.Sprintf("call_%d", l.calls)
+		l.mu.Unlock()
+		out := make(chan provider.LLMDelta, 1)
+		out <- provider.LLMDelta{ToolCall: &provider.ToolCall{ID: id, Name: "quote_total", Arguments: `{"config":{"三者险":"300万"}}`}}
+		close(out)
+		return out, nil
+	}
+	return l.quoteLLM.Stream(ctx, req)
+}
+
+// memoQuote prices whatever memory it is handed and keeps it.
+type memoQuote struct {
+	statusQuote
+	mu   sync.Mutex
+	reqs []tools.Request
+}
+
+func (m *memoQuote) Execute(ctx context.Context, t tools.Tool, req tools.Request) tools.Result {
+	m.mu.Lock()
+	m.reqs = append(m.reqs, req)
+	m.mu.Unlock()
+	return m.statusQuote.Execute(ctx, t, req)
+}
+
+// A change to one item of the plan is one call: the quote tool with the
+// change in its config. The change is in the working memory before the task
+// takes its snapshot (so the next change builds on it), and once the
+// result has been read out its figures stay beside the memory for the model
+// to repeat — a trimmed history no longer loses them (10:46 on 10-26).
+func TestAPlanChangeIsOneCallAndItsResultStaysWithTheMemory(t *testing.T) {
+	opts := quoteConfig()
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpening = "保费给您计算好了，"
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpeningStatus = "quote"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("三者改成三百万")
+	asr.msPerRune = 150
+	llm := &changeLLM{}
+	quote := &memoQuote{statusQuote: statusQuote{delay: 300 * time.Millisecond, status: "quote"}}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, quote)
+
+	speak(e, rate, 1050)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "三千二百") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	quote.mu.Lock()
+	reqs := append([]tools.Request(nil), quote.reqs...)
+	quote.mu.Unlock()
+	if len(reqs) != 1 {
+		t.Fatalf("the tool ran %d times", len(reqs))
+	}
+	if reqs[0].MemoryVersion != 1 || !strings.Contains(string(reqs[0].Memory), `"三者险":"300万"`) {
+		t.Fatalf("the change was not in the memory the task priced: v%d %s", reqs[0].MemoryVersion, reqs[0].Memory)
+	}
+	done := make(chan string, 1)
+	e.post(func() { done <- e.memoryBlock() })
+	block := <-done
+	if !strings.Contains(block, "最近一次报价结果") || !strings.Contains(block, "3200") {
+		t.Fatalf("the delivered result is not beside the memory: %q", block)
+	}
+	// The same change again changes nothing, so the memory's version holds.
+	v := make(chan int, 1)
+	e.post(func() {
+		e.recordConfigChange(provider.ToolCall{Arguments: `{"config":{"三者险":"300万"}}`})
+		_, ver := e.memorySnapshot()
+		v <- ver
+	})
+	if got := <-v; got != 1 {
+		t.Fatalf("a repeated change bumped the memory to v%d", got)
+	}
+	// A readout cut short by the caller is remembered as such: the block says
+	// the total may not have been heard and asks for it to be repeated.
+	e.post(func() {
+		e.noteReadoutCut(e.tools.lastResultTurn, "保费给您计算好了，一共")
+		done <- e.memoryBlock()
+	})
+	block = <-done
+	if !strings.Contains(block, "被客户打断") || !strings.Contains(block, "3200") {
+		t.Fatalf("the cut readout is not noted beside the memory: %q", block)
+	}
+	// A cut of some other turn is not the readout's.
+	e.post(func() { e.tools.lastResultCut = false; e.noteReadoutCut("item_other", "x"); done <- e.memoryBlock() })
+	if block = <-done; strings.Contains(block, "被客户打断") {
+		t.Fatalf("another turn's cut was taken for the readout's: %q", block)
+	}
+}

@@ -249,7 +249,6 @@ func TrimTrailingSilence(pcm []byte, rate int, floorDB float64, keepMS int) []by
 	return pcm[:cut]
 }
 
-
 // FadeOutPCM16 applies a linear fade over the last fadeMS of PCM16 audio, so a
 // cut made for length is not heard as a click.
 func FadeOutPCM16(pcm []byte, rate, fadeMS int) []byte {

@@ -71,7 +71,7 @@ func TestTheOverviewListsTheCallAndPoolsItsBuild(t *testing.T) {
 	if code := getJSON(t, ts.URL+"/api/overview", &o); code != 200 {
 		t.Fatalf("status %d", code)
 	}
-	if o.TargetMS != 1200 || o.Build != "c8a8477" || len(o.Calls) != 1 || len(o.Builds) != 1 {
+	if o.TargetMS != 1000 || o.Build != "c8a8477" || len(o.Calls) != 1 || len(o.Builds) != 1 {
 		t.Fatalf("%+v", o)
 	}
 	row := o.Calls[0]

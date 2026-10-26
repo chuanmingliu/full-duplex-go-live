@@ -1935,6 +1935,7 @@ func (e *Engine) onTruncated(r TruncationReport) {
 	})
 	e.recordTurn(r.TurnID, r.SpokenText)
 	e.post(func() {
+		e.noteReadoutCut(r.TurnID, r.SpokenText)
 		turn := e.tracker.Current()
 		if turn == nil || turn.ID != r.TurnID {
 			return
