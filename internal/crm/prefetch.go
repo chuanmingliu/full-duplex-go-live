@@ -83,8 +83,13 @@ func (s *Service) Prefetch(call string, vars map[string]any) {
 		s.log.Info("crm: default quotation prefetched", "call", call, "ms", p.took.Milliseconds(), "err", errString(p.err), "vars", len(p.vars))
 		if p.err == nil {
 			// The combinations the caller is likely to ask for next, priced
-			// now too (prequote.go).
-			s.prequoteNeighbours(call, req)
+			// now too (prequote.go) — on a goroutine of their own: p.done
+			// closes when this one returns, and the default quotation is
+			// answered on it. On the 12:42 call of 10-26 the pricing ran
+			// here, the default waited for the last neighbour to start
+			// (15 s) and the caller heard the prehook for a price that
+			// had been ready since the ringing.
+			go s.prequoteNeighbours(call, req)
 		}
 	}()
 }

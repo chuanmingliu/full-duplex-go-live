@@ -1035,10 +1035,22 @@ func TestACallersMissGoesNextAndTheNeighboursStillFinish(t *testing.T) {
 	fake.mu.Lock()
 	before := len(fake.inquiries)
 	fake.mu.Unlock()
+	// The default quotation is answered at once while the neighbours are
+	// being priced (12:42 on 10-26: it waited for them, 15 s, and the
+	// caller heard "请您稍等" for a price ready since the ringing).
+	def := map[string]any{"tool": "quote_total", "call_id": "c0", "session": "s", "call": "out-lead-12", "arguments": map[string]any{}, "memory": map[string]any{}, "memory_version": 0}
+	began := time.Now()
+	var dq map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", def, &dq); code != 200 || dq["default"] != true {
+		t.Fatalf("default: %d %s", code, body)
+	}
+	if time.Since(began) > 200*time.Millisecond {
+		t.Fatalf("the default quotation waited %s on the neighbours", time.Since(began))
+	}
 	// Two changes away: no neighbour has it.
 	call := map[string]any{"tool": "quote_total", "call_id": "c", "session": "s", "call": "out-lead-12", "arguments": map[string]any{},
 		"memory": map[string]any{"quote": map[string]any{"交强险": true, "三者险": "500万", "驾乘险": "80万", "玻璃险": true}}, "memory_version": 3}
-	began := time.Now()
+	began = time.Now()
 	var got map[string]any
 	if code, body := fx.do("POST", "/api/tools/quote", call, &got); code != 200 || got["status"] != "quote" || got["prequoted"] == true {
 		t.Fatalf("miss: %d %s", code, body)
