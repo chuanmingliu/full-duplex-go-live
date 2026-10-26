@@ -918,7 +918,7 @@
    "title": "Two of the caller's own utterances dropped as 'mostly another voice' on a quiet line",
    "area": "focus",
    "status": "fixed",
-   "commit": "pending",
+   "commit": "e2e84be",
    "found": "2026-10-26",
    "found_on": "the 09:04 call",
    "found_call": "out-mvok0t18-qqm0",
