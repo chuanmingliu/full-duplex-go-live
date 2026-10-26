@@ -260,3 +260,17 @@ regardless (lever 3.3).
 
 The quotation faults of the same call (8 s to a changed figure; a cut
 readout never repeated) are fixed in the same retro.
+
+## 10. Under 1000 live: 23:42 on 10-26 (9414aa1)
+
+Call out-mvpfe2u2-kls8, the owner on the line, 12 answered turns, from the
+caller's last sound: first audio p95 380, **content p50 860 / p95 920 / max
+962, 0 over 1000** (`journal/retros/out-mvpfe2u2-kls8.md`). The build's
+change from 9158f10 is only the opener: 80 ms of tail instead of 120, cap
+540 instead of 650 — the floor fell from 1030 to 920 and the twelve turns
+sit between 810 and 962. The hour was the usual slow one but the model was
+moderate (first token 302 / 425 from the close); on a night like 10-12's
+(600–700) the clause would land 200–300 ms after the opener and the p95
+would not hold — that is still lever 3.3. Pooled with the 22:40 simulated
+call on the same build: 25 turns, p95 920. Small samples; the next quiet
+daytime call should pool with these.

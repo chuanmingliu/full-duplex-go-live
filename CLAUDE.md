@@ -33,7 +33,9 @@ simulated conversation through the PBX (n=32). Quote both. Live calls on the ope
 (8166f1b, the slow hour) first audio p95 381, content p95 1150; 10-26 09:04
 (a76c87e, daytime, 7 turns) first audio 380, content p95 910; 10-26 10:46
 (9158f10, 18 turns) first audio 380, content p95 1069 — the opener's own
-length (p95 650) binding on 14 of 18 turns, so its cap went to 540.
+length (p95 650) binding on 14 of 18 turns, so its cap went to 540; **10-26
+23:42 (9414aa1, 12 turns) first audio 380, content p95 920, max 962 — under
+1000 live**, 25 turns at p95 920 pooled with the 22:40 sim on the build.
 **The log's `first_audio_out_ms`/`first_content_ms` are from the turn's
 close; add `end_silence_ms` (the pause) for the headline figure, as
 `call-latency.sh` does. The 10:46 call was first reported without it.**
@@ -132,6 +134,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-26 12:42 | dafc8f8 + lead service 4a8f149 (pre-quotations), `call`, 40 s; the default quotation waited 15 s on the neighbours' pricing and got the prehook — the prefetch's done channel closed too late (fixed f61ad6a; `journal/retros/out-mvorsnui-o9m0.md`) | 1 | 1 (content 593) | — | — |
 | 10-26 13:55–14:22 | dafc8f8/f61ad6a → 5b1c42f, **simulated** (`sim-prequote-hit/-interrupt/-miss`), the pre-quotations: default direct (0–1 ms, no ack) on all four; run 1 priced a change over an empty plan (one coverage) → the answer's `selection` sets the memory's plan, a plan-less change is laid over the default; runs 2–4: one-item changes **cache hits at 0 ms**, two-item changes and drops priced once (3.5–4 s) on the right base; a hit still says the ack first (~3.6 s, the owner's 10-23 rule — open) (`journal/retros/sim-2026-10-26-prequote.md`). From the last sound: content 932 / 1100 and 909 / 1030 | 5+4 | 380 (content 932 / 909) | 380 (content 1100 / 1030) | 0 (content: 2+1 over 1000) |
 | 10-26 22:40 | 9414aa1 (opener tail 80, cap 540), **simulated** (`kb-coverage-nerd`), 13 answered turns with an opener, 14 openers became backchannels, 1 cut; from the last sound: **first audio 380 / 380 / 381; content p50 841 / p95 920 / max 920, 0 over 1000**; opener p50 460 / max 540, binding on 9 of 13; first token from the close p50 304 / p95 362 (a moderate hour) | 13 | 380 (content 841) | 381 (content 920) | 0 |
+| 10-26 23:42 | 9414aa1, **`call`, the owner on the line, quiet, the slow hour (moderate tonight: first token 302 / 425 from the close)**, 3.7 min; 12 of 12 answered turns opened at the pause, 3 openers became backchannels, 2 cuts, 10 other voices let go; three quotations all from the cache at 0 ms, one readout cut and noted; from the last sound: **first audio 380 / 380 / 381; content p50 860 / p95 920 / max 962 — 0 of 12 over 1000** (`journal/retros/out-mvpfe2u2-kls8.md`) | 12 | 380 (content 860) | 381 (content 962, p95 920) | 0 |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
