@@ -893,7 +893,7 @@ answer").** Three rules since 8166f1b's successor:
 - *Variety that fits.* The opener is chosen when the answer is begun, from
   `opener_phrases` for a turn that reads as a statement (好的，/嗯，/明白，/好，/
   行，/嗯嗯，/对，) or `opener_question_phrases` for one that reads as a
-  question (嗯，/嗯嗯，/好的，/这个嘛，/是这样，/好，; `endpoint.ReadsAsQuestion`),
+  question (嗯，/嗯嗯，/好的，/好，/对，/行，; `endpoint.ReadsAsQuestion`; all under 500 ms of audio, because with a quick model the opener's length sets when the answer begins — the 09:04 call of 10-26),
   never one said in the last three turns. All of them work as an 嗯 of
   listening too — see the third rule.
 - *A smooth join.* The model is told, after the caller's words, which opener

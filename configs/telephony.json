@@ -99,7 +99,7 @@
     "phrase_cache_learn_chars": 12,
     "opener": true,
     "opener_phrases": ["好的，", "嗯，", "明白，", "好，", "行，", "嗯嗯，", "对，"],
-    "opener_question_phrases": ["嗯，", "嗯嗯，", "好的，", "这个嘛，", "是这样，", "好，"],
+    "opener_question_phrases": ["嗯，", "嗯嗯，", "好的，", "好，", "对，", "行，"],
     "client_delegation": "always",
     "settled_close_ms": 600,
     "backend_prefix_warm_start": true,

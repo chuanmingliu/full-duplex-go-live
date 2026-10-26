@@ -815,7 +815,7 @@ func Default() Config {
 			UserBackchannelHoldMS:      600,
 			Opener:                     false,
 			OpenerPhrases:              []string{"好的，", "嗯，", "明白，", "好，", "行，", "嗯嗯，", "对，"},
-			OpenerQuestionPhrases:      []string{"嗯，", "嗯嗯，", "好的，", "这个嘛，", "是这样，", "好，"},
+			OpenerQuestionPhrases:      []string{"嗯，", "嗯嗯，", "好的，", "好，", "对，", "行，"},
 			HoldingFiller:              false,
 			HoldingFillerAfterMS:       1500,
 			HoldingFillerPhrases:       []string{"我看一下", "稍等一下", "让我查一下"},
