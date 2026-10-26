@@ -1211,6 +1211,11 @@ func (e *Engine) writeASR(samples []float32) {
 // openerMaxMS caps an opener's audio.
 const openerMaxMS = 650
 
+// openerContinuationMS: a continuation at least this long after a
+// backchanneled opener is a real stretch of speech and opens as usual; a
+// shorter one is a fragment and gets no second opener.
+const openerContinuationMS = 1000
+
 // sayOpener opens the answer to a turn just judged over with a word from the
 // phrase cache, before the chat model's first clause is in — if the answer
 // has produced no audio yet, and nothing is being said. The opener is the
@@ -1225,16 +1230,20 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if turn.Opened != "" || !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
 		return
 	}
-	if time.Now().Before(e.skipOpenerUntil) {
+	if time.Now().Before(e.skipOpenerUntil) && e.speechEndMS-e.utterStartMS < openerContinuationMS {
 		// The opener before this one turned out to be mid-sentence and
-		// became a backchannel moments ago; a second 嗯 on a fragment that
-		// followed at once is the tic the owner heard (23:36 on 10-25). The
-		// answer begins when it is ready. A continuation that ran longer
-		// opens as usual, with a different phrase.
+		// became a backchannel moments ago, and what followed was a short
+		// fragment: a second 嗯 on it is the tic the owner heard (23:36 on
+		// 10-25). The answer begins when it is ready. A continuation that
+		// was a real stretch of speech opens as usual, with a different
+		// phrase — on the 10:00 simulated call 14 openers became backchannels
+		// and every fragment after them went without one, which put the
+		// first audio of those turns at the content's ~1000 ms.
 		e.skipOpenerUntil = time.Time{}
-		e.log.Debug("speak: no opener on the continuation of a sentence", "turn", turn.ID)
+		e.log.Debug("speak: no opener on a short fragment after a backchannel", "turn", turn.ID, "fragment_ms", e.speechEndMS-e.utterStartMS)
 		return
 	}
+	e.skipOpenerUntil = time.Time{}
 	phrase := turn.OpenerPlanned
 	if phrase == "" {
 		phrase = e.planOpener(turn)
