@@ -1230,13 +1230,17 @@ func (e *Engine) sayOpener(turn *Turn) {
 	// the answer follows at once, so the pause is cut to 80 ms — otherwise the
 	// opener's length, not the model, decided when the answer began (bench H
 	// of 10-25: every content figure exactly 380 + the opener's length).
-	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, 80)
+	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, 120)
 	// A one-word opener is 400–500 ms of voice; a faint tail above the trim's
 	// floor once left one at 1000 ms (the 09:16 call of 10-26), which then set
 	// when the answer began. Capped, with a short fade so the cut is not heard.
 	if max := audio.PCM16(e.opts.ClientRate).BytesForMS(openerMaxMS); len(pcm) > max {
-		pcm = audio.FadeOutPCM16(pcm[:max], e.opts.ClientRate, 30)
+		pcm = pcm[:max]
 	}
+	// The join to the answer is a cut between two renderings; a fade on the
+	// opener's last 60 ms takes the edge off it (the owner, 09:37 on 10-26:
+	// "we need a smooth opener").
+	pcm = audio.FadeOutPCM16(append([]byte(nil), pcm...), e.opts.ClientRate, 60)
 	turn.Opened = phrase
 	turn.OpenedAt = time.Now()
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))

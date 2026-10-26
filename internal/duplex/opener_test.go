@@ -177,3 +177,24 @@ func TestTheModelIsToldTheOpener(t *testing.T) {
 		t.Fatalf("the model was not told the question's opener: %+v", note)
 	}
 }
+
+
+// The model's opening 嗯嗯，好的， after the engine's 嗯， leaves nothing of
+// either; a clause that opens with its own words is untouched.
+func TestStripOpenersTakesEveryLeadingOpener(t *testing.T) {
+	pools := [][]string{{"好的，", "嗯，", "嗯嗯，"}, {"对，"}}
+	for _, tc := range []struct {
+		text, opened, want string
+		n                  int
+	}{
+		{"嗯嗯，好的，三者险是一千五。", "嗯，", "三者险是一千五。", 2},
+		{"嗯，三者险是一千五。", "嗯嗯，", "三者险是一千五。", 1},
+		{"好的，对，没问题。", "嗯，", "没问题。", 2},
+		{"三者险是一千五。", "嗯，", "三者险是一千五。", 0},
+	} {
+		got, n := stripOpeners(tc.text, tc.opened, pools...)
+		if got != tc.want || n != tc.n {
+			t.Errorf("stripOpeners(%q, %q) = %q, %d; want %q, %d", tc.text, tc.opened, got, n, tc.want, tc.n)
+		}
+	}
+}

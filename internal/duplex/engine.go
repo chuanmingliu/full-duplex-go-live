@@ -1131,12 +1131,9 @@ func (p *speechPipe) speak(text string) bool {
 		// Its own opener, or any of the pool's (嗯，好的，… after the engine's
 		// 嗯， is the tic the owner heard): one is enough.
 		d := p.e.opts.Cfg.Duplex
-		for _, o := range append(append([]string{opened}, d.OpenerPhrases...), d.OpenerQuestionPhrases...) {
-			if trimmed, ok := withoutOpener(text, o); ok {
-				p.e.log.Debug("speak: the model's opener was already said at the pause", "turn", p.turn.ID, "opener", opened, "model", o)
-				text = trimmed
-				break
-			}
+		if trimmed, n := stripOpeners(text, opened, d.OpenerPhrases, d.OpenerQuestionPhrases); n > 0 {
+			p.e.log.Debug("speak: the model's opener was already said at the pause", "turn", p.turn.ID, "opener", opened, "stripped", n)
+			text = trimmed
 		}
 	}
 	if text == "" {
@@ -2512,4 +2509,33 @@ func withoutOpener(text, opener string) (string, bool) {
 	}
 	rest := strings.TrimLeft(text[len(core):], "，。！？、,.!? ")
 	return rest, true
+}
+
+
+// stripOpeners drops the openers at the start of the model's first clause —
+// its own, or any of the pools' — longest first (嗯嗯 before 嗯) and again
+// while one still leads, up to three. 嗯， said by the engine and 嗯嗯，好的，
+// from the model used to leave "嗯，嗯，好的，" (the 09:31 call of 10-26). It
+// returns the rest and how many were dropped.
+func stripOpeners(text, opened string, pools ...[]string) (string, int) {
+	pool := []string{opened}
+	for _, p := range pools {
+		pool = append(pool, p...)
+	}
+	sort.SliceStable(pool, func(i, j int) bool { return len([]rune(pool[i])) > len([]rune(pool[j])) })
+	n := 0
+	for n < 3 {
+		stripped := false
+		for _, o := range pool {
+			if trimmed, ok := withoutOpener(text, o); ok {
+				text, stripped = trimmed, true
+				n++
+				break
+			}
+		}
+		if !stripped || text == "" {
+			break
+		}
+	}
+	return text, n
 }
