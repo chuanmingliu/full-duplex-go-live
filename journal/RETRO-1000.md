@@ -239,3 +239,25 @@ turns, all builds mixed:
 So the content figure is the chat model's first token, almost alone. The
 opener (§7) takes the first audio off that path; what remains on it is a
 vendor's tail that no setting here reaches — lever 3.3, the owner's.
+
+## 9. Met on a live call, 10-26 10:46 (9158f10)
+
+Call out-mvonnls7-8wwz, the owner on the line, daytime, quiet, 5 min 20 s,
+18 answered turns with a pause: **first audio p95 0 (max 39), the answer's own
+first word p50 557 / p95 689 / max 901; 0 of 18 over 1000**
+(`journal/retros/out-mvonnls7-8wwz.md`).
+
+What made the difference from 09:31 (p95 1077 on 25 turns): the 600 ms
+patience waits now carry the opener at the base pause (2bf836a), a
+backchanneled opener ends its turn so the continuation opens too (ed45794,
+9158f10), and on 16 of 18 turns the model's first clause was ready before the
+opener had finished — the content figure *is* the opener's length (440–650),
+so the chat model's first token (316–537 this hour) is no longer on the
+caller's path at all when the hour is good. In a slow hour it still is; the
+margin at p95 is ~300 ms.
+
+The call also showed the next thing to fix, which is not latency of the turn
+but of the quotation: 8 s to a changed figure (two model steps around
+`update_memory`; now one call, the change folded into memory by the engine)
+and a readout cut by the caller that was never repeated (now kept beside the
+working memory with what was heard). Same retro.
