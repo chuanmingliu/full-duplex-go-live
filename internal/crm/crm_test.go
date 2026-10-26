@@ -1089,3 +1089,37 @@ func TestACallersMissGoesNextAndTheNeighboursStillFinish(t *testing.T) {
 		t.Fatalf("not kept: %d %s", code, body)
 	}
 }
+
+// The default quotation is answered the moment it is priced, while its
+// neighbours are still being priced behind it — the 12:42 call of 10-26
+// waited 15 s for it.
+func TestTheDefaultIsAnsweredWhileTheNeighboursAreStillBeingPriced(t *testing.T) {
+	fx := newFixture(t)
+	fake := &fakeIntranet{}
+	srv := httptest.NewServer(fake.handler())
+	defer srv.Close()
+	api := strings.Replace(DefaultQuoteAPI, `"base_url": ""`, `"base_url": "`+srv.URL+`/intranet"`, 1)
+	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 150`, 1) // ~150 ms an inquiry; eight neighbours ~1.2 s
+	api = strings.Replace(api, `"timeout_ms": 90000`, `"timeout_ms": 5000, "default_phone": "13800000000"`, 1)
+	if code, body := fx.do("PUT", "/api/configs/"+QuoteAPIName+"?note=test", api, nil); code != 200 {
+		t.Fatalf("config: %d %s", code, body)
+	}
+	if code, body := fx.do("POST", "/api/quote/prefetch", map[string]any{"call": "out-lead-13", "vars": map[string]any{"carNum": "test", "vehicleAge": 2}}, nil); code != 202 {
+		t.Fatalf("prefetch: %d %s", code, body)
+	}
+	call := map[string]any{"tool": "quote_total", "call_id": "c", "session": "s", "call": "out-lead-13", "arguments": map[string]any{}, "memory": map[string]any{}, "memory_version": 0}
+	began := time.Now()
+	var got map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &got); code != 200 || got["default"] != true {
+		t.Fatalf("default: %d %s", code, body)
+	}
+	if waited := time.Since(began); waited > 600*time.Millisecond {
+		t.Fatalf("the default took %s: it waited for the neighbours", waited)
+	}
+	fake.mu.Lock()
+	n := len(fake.inquiries)
+	fake.mu.Unlock()
+	if n >= 9 {
+		t.Fatalf("%d inquiries already: the neighbours were not still being priced", n)
+	}
+}
