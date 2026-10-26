@@ -1182,6 +1182,9 @@ func (e *Engine) writeASR(samples []float32) {
 	}
 }
 
+// openerMaxMS caps an opener's audio.
+const openerMaxMS = 650
+
 // sayOpener opens the answer to a turn just judged over with a word from the
 // phrase cache, before the chat model's first clause is in — if the answer
 // has produced no audio yet, and nothing is being said. The opener is the
@@ -1228,6 +1231,12 @@ func (e *Engine) sayOpener(turn *Turn) {
 	// opener's length, not the model, decided when the answer began (bench H
 	// of 10-25: every content figure exactly 380 + the opener's length).
 	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, 80)
+	// A one-word opener is 400–500 ms of voice; a faint tail above the trim's
+	// floor once left one at 1000 ms (the 09:16 call of 10-26), which then set
+	// when the answer began. Capped, with a short fade so the cut is not heard.
+	if max := audio.PCM16(e.opts.ClientRate).BytesForMS(openerMaxMS); len(pcm) > max {
+		pcm = audio.FadeOutPCM16(pcm[:max], e.opts.ClientRate, 30)
+	}
 	turn.Opened = phrase
 	turn.OpenedAt = time.Now()
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))

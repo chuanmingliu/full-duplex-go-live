@@ -11,9 +11,9 @@ announcement and other background noise". Not a latency sample.
   confirmed on 3 then 4 utterances): the noise reached the recognizer, not
   the labels — the ISS-033 shape (a line that is never quiet), not ISS-052's.
 - 4 openers (行, 对, 好的, 嗯嗯), none became a backchannel; 1 answer cut.
-  One opener's cached audio was 1000 ms (the others 400–490): a learned entry
-  (`phrase_cache_learn_chars`) may have replaced the warmed one for the same
-  words with a longer rendering; worth a look.
+  One opener's cached audio was 1000 ms (the others 400–490): a faint tail
+  above the trim's −40 dBFS floor. Openers are now capped at 650 ms with a
+  30 ms fade (the successor build).
 - Figures, for the record only: first audio from last sound p50 600 (the
   patience waits), content 784 / 1030 / 1182 / 1645.
 
