@@ -620,6 +620,7 @@ func (f *fakeIntranet) handler() http.Handler {
 		f.mu.Lock()
 		f.queries++
 		n := f.queries
+		id := 100 + len(f.inquiries) // each inquiry submitted is a new quote
 		f.mu.Unlock()
 		old := `{"quotePriceId":100,"result":"0","insureFlowCode":"OLD","sumPreimum":"7000.00","coverageList":[]}`
 		if n < f.readyAt {
@@ -630,7 +631,8 @@ func (f *fakeIntranet) handler() http.Handler {
 			w.Write([]byte(`{"code":0,"msg":"ok","data":{"Result":"0","quotePriceInfos":[{"quotePriceId":101,"result":"1","resultMessage":"车辆信息有误","insureFlowCode":"NEW"}]}}`))
 			return
 		}
-		w.Write([]byte(`{"code":0,"msg":"ok","data":{"Result":"0","ResultMessage":"操作成功","preimumDiff":"120.5","quotePriceInfos":[{"quotePriceId":101,"result":"0","planType":"1",
+		fmt.Fprintf(w, `{"code":0,"msg":"ok","data":{"Result":"0","ResultMessage":"操作成功","preimumDiff":"120.5","quotePriceInfos":[{"quotePriceId":%d,"result":"0","planType":"1",`, id)
+		w.Write([]byte(`
 		  "businessDiscount":"0.85","businessQuoteResult":"0","businessSumPreimum":"3873.03","bizStandardTotalPremium":"4556.5","bizDiscountPremium":"683.47",
 		  "businessEffectiveDate":"2026-07-25","businessExpireDate":"2027-07-24","compelQuoteResult":"0","compelSumPreimum":"1100.00","compelEffectiveDate":"2026-07-03","compelExpireDate":"2027-07-02",
 		  "coverageList":[{"coverageCode":"951","coverageType":"0","coverageSimpleName":"机动车损失保险","amount":"188160","coveragePreimum":"2037.85","standardPremium":"2397.47"},
@@ -999,4 +1001,79 @@ func TestInquiriesAreOneAtATimeAndCallersGoFirst(t *testing.T) {
 		t.Fatalf("%s got the service after the caller, want the neighbour", who)
 	}
 	s.releaseAPITurn()
+}
+
+// While the neighbours are still being priced, a caller's ask that hits
+// none of them is served next — after the one in flight, before the rest —
+// and the pricing of the neighbours goes on to the end (the owner, 12:16
+// on 10-26: the background work must not stop).
+func TestACallersMissGoesNextAndTheNeighboursStillFinish(t *testing.T) {
+	fx := newFixture(t)
+	fake := &fakeIntranet{}
+	srv := httptest.NewServer(fake.handler())
+	defer srv.Close()
+	api := strings.Replace(DefaultQuoteAPI, `"base_url": ""`, `"base_url": "`+srv.URL+`/intranet"`, 1)
+	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 120`, 1) // each inquiry ~120 ms
+	api = strings.Replace(api, `"timeout_ms": 90000`, `"timeout_ms": 5000, "default_phone": "13800000000"`, 1)
+	if code, body := fx.do("PUT", "/api/configs/"+QuoteAPIName+"?note=test", api, nil); code != 200 {
+		t.Fatalf("config: %d %s", code, body)
+	}
+	if code, body := fx.do("POST", "/api/quote/prefetch", map[string]any{"call": "out-lead-12", "vars": map[string]any{"carNum": "test", "vehicleAge": 2}}, nil); code != 202 {
+		t.Fatalf("prefetch: %d %s", code, body)
+	}
+	// Two or three inquiries in: the default and a neighbour or two.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		fake.mu.Lock()
+		n := len(fake.inquiries)
+		fake.mu.Unlock()
+		if n >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	fake.mu.Lock()
+	before := len(fake.inquiries)
+	fake.mu.Unlock()
+	// Two changes away: no neighbour has it.
+	call := map[string]any{"tool": "quote_total", "call_id": "c", "session": "s", "call": "out-lead-12", "arguments": map[string]any{},
+		"memory": map[string]any{"quote": map[string]any{"交强险": true, "三者险": "500万", "驾乘险": "80万", "玻璃险": true}}, "memory_version": 3}
+	began := time.Now()
+	var got map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &got); code != 200 || got["status"] != "quote" || got["prequoted"] == true {
+		t.Fatalf("miss: %d %s", code, body)
+	}
+	waited := time.Since(began)
+	fake.mu.Lock()
+	at := len(fake.inquiries)
+	fake.mu.Unlock()
+	// Served after the inquiry in flight, not after the whole queue: one
+	// inquiry's wait plus its own.
+	if at > before+2 || waited > 1500*time.Millisecond {
+		t.Fatalf("the caller's ask was inquiry %d after %d in flight, %s", at, before, waited)
+	}
+	// And the neighbours all got priced afterwards: 1 default + 8 + the caller's.
+	deadline = time.Now().Add(6 * time.Second)
+	for {
+		fake.mu.Lock()
+		n := len(fake.inquiries)
+		fake.mu.Unlock()
+		if n >= 10 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the neighbours stopped at %d inquiries", n)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+	events, _ := os.ReadFile(filepath.Join(fx.dir, logFile))
+	if ahead := strings.Count(string(events), `"prequote":true`); ahead != 8 {
+		t.Fatalf("%d neighbours recorded, want 8", ahead)
+	}
+	// The caller's own answer is kept: asked again, it is from the cache.
+	var again map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &again); code != 200 || again["cached"] != true {
+		t.Fatalf("not kept: %d %s", code, body)
+	}
 }
