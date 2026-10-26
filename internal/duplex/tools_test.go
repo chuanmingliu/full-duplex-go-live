@@ -894,9 +894,10 @@ func TestTheResultOpeningIsOnlyForItsStatus(t *testing.T) {
 // statusQuote answers with a status, as the lead service does; dflt marks
 // the result as the prefetched default quotation.
 type statusQuote struct {
-	delay  time.Duration
-	status string
-	dflt   bool
+	delay     time.Duration
+	status    string
+	dflt      bool
+	selection map[string]any // the plan the quote says it priced, when set
 }
 
 func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Request) tools.Result {
@@ -910,6 +911,9 @@ func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Reque
 	vars := map[string]any{"total": 3200, "lines": []any{map[string]any{"coverage": "交强险", "premium": 950}}, "memory_version": req.MemoryVersion}
 	if s.dflt {
 		vars["default"] = true
+	}
+	if len(s.selection) > 0 {
+		vars["selection"] = s.selection
 	}
 	if s.status != "quote" {
 		vars = map[string]any{"status": s.status, "memory_version": req.MemoryVersion}
@@ -1176,5 +1180,55 @@ func TestAPlanChangeIsOneCallAndItsResultStaysWithTheMemory(t *testing.T) {
 	e.post(func() { e.tools.lastResultCut = false; e.noteReadoutCut("item_other", "x"); done <- e.memoryBlock() })
 	if block = <-done; strings.Contains(block, "被客户打断") {
 		t.Fatalf("another turn's cut was taken for the readout's: %q", block)
+	}
+}
+
+// A delivered quotation brings the working memory's plan to the selection it
+// priced — the default quotation above all, which is quoted with nothing in
+// memory — so a later change is laid over the whole plan, not over nothing
+// (the 13:55 simulated call of 10-26 priced one coverage). A coverage the
+// selection no longer has leaves the memory.
+func TestADeliveredQuotationSetsTheMemorysPlan(t *testing.T) {
+	opts := quoteConfig()
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	llm := &quoteLLM{}
+	quote := &statusQuote{delay: 50 * time.Millisecond, status: "quote", dflt: true,
+		selection: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true}}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, quote)
+	// Something unrelated is already in the plan; it is not in the selection
+	// and goes.
+	e.post(func() { e.tools.memory.Patch(json.RawMessage(`{"quote":{"划痕险":true}}`)) })
+
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "三千二百") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	done := make(chan string, 1)
+	e.post(func() { snap, _ := e.memorySnapshot(); done <- string(snap) })
+	mem := <-done
+	for _, want := range []string{`"交强险":true`, `"车损险":true`, `"三者险":"200万"`, `"座位险":true`} {
+		if !strings.Contains(mem, want) {
+			t.Fatalf("the priced selection is not the memory's plan: %s", mem)
+		}
+	}
+	if strings.Contains(mem, "划痕险") {
+		t.Fatalf("a coverage the quotation did not price stayed in the plan: %s", mem)
+	}
+	// The same selection delivered again changes nothing.
+	v := make(chan int, 1)
+	e.post(func() {
+		_, before := e.memorySnapshot()
+		out, _ := json.Marshal(map[string]any{"selection": quote.selection})
+		e.recordSelection(out)
+		_, after := e.memorySnapshot()
+		v <- after - before
+	})
+	if d := <-v; d != 0 {
+		t.Fatalf("an unchanged selection bumped the memory by %d", d)
 	}
 }

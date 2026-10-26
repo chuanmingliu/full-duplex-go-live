@@ -213,6 +213,9 @@ type QuoteRequest struct {
 	// Skipped are coverages the intake left out (the customer could not
 	// answer for them, or they are outside the plan); echoed in the answer.
 	Skipped []string `json:"-"`
+	// PlanInMemory says the tool call's working memory held a plan (its
+	// quote field); without one, a config is a change to the default plan.
+	PlanInMemory bool `json:"-"`
 	// prequote marks a request the service made itself, ahead of a caller's
 	// ask (prequote.go); recorded as such.
 	prequote bool
@@ -250,6 +253,7 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 		for k, v := range tc.Memory {
 			if k == "quote" {
 				if m, ok := v.(map[string]any); ok {
+					req.PlanInMemory = len(m) > 0
 					for ck, cv := range m {
 						req.Config[ck] = cv
 					}
@@ -295,16 +299,21 @@ type QuoteLine struct {
 type Quote struct {
 	// Status is "quote": the answer to a request that could run (a request
 	// that could not answers a Need with status "need").
-	Status        string      `json:"status,omitempty"`
-	Total         float64     `json:"total"`
-	Currency      string      `json:"currency"`
-	Lines         []QuoteLine `json:"lines"`
-	Skipped       []string    `json:"skipped,omitempty"` // selected but unknown to the rules
-	RulesVersion  int         `json:"rules_version"`
-	RulesSHA      string      `json:"rules_sha"`
-	MemoryVersion int         `json:"memory_version,omitempty"`
-	ComputedAt    time.Time   `json:"computed_at"`
-	ComputeMS     int64       `json:"compute_ms"`
+	Status   string      `json:"status,omitempty"`
+	Total    float64     `json:"total"`
+	Currency string      `json:"currency"`
+	Lines    []QuoteLine `json:"lines"`
+	Skipped  []string    `json:"skipped,omitempty"` // selected but unknown to the rules
+	// Selection is the plan this priced — coverage → true or tier, after
+	// the intake — so the caller's working memory can be brought to it
+	// (the 13:55 simulated call of 10-26: a change was laid over a memory
+	// with no plan, and one coverage was priced).
+	Selection     map[string]any `json:"selection,omitempty"`
+	RulesVersion  int            `json:"rules_version"`
+	RulesSHA      string         `json:"rules_sha"`
+	MemoryVersion int            `json:"memory_version,omitempty"`
+	ComputedAt    time.Time      `json:"computed_at"`
+	ComputeMS     int64          `json:"compute_ms"`
 }
 
 var numberIn = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)

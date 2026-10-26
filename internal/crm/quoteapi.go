@@ -198,30 +198,31 @@ type apiQuoteInfo struct {
 // totals as numbers, the coverages as lines, the dates, and a few words the
 // model can say. The service's own record is kept with the quote event.
 type APIQuote struct {
-	Status           string      `json:"status,omitempty"`
-	Total            float64     `json:"total"`
-	Currency         string      `json:"currency"`
-	BusinessPremium  float64     `json:"business_premium"`
-	BusinessStandard float64     `json:"business_standard_premium,omitempty"`
-	BusinessDiscount float64     `json:"business_discount_amount,omitempty"`
-	DiscountRatio    string      `json:"discount_ratio,omitempty"`
-	CompelPremium    float64     `json:"compel_premium"`
-	TaxPremium       float64     `json:"tax_premium"`
-	TaxLateCharge    float64     `json:"tax_late_charge,omitempty"`
-	PremiumDiff      string      `json:"premium_diff_vs_last_year,omitempty"`
-	Lines            []QuoteLine `json:"lines"`
-	Services         []string    `json:"services,omitempty"`
-	BusinessPeriod   string      `json:"business_period,omitempty"`
-	CompelPeriod     string      `json:"compel_period,omitempty"`
-	PlanType         string      `json:"plan_type,omitempty"`
-	InsureFlowCode   string      `json:"insure_flow_code,omitempty"`
-	QuotePriceID     int64       `json:"quote_price_id"`
-	ValidForS        int64       `json:"valid_for_s,omitempty"`
-	Skipped          []string    `json:"skipped,omitempty"`
-	MemoryVersion    int         `json:"memory_version,omitempty"`
-	ComputedAt       time.Time   `json:"computed_at"`
-	ComputeMS        int64       `json:"compute_ms"`
-	Source           string      `json:"source"`
+	Status           string         `json:"status,omitempty"`
+	Total            float64        `json:"total"`
+	Currency         string         `json:"currency"`
+	BusinessPremium  float64        `json:"business_premium"`
+	BusinessStandard float64        `json:"business_standard_premium,omitempty"`
+	BusinessDiscount float64        `json:"business_discount_amount,omitempty"`
+	DiscountRatio    string         `json:"discount_ratio,omitempty"`
+	CompelPremium    float64        `json:"compel_premium"`
+	TaxPremium       float64        `json:"tax_premium"`
+	TaxLateCharge    float64        `json:"tax_late_charge,omitempty"`
+	PremiumDiff      string         `json:"premium_diff_vs_last_year,omitempty"`
+	Lines            []QuoteLine    `json:"lines"`
+	Services         []string       `json:"services,omitempty"`
+	BusinessPeriod   string         `json:"business_period,omitempty"`
+	CompelPeriod     string         `json:"compel_period,omitempty"`
+	PlanType         string         `json:"plan_type,omitempty"`
+	InsureFlowCode   string         `json:"insure_flow_code,omitempty"`
+	QuotePriceID     int64          `json:"quote_price_id"`
+	ValidForS        int64          `json:"valid_for_s,omitempty"`
+	Skipped          []string       `json:"skipped,omitempty"`
+	Selection        map[string]any `json:"selection,omitempty"`
+	MemoryVersion    int            `json:"memory_version,omitempty"`
+	ComputedAt       time.Time      `json:"computed_at"`
+	ComputeMS        int64          `json:"compute_ms"`
+	Source           string         `json:"source"`
 }
 
 // yuan turns "300万", "3000000", "200w", 2000000 into a yuan string.

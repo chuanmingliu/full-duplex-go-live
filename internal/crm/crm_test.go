@@ -1123,3 +1123,43 @@ func TestTheDefaultIsAnsweredWhileTheNeighboursAreStillBeingPriced(t *testing.T)
 		t.Fatalf("%d inquiries already: the neighbours were not still being priced", n)
 	}
 }
+
+// A change asked with no plan in the working memory is a change to the
+// default plan: laid over the default selection, so the whole plan is
+// priced — and, being a neighbour, from the cache. The answer says which
+// selection it priced.
+func TestAChangeWithNoPlanInMemoryIsLaidOverTheDefault(t *testing.T) {
+	fx := newFixture(t)
+	if code, body := fx.do("POST", "/api/quote/prefetch", map[string]any{"call": "out-lead-14", "vars": map[string]any{"vehiclePrice": 300000, "vehicleAge": 2, "ncd": 1, "seats": 7, "carNum": "test"}}, nil); code != 202 {
+		t.Fatalf("prefetch: %d %s", code, body)
+	}
+	call := map[string]any{"tool": "quote_total", "call_id": "c", "session": "s", "call": "out-lead-14", "arguments": map[string]any{}, "memory": map[string]any{}, "memory_version": 0}
+	var dq map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &dq); code != 200 || dq["default"] != true {
+		t.Fatalf("default: %d %s", code, body)
+	}
+	sel, _ := dq["selection"].(map[string]any)
+	if len(sel) != 4 || sel["三者险"] != "200万" {
+		t.Fatalf("the default's selection is not in its answer: %v", dq["selection"])
+	}
+	call["arguments"] = map[string]any{"config": map[string]any{"三者险": "500万"}}
+	call["memory_version"] = 1
+	var q map[string]any
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 || q["status"] != "quote" {
+		t.Fatalf("change: %d %s", code, body)
+	}
+	lines, _ := q["lines"].([]any)
+	sel, _ = q["selection"].(map[string]any)
+	if len(lines) != 4 || len(sel) != 4 || sel["三者险"] != "500万" || sel["车损险"] != true {
+		t.Fatalf("the change was not laid over the default plan: lines %d, selection %v", len(lines), sel)
+	}
+	// A plan in memory is priced as given, as before.
+	call["arguments"] = map[string]any{}
+	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "三者险": "500万"}}
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 {
+		t.Fatalf("plan: %d %s", code, body)
+	}
+	if lines, _ := q["lines"].([]any); len(lines) != 2 {
+		t.Fatalf("a plan in memory was changed: %d lines", len(lines))
+	}
+}

@@ -247,12 +247,31 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 		}()
 	}
 	q, err := s.quoteNow(req)
+	if err == nil {
+		switch x := q.(type) {
+		case *Quote:
+			x.Selection = selectedConfig(req.Config)
+		case *APIQuote:
+			x.Selection = selectedConfig(req.Config)
+		}
+	}
 	if kept != nil && err == nil {
 		if _, isNeed := q.(*Need); !isNeed && q != nil {
 			kept.quote = q
 		}
 	}
 	return q, err
+}
+
+// selectedConfig is the selection with the declined coverages left out.
+func selectedConfig(config map[string]any) map[string]any {
+	out := map[string]any{}
+	for c, v := range config {
+		if selected(v) {
+			out[c] = v
+		}
+	}
+	return out
 }
 
 // quoteNow prices a request that passed the intake, by the service or the
@@ -833,6 +852,18 @@ func (s *Service) Handler() http.Handler {
 			}
 			writeJSON(w, http.StatusOK, q)
 			return nil
+		}
+		// A change with no plan in the working memory is a change to the
+		// default plan: laid over the default selection (the 13:55 simulated
+		// call of 10-26 priced the one changed coverage alone).
+		if !req.PlanInMemory {
+			if base := s.DefaultSelection(req.Call); len(base) > 0 {
+				merged := copyVars(base)
+				for k, v := range req.Config {
+					merged[k] = v
+				}
+				req.Config = merged
+			}
 		}
 		// A second quotation: what the lead already knows is not asked again.
 		for k, v := range s.LeadVars(req.Call) {

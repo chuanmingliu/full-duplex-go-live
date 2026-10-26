@@ -293,6 +293,54 @@ func (e *Engine) recordConfigChange(c provider.ToolCall) {
 	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: patch})
 }
 
+// recordSelection brings the working memory's plan to the selection a
+// quotation was priced on (`selection` in the lead service's answer), so a
+// later change builds on it. The default quotation is quoted with nothing
+// in memory; on the 13:55 simulated call of 10-26 the first change was laid
+// over that nothing and one coverage was priced. Coverages the selection
+// no longer has are removed (nil in the patch).
+func (e *Engine) recordSelection(output []byte) {
+	ts := e.tools
+	if ts == nil || ts.memory == nil {
+		return
+	}
+	var r struct {
+		Selection map[string]any `json:"selection"`
+	}
+	if json.Unmarshal(output, &r) != nil || len(r.Selection) == 0 {
+		return
+	}
+	snap, _ := ts.memory.Snapshot()
+	var mem struct {
+		Quote map[string]any `json:"quote"`
+	}
+	_ = json.Unmarshal(snap, &mem)
+	quote := map[string]any{}
+	same := len(mem.Quote) == len(r.Selection)
+	for k, v := range r.Selection {
+		quote[k] = v
+		if cur, ok := mem.Quote[k]; !ok || fmt.Sprint(cur) != fmt.Sprint(v) {
+			same = false
+		}
+	}
+	for k := range mem.Quote {
+		if _, keep := r.Selection[k]; !keep {
+			quote[k] = nil
+			same = false
+		}
+	}
+	if same {
+		return
+	}
+	patch, _ := json.Marshal(map[string]any{"quote": quote})
+	v, err := ts.memory.Patch(patch)
+	if err != nil {
+		return
+	}
+	e.log.Info("tools: the working memory's plan is the one priced", "version", v, "coverages", len(r.Selection))
+	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: patch})
+}
+
 // isServerTool says whether a call is one the engine carries out.
 func (e *Engine) isServerTool(name string) bool {
 	if e.tools == nil {
@@ -788,6 +836,9 @@ func (e *Engine) maybeDeliver() {
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "delivered",
 		MemoryVersion: task.Request.MemoryVersion, WaitedMS: waited.Milliseconds(), Interrupting: busy})
 	e.history = append(e.history, provider.Message{Role: provider.RoleSystem, Content: note.String()})
+	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
+		e.recordSelection(task.Result.Output)
+	}
 	turn := e.tracker.Begin("", false)
 	e.specTurn = nil
 	e.commitTurn(turn)

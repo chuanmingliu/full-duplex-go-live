@@ -35,6 +35,8 @@ type prefetched struct {
 	quote   any
 	err     error
 	took    time.Duration
+	// selection is the default plan as priced (after the intake).
+	selection map[string]any
 }
 
 // Prefetch starts the default quotation for a call with the lead's variables
@@ -74,6 +76,9 @@ func (s *Service) Prefetch(call string, vars map[string]any) {
 			p.vars = copyVars(req.Vars)
 			s.mu.Unlock()
 			p.quote, p.err = s.Quote(req)
+			s.mu.Lock()
+			p.selection = selectedConfig(req.Config)
+			s.mu.Unlock()
 			if n, isNeed := p.quote.(*Need); isNeed && n != nil {
 				p.err = fmt.Errorf("the default plan is missing %d field(s) for this lead: %s", len(n.Missing), missingNames(n))
 				p.quote = nil
@@ -189,7 +194,27 @@ func (s *Service) DefaultQuote(ctx context.Context, call string, vars map[string
 	}
 	out["default"] = true
 	out["prefetched_ms"] = p.took.Milliseconds()
+	if len(p.selection) > 0 {
+		out["selection"] = copyVars(p.selection)
+	}
 	return out, nil
+}
+
+// DefaultSelection is the default plan a call was quoted on, as priced —
+// the base a change with no plan in the working memory is laid over.
+func (s *Service) DefaultSelection(call string) map[string]any {
+	p := s.prefetchFor(call)
+	if p == nil {
+		return nil
+	}
+	select {
+	case <-p.done:
+	case <-time.After(10 * time.Second):
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return copyVars(p.selection)
 }
 
 // LeadVars are the variables the call's default quotation ran on — the
