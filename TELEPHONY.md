@@ -882,9 +882,23 @@ rather than dead air. The answer's own first word arrives where it did
 (~900 p50, ~1080 p95), so the log says both: `turn: response latency` has
 `first_audio_out_ms` (the opener) and `first_content_ms` (the answer, when
 it was ready or when the opener ended), and the session summary adds
-`content_p50_ms`/`content_p95_ms` over the opened turns. Quote both; the
-headline is the first by the owner's definition, the second is what the
-chat-model levers still work on.
+`content_p50_ms`/`content_p95_ms` over the opened turns. **Both count from
+the turn's close; the headline figure, from the caller's last sound, is
+each plus `end_silence_ms` (the pause, 380)** — `scripts/call-latency.sh`
+does that; the 10:46 call of 10-26 was once reported without it. Quote
+both; the headline is the first by the owner's definition, the second is
+what the chat-model levers still work on.
+
+**The opener's own length is on the caller's path.** The answer's first
+word cannot start before the opener ends, and with a quick model the clause
+is ready sooner than that (14 of 18 turns on the 10:46 call of 10-26): the
+content figure is then pause + the opener's rendered length. The synthesizer
+renders a one-word opener as ~400 ms of voice and a pause of several hundred
+ms for the comma; the engine keeps 80 ms of that pause (`openerTailMS`),
+caps the whole at 540 ms (`openerMaxMS`; it was 650, a 1030 floor) and fades
+the last 60 ms. Floor 920 from the last sound, ~850 on a typical opener;
+the first simulated call on it (22:40, 13 turns) gave content p50 841 /
+p95 920.
 
 **Not a word every time, and not in the caller's mouth (10-25 23:36, the
 owner: two phrases were "too mechanical", and the assistant was "too rush to
