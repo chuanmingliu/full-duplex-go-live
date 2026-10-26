@@ -296,13 +296,25 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 	if p.activeTurn != turnID {
 		return
 	}
-	if p.speaking {
-		// The opener is still in the air: finish it, then go.
-		p.graceTurn = turnID
-		p.graceMarks = 1
+	// The opener's mark has usually passed by now (it is one word, and the
+	// caller went on after it), so a grace on the next mark would never
+	// resolve; what may remain is paced audio still in the air. Let that
+	// play out, then end the turn.
+	remaining := p.emittedMS - p.heardMSLocked()
+	if remaining <= 0 {
+		p.resetTurnLocked()
+		p.setSpeakingLocked(false)
 		return
 	}
-	p.resetTurnLocked()
+	go func() {
+		time.Sleep(time.Duration(remaining) * time.Millisecond)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.activeTurn == turnID && len(p.queue) == 0 {
+			p.resetTurnLocked()
+			p.setSpeakingLocked(false)
+		}
+	}()
 }
 
 // Enqueue adds an item to the speak channel, and reports whether it was

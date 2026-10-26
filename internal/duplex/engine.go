@@ -202,6 +202,8 @@ type Engine struct {
 	// continuation that was a real stretch of speech opens normally, with a
 	// different phrase.
 	skipOpenerUntil time.Time
+	// lastActiveMS is how much of the last closed utterance was voiced.
+	lastActiveMS int64
 	// fillerSinceAnswer counts holding fillers spoken since the caller last
 	// actually heard an answer. Above zero, another one is noise.
 	fillerSinceAnswer int
@@ -805,6 +807,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.speechEndAt = time.Now()
 		e.speechEndMS = d.EndMS
 		e.speechEndSilenceMS = int64(d.SilenceMS)
+		e.lastActiveMS = int64(d.ActiveMS)
 		e.noteCallerSpoke()
 		e.enrolFocus(d.StartMS, d.EndMS, d.ActiveMS, d.BargeIn)
 		// ...but only for a turn this utterance actually produced. A turn that

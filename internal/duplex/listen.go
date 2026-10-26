@@ -1234,7 +1234,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if turn.Opened != "" || !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
 		return
 	}
-	if time.Now().Before(e.skipOpenerUntil) && e.speechEndMS-e.utterStartMS < openerContinuationMS {
+	if time.Now().Before(e.skipOpenerUntil) && e.lastActiveMS < openerContinuationMS {
 		// The opener before this one turned out to be mid-sentence and
 		// became a backchannel moments ago, and what followed was a short
 		// fragment: a second 嗯 on it is the tic the owner heard (23:36 on
@@ -1244,7 +1244,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 		// and every fragment after them went without one, which put the
 		// first audio of those turns at the content's ~1000 ms.
 		e.skipOpenerUntil = time.Time{}
-		e.log.Debug("speak: no opener on a short fragment after a backchannel", "turn", turn.ID, "fragment_ms", e.speechEndMS-e.utterStartMS)
+		e.log.Debug("speak: no opener on a short fragment after a backchannel", "turn", turn.ID, "voiced_ms", e.lastActiveMS)
 		return
 	}
 	e.skipOpenerUntil = time.Time{}

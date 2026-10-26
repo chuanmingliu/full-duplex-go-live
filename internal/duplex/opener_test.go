@@ -133,7 +133,7 @@ func TestAnOpenerBecomesABackchannelWhenTheCallerGoesOn(t *testing.T) {
 	})
 	speak(e, rate, 600) // 我想问一下
 	pause(e, rate, 560) // the turn closes at 400; the opener plays
-	speak(e, rate, 900) // …保险多少钱 — the caller went on
+	speak(e, rate, 700) // …保险多少钱 — the caller went on, a short fragment
 	pause(e, rate, 1500)
 	waitFor(t, "the answer", 6*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
 	if !strings.Contains(logs.String(), "the opener became a backchannel") {
