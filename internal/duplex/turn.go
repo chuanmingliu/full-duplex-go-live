@@ -331,6 +331,33 @@ func (t *Turn) stamp(field *time.Time) {
 	t.mu.Unlock()
 }
 
+// InheritOpener carries an opener said under an earlier revision of this
+// turn over to this one: the phrase, its length and the stamps of its audio
+// (first segment, first audio, first audio out). Without the stamps the
+// revised turn's first audio read as its content's — the opener's length
+// too late on the headline, and the content figure, which adds the opener's
+// length to the first audio out, by as much again (review of 10-27).
+func (t *Turn) InheritOpener(from *Turn) {
+	if from == nil || from.Opened == "" {
+		return
+	}
+	from.mu.Lock()
+	seg, aud, out := from.firstSegment, from.firstAudio, from.firstAudioOut
+	from.mu.Unlock()
+	t.mu.Lock()
+	t.Opened, t.OpenedMS, t.OpenedAt, t.OpenerPlanned = from.Opened, from.OpenedMS, from.OpenedAt, from.Opened
+	if t.firstSegment.IsZero() {
+		t.firstSegment = seg
+	}
+	if t.firstAudio.IsZero() {
+		t.firstAudio = aud
+	}
+	if t.firstAudioOut.IsZero() {
+		t.firstAudioOut = out
+	}
+	t.mu.Unlock()
+}
+
 func (t *Turn) stampOnce(field *time.Time) {
 	t.mu.Lock()
 	if field.IsZero() {

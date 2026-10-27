@@ -752,3 +752,35 @@ func TestTheFloorIsFreeForTheNextOpenerWhileABackchannelDrains(t *testing.T) {
 	p.Enqueue(Segment{Kind: SegEnd, Gen: gen.Current(), TurnID: "item_2"})
 	waitFor(t, "the floor to be released", 3*time.Second, func() bool { return !p.Active() })
 }
+
+// A revised turn inherits the opener said under the earlier revision with
+// the stamps of its audio, so its first audio is the opener's, not its
+// content's.
+func TestARevisedTurnInheritsTheOpenersStamps(t *testing.T) {
+	var gen Generation
+	tr := NewTracker(&gen)
+	spec := tr.Begin("今天天气", true)
+	spec.Opened, spec.OpenedMS, spec.OpenedAt = "好的，", 430, time.Now()
+	spec.MarkFirstSegment()
+	spec.MarkFirstAudio()
+	spec.MarkFirstAudioOut()
+	before := spec.Timings()
+	time.Sleep(20 * time.Millisecond)
+	revised := tr.Revise(spec.ID, "今天天气怎么样", true)
+	if revised == nil {
+		t.Fatal("no revision")
+	}
+	revised.InheritOpener(spec)
+	tm := revised.Timings()
+	if revised.Opened != "好的，" || revised.OpenedMS != 430 || revised.OpenerPlanned != "好的，" {
+		t.Fatalf("the opener was not inherited: %+v", revised)
+	}
+	if !tm.FirstAudioOut.Equal(before.FirstAudioOut) || !tm.FirstAudio.Equal(before.FirstAudio) || !tm.FirstSegment.Equal(before.FirstSegment) {
+		t.Fatalf("the opener's stamps were not inherited: %v vs %v", tm.FirstAudioOut, before.FirstAudioOut)
+	}
+	// A later stamp on the revised turn does not move them.
+	revised.MarkFirstAudioOut()
+	if !revised.Timings().FirstAudioOut.Equal(before.FirstAudioOut) {
+		t.Fatal("the inherited first audio out was overwritten")
+	}
+}

@@ -1150,8 +1150,9 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		metrics.Default().SpeculationAbandoned()
 		if revised != nil {
 			if spec.Opened != "" {
-				// Said already, at the pause; the revised answer follows it.
-				revised.Opened, revised.OpenedMS, revised.OpenedAt, revised.OpenerPlanned = spec.Opened, spec.OpenedMS, spec.OpenedAt, spec.Opened
+				// Said already, at the pause; the revised answer follows it,
+				// and the opener's audio stamps come with it.
+				revised.InheritOpener(spec)
 			}
 			e.sayOpener(revised)
 			e.commitTurn(revised)
