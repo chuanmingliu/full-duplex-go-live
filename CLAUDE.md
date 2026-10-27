@@ -858,7 +858,11 @@ make bundle            # dist/golive-telephony.tar.gz for a box with no Go
 `internal/duplex` fails now and then in a full run and passes on rerun. The
 flaky test is `TestSpokenFillersReachTheTranscript` (3 of 6 runs alone on
 10-19, on a tree without any engine change: a race in the test, not in the
-engine). Any other failure there is worth a second look.
+engine; **in the cloud container it fails 6 of 6, on 031a062 as on 20cba5b,
+with "transcript for the filler = ''" — not a signal there**). Any other
+failure there is worth a second look. The package takes ~600 s in the cloud
+container: run it with `-timeout 25m`, or `go test`'s default 10 minutes
+kills it mid-run.
 
 For every fix: a test that fails without it. Check that it does.
 
