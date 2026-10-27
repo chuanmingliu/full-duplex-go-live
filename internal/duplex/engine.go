@@ -994,32 +994,38 @@ func (p *speechPipe) run() {
 	grace := time.Duration(p.e.opts.Cfg.Duplex.StreamFirstChunkGraceMS) * time.Millisecond
 	spoke := false
 
-	// say speaks one segment. When it turns out to say nothing — the model's
-	// own opener, already said at the pause and stripped — the first segment
-	// is still ahead: the segmenter is put back on first-segment rules for
-	// the text it holds (a clause may end on a comma, at
-	// stream_first_chunk_chars) and the deadline is re-armed. Without this
-	// the answer's first word waited for a strong boundary at
-	// stream_min_chunk_chars: 640 and 840 ms after the first token on two
-	// turns of the 21:31 simulated call of 10-27.
-	say := func(text string) bool {
+	// say speaks one segment and reports whether anything was said. The one
+	// way to say nothing is the model's own opener, already said at the
+	// pause and stripped; the first segment is then still ahead.
+	say := func(text string) (ok, said bool) {
 		p.saidNothing = false
 		if !p.speak(text) {
-			return false
+			return false, false
 		}
-		if !p.saidNothing {
-			spoke = true
-			return true
+		if p.saidNothing {
+			p.saidNothing = false
+			return true, false
 		}
-		p.saidNothing = false
+		spoke = true
+		return true, true
+	}
+	// restartFirst, after the first segment said nothing and no cut segment
+	// is waiting to be spoken: the segmenter is put back on first-segment
+	// rules for the text it holds (a clause may end on a comma, at
+	// stream_first_chunk_chars; what is already ready is spoken now) and the
+	// deadline is re-armed. Without this the answer's first word waited for
+	// a strong boundary at stream_min_chunk_chars: 640 and 840 ms after the
+	// first token on two turns of the 21:31 simulated call of 10-27. It is
+	// never called while segments cut from the same delta are still to be
+	// spoken — re-pushing the buffer then would put later text before them.
+	restartFirst := func() bool {
 		spoke = false
 		firstDeadline, boundaryGrace = nil, nil
 		ready := seg.RestartFirst()
 		p.e.log.Debug("speak: the first segment said nothing; the next is the first again",
 			"turn", p.turn.ID, "pending_chars", len([]rune(seg.Pending())), "ready", len(ready))
 		for _, r := range ready {
-			spoke = true
-			if !p.speak(r) {
+			if ok, _ := say(r); !ok {
 				return false
 			}
 		}
@@ -1054,7 +1060,11 @@ consume:
 			p.e.log.Debug("speak: first segment cut at an early boundary",
 				"turn", p.turn.ID, "text", early, "grace_ms", grace.Milliseconds())
 			firstDeadline = nil
-			if !say(early) {
+			ok, said := say(early)
+			if !ok {
+				return
+			}
+			if !said && !restartFirst() {
 				return
 			}
 		case <-firstDeadline:
@@ -1082,7 +1092,11 @@ consume:
 			p.e.log.Debug("speak: first segment flushed on deadline",
 				"turn", p.turn.ID, "chars", len([]rune(forced)), "ms", deadline.Milliseconds())
 			boundaryGrace = nil
-			if !say(forced) {
+			ok, said := say(forced)
+			if !ok {
+				return
+			}
+			if !said && !restartFirst() {
 				return
 			}
 		case text, ok := <-p.in:
@@ -1092,10 +1106,18 @@ consume:
 			if firstDeadline == nil && !spoke && deadline > 0 {
 				firstDeadline = time.After(deadline)
 			}
-			for _, ready := range seg.Push(text) {
+			ready := seg.Push(text)
+			for i, r := range ready {
 				firstDeadline = nil
 				boundaryGrace = nil
-				if !say(ready) {
+				ok, said := say(r)
+				if !ok {
+					return
+				}
+				// A segment cut from the same delta that follows the stripped
+				// one is spoken next, in order; only when none follows is
+				// the segmenter restarted on what it still holds.
+				if !said && i == len(ready)-1 && !restartFirst() {
 					return
 				}
 				if p.soft.Load() {

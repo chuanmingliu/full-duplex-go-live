@@ -537,3 +537,66 @@ func TestAFragmentAfterABackchannelOpensWithAPhraseOfAnotherKind(t *testing.T) {
 		t.Fatalf("the fragment's first audio (%v) was not before the model's first token (%v)", tm.FirstAudio, tm.FirstToken)
 	}
 }
+
+// oneDeltaLLM delivers the whole reply as a single delta.
+type oneDeltaLLM struct {
+	text  string
+	delay time.Duration
+}
+
+func (l *oneDeltaLLM) Name() string { return "onedelta" }
+func (l *oneDeltaLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
+	out := make(chan provider.LLMDelta, 4)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(l.delay):
+		}
+		out <- provider.LLMDelta{Text: l.text}
+		out <- provider.LLMDelta{Usage: &provider.TokenUsage{InputTokens: 1, OutputTokens: len([]rune(l.text))}}
+	}()
+	return out, nil
+}
+
+// One delta of the model's can carry several segments at once (a reply
+// that arrives whole). When the first of them is the opener, stripped, the
+// restart must wait until the other segments cut from that delta are
+// spoken — found by review on 10-27: the restart re-pushed the buffer and
+// put the model's later "好的，再见" before its first sentence.
+func TestSegmentsStayInOrderWhenOneDeltaCarriesSeveralAndTheFirstIsStripped(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	cfg.opts.Cfg.Duplex.StreamFirstChunkChars = 3
+	cfg.opts.Cfg.Duplex.StreamMinChunkChars = 24
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	if added, err := WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil); err != nil || added == 0 {
+		t.Fatalf("warming added %d, err %v", added, err)
+	}
+	c := newCollector(rate)
+	asr := newTrailingASR("今天天气怎么样")
+	asr.msPerRune = 150
+	llm := &oneDeltaLLM{text: "好的，我听到你说今天天气怎么样。让我确认一下细节，然后给你一个完整的答复。好的，再见。", delay: 300 * time.Millisecond}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	speak(e, rate, 1000)
+	pause(e, rate, 1500)
+	waitFor(t, "the answer", 8*time.Second, func() bool { return strings.Contains(c.allOutput(), "再见") })
+	said := c.allOutput()
+	if !strings.Contains(logs.String(), "the model's opener was already said at the pause") {
+		t.Fatalf("the model's opener was not stripped; the test does not exercise the case:\n%s", logs.String())
+	}
+	want := "好的，我听到你说今天天气怎么样。让我确认一下细节，然后给你一个完整的答复。好的，再见。"
+	if strings.ReplaceAll(said, " ", "") != want {
+		t.Fatalf("words out of order or doubled:\n got %q\nwant %q", said, want)
+	}
+}
