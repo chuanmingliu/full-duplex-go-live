@@ -1226,6 +1226,13 @@ const openerMaxMS = 540
 // kept: the gap the caller hears between the opener and the answer.
 const openerTailMS = 80
 
+// openerLeadMS is how much of the rendered quiet before the opener's word is
+// kept, so its onset is not clipped.
+const openerLeadMS = 20
+
+// segmentLeadMS is the same for the answer's own first segment.
+const segmentLeadMS = 20
+
 // openerContinuationMS: a continuation at least this long after a
 // backchanneled opener is a real stretch of speech and opens as usual; a
 // shorter one is a fragment and gets no second opener.
@@ -1282,6 +1289,14 @@ func (e *Engine) sayOpener(turn *Turn) {
 	// of 10-25: every content figure exactly 380 + the opener's length; the
 	// 10:46 call of 10-26 again, with 120 ms kept).
 	pcm = audio.TrimTrailingSilence(pcm, e.opts.ClientRate, -40, openerTailMS)
+	// The rendering opens with a quiet head as well, before the first syllable.
+	// The opener is the turn's first audio, so that head is heard as the pause
+	// running on — and the answer's own first word, which waits for the
+	// opener's end, is later by the same amount on every turn the opener
+	// binds (14 of 18 on the 10:46 call of 10-26). Cut to 20 ms.
+	rendered := len(pcm)
+	pcm = audio.TrimLeadingSilence(pcm, e.opts.ClientRate, -40, openerLeadMS)
+	leadMS := int(audio.PCM16(e.opts.ClientRate).DurationMS(make([]byte, rendered-len(pcm))))
 	// A one-word opener is 400–500 ms of voice; a faint tail above the trim's
 	// floor once left one at 1000 ms (the 09:16 call of 10-26), which then set
 	// when the answer began. Capped, with a short fade so the cut is not heard.
@@ -1307,7 +1322,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	e.player.Enqueue(mark)
 	turn.AppendResponse(phrase)
 	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "turn", turn.ID, "text", phrase,
-		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
+		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)), "lead_ms", leadMS)
 }
 
 // planOpener chooses the opener for a turn's answer from the pool that fits

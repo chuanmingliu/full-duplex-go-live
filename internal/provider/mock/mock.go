@@ -571,6 +571,9 @@ type TTS struct {
 	// FirstByteDelay is how long each Synthesize takes to produce its first
 	// chunk.
 	FirstByteDelay time.Duration
+	// LeadSilence is how much near-silence opens every rendering, as a
+	// vendor's audio does before the first syllable.
+	LeadSilence time.Duration
 	// Serial makes one stream synthesize one segment at a time, like a vendor
 	// task that is a single ordered stream. A second Synthesize waits for the
 	// first to finish or be cancelled.
@@ -658,6 +661,8 @@ func (s *ttsStream) Synthesize(ctx context.Context, text string) (<-chan provide
 	runes := []rune(text)
 	totalMS := float64(len(runes)) * s.tts.MSPerRune / s.speed
 	totalSamples := int(totalMS / 1000 * float64(s.rate))
+	leadSamples := int(s.tts.LeadSilence.Seconds() * float64(s.rate))
+	totalSamples += leadSamples
 
 	out := make(chan provider.TTSChunk, 8)
 	go func() {
@@ -680,7 +685,12 @@ func (s *ttsStream) Synthesize(ctx context.Context, text string) (<-chan provide
 			}
 			buf := make([]float32, end-start)
 			for i := range buf {
-				n := start + i
+				n := start + i - leadSamples
+				if n < 0 {
+					// The quiet head: a flicker of noise, not digital zero.
+					buf[i] = float32(1.0 / 32767)
+					continue
+				}
 				// One blip per character: a 220 Hz carrier with a 3 Hz
 				// syllable envelope, kept well below full scale.
 				tSec := float64(n) / float64(s.rate)

@@ -880,8 +880,8 @@ instead of ~500 ms after it — first audio is 380 ms at p95 on the bench
 (RETRO-1000 §7) — and a synthesizer stall becomes a pause after a word
 rather than dead air. The answer's own first word arrives where it did
 (~900 p50, ~1080 p95), so the log says both: `turn: response latency` has
-`first_audio_out_ms` (the opener) and `first_content_ms` (the answer, when
-it was ready or when the opener ended), and the session summary adds
+`first_audio_out_ms` (the opener) and `first_content_ms` (the answer's
+first audio, or the opener's end, whichever is later), and the session summary adds
 `content_p50_ms`/`content_p95_ms` over the opened turns. **Both count from
 the turn's close; the headline figure, from the caller's last sound, is
 each plus `end_silence_ms` (the pause, 380)** — `scripts/call-latency.sh`
@@ -899,6 +899,25 @@ caps the whole at 540 ms (`openerMaxMS`; it was 650, a 1030 floor) and fades
 the last 60 ms. Floor 920 from the last sound, ~850 on a typical opener;
 the first simulated call on it (22:40, 13 turns) gave content p50 841 /
 p95 920.
+
+**The content stamp was the request, not the audio, until 10-27.**
+`first_content_ms` was stamped when the answer's first segment was handed to
+the synthesizer; on a turn the model's clause binds (the opener had ended)
+the figure was therefore short by the synthesizer's first-audio time, ~200
+ms. It is stamped on the segment's first audio chunk now. The content
+figures of the 10-25/10-26 calls and benches are right on opener-bound
+turns (the max with the opener's end hid the gap) and ~200 ms low on
+clause-bound ones — which are the tail: read the earlier p95s with that in
+mind, and compare only calls since this change with each other.
+
+**The quiet head of a rendering is cut (10-27).** A synthesized phrase opens
+with some tens of ms of near-silence before the first syllable. The opener's
+is cut to 20 ms (`openerLeadMS`): the caller hears the word at the pause and
+the answer, which waits for the opener's end, comes earlier by the same
+amount. The answer's first segment's head is cut the same way, across as
+many chunks as it spans (`segmentLeadMS`), so the first word is heard when
+the content figure says. Both log `lead_ms`, so the first call shows what
+the heads were worth.
 
 **An opener that fits the caller's words (10-27, after ConvFill, arXiv
 2511.07397).** A fixed 好的，/嗯， carries no meaning; ConvFill's finding is that

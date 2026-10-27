@@ -313,3 +313,100 @@ func TestTheOpenerFitsTheCallersWordsFromTheLeadServicesScenarios(t *testing.T) 
 		t.Fatal("the scenario was not logged")
 	}
 }
+
+// The content figure is when the answer's own first word is heard — the
+// synthesizer's first audio for the first segment — not when that segment was
+// handed to the synthesizer. Until 10-27 it was the latter, and on a turn the
+// model's clause binds (the opener ends before the clause is in) the figure
+// was short by the synthesizer's first-audio time, ~200 ms on a call.
+func TestTheContentFigureIsTheAnswersFirstAudioNotItsRequest(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	if added, err := WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil); err != nil || added == 0 {
+		t.Fatalf("warming added %d, err %v", added, err)
+	}
+	// From here on the synthesizer is slow to its first audio.
+	tts.FirstByteDelay = 1500 * time.Millisecond
+	c := newCollector(rate)
+	asr := newTrailingASR("今天天气怎么样")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.FirstTokenDelay = 700 * time.Millisecond // the clause, not the opener, binds
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	speak(e, rate, 1000)
+	pause(e, rate, 1800)
+	waitFor(t, "the answer", 6*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
+	turn := e.tracker.Current()
+	if turn == nil {
+		t.Fatal("no current turn")
+	}
+	tm := turn.Timings()
+	if tm.FirstContent.IsZero() || tm.FirstToken.IsZero() {
+		t.Fatalf("timings not stamped: %+v", tm)
+	}
+	if d := tm.FirstContent.Sub(tm.FirstToken); d < 1400*time.Millisecond {
+		t.Fatalf("the content stamp is only %v after the first token; the synthesizer took 1500 ms to its first audio, so the stamp is the request, not the audio", d)
+	}
+}
+
+// A rendering opens with a quiet head before its first syllable. The opener
+// is said at the pause and the answer's first segment follows it, so both
+// heads are dead air the caller waits through — cut to 20 ms, and the amount
+// is logged so a call shows what it was worth.
+func TestTheQuietHeadOfTheOpenerAndTheFirstSegmentIsCut(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	tts.LeadSilence = 200 * time.Millisecond
+	if added, err := WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil); err != nil || added == 0 {
+		t.Fatalf("warming added %d, err %v", added, err)
+	}
+	c := newCollector(rate)
+	asr := newTrailingASR("今天天气怎么样")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	speak(e, rate, 1000)
+	pause(e, rate, 1500)
+	waitFor(t, "the answer", 6*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
+	lead := func(line string) int {
+		m := regexp.MustCompile(line + `.*\blead_ms=(\d+)`).FindStringSubmatch(logs.String())
+		if m == nil {
+			t.Fatalf("no lead_ms on %q:\n%s", line, logs.String())
+		}
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	if n := lead("opened the answer from the phrase cache at the pause"); n < 160 || n > 200 {
+		t.Fatalf("the opener's quiet head: %d ms cut; wanted ~180 of the 200 rendered", n)
+	}
+	if n := lead("speak: first audio for segment"); n < 160 || n > 200 {
+		t.Fatalf("the first segment's quiet head: %d ms cut; wanted ~180 of the 200 rendered", n)
+	}
+	// The opener's own audio is the word, not the head: 好的， is 330 ms of
+	// voice in this synthesizer.
+	m := regexp.MustCompile(`opened the answer from the phrase cache at the pause.*audio_ms=(\d+)`).FindStringSubmatch(logs.String())
+	if n, _ := strconv.Atoi(m[1]); n < 330 || n > 360 {
+		t.Fatalf("the opener ran %d ms; wanted 330 of voice + 20 of head", n)
+	}
+}

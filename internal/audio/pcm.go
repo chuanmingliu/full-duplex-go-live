@@ -249,6 +249,49 @@ func TrimTrailingSilence(pcm []byte, rate int, floorDB float64, keepMS int) []by
 	return pcm[:cut]
 }
 
+// TrimLeadingSilence cuts the quiet head off PCM16 audio: everything before
+// the first 10 ms window whose peak is above floorDB (dBFS), less keepMS of
+// it so the onset is not clipped. A synthesizer opens a rendering with a few
+// tens of milliseconds of nothing; for a phrase said at the pause that is
+// dead air the caller waits through, and it puts the words that follow it
+// later by the same amount. Audio with no sound above the floor is returned
+// unchanged.
+func TrimLeadingSilence(pcm []byte, rate int, floorDB float64, keepMS int) []byte {
+	if rate <= 0 || len(pcm) < 4 {
+		return pcm
+	}
+	win := rate / 100 * 2 // 10 ms of samples, in bytes
+	if win < 2 {
+		win = 2
+	}
+	thr := int32(32767 * math.Pow(10, floorDB/20))
+	first := -1
+	for off := 0; off+1 < len(pcm) && first < 0; off += win {
+		end := off + win
+		if end > len(pcm) {
+			end = len(pcm)
+		}
+		for i := off; i+1 < end; i += 2 {
+			v := int32(int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8))
+			if v < 0 {
+				v = -v
+			}
+			if v > thr {
+				first = off
+				break
+			}
+		}
+	}
+	if first < 0 {
+		return pcm
+	}
+	cut := first - keepMS*rate/1000*2
+	if cut <= 0 {
+		return pcm
+	}
+	return pcm[cut:]
+}
+
 // FadeOutPCM16 applies a linear fade over the last fadeMS of PCM16 audio, so a
 // cut made for length is not heard as a click.
 func FadeOutPCM16(pcm []byte, rate, fadeMS int) []byte {

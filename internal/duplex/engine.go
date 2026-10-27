@@ -1198,7 +1198,10 @@ func (p *speechPipe) speak(text string) bool {
 	segCtx, cancelSeg := context.WithCancel(p.ctx)
 	defer cancelSeg()
 	synthCtx := segCtx
-	if !p.begun {
+	// first: this is the answer's first segment, the one the caller is
+	// waiting through silence for.
+	first := !p.begun
+	if first {
 		p.begun = true
 		synthCtx = provider.WithUrgent(segCtx)
 	}
@@ -1223,7 +1226,6 @@ func (p *speechPipe) speak(text string) bool {
 		p.e.log.Debug("speak: cutting the filler short; the answer is ready",
 			"turn", p.turn.ID)
 	}
-	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(Segment{
 		Kind:     SegBegin,
 		Gen:      p.turn.Generation,
@@ -1237,6 +1239,13 @@ func (p *speechPipe) speak(text string) bool {
 	// keep is the segment's audio as the provider produced it, collected only
 	// for text worth caching.
 	var keep []byte
+	// trimLead: the answer's first segment opens with a quiet head before its
+	// first syllable, as every rendering does; the caller is waiting through
+	// silence for exactly this audio, so the head is cut (to segmentLeadMS)
+	// until the first sound is in, across as many chunks as it spans.
+	trimLead := first
+	var leadMS int
+	var held []byte
 
 	for chunk := range chunks {
 		if p.ctx.Err() != nil || !p.current() {
@@ -1257,14 +1266,40 @@ func (p *speechPipe) speak(text string) bool {
 		if err != nil {
 			continue
 		}
+		if trimLead {
+			if !audible(pcm) {
+				// Nothing but the head so far: hold it back and go on. Its
+				// last few ms are kept to put before the onset.
+				leadMS += int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm))
+				keepHead := audio.PCM16(p.e.opts.ClientRate).BytesForMS(segmentLeadMS)
+				if len(pcm) > keepHead {
+					pcm = pcm[len(pcm)-keepHead:]
+				}
+				held = append(held[:0], pcm...)
+				continue
+			}
+			whole := append(held, pcm...)
+			trimmed := audio.TrimLeadingSilence(whole, p.e.opts.ClientRate, -40, segmentLeadMS)
+			leadMS += int(audio.PCM16(p.e.opts.ClientRate).DurationMS(make([]byte, len(whole)-len(trimmed))))
+			leadMS -= int(audio.PCM16(p.e.opts.ClientRate).DurationMS(held))
+			pcm = trimmed
+			held = nil
+			trimLead = false
+		}
 		pcmBytes += len(pcm)
 		if firstChunk {
 			firstChunk = false
 			p.e.log.Debug("speak: first audio for segment",
 				"turn", p.turn.ID,
 				"chars", len([]rune(text)),
-				"ms", time.Since(segStarted).Milliseconds())
+				"ms", time.Since(segStarted).Milliseconds(),
+				"lead_ms", leadMS)
 		}
+		// The answer's own first word is this audio, not the request for it:
+		// stamped here, after the synthesizer's first-audio time, so the
+		// content figure on a turn the model's clause binds is not short by
+		// that time (~200 ms; it was, until 10-27).
+		p.turn.MarkFirstContent()
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
 			Kind:     SegAudio,
@@ -1335,6 +1370,18 @@ func (p *speechPipe) speak(text string) bool {
 		"audio_ms", int(float64(pcmBytes)/float64(audio.BytesPerSample)/float64(p.e.opts.ClientRate)*1000),
 		"ms", time.Since(segStarted).Milliseconds())
 	return true
+}
+
+// audible reports whether any sample of PCM16 audio is above -40 dBFS.
+func audible(pcm []byte) bool {
+	const thr = 327 // 32767 * 10^(-40/20)
+	for i := 0; i+1 < len(pcm); i += 2 {
+		v := int32(int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8))
+		if v > thr || v < -thr {
+			return true
+		}
+	}
+	return false
 }
 
 // speakCached plays a segment from the phrase cache.
