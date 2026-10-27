@@ -39,6 +39,14 @@ length (p95 650) binding on 14 of 18 turns, so its cap went to 540; **10-26
 **The log's `first_audio_out_ms`/`first_content_ms` are from the turn's
 close; add `end_silence_ms` (the pause) for the headline figure, as
 `call-latency.sh` does. The 10:46 call was first reported without it.**
+**And until ddf25e2 (10-27) `first_content_ms` was stamped on the request
+for the first segment, not on its audio: every content figure before it is
+~200 ms low on the turns the model's clause binds (ISS-059). The first
+honest figure: 21:31 on 10-27, simulated, p50 950 / p95 1151 in the slow
+hour. Compare only calls since ddf25e2 with each other. Count every
+answered turn, not only the opened ones: on that call 6 of 20 turns had
+no opener (fragments after a backchannel) and their first audio was
+807–1100 — `opener_on_fragments` (fba0387+) is the answer to that.**
 
 Two definitions are in use. **The headline is always the first, caller's
 last sound → first audio** (the owner settled it on 10-16: it is what the
@@ -135,6 +143,7 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-26 13:55–14:22 | dafc8f8/f61ad6a → 5b1c42f, **simulated** (`sim-prequote-hit/-interrupt/-miss`), the pre-quotations: default direct (0–1 ms, no ack) on all four; run 1 priced a change over an empty plan (one coverage) → the answer's `selection` sets the memory's plan, a plan-less change is laid over the default; runs 2–4: one-item changes **cache hits at 0 ms**, two-item changes and drops priced once (3.5–4 s) on the right base; a hit still says the ack first (~3.6 s, the owner's 10-23 rule — open) (`journal/retros/sim-2026-10-26-prequote.md`). From the last sound: content 932 / 1100 and 909 / 1030 | 5+4 | 380 (content 932 / 909) | 380 (content 1100 / 1030) | 0 (content: 2+1 over 1000) |
 | 10-26 22:40 | 9414aa1 (opener tail 80, cap 540), **simulated** (`kb-coverage-nerd`), 13 answered turns with an opener, 14 openers became backchannels, 1 cut; from the last sound: **first audio 380 / 380 / 381; content p50 841 / p95 920 / max 920, 0 over 1000**; opener p50 460 / max 540, binding on 9 of 13; first token from the close p50 304 / p95 362 (a moderate hour) | 13 | 380 (content 841) | 381 (content 920) | 0 |
 | 10-26 23:42 | 9414aa1, **`call`, the owner on the line, quiet, the slow hour (moderate tonight: first token 302 / 425 from the close)**, 3.7 min; 12 of 12 answered turns opened at the pause, 3 openers became backchannels, 2 cuts, 10 other voices let go; three quotations all from the cache at 0 ms, one readout cut and noted; from the last sound: **first audio 380 / 380 / 381; content p50 860 / p95 920 / max 962 — 0 of 12 over 1000** (`journal/retros/out-mvpfe2u2-kls8.md`) | 12 | 380 (content 860) | 381 (content 962, p95 920) | 0 |
+| 10-27 21:31 | ddf25e2 (content stamped on the audio; quiet heads cut), **simulated** (`kb-coverage-nerd`), the slow hour (first token 224 / 455 from the close); 20 answered turns, 14 with an opener, 6 fragments after a backchannel without one: opened turns first audio 380 / 380 / 561, **content p50 950 / p95 1151 / max 1186, 5 over 1000 — the first honest content figure**; the 6 no-opener turns first audio 807–1100; opener heads 110–220 ms and first-segment heads 84–172 cut; two turns lost 640/840 ms to a stripped duplicate opener (fixed fba0387) | 20 | 380 (content 950) | 1100 (content 1186, p95 1151) | 3 (content: 5 over 1000) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95

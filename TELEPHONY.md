@@ -910,6 +910,22 @@ turns (the max with the opener's end hid the gap) and ~200 ms low on
 clause-bound ones — which are the tail: read the earlier p95s with that in
 mind, and compare only calls since this change with each other.
 
+**A fragment after a backchannel opens too (10-27, `opener_on_fragments`).**
+When an opener became a backchannel (the caller went on mid-sentence) and
+what followed was a short fragment, the fragment's answer got no opener — a
+second 嗯 on it was the tic the owner heard on 10-25 — and its first audio
+was the model's and the synthesizer's: 807–1100 ms from the last sound on
+6 of 20 turns of the 21:31 simulated call of 10-27 (`kb-coverage-nerd`,
+which speaks in pieces). With the setting on, such a fragment opens with a
+phrase of another kind: the scenario opener that fits its words, else a
+statement opener that is not an 嗯 — 嗯，… 好的，… and never 嗯，嗯. On in
+the telephony profile as a test under decision 15; the owner hears it and
+decides. Also from that call: **the model's own opener, when it repeats the
+engine's and is stripped, no longer counts as the first segment** — the
+answer's first word used to wait for a 24-character strong boundary after
+it (640 and 840 ms after the first token on two turns); the segmenter is
+put back on first-segment rules (`Segmenter.RestartFirst`).
+
 **The quiet head of a rendering is cut (10-27).** A synthesized phrase opens
 with some tens of ms of near-silence before the first syllable. The opener's
 is cut to 20 ms (`openerLeadMS`): the caller hears the word at the pause and

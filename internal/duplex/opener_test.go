@@ -470,3 +470,70 @@ func TestTheFirstWordAfterAStrippedOpenerIsStillAFirstSegment(t *testing.T) {
 		t.Fatalf("the opener was said %d times: %q", n, c.allOutput())
 	}
 }
+
+// With opener_on_fragments, the short fragment after a backchanneled opener
+// gets an opener of another kind: 嗯，… then 好的，…, never 嗯，嗯. Its first
+// audio is at the pause again instead of at the model's.
+func TestAFragmentAfterABackchannelOpensWithAPhraseOfAnotherKind(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerOnFragments = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"嗯，", "好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"嗯，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	cfg.opts.Cfg.Duplex.AllowBargeIn = true
+	cfg.opts.Cfg.Duplex.OnNewQuery = "cut"
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	if _, err := WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil); err != nil {
+		t.Fatal(err)
+	}
+	c := newCollector(rate)
+	asr := newTrailingASR("我想问一下保险多少钱")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.FirstTokenDelay = 900 * time.Millisecond // the answer itself is late; the opener must not wait for it
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	speak(e, rate, 600) // 我想问一下 — reads as a question: 嗯，
+	pause(e, rate, 560) // the turn closes at 400; the opener plays
+	speak(e, rate, 700) // …保险多少钱 — a short fragment
+	stopped := time.Now()
+	pause(e, rate, 1800)
+	waitFor(t, "the answer", 6*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
+	if !strings.Contains(logs.String(), "the opener became a backchannel") {
+		t.Fatalf("the caller going on was not read as continuing the sentence")
+	}
+	if !strings.Contains(logs.String(), "a fragment after a backchannel opens with a phrase of another kind") {
+		t.Fatalf("the fragment got no opener of another kind:\n%s", logs.String())
+	}
+	said := c.allOutput()
+	if strings.Count(said, "嗯") != 1 || strings.Count(said, "好的") != 1 {
+		t.Fatalf("wanted 嗯 once (the backchannel) and 好的 once (the fragment's opener): %q", said)
+	}
+	// The fragment's opener was said at its pause, not at the model's 900 ms.
+	m := regexp.MustCompile(`a fragment after a backchannel opens.*`).FindStringIndex(logs.String())
+	if m == nil {
+		t.Fatal("no log line")
+	}
+	if d := time.Since(stopped); d < 0 {
+		t.Fatal("clock")
+	}
+	turn := e.tracker.Current()
+	if turn == nil {
+		t.Fatal("no current turn")
+	}
+	tm := turn.Timings()
+	if tm.FirstAudio.IsZero() || tm.FirstToken.IsZero() || !tm.FirstAudio.Before(tm.FirstToken) {
+		t.Fatalf("the fragment's first audio (%v) was not before the model's first token (%v)", tm.FirstAudio, tm.FirstToken)
+	}
+}

@@ -366,6 +366,16 @@ type DuplexConfig struct {
 	// mechanical"); all are warmed into the phrase cache at session open.
 	OpenerPhrases         []string `json:"opener_phrases"`
 	OpenerQuestionPhrases []string `json:"opener_question_phrases"`
+	// OpenerOnFragments: when the previous opener became a backchannel (the
+	// caller went on mid-sentence) and what followed was a short fragment,
+	// the fragment's answer gets no opener by default — a second 嗯 on it was
+	// the tic the owner heard (10-25 23:36) — and its first audio is then the
+	// chat model's and the synthesizer's: 807–1100 ms from the last sound on
+	// 6 of 20 turns of the 21:31 simulated call of 10-27. With this on, the
+	// fragment's answer opens with a phrase of a different kind — a scenario
+	// opener that fits the words, else a statement opener that is not 嗯 —
+	// so the pair reads 嗯，… 好的，… rather than 嗯，… 嗯，….
+	OpenerOnFragments bool `json:"opener_on_fragments"`
 
 	// HoldingFiller keeps the conversation alive while the backend works.
 	//

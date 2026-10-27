@@ -1252,21 +1252,28 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if turn.Opened != "" || !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
 		return
 	}
-	if time.Now().Before(e.skipOpenerUntil) && e.lastActiveMS < openerContinuationMS {
+	fragment := time.Now().Before(e.skipOpenerUntil) && e.lastActiveMS < openerContinuationMS
+	e.skipOpenerUntil = time.Time{}
+	phrase := turn.OpenerPlanned
+	if fragment {
 		// The opener before this one turned out to be mid-sentence and
 		// became a backchannel moments ago, and what followed was a short
 		// fragment: a second 嗯 on it is the tic the owner heard (23:36 on
-		// 10-25). The answer begins when it is ready. A continuation that
-		// was a real stretch of speech opens as usual, with a different
-		// phrase — on the 10:00 simulated call 14 openers became backchannels
-		// and every fragment after them went without one, which put the
-		// first audio of those turns at the content's ~1000 ms.
-		e.skipOpenerUntil = time.Time{}
-		e.log.Debug("speak: no opener on a short fragment after a backchannel", "turn", turn.ID, "voiced_ms", e.lastActiveMS)
-		return
+		// 10-25). By default the answer begins when it is ready — which put
+		// the first audio of those turns at the content's ~1000 ms (14 such
+		// turns on the 10:00 simulated call of 10-26, 6 of 20 on the 21:31
+		// call of 10-27). With opener_on_fragments the answer opens with a
+		// phrase of another kind, so the pair is 嗯，… 好的，… and not 嗯，嗯.
+		phrase = ""
+		if d.OpenerOnFragments {
+			phrase = e.planFragmentOpener(turn)
+		}
+		if phrase == "" {
+			e.log.Debug("speak: no opener on a short fragment after a backchannel", "turn", turn.ID, "voiced_ms", e.lastActiveMS)
+			return
+		}
+		e.log.Debug("speak: a fragment after a backchannel opens with a phrase of another kind", "turn", turn.ID, "voiced_ms", e.lastActiveMS, "opener", phrase)
 	}
-	e.skipOpenerUntil = time.Time{}
-	phrase := turn.OpenerPlanned
 	if phrase == "" {
 		phrase = e.planOpener(turn)
 	}
@@ -1323,6 +1330,54 @@ func (e *Engine) sayOpener(turn *Turn) {
 	turn.AppendResponse(phrase)
 	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "turn", turn.ID, "text", phrase,
 		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)), "lead_ms", leadMS)
+}
+
+// planFragmentOpener chooses the opener for a fragment said after a
+// backchannel: a scenario phrase that fits the caller's words if there is
+// one, else a statement opener that is not an 嗯 — never the phrase just said
+// as the backchannel, never one of the last three. "" when nothing fits.
+func (e *Engine) planFragmentOpener(turn *Turn) string {
+	d := e.opts.Cfg.Duplex
+	if !d.Opener || turn == nil {
+		return ""
+	}
+	// The phrase planned for this turn when the answer was begun (the model
+	// was told to continue from it) serves if it is not an 嗯.
+	if planned := turn.OpenerPlanned; planned != "" && !strings.HasPrefix(planned, "嗯") {
+		return planned
+	}
+	question := endpoint.ReadsAsQuestion(turn.Transcript)
+	pool := d.OpenerPhrases
+	if sc := e.openers.Match(turn.Transcript, question); sc != nil {
+		pool = sc.Phrases
+	}
+	var fresh []string
+	for _, p := range pool {
+		if strings.HasPrefix(p, "嗯") {
+			continue
+		}
+		recent := false
+		for _, r := range e.recentOpeners {
+			if r == p && r != turn.OpenerPlanned {
+				recent = true
+				break
+			}
+		}
+		if !recent {
+			fresh = append(fresh, p)
+		}
+	}
+	if len(fresh) == 0 {
+		e.log.Debug("speak: no opener of another kind for the fragment", "turn", turn.ID, "pool", len(pool), "recent", e.recentOpeners)
+		return ""
+	}
+	phrase := fresh[rand.Intn(len(fresh))]
+	e.recentOpeners = append(e.recentOpeners, phrase)
+	if len(e.recentOpeners) > 3 {
+		e.recentOpeners = e.recentOpeners[len(e.recentOpeners)-3:]
+	}
+	turn.OpenerPlanned = phrase
+	return phrase
 }
 
 // planOpener chooses the opener for a turn's answer from the pool that fits

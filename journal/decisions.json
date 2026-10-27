@@ -164,6 +164,15 @@
    "undo": "yes — `opener: false` in the profile; the race rule is a config",
    "needs": "The owner's yes on the opening clauses and the wording; then `min_silence_ms` 380 → 300 becomes worth 80 ms a turn and is the next lever",
    "status": "taken 10-25 as a test on the owner's say-so (/goal 1000 ms, \"do whatever test you need\"): the opener is the engine's, not the model's — `opener: true`, `opener_phrases` 好的，/嗯，/明白， in the telephony profile since de62d5f; the first-clause race is built (`llm_hedge_clause_chars`, off: −28 ms at the median on the bench, the p95 within noise at n=20). Bench of 10-25 22:03, 20 turns: first audio p50/p95 380/380 (850/1077 without); the answer's own first word p50 902 / p95 1076 (first_content_ms). Owner still decides the phrases and whether the voice suits."
+  },
+  {
+   "rank": 16,
+   "title": "A fragment after a backchanneled opener opens with a phrase of another kind (opener_on_fragments), as a test",
+   "gain": "On a caller who speaks in pieces (kb-coverage-nerd), 6 of 20 answered turns on the 21:31 call of 10-27 were fragments after a backchannel and got no opener: first audio 807–1100 ms from the last sound, the only turns of the call whose first audio was not at the pause. With an opener of another kind they return to 380.",
+   "basis": "journal/retros/out-mvqq5jyz-t7p7.md; the 10-26 10:00 simulated round (14 openers became backchannels, every fragment after them went without one).",
+   "cost": "The assistant says two short words across the caller's sentence (嗯，… then 好的，/a scenario phrase…) where it said one. The owner's 10-25 objection was the same word twice (嗯，嗯); the planner never repeats the kind. The owner hears it on a call and decides.",
+   "guard": "Off by default; on in the telephony profile since fba0387+. Never an 嗯 after an 嗯; never one of the last three phrases.",
+   "status": "on as a test (decision 15's licence: 'do whatever test you need'), 2026-10-27; the owner decides after hearing it"
   }
  ]
 }
