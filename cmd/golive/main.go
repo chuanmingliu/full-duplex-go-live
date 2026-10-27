@@ -210,7 +210,9 @@ func warmPhrases(ctx context.Context, cfg config.Config, log *slog.Logger) {
 	if err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// Paced at ~20 phrases a minute for the synthesizer's rate limit, so
+	// the profile's phrases and the openers take a couple of minutes.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	started := time.Now()
 	n, err := duplex.WarmPhrases(ctx, cfg, tts, log)

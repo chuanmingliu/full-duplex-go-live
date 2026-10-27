@@ -1380,7 +1380,7 @@ func (e *Engine) loadOpeners() {
 	if e.deps.TTS != nil && cfg.Duplex.PhraseCache {
 		texts := o.Phrases()
 		go func() {
-			ctx, cancel := context.WithTimeout(e.ctx, 20*time.Second)
+			ctx, cancel := context.WithTimeout(e.ctx, 3*time.Minute)
 			defer cancel()
 			if n, err := WarmTexts(ctx, cfg, e.deps.TTS, texts, e.log); err != nil {
 				e.log.Warn("speak: the openers could not all be cached", "added", n, "err", err)

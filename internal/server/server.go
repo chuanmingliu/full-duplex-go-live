@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/chuanmingliu/golive/internal/config"
+	"github.com/chuanmingliu/golive/internal/duplex"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
@@ -91,6 +92,13 @@ func NewServer(cfg config.Config, log *slog.Logger) *Server {
 			s.sweepStore()
 			log.Info("session storage enabled", "store_dir", cfg.StoreDir, "ttl_hours", cfg.StoreTTLHours)
 		}
+	}
+	// A batch warm of the phrase cache yields to live calls: the
+	// synthesizer's allowance is the caller's first.
+	duplex.CallsLive = func() int {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.sessions)
 	}
 	return s
 }

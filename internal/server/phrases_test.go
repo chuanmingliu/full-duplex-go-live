@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/duplex"
@@ -55,14 +56,19 @@ func TestPhrasesAreCachedOnRequestWithTheLeadServicesToken(t *testing.T) {
 		t.Fatalf("a wrong token: %d", code)
 	}
 	code, out := post("lead-secret", map[string]any{"phrases": []string{"价格的话，", "这个保额，", ""}})
-	if code != 200 || out["ok"] != true || out["added"] != float64(2) {
+	if code != 200 || out["ok"] != true || out["queued"] != float64(2) {
 		t.Fatalf("the lead service's token: %d %v", code, out)
+	}
+	// The synthesis runs on after the answer, paced.
+	deadline := time.Now().Add(10 * time.Second)
+	for duplex.Phrases().Len() < 2 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
 	}
 	if n := duplex.Phrases().Len(); n != 2 {
 		t.Fatalf("%d phrases in the cache", n)
 	}
-	// Again: nothing new to add.
-	if _, out := post("golive-secret", map[string]any{"phrases": []string{"价格的话，"}}); out["added"] != float64(0) || out["ok"] != true {
+	// Again: nothing new to queue.
+	if _, out := post("golive-secret", map[string]any{"phrases": []string{"价格的话，"}}); out["queued"] != float64(0) || out["already"] != float64(1) || out["ok"] != true {
 		t.Fatalf("second time: %v", out)
 	}
 }

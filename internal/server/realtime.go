@@ -1095,34 +1095,38 @@ func (s *Server) handlePhrases(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
-	defer cancel()
-	started := time.Now()
 	var texts []string
 	for _, p := range body.Phrases {
 		if p = strings.TrimSpace(p); p != "" && len([]rune(p)) <= 40 {
 			texts = append(texts, p)
 		}
 	}
-	added := 0
+	// The openers config is read now, so the answer can say how many
+	// phrases are new; the synthesis runs on, paced for the synthesizer's
+	// rate limit (3 s a phrase), after the answer: a save on the panel
+	// returns at once and the phrases are in the cache within a minute.
 	if body.Openers {
-		_, n, err := duplex.WarmOpeners(ctx, s.cfg, tts, s.log)
+		o, err := duplex.FetchOpenersFor(s.cfg)
 		if err != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error(), "added": n})
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
-		added += n
+		texts = append(texts, o.Phrases()...)
 	}
-	if len(texts) > 0 {
+	missing := duplex.MissingPhrases(s.cfg, tts, texts)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		started := time.Now()
 		n, err := duplex.WarmTexts(ctx, s.cfg, tts, texts, s.log)
-		added += n
 		if err != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error(), "added": added, "took_ms": time.Since(started).Milliseconds()})
+			s.log.Warn("phrase cache: phrases asked for were not all cached", "added", n, "err", err)
 			return
 		}
-	}
-	s.log.Info("phrase cache: phrases cached on request", "asked", len(texts), "openers", body.Openers, "added", added, "took_ms", time.Since(started).Milliseconds())
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "asked": len(texts), "added": added, "cached": duplex.Phrases().Len(), "took_ms": time.Since(started).Milliseconds()})
+		s.log.Info("phrase cache: phrases cached on request", "asked", len(texts), "added", n, "took_ms", time.Since(started).Milliseconds())
+	}()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "asked": len(texts), "queued": len(missing), "already": len(texts) - len(missing), "cached": duplex.Phrases().Len(),
+		"eta_s": 3 * len(missing)})
 }
 
 // toolsToken is the lead service's bearer token from the profile's file.

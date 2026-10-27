@@ -299,7 +299,7 @@
           msg.replaceChildren(h('p', { class: 'muted', text: 'Saving, and synthesizing the openers into golive’s cache…' }));
           guard(api('PUT', '/api/configs/openers?note=' + encodeURIComponent(note.value), cfg)).then(function (d) {
             var k = d.cached || {};
-            var line = k.ok ? ('Saved v' + d.config.version + '. golive cached the openers: ' + (k.added || 0) + ' newly synthesized, ' + (k.cached || '?') + ' phrases in its cache, ' + (k.took_ms || 0) + ' ms.')
+            var line = k.ok ? ('Saved v' + d.config.version + '. golive is caching the openers: ' + (k.queued || 0) + ' new phrase(s) being synthesized now' + (k.queued ? ' (about ' + (k.eta_s || 0) + ' s, paced for the synthesizer’s rate limit)' : '') + ', ' + (k.already || 0) + ' already cached.')
               : ('Saved v' + d.config.version + ', but golive did not cache them: ' + (k.error || 'no answer') + '. They will be cached when golive next starts or a call begins.');
             tip('Saved openers v' + d.config.version);
             msg.replaceChildren(h('p', { class: k.ok ? 'ok' : 'warn', text: line }));
