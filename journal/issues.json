@@ -925,6 +925,19 @@
    "symptom": "09:05:24 and 09:05:29: the owner, alone on a quiet line, spoke 940 and 1240 ms; the labels gave 27% and 44% of the voiced time to the caller; the quiet close let both go ('mostly another voice at the quiet close', ISS-053's rule) — no turn, no answer; the owner asked 能听到吗 at 09:05:33.",
    "cause": "The ISS-053 rule dropped any utterance under 50% the caller's. Its case was 8% (a station announcement); 27–44% is a mis-scored caller.",
    "fix": "quietCloseIgnoreShare 0.25: an utterance with a quarter or more of the caller's voice is answered. Test TestTheQuietCloseAnswersAnUtteranceWithAQuarterOfTheCaller. Open: why the scorer gave the owner's voice to 'another' on this call (enrolment on 2 utterances; the handset?) — the labels of this call are worth a look on the box."
+  },
+  {
+   "id": "ISS-059",
+   "title": "The content figure was stamped on the request for the first segment, not on its audio",
+   "area": "latency",
+   "status": "fixed",
+   "commit": "ddf25e2",
+   "found": "2026-10-27",
+   "found_on": "reading the pipe",
+   "found_call": "",
+   "symptom": "first_content_ms (and content_p50/p95_ms) counted from when the answer's first segment was handed to the synthesizer. On an opener-bound turn the max with the opener's end hid it; on a clause-bound turn the figure was short by the synthesizer's first-audio time, ~200 ms — i.e. at the tail. The 10-25/10-26 content figures (bench 969–1076, sim 920, live 920) are understated on their clause-bound turns.",
+   "cause": "MarkFirstContent was called before the chunk loop in speechPipe.speak; speakCached (the cache path) stamps at the audio, which is why cache-opened turns were right.",
+   "fix": "Stamped on the first content audio chunk. Test TestTheContentFigureIsTheAnswersFirstAudioNotItsRequest (fails on the old stamp with a 1.5 s first-audio delay). First honest call: out-mvqq5jyz-t7p7, content p50 950 / p95 1151 (slow hour). Compare only calls since ddf25e2 with each other."
   }
  ]
 }
