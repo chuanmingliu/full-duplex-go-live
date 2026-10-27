@@ -55,20 +55,23 @@ type Openers struct {
 	Scenarios []OpenerScenario `json:"scenarios"`
 }
 
-// OpenerMaxRunes bounds a phrase: an opener is said at the pause and the
-// answer's own first word waits for its end, so a long one is latency.
-const OpenerMaxRunes = 8
+// OpenerMaxRunes bounds a phrase (the comma included): an opener is said at
+// the pause and the answer's own first word waits for its end, so every
+// character is latency — four characters render at the 540 ms cap (the
+// 12:03 simulated call of 10-27: content 920 on every scenario turn), a
+// bare 嗯， at ~440.
+const OpenerMaxRunes = 5
 
 // DefaultOpeners is seeded on a lead service that has none: the scenarios
 // of a motor-insurance call, in the order they are tried.
 const DefaultOpeners = `{
   "scenarios": [
-    {"id": "price", "name": "问价格", "keywords": ["多少钱", "价格", "保费", "费用", "多少", "贵", "便宜", "优惠", "折"], "phrases": ["价格的话，", "保费方面，", "费用这块，"]},
-    {"id": "tier", "name": "问保额/档位", "keywords": ["保额", "三者", "三百万", "二百万", "一百万", "五百万", "万的", "档"], "phrases": ["这个保额，", "保额方面，"]},
-    {"id": "coverage", "name": "问险种", "keywords": ["车损", "座位", "驾乘", "划痕", "玻璃", "涉水", "交强", "商业险", "险种", "保什么", "赔不赔", "赔吗"], "phrases": ["这个险种，", "这一项，"]},
-    {"id": "claim", "name": "问理赔/出险", "keywords": ["出险", "出过", "理赔", "赔付", "报案", "事故", "撞"], "phrases": ["理赔这块，", "出险的话，"]},
-    {"id": "doubt", "name": "顾虑/比较", "keywords": ["别家", "其他公司", "比较", "再看看", "考虑", "不划算", "太贵", "没必要", "不想"], "phrases": ["您这个顾虑，", "明白您的意思，"]},
-    {"id": "process", "name": "问流程/手续", "keywords": ["怎么办", "怎么买", "手续", "流程", "资料", "多久", "什么时候", "生效", "付款", "支付"], "phrases": ["流程上，", "手续方面，"]},
+    {"id": "doubt", "name": "顾虑/比较", "keywords": ["别家", "其他公司", "比较", "再看看", "考虑", "不划算", "太贵", "便宜", "没必要", "不想", "犹豫"], "phrases": ["您的顾虑，", "明白，"]},
+    {"id": "price", "name": "问价格", "keywords": ["多少钱", "价格", "保费", "费用", "多少", "贵", "优惠", "折"], "phrases": ["价格嘛，", "保费呢，", "费用上，"]},
+    {"id": "tier", "name": "问保额/档位", "keywords": ["保额", "三者", "三百万", "二百万", "一百万", "五百万", "万的", "档"], "phrases": ["保额嘛，", "这个档，"]},
+    {"id": "coverage", "name": "问险种", "keywords": ["车损", "座位", "驾乘", "划痕", "玻璃", "涉水", "交强", "商业险", "险种", "保什么", "赔不赔", "赔吗"], "phrases": ["这一项，", "这个险，"]},
+    {"id": "claim", "name": "问理赔/出险", "keywords": ["出险", "出过", "理赔", "赔付", "报案", "事故", "撞"], "phrases": ["理赔嘛，", "出险呢，"]},
+    {"id": "process", "name": "问流程/手续", "keywords": ["怎么办", "怎么买", "手续", "流程", "资料", "多久", "什么时候", "生效", "付款", "支付"], "phrases": ["流程上，", "手续嘛，"]},
     {"id": "yes", "name": "客户同意", "kind": "statement", "keywords": ["可以", "行吧", "好的", "没问题", "就这样", "那就", "要了", "办吧"], "phrases": ["好的，", "行，"]},
     {"id": "no", "name": "客户拒绝", "kind": "statement", "keywords": ["不要", "不用", "算了", "不需要", "先不"], "phrases": ["明白，", "好，"]}
   ]

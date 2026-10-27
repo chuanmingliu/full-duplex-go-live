@@ -1202,8 +1202,8 @@ func TestSavingTheOpenersCachesThemInGolive(t *testing.T) {
 	if len(asks) != 1 || asks[0] != fx.svc.token {
 		t.Fatalf("golive was asked %d times, with the service's token: %v", len(asks), len(asks) == 1 && asks[0] == fx.svc.token)
 	}
-	bad := map[string]any{"scenarios": []map[string]any{{"id": "x", "keywords": []string{"a"}, "phrases": []string{"这句开头实在太长了不行，"}}}}
-	if code, body := fx.do("PUT", "/api/configs/openers", bad, nil); code != 400 || !strings.Contains(body, "8") {
+	bad := map[string]any{"scenarios": []map[string]any{{"id": "x", "keywords": []string{"a"}, "phrases": []string{"这个保额的话，"}}}}
+	if code, body := fx.do("PUT", "/api/configs/openers", bad, nil); code != 400 || !strings.Contains(body, "5") {
 		t.Fatalf("a long opener was accepted: %d %s", code, body)
 	}
 	// Another config's save does not ask golive.

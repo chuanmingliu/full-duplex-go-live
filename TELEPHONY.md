@@ -918,8 +918,17 @@ and asks golive to synthesize every phrase into its cache on the spot
 (`POST /v1/phrases {"openers": true}`, the lead service's own token
 accepted there; `WarmOpeners` at golive's start covers a restart), so the
 next turn that fits a scenario hears the new opener at the pause. Phrases
-are capped at 8 characters on save: the answer's own first word waits for
-the opener to end.
+are capped at 4 characters plus the comma on save: the answer's own first
+word waits for the opener to end, and four characters already render at the
+540 ms cap (the 12:03 simulated call of 10-27: 价格的话，/保额方面，/这一项，/
+理赔这块， all 540, content 920 on every scenario turn; a bare 嗯， is ~440).
+Scenarios are tried in order, so the more specific come first (顾虑 before
+价格: 便宜 is a comparison before it is a price). A batch warm of the cache
+— start-up, a session's start, a panel save — is paced at 3 s a phrase,
+retries the synthesizer's rate limit, and waits while a call is live (11:49
+on 10-27: a burst of 33 phrases was refused with 1002 and the next call's
+opening line with it); an opening line synthesized while the phone rings is
+not paced.
 
 **Not a word every time, and not in the caller's mouth (10-25 23:36, the
 owner: two phrases were "too mechanical", and the assistant was "too rush to

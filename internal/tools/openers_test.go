@@ -20,6 +20,7 @@ func TestTheDefaultOpenersParseAndMatchByTheCallersWords(t *testing.T) {
 		{"座位险是保什么的", true, "coverage"},
 		{"去年出过一次险", false, "claim"},
 		{"我再看看别家的吧", false, "doubt"},
+		{"别家报的比你们便宜", false, "doubt"}, // doubt before price: 便宜 is a comparison
 		{"行吧那就这样", false, "yes"},
 		{"行吧那就这样？", true, ""}, // a statement-only scenario does not fit a question
 		{"今天天气不错", false, ""},
@@ -53,7 +54,7 @@ func TestOpenersAreCheckedOnSave(t *testing.T) {
 		`{"scenarios": [{"id": "", "keywords": ["a"], "phrases": ["好的，"]}]}`,
 		`{"scenarios": [{"id": "a", "keywords": [], "phrases": ["好的，"]}]}`,
 		`{"scenarios": [{"id": "a", "keywords": ["x"], "phrases": []}]}`,
-		`{"scenarios": [{"id": "a", "keywords": ["x"], "phrases": ["这一句开头实在是太长了，"]}]}`,
+		`{"scenarios": [{"id": "a", "keywords": ["x"], "phrases": ["这个保额的话，"]}]}`,
 		`{"scenarios": [{"id": "a", "keywords": ["x"], "phrases": ["好，"]}, {"id": "a", "keywords": ["y"], "phrases": ["好，"]}]}`,
 		`{"scenarios": [{"id": "a", "kind": "maybe", "keywords": ["x"], "phrases": ["好，"]}]}`,
 		`not json`,
