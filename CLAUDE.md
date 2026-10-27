@@ -639,7 +639,12 @@ cache instead of the service's 3.5–4 s; on-demand quotations are kept too. **T
 service on the box" in `TELEPHONY.md`) speaks the business's two-API
 interface with the placeholder rating over a vehicle table kept on the box;
 `quote-api`'s `base_url` points at it (`phone-brain.sh quotesvc use`) until
-the business's intranet service is reachable.
+the business's intranet service is reachable. **Openers by scenario**
+(`openers` config, `internal/tools/openers.go`, panel page `#/openers`,
+10-27): the opener at the pause is chosen by the caller's words (price →
+价格的话，); saving on the panel caches the phrases in golive at once
+(`POST /v1/phrases`). "An opener that fits the caller's words" in
+`TELEPHONY.md`.
 
 - The owner's prompts are Jinja2 written for a Python renderer. `internal/
   jinja` must render them to the character: `testdata/gen.py` renders every

@@ -171,6 +171,7 @@
     'quote-speech': 'What the assistant says around a quotation, as preset lines instead of the model’s improvisation. "prehook": said the moment the premium is being worked out (not for a missing field); "posthook": the first words of the reply that delivers the result; "template": a Jinja2 template over the result (total, lines[].coverage / choice / premium, skipped) read out right after the posthook, before the model speaks — leave it empty to let the model read the figures; "posthook_status": the result status these are for ("quote"). A template that does not render is refused on save. Read by golive at the start of every call; see internal/tools/quotespeech.go.',
     'quote-plans': 'What a quotation needs before it runs. Named plans; "default" picks one, a call can name another in its working memory (quote_plan — a lead’s own plan, once leads exist). A plan lists its coverages, their tiers ("options": {"驾乘险": ["0","30万","50万","80万"]} — a coverage chosen without one is asked for, "0" means none) and its fields: name, "for" (the coverages that need it, ["*"] for all), "question" (what the assistant asks when it is unknown), "if_unknown" (skip the coverages or stop), "source" (rules, api or any — the business service looks a car up by its plate and does not need the price). With a must field missing the tool answers status=need and the assistant asks one question at a time; only with every field known is a quotation made. "default_selection" is the fixed default quotation (coverage → true or a tier) worked out for the lead while the phone rings and read out without a question; "default_vars" stand in for a lead’s variables on a call placed without one (the test line). See internal/crm/plans.go, prefetch.go.',
     'hangup-rules': 'When the assistant ends a call. Each rule is a case: kind "model" (the chat model judges "when" and says "farewell" before hanging up — add a case by adding a line), "keyword" (a regular expression on the caller’s words; the engine says the farewell and hangs up), "silence" (no word from the caller for "seconds"), "duration" (the call has run "seconds"). "enabled": false keeps a case without using it. "min_turns" on a model rule (or "model_min_turns" on the set) makes the engine refuse the model’s end_call until the caller has had that many turns — "refused twice" hung up on one garbled line on 10-23. Read by golive at the start of every call; a bad pattern is refused on save. See internal/tools/hangup.go.',
+    'openers': 'What the assistant says at the pause, before its answer, keyed by the caller’s words — the Openers page edits this as a form. Each scenario: "keywords" (any one found in the caller’s words matches; scenarios are tried in order), "kind" (question, statement or any), "phrases" (short clauses ending in a comma, at most 8 characters — the answer waits for the opener to end). Saving caches every phrase in golive at once. See internal/tools/openers.go.',
     'quote-api': 'The business’s quotation service: base_url up to and including /intranet, the channel ids, the coverage codes, the phone and vehicle variables and their defaults, and how long to poll. With a base_url set, quote_total goes here. See internal/crm/quoteapi.go.'
   };
   function configs(name) {
@@ -226,6 +227,83 @@
             tip('Saved ' + d.config.name + ' v' + d.config.version);
             location.hash = '#/configs/' + encodeURIComponent(name);
             configs(name);
+          }).catch(function (err) { if (err.status !== 401) msg.replaceChildren(errBox(err)); });
+        } })),
+      msg));
+  }
+
+  // ----- openers -----
+  // The `openers` config as a form: one card per scenario. Save writes the
+  // config (a new version) and golive caches every phrase at once — the
+  // result line says how many it added.
+  function openers() {
+    setNav('openers');
+    page('Openers', 'What the assistant says at the pause, before its answer, chosen by what the caller just said: a question about the price opens with “价格的话，” instead of a bare “嗯，”. Scenarios are tried top to bottom; the first whose keyword is in the caller’s words wins; none matching, the profile’s own pools stand. Saving caches every phrase in golive on the spot, so the next turn that fits hears it at the pause.');
+    var pane = h('div');
+    main.appendChild(pane);
+    pane.appendChild(h('p', { class: 'muted', text: 'Loading…' }));
+    guard(api('GET', '/api/configs/openers')).then(function (d) {
+      var body = d.config.body;
+      if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = { scenarios: [] }; } }
+      showOpeners(pane, d.config, body.scenarios || []);
+    }).catch(function (err) { if (err.status !== 401) { clear(pane); pane.appendChild(errBox(err)); } });
+  }
+  function showOpeners(pane, c, scenarios) {
+    clear(pane);
+    var rows = [];
+    var list = h('div');
+    var msg = h('div');
+    function scenarioCard(sc) {
+      var id = h('input', { type: 'text', placeholder: 'id (letters, e.g. price)', value: sc.id || '' });
+      var name = h('input', { type: 'text', placeholder: 'name (for this page)', value: sc.name || '' });
+      var kind = h('select');
+      [['', 'any turn'], ['question', 'questions only'], ['statement', 'statements only']].forEach(function (o) {
+        var opt = h('option', { value: o[0], text: o[1] }); if ((sc.kind || '') === o[0] || (sc.kind === 'any' && o[0] === '')) opt.selected = true; kind.appendChild(opt);
+      });
+      var kws = h('input', { type: 'text', placeholder: 'keywords, comma-separated: 多少钱, 价格, 保费', value: (sc.keywords || []).join('，') });
+      var phs = h('input', { type: 'text', placeholder: 'openers, one per line or comma-separated: 价格的话，', value: (sc.phrases || []).join(' / ') });
+      var enabled = h('input', { type: 'checkbox' }); enabled.checked = sc.enabled !== false;
+      var card = h('div', { class: 'card' });
+      var row = { card: card, read: function () {
+        var split = function (v) { return v.split(/[\n,，;；\/]+/).map(function (x) { return x.trim(); }).filter(Boolean); };
+        var out = { id: id.value.trim(), name: name.value.trim(), keywords: split(kws.value), phrases: split(phs.value) };
+        if (kind.value) out.kind = kind.value;
+        if (!enabled.checked) out.enabled = false;
+        return out;
+      } };
+      card.appendChild(h('div', { class: 'row' },
+        h('label', { class: 'row' }, enabled, ' enabled'),
+        h('button', { class: 'btn', type: 'button', text: '↑', title: 'earlier (tried first)', onclick: function () { var i = rows.indexOf(row); if (i > 0) { rows.splice(i, 1); rows.splice(i - 1, 0, row); list.insertBefore(card, rows[i].card); } } }),
+        h('button', { class: 'btn', type: 'button', text: '↓', title: 'later', onclick: function () { var i = rows.indexOf(row); if (i >= 0 && i < rows.length - 1) { rows.splice(i, 1); rows.splice(i + 1, 0, row); list.insertBefore(rows[i].card, card); } } }),
+        h('button', { class: 'btn', type: 'button', text: 'Remove', onclick: function () { var i = rows.indexOf(row); if (i >= 0) rows.splice(i, 1); card.remove(); } })));
+      card.appendChild(h('div', { class: 'grid2' }, h('div', null, h('label', { text: 'Id' }), id), h('div', null, h('label', { text: 'Name' }), name)));
+      card.appendChild(h('label', { text: 'Applies to' })); card.appendChild(kind);
+      card.appendChild(h('label', { text: 'Keywords (any one in the caller’s words matches)' })); card.appendChild(kws);
+      card.appendChild(h('label', { text: 'Openers (short, ending in a comma, at most 8 characters; one is chosen, never the same twice running)' })); card.appendChild(phs);
+      rows.push(row);
+      return card;
+    }
+    scenarios.forEach(function (sc) { list.appendChild(scenarioCard(sc)); });
+    var note = h('input', { type: 'text', placeholder: 'what changed (optional)' });
+    pane.appendChild(h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('strong', { text: 'openers' }), h('span', { class: 'chip', text: 'v' + c.version }), h('span', { class: 'muted', text: when(c.created_at) + ' by ' + c.by + (c.note ? ' · ' + c.note : '') }),
+        h('a', { href: '#/configs/openers', class: 'muted', text: 'edit as JSON' }))));
+    pane.appendChild(list);
+    pane.appendChild(h('div', { class: 'card' },
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', type: 'button', text: 'Add scenario', onclick: function () { var card = scenarioCard({}); list.appendChild(card); card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } })),
+      h('label', { text: 'Note' }), note,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-primary', type: 'button', text: 'Save as v' + (c.version + 1) + ' and cache the openers', onclick: function () {
+          var cfg = { scenarios: rows.map(function (r) { return r.read(); }) };
+          msg.replaceChildren(h('p', { class: 'muted', text: 'Saving, and synthesizing the openers into golive’s cache…' }));
+          guard(api('PUT', '/api/configs/openers?note=' + encodeURIComponent(note.value), cfg)).then(function (d) {
+            var k = d.cached || {};
+            var line = k.ok ? ('Saved v' + d.config.version + '. golive cached the openers: ' + (k.added || 0) + ' newly synthesized, ' + (k.cached || '?') + ' phrases in its cache, ' + (k.took_ms || 0) + ' ms.')
+              : ('Saved v' + d.config.version + ', but golive did not cache them: ' + (k.error || 'no answer') + '. They will be cached when golive next starts or a call begins.');
+            tip('Saved openers v' + d.config.version);
+            msg.replaceChildren(h('p', { class: k.ok ? 'ok' : 'warn', text: line }));
+            c.version = d.config.version;
           }).catch(function (err) { if (err.status !== 401) msg.replaceChildren(errBox(err)); });
         } })),
       msg));
@@ -367,6 +445,7 @@
     switch (parts[0]) {
       case '': case 'templates': templates(parts[1] || ''); break;
       case 'configs': configs(parts[1] || ''); break;
+      case 'openers': openers(); break;
       case 'render': render(q); break;
       case 'quote': quote(); break;
       case 'calls': calls(); break;

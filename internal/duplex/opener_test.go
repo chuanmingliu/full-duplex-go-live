@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -248,5 +250,66 @@ func TestTheOpenerIsSaidAtTheBasePauseDuringAPatienceWait(t *testing.T) {
 	waitFor(t, "the answer", 4*time.Second, func() bool { return strings.Contains(c.allOutput(), "我听到你说") })
 	if n := strings.Count(c.allOutput(), "嗯"); n != 1 {
 		t.Fatalf("the opener was said %d times: %q", n, c.allOutput())
+	}
+}
+
+// The opener fits the caller's words when the lead service has a scenario
+// for them: a question about the price opens with the price scenario's
+// phrase, from the cache, at the pause; the phrases are cached at the
+// session's start (the owner, 11:27 on 10-27, after ConvFill).
+func TestTheOpenerFitsTheCallersWordsFromTheLeadServicesScenarios(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/configs/openers" {
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = w.Write([]byte(`{"config":{"name":"openers","version":3,"body":{"scenarios":[{"id":"price","keywords":["多少钱","多少","价格"],"phrases":["价格的话，"]}]}}}`))
+	}))
+	t.Cleanup(svc.Close)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"嗯，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	cfg.opts.Cfg.ToolsBaseURL = svc.URL
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	if _, err := WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil); err != nil {
+		t.Fatal(err)
+	}
+	c := newCollector(rate)
+	asr := newTrailingASR("这个一共多少钱")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.FirstTokenDelay = 700 * time.Millisecond
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	waitFor(t, "the openers cached", 3*time.Second, func() bool { return strings.Contains(logs.String(), "openers cached") })
+
+	speak(e, rate, 1000)
+	closed := time.Now()
+	pause(e, rate, 1200)
+	waitFor(t, "the answer", 5*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
+	said := strings.TrimSpace(c.allOutput())
+	if !strings.HasPrefix(said, "价格的话，") {
+		t.Fatalf("the answer did not open with the price scenario's phrase: %q", said)
+	}
+	if strings.Contains(said, "好的，") || strings.Contains(said, "嗯，") {
+		t.Fatalf("the profile's pool was used beside the scenario's: %q", said)
+	}
+	if d := c.firstAudioAt().Sub(closed); d > 800*time.Millisecond {
+		t.Fatalf("first audio %v after the caller stopped: the scenario's phrase was not in the cache", d)
+	}
+	if !strings.Contains(logs.String(), "scenario=price") {
+		t.Fatal("the scenario was not logged")
 	}
 }

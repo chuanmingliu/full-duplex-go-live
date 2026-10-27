@@ -221,6 +221,13 @@ func warmPhrases(ctx context.Context, cfg config.Config, log *slog.Logger) {
 	if n > 0 {
 		log.Info("phrase cache warmed", "phrases", n, "took_ms", time.Since(started).Milliseconds())
 	}
+	// The scenario-keyed openers from the lead service, when the profile has
+	// one (tools/openers.go).
+	if o, n, err := duplex.WarmOpeners(ctx, cfg, tts, log); err != nil {
+		log.Warn("the lead service's openers were not cached", "err", err)
+	} else if len(o.Scenarios) > 0 {
+		log.Info("openers by scenario cached", "version", o.Version, "scenarios", len(o.Scenarios), "phrases", len(o.Phrases()), "added", n)
+	}
 }
 
 func printResolved(cfg config.Config) error {

@@ -133,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("/v1/realtime", s.handleRealtime)
 		mux.HandleFunc("/v1/opening", s.protect(s.handleOpening))
 		mux.HandleFunc("/v1/pool", s.protect(s.handlePool))
+		mux.HandleFunc("/v1/phrases", s.handlePhrases)
 	}
 	// Whatever else is asked for under /v1/ is said out loud. Putting golive
 	// where another agent used to be means inheriting that agent's callers,

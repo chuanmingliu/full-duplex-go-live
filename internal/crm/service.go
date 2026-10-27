@@ -179,6 +179,11 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(tools.OpenersName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.OpenersName, []byte(tools.DefaultOpeners), "openers by scenario: what the assistant says at the pause, keyed by the caller's words", "crm"); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(QuoteAPIName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(QuoteAPIName, []byte(DefaultQuoteAPI), "no base_url yet: quotes go to the rules", "crm"); err != nil {
 			events.Close()
@@ -627,6 +632,37 @@ func renderFailure(err error) error {
 	return err
 }
 
+// cachePhrases asks golive on the phone line to synthesize the openers
+// config's phrases into its phrase cache, presenting this service's own
+// token (golive holds it as tools_token_file). The answer is golive's, or
+// why it was not asked.
+func (s *Service) cachePhrases(ctx context.Context) map[string]any {
+	if s.cfg.GoliveURL == "" {
+		return map[string]any{"ok": false, "error": "no golive url configured"}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	body, _ := json.Marshal(map[string]any{"openers": true})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.cfg.GoliveURL, "/")+"/v1/phrases", bytes.NewReader(body))
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.token)
+	resp, err := s.cfg.HTTP.Do(req)
+	if err != nil {
+		s.log.Warn("crm: golive could not be asked to cache the openers", "err", err)
+		return map[string]any{"ok": false, "error": "golive is not answering: " + err.Error()}
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil || out == nil {
+		return map[string]any{"ok": false, "error": fmt.Sprintf("golive answered HTTP %d", resp.StatusCode)}
+	}
+	s.log.Info("crm: golive asked to cache the openers", "status", resp.StatusCode, "ok", out["ok"], "added", out["added"])
+	return out
+}
+
 // lineBusy asks golive whether a call is in progress.
 func (s *Service) lineBusy(ctx context.Context) (bool, error) {
 	if s.cfg.GoliveURL == "" {
@@ -802,6 +838,11 @@ func (s *Service) Handler() http.Handler {
 				return fail(http.StatusBadRequest, "%v", err)
 			}
 		}
+		if r.PathValue("name") == tools.OpenersName {
+			if _, err := tools.ParseOpeners(raw); err != nil {
+				return fail(http.StatusBadRequest, "openers: %v", err)
+			}
+		}
 		if r.PathValue("name") == tools.HangupRulesName {
 			if _, errs := tools.ParseHangupRules(raw); len(errs) > 0 {
 				msgs := make([]string, 0, len(errs))
@@ -831,7 +872,14 @@ func (s *Service) Handler() http.Handler {
 			return err
 		}
 		s.log.Info("crm: config saved", "config", v.Name, "version", v.Version, "sha", v.SHA, "by", who(r))
-		writeJSON(w, http.StatusOK, map[string]any{"config": v})
+		out := map[string]any{"config": v}
+		if v.Name == tools.OpenersName {
+			// The owner clicked save: the phrases are synthesized into
+			// golive's cache now, so the next turn that fits a scenario opens
+			// with one at the pause (the owner, 11:27 on 10-27).
+			out["cached"] = s.cachePhrases(r.Context())
+		}
+		writeJSON(w, http.StatusOK, out)
 		return nil
 	}))
 	mux.HandleFunc("POST /api/tools/quote", s.authed(func(w http.ResponseWriter, r *http.Request) error {

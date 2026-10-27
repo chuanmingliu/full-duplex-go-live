@@ -71,3 +71,8 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .kv dt { color: var(--ink-3); } .kv dd { margin: 0; }
 .tip { position: fixed; right: 16px; bottom: 16px; background: var(--ink); color: var(--page); padding: 8px 12px; border-radius: 6px; font-size: 13px; z-index: 9; }
 .gate { max-width: 520px; margin: 60px auto; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+.ok { color: var(--accent); }
+.warn { color: #a15c00; }

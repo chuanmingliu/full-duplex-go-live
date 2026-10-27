@@ -900,6 +900,27 @@ the last 60 ms. Floor 920 from the last sound, ~850 on a typical opener;
 the first simulated call on it (22:40, 13 turns) gave content p50 841 /
 p95 920.
 
+**An opener that fits the caller's words (10-27, after ConvFill, arXiv
+2511.07397).** A fixed 好的，/嗯， carries no meaning; ConvFill's finding is that
+a filler grounded in what the caller said reads as responsiveness. A talker
+model cannot beat the cache on latency (a generation plus a synthesis land
+~600 ms after the close, not 0), so the middle road is the lead service's
+`openers` config (`internal/tools/openers.go`, seeded from
+`tools.DefaultOpeners`): scenarios in order, each a few keywords, a kind
+(question / statement / any) and a few short phrases — a question about the
+price opens with 价格的话，, a tier with 这个保额，, a doubt with 您这个顾虑，.
+`planOpener` matches the words in hand at the early final (substring, first
+scenario wins) and draws from that scenario's phrases; no match, the
+profile's own pools stand. The engine reads the config at every session's
+start and caches its phrases; **the panel's Openers page** (`#/openers`, a
+form over the config; `#/configs/openers` is the JSON) saves a new version
+and asks golive to synthesize every phrase into its cache on the spot
+(`POST /v1/phrases {"openers": true}`, the lead service's own token
+accepted there; `WarmOpeners` at golive's start covers a restart), so the
+next turn that fits a scenario hears the new opener at the pause. Phrases
+are capped at 8 characters on save: the answer's own first word waits for
+the opener to end.
+
 **Not a word every time, and not in the caller's mouth (10-25 23:36, the
 owner: two phrases were "too mechanical", and the assistant was "too rush to
 answer").** Three rules since 8166f1b's successor:

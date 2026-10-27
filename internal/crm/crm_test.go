@@ -147,7 +147,9 @@ type fixture struct {
 	mu       sync.Mutex
 	dials    []map[string]string
 	sessions int
-	refuse   bool
+	// phraseAsks are the tokens golive was presented with on /v1/phrases.
+	phraseAsks []string
+	refuse     bool
 }
 
 const lockedNumber = "00000001234"
@@ -192,6 +194,15 @@ func newFixture(t *testing.T) *fixture {
 	golive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fx.mu.Lock()
 		defer fx.mu.Unlock()
+		if r.URL.Path == "/v1/phrases" {
+			// golive asked to cache the openers: it reads the config back
+			// from this service with the token it was given.
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			fx.phraseAsks = append(fx.phraseAsks, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			fmt.Fprintf(w, `{"ok":true,"asked":0,"added":%d,"cached":12,"took_ms":40}`, len(body))
+			return
+		}
 		fmt.Fprintf(w, `{"model":"golive-1","sessions":%d,"status":"ok"}`, fx.sessions)
 	}))
 	t.Cleanup(golive.Close)
@@ -503,8 +514,8 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	// Three configs are seeded, listed by name: hangup-rules, quote-api, quote-rules.
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 5 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[3].Name != QuoteRulesName || list.Configs[3].Version != 1 || list.Configs[1].Name != QuoteAPIName || list.Configs[2].Name != QuotePlansName || list.Configs[4].Name != tools.QuoteSpeechName {
+	// Six configs are seeded, listed by name: hangup-rules, openers, quote-api, quote-plans, quote-rules, quote-speech.
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
@@ -748,7 +759,7 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 5 {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	// As golive's tool call: the plan in memory, no vehicle price, no seats.
@@ -1161,5 +1172,48 @@ func TestAChangeWithNoPlanInMemoryIsLaidOverTheDefault(t *testing.T) {
 	}
 	if lines, _ := q["lines"].([]any); len(lines) != 2 {
 		t.Fatalf("a plan in memory was changed: %d lines", len(lines))
+	}
+}
+
+// Saving the openers config caches its phrases in golive at once: the lead
+// service asks golive's /v1/phrases with its own token, and the save's answer
+// carries golive's count. A bad config is refused before any of that.
+func TestSavingTheOpenersCachesThemInGolive(t *testing.T) {
+	fx := newFixture(t)
+	var got struct {
+		Config struct {
+			Version int `json:"version"`
+		} `json:"config"`
+		Cached map[string]any `json:"cached"`
+	}
+	if code, body := fx.do("GET", "/api/configs/openers", nil, nil); code != 200 || !strings.Contains(body, `"price"`) {
+		t.Fatalf("the seed: %d %s", code, body)
+	}
+	cfg := map[string]any{"scenarios": []map[string]any{{"id": "price", "keywords": []string{"多少钱"}, "phrases": []string{"价格的话，"}}, {"id": "thanks", "keywords": []string{"谢谢"}, "phrases": []string{"不客气，"}}}}
+	if code, body := fx.do("PUT", "/api/configs/openers?note=two", cfg, &got); code != 200 || got.Config.Version != 2 {
+		t.Fatalf("save: %d %s", code, body)
+	}
+	if got.Cached["ok"] != true {
+		t.Fatalf("golive was not asked, or did not cache: %v", got.Cached)
+	}
+	fx.mu.Lock()
+	asks := append([]string(nil), fx.phraseAsks...)
+	fx.mu.Unlock()
+	if len(asks) != 1 || asks[0] != fx.svc.token {
+		t.Fatalf("golive was asked %d times, with the service's token: %v", len(asks), len(asks) == 1 && asks[0] == fx.svc.token)
+	}
+	bad := map[string]any{"scenarios": []map[string]any{{"id": "x", "keywords": []string{"a"}, "phrases": []string{"这句开头实在太长了不行，"}}}}
+	if code, body := fx.do("PUT", "/api/configs/openers", bad, nil); code != 400 || !strings.Contains(body, "8") {
+		t.Fatalf("a long opener was accepted: %d %s", code, body)
+	}
+	// Another config's save does not ask golive.
+	if code, _ := fx.do("PUT", "/api/configs/hangup-rules", json.RawMessage(tools.DefaultHangupRules), nil); code != 200 {
+		t.Fatal("hangup-rules save")
+	}
+	fx.mu.Lock()
+	n := len(fx.phraseAsks)
+	fx.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("golive asked %d times after an unrelated save", n)
 	}
 }

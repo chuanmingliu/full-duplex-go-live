@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/segment"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // PhraseKey identifies one piece of synthesized audio: these exact words, in
@@ -229,6 +231,42 @@ func WarmPhrases(ctx context.Context, cfg config.Config, tts provider.TTS, log *
 	}
 	added, _, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, ""), cfg.ClientRate, cfg.Language, log)
 	return added, err
+}
+
+// WarmTexts synthesizes short phrases exactly as given into the shared cache
+// for the default voice and rate — the openers a panel has just saved, so
+// the first caller to draw one hears it at the pause. It returns how many it
+// added (phrases already cached count as done, not added).
+func WarmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, log *slog.Logger) (int, error) {
+	if tts == nil || len(texts) == 0 {
+		return 0, nil
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	added, _, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, ""), cfg.ClientRate, cfg.Language, log)
+	return added, err
+}
+
+// WarmOpeners reads the lead service's `openers` config and caches every
+// phrase in it. Run at start-up after WarmPhrases, and by /v1/phrases when
+// the panel saves the config.
+func WarmOpeners(ctx context.Context, cfg config.Config, tts provider.TTS, log *slog.Logger) (tools.Openers, int, error) {
+	if !cfg.Duplex.Opener || !cfg.Duplex.PhraseCache || cfg.ToolsBaseURL == "" {
+		return tools.Openers{}, 0, nil
+	}
+	token := ""
+	if cfg.ToolsTokenFile != "" {
+		if b, err := os.ReadFile(cfg.ToolsTokenFile); err == nil {
+			token = strings.TrimSpace(string(b))
+		}
+	}
+	o, err := tools.FetchOpeners(cfg.ToolsBaseURL, token, 3*time.Second)
+	if err != nil {
+		return tools.Openers{}, 0, err
+	}
+	n, err := WarmTexts(ctx, cfg, tts, o.Phrases(), log)
+	return o, n, err
 }
 
 // WarmSpeech synthesizes one piece of text into the shared cache ahead of the

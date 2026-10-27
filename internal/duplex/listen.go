@@ -1,6 +1,7 @@
 package duplex
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -12,6 +13,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // This file is the listen channel past the detector: the recognizer's
@@ -1317,9 +1319,17 @@ func (e *Engine) planOpener(turn *Turn) string {
 	if !d.Opener || turn == nil || turn.OpenerPlanned != "" {
 		return turn.OpenerPlanned
 	}
+	question := endpoint.ReadsAsQuestion(turn.Transcript)
 	pool := d.OpenerPhrases
-	if endpoint.ReadsAsQuestion(turn.Transcript) && len(d.OpenerQuestionPhrases) > 0 {
+	if question && len(d.OpenerQuestionPhrases) > 0 {
 		pool = d.OpenerQuestionPhrases
+	}
+	// A scenario from the panel that fits the caller's words gives an opener
+	// that carries meaning (价格的话，) instead of a bare 嗯，: the ConvFill
+	// idea at the cache's latency (tools/openers.go).
+	scenario := ""
+	if sc := e.openers.Match(turn.Transcript, question); sc != nil {
+		pool, scenario = sc.Phrases, sc.ID
 	}
 	var fresh []string
 	for _, p := range pool {
@@ -1346,7 +1356,39 @@ func (e *Engine) planOpener(turn *Turn) string {
 		e.recentOpeners = e.recentOpeners[len(e.recentOpeners)-3:]
 	}
 	turn.OpenerPlanned = phrase
+	if scenario != "" {
+		e.log.Debug("speak: the opener fits the caller's words", "turn", turn.ID, "scenario", scenario, "opener", phrase)
+	}
 	return phrase
+}
+
+// loadOpeners reads the lead service's scenario-keyed openers for this
+// session and makes sure their phrases are in the cache (a panel save warms
+// them too, through /v1/phrases; this covers a restart in between).
+func (e *Engine) loadOpeners() {
+	cfg := e.opts.Cfg
+	if !cfg.Duplex.Opener || cfg.ToolsBaseURL == "" {
+		return
+	}
+	o, err := tools.FetchOpeners(cfg.ToolsBaseURL, e.toolsToken(), 2*time.Second)
+	if err != nil {
+		e.log.Warn("speak: the lead service's openers could not be read; the profile's pools stand", "err", err)
+		return
+	}
+	e.openers = o
+	e.log.Info("speak: openers by scenario from the lead service", "version", o.Version, "scenarios", len(o.Scenarios), "phrases", len(o.Phrases()))
+	if e.deps.TTS != nil && cfg.Duplex.PhraseCache {
+		texts := o.Phrases()
+		go func() {
+			ctx, cancel := context.WithTimeout(e.ctx, 20*time.Second)
+			defer cancel()
+			if n, err := WarmTexts(ctx, cfg, e.deps.TTS, texts, e.log); err != nil {
+				e.log.Warn("speak: the openers could not all be cached", "added", n, "err", err)
+			} else if n > 0 {
+				e.log.Info("speak: openers cached", "added", n)
+			}
+		}()
+	}
 }
 
 // openerNote tells the model the opener the engine says for this turn, so

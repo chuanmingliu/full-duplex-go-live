@@ -1059,6 +1059,82 @@ func (s *Server) synthesizeOpening(ctx context.Context, greeting string) (int, e
 	return duplex.WarmSpeech(ctx, s.cfg, tts, greeting, "", s.cfg.Realtime.SampleRate, s.cfg.Language, s.log)
 }
 
+// handlePhrases is POST /v1/phrases {"phrases": [...]} or {"openers": true}:
+// synthesizes short phrases into the shared phrase cache now, so an opener
+// the owner has just saved on the lead service's panel is heard at the pause
+// on the very next turn that fits it (the owner, 11:27 on 10-27: "cached
+// when the save button is clicked"). With "openers": true the lead service's
+// openers config is read and all of its phrases cached. Protected by the
+// server's token or by the lead service's own (tools_token_file), which is
+// what the lead service presents.
+func (s *Server) handlePhrases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
+		return
+	}
+	if err := s.authorize(r); err != nil {
+		if tok := s.toolsToken(); tok == "" || !tokenEqual(bearerToken(r), tok) {
+			s.rejectAuth(w, r)
+			return
+		}
+	}
+	var body struct {
+		Phrases []string `json:"phrases"`
+		Openers bool     `json:"openers"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_json"})
+		return
+	}
+	if !s.cfg.Duplex.PhraseCache {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "the phrase cache is off in this profile"})
+		return
+	}
+	tts, err := provider.OpenTTS(s.cfg.TTS)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	started := time.Now()
+	var texts []string
+	for _, p := range body.Phrases {
+		if p = strings.TrimSpace(p); p != "" && len([]rune(p)) <= 40 {
+			texts = append(texts, p)
+		}
+	}
+	added := 0
+	if body.Openers {
+		_, n, err := duplex.WarmOpeners(ctx, s.cfg, tts, s.log)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error(), "added": n})
+			return
+		}
+		added += n
+	}
+	if len(texts) > 0 {
+		n, err := duplex.WarmTexts(ctx, s.cfg, tts, texts, s.log)
+		added += n
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error(), "added": added, "took_ms": time.Since(started).Milliseconds()})
+			return
+		}
+	}
+	s.log.Info("phrase cache: phrases cached on request", "asked", len(texts), "openers", body.Openers, "added", added, "took_ms", time.Since(started).Milliseconds())
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "asked": len(texts), "added": added, "cached": duplex.Phrases().Len(), "took_ms": time.Since(started).Milliseconds()})
+}
+
+// toolsToken is the lead service's bearer token from the profile's file.
+func (s *Server) toolsToken() string {
+	if f := s.cfg.ToolsTokenFile; f != "" {
+		if b, err := os.ReadFile(f); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return ""
+}
+
 // handlePool reports the sessions in progress, which is how something that did
 // not open a session — a monitor, a test — finds the one to attach to.
 func (s *Server) handlePool(w http.ResponseWriter, r *http.Request) {

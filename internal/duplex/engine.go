@@ -196,6 +196,9 @@ type Engine struct {
 	lastOpener string
 	// recentOpeners are the last three openers said, not to be said again.
 	recentOpeners []string
+	// openers are the lead service's scenario-keyed openers (tools.Openers),
+	// read at the session's start; empty when the profile has none.
+	openers tools.Openers
 	// skipOpenerUntil: the last opener became a backchannel (the caller went
 	// on mid-sentence); a turn that closes before this moment opens without
 	// one — 嗯, 行, 好的 on three fragments of one sentence is a tic — while a
@@ -438,6 +441,7 @@ func (e *Engine) Start(ctx context.Context) {
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
 	e.setupTools()
+	e.loadOpeners()
 	e.startFocus(e.ctx)
 	// The session has just opened and nobody is waiting on anything yet, which
 	// makes this the cheapest moment in the whole call to pay for handshakes.
