@@ -938,6 +938,19 @@
    "symptom": "first_content_ms (and content_p50/p95_ms) counted from when the answer's first segment was handed to the synthesizer. On an opener-bound turn the max with the opener's end hid it; on a clause-bound turn the figure was short by the synthesizer's first-audio time, ~200 ms — i.e. at the tail. The 10-25/10-26 content figures (bench 969–1076, sim 920, live 920) are understated on their clause-bound turns.",
    "cause": "MarkFirstContent was called before the chunk loop in speechPipe.speak; speakCached (the cache path) stamps at the audio, which is why cache-opened turns were right.",
    "fix": "Stamped on the first content audio chunk. Test TestTheContentFigureIsTheAnswersFirstAudioNotItsRequest (fails on the old stamp with a 1.5 s first-audio delay). First honest call: out-mvqq5jyz-t7p7, content p50 950 / p95 1151 (slow hour). Compare only calls since ddf25e2 with each other."
+  },
+  {
+   "id": "ISS-060",
+   "title": "A fragment after a backchanneled opener got no opener: the player was 'active' while the backchannel's last paced audio drained",
+   "area": "opener",
+   "status": "fixed",
+   "commit": "27946cc",
+   "found": "2026-10-27",
+   "found_on": "the 22:05 simulated call (a4cb23a)",
+   "found_call": "out-mvqrd0av-55a6",
+   "symptom": "Five of 21 answered turns had no opener and their first audio was 742–1131 ms from the last sound (p95 1063 over all turns). Each closed 170–200 ms after the previous opener became a backchannel; sayOpener returned before any of its logging.",
+   "cause": "FinishOpenerAsBackchannel drops the turn's queue but keeps the turn active while the paced audio already in the air (up to playback_lead_ms, 300) drains; sayOpener refused on Player.Active().",
+   "fix": "Player.FreeForOpener ignores a draining backchanneled turn; the skip logs 'speak: no opener; the floor is busy'. Verified on out-mvqsfqv2-ugvf (22:34, 27946cc): 20 of 21 turns opened at the pause, first audio p95 381; the one miss logged the busy floor (a different case, first token 565). Test TestTheFloorIsFreeForTheNextOpenerWhileABackchannelDrains."
   }
  ]
 }

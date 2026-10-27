@@ -144,6 +144,8 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-26 22:40 | 9414aa1 (opener tail 80, cap 540), **simulated** (`kb-coverage-nerd`), 13 answered turns with an opener, 14 openers became backchannels, 1 cut; from the last sound: **first audio 380 / 380 / 381; content p50 841 / p95 920 / max 920, 0 over 1000**; opener p50 460 / max 540, binding on 9 of 13; first token from the close p50 304 / p95 362 (a moderate hour) | 13 | 380 (content 841) | 381 (content 920) | 0 |
 | 10-26 23:42 | 9414aa1, **`call`, the owner on the line, quiet, the slow hour (moderate tonight: first token 302 / 425 from the close)**, 3.7 min; 12 of 12 answered turns opened at the pause, 3 openers became backchannels, 2 cuts, 10 other voices let go; three quotations all from the cache at 0 ms, one readout cut and noted; from the last sound: **first audio 380 / 380 / 381; content p50 860 / p95 920 / max 962 — 0 of 12 over 1000** (`journal/retros/out-mvpfe2u2-kls8.md`) | 12 | 380 (content 860) | 381 (content 962, p95 920) | 0 |
 | 10-27 21:31 | ddf25e2 (content stamped on the audio; quiet heads cut), **simulated** (`kb-coverage-nerd`), the slow hour (first token 224 / 455 from the close); 20 answered turns, 14 with an opener, 6 fragments after a backchannel without one: opened turns first audio 380 / 380 / 561, **content p50 950 / p95 1151 / max 1186, 5 over 1000 — the first honest content figure**; the 6 no-opener turns first audio 807–1100; opener heads 110–220 ms and first-segment heads 84–172 cut; two turns lost 640/840 ms to a stripped duplicate opener (fixed fba0387) | 20 | 380 (content 950) | 1100 (content 1186, p95 1151) | 3 (content: 5 over 1000) |
+| 10-27 22:05 | a4cb23a (fragment opener; stripped-opener restart), **simulated** (`kb-coverage-nerd`), same hour (257 / 419); 21 answered turns, 16 opened, **5 fragments closed inside the backchannel's 300 ms drain and got no opener (ISS-060): first audio p50 380 / p95 1063 / max 1131**; content 955 / 1184 / 1274, 7 over 1000; 8 fragments opened with a phrase of another kind | 21 | 380 (content 955) | 1131 (content 1274, p95 1184) | 2 (content: 7 over 1000) |
+| 10-27 22:34 | 27946cc (the floor is free for the opener while a backchannel drains; review fixes), **simulated** (`kb-coverage-nerd`), same hour (239 / 491); 21 answered turns, **20 opened at the pause: first audio p50 380 / p95 381 / max 1286 — under 1000 on the headline over every answered turn**; the answer's own first word 947 / 1188 / 1286, 8 over 1000 (the model's hour: content ≈ close + first token + ~320); 11 fragments opened with a phrase of another kind, 5 stripped openers followed by 7/20/12-character first segments | 21 | 380 (content 947) | 1286 (content 1286, p95 1188) | 1 (content: 8 over 1000) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95
@@ -580,6 +582,16 @@ made on one build.
    from 120 to 100 or 80: each pause at or over the new value that the caller
    carries on from is a recognition split in two), `llm hedge: a copy answered
    first` (do copies 5–8 win their share).
+1a. **The content figure's own levers, as an A/B in one daytime hour** (10-27
+   evening: three calls on three builds gave the answer's own first word
+   p95 1151 / 1184 / 1188 — the chat model's hour, content ≈ close + first
+   token + ~320): `stream_first_chunk_deadline_ms` 160 → 100 (many first
+   clauses waited the whole 160; −40 to −60 on clause-bound turns),
+   `llm_hedge_clause_chars: 4` (built, off; −28 at the median on the bench),
+   `early_final_ms` 120 → 100 (−20, 18% more split recognitions). Profile
+   values, the owner's; ~−100 at p95 together. The headline (first audio)
+   is at the pause on 20 of 21 turns since 27946cc; count every answered
+   turn when quoting it.
 1b. **What is left is mostly decisions, not iterations.** Ranked by what they
    would buy, none taken without the owner:
    - *A faster or second chat-model vendor in the race.* The chat model is 361
