@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -599,4 +600,155 @@ func TestSegmentsStayInOrderWhenOneDeltaCarriesSeveralAndTheFirstIsStripped(t *t
 	if strings.ReplaceAll(said, " ", "") != want {
 		t.Fatalf("words out of order or doubled:\n got %q\nwant %q", said, want)
 	}
+}
+
+// quietTTS renders one marked text as near-silence (every sample = 1), as a
+// vendor would a rendering with nothing above -40 dBFS; everything else goes
+// to the mock.
+type quietTTS struct {
+	inner *mock.TTS
+	quiet string
+}
+
+func (q *quietTTS) Name() string { return q.inner.Name() }
+func (q *quietTTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	s, err := q.inner.Open(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &quietStream{TTSStream: s, quiet: q.quiet}, nil
+}
+
+type quietStream struct {
+	provider.TTSStream
+	quiet string
+}
+
+func (s *quietStream) Synthesize(ctx context.Context, text string) (<-chan provider.TTSChunk, error) {
+	if !strings.Contains(text, s.quiet) {
+		return s.TTSStream.Synthesize(ctx, text)
+	}
+	out := make(chan provider.TTSChunk, 4)
+	go func() {
+		defer close(out)
+		n := s.SampleRate() * 300 / 1000 // 300 ms
+		pcm := make([]byte, n*2)
+		for i := 0; i < n; i++ {
+			pcm[2*i] = 1
+		}
+		for _, part := range [][]byte{pcm[:len(pcm)/2], pcm[len(pcm)/2:]} {
+			select {
+			case <-ctx.Done():
+				return
+			case out <- provider.TTSChunk{PCM: part}:
+			}
+		}
+	}()
+	return out, nil
+}
+
+// A first segment whose whole rendering is under the silence floor is still
+// audio: it is played (what was kept of it), the segment is recorded as
+// spoken and the synthesis session is kept. Found by review on 10-27: the
+// lead trim held every chunk back, the pipe took it for "no audio", dropped
+// the session (two reconnects) and left the sentence out of the transcript.
+func TestAnAllQuietFirstSegmentStillCounts(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	rate := cfg.opts.Cfg.ClientRate
+	inner := mock.NewTTS()
+	if added, err := WarmPhrases(context.Background(), cfg.opts.Cfg, inner, nil); err != nil || added == 0 {
+		t.Fatalf("warming added %d, err %v", added, err)
+	}
+	tts := &quietTTS{inner: inner, quiet: "我听到你说"}
+	c := newCollector(rate)
+	asr := newTrailingASR("今天天气怎么样")
+	asr.msPerRune = 150
+	llm := mock.NewLLM()
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	speak(e, rate, 1000)
+	pause(e, rate, 1500)
+	waitFor(t, "the answer", 8*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
+	opens := inner.Opens()
+	if strings.Contains(logs.String(), "produced no audio") {
+		t.Fatalf("the quiet segment was taken for no audio")
+	}
+	if !strings.Contains(logs.String(), "all quiet; playing what was kept") {
+		t.Fatalf("the quiet segment was not played from what was kept")
+	}
+	if !strings.Contains(c.allOutput(), "我听到你说") {
+		t.Fatalf("the quiet sentence is missing from what was said: %q", c.allOutput())
+	}
+	// One open for the warm, one for the session; a third is the reconnect
+	// after a dropped session.
+	if opens != 2 {
+		t.Fatalf("the synthesis session was reopened: %d opens, wanted 2", opens)
+	}
+}
+
+// When an opener becomes a backchannel, the player drops the turn's queue and
+// lets the paced audio already in the air (up to playback_lead_ms) play out;
+// through that drain the player is still Active, but the floor is free for
+// the next turn's opener — on the 22:05 simulated call of 10-27 five
+// fragments closed inside that drain and got no opener (first audio
+// 742–1131 ms). The new turn's opener is accepted and played at once.
+func TestTheFloorIsFreeForTheNextOpenerWhileABackchannelDrains(t *testing.T) {
+	var mu sync.Mutex
+	heard := map[string]int{}
+	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 300},
+		func(id string, pcm []byte, _ time.Time) {
+			mu.Lock()
+			heard[id] += len(pcm)
+			mu.Unlock()
+		})
+	bytesFor := func(id string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return heard[id]
+	}
+	var gen Generation
+	go p.Run(&gen)
+	defer p.Close()
+
+	// The opener, then the guessed answer behind it: two seconds of audio.
+	twoSeconds := make([]byte, 2*2*24000)
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_1", Text: "嗯，"})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_1", PCM: twoSeconds})
+	waitFor(t, "the opener to be heard", 2*time.Second, func() bool { return bytesFor("item_1") > 24000/2 })
+
+	// The caller went on: the opener stands, the rest is dropped.
+	p.FinishOpenerAsBackchannel("item_1")
+	if p.PendingMS() <= 0 {
+		t.Fatal("nothing in the air after the backchannel; the drain is not exercised")
+	}
+	if !p.Active() {
+		t.Fatal("the player should still be active while its paced audio drains")
+	}
+	if !p.FreeForOpener() {
+		t.Fatal("the floor is not free for the next opener during the drain")
+	}
+	// The fragment's turn opens now, not after the drain.
+	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_2", Text: "好的，"})
+	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_2", PCM: make([]byte, 2*24000/2)})
+	waitFor(t, "the next opener to be heard", 2*time.Second, func() bool { return bytesFor("item_2") > 0 })
+	if p.FreeForOpener() {
+		t.Fatal("the floor reads free while the next turn's opener is playing")
+	}
+	p.Enqueue(Segment{Kind: SegMark, Gen: gen.Current(), TurnID: "item_2", Text: "好的，"})
+	p.Enqueue(Segment{Kind: SegEnd, Gen: gen.Current(), TurnID: "item_2"})
+	waitFor(t, "the floor to be released", 3*time.Second, func() bool { return !p.Active() })
 }

@@ -1249,7 +1249,11 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if !d.Opener || len(d.OpenerPhrases) == 0 || turn == nil || turn.Scripted || e.hangingUp() {
 		return
 	}
-	if turn.Opened != "" || !turn.Timings().FirstAudio.IsZero() || e.player.Active() {
+	if turn.Opened != "" || !turn.Timings().FirstAudio.IsZero() {
+		return
+	}
+	if !e.player.FreeForOpener() {
+		e.log.Debug("speak: no opener; the floor is busy", "turn", turn.ID, "active", e.player.Active())
 		return
 	}
 	fragment := time.Now().Before(e.skipOpenerUntil) && e.lastActiveMS < openerContinuationMS
@@ -1317,6 +1321,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	turn.Opened = phrase
 	turn.OpenedAt = time.Now()
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
+	e.lastSaidOpener = phrase
 	turn.MarkFirstSegment()
 	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
 	begin, body, mark := seg, seg, seg
@@ -1333,17 +1338,23 @@ func (e *Engine) sayOpener(turn *Turn) {
 }
 
 // planFragmentOpener chooses the opener for a fragment said after a
-// backchannel: a scenario phrase that fits the caller's words if there is
-// one, else a statement opener that is not an 嗯 — never the phrase just said
-// as the backchannel, never one of the last three. "" when nothing fits.
+// backchannel: never the phrase just said as the backchannel, and never an
+// 嗯 after an 嗯 (the tic the owner heard on 10-25) — 嗯，… 好的，… and 好的，…
+// 嗯，… both read as listening; a scenario phrase that fits the caller's
+// words if there is one, else a statement opener; one not said in the last
+// three turns when the pool allows it. The phrase planned for this turn when
+// the answer was begun (the model was told to continue from it) serves when
+// it passes. "" when nothing does.
 func (e *Engine) planFragmentOpener(turn *Turn) string {
 	d := e.opts.Cfg.Duplex
 	if !d.Opener || turn == nil {
 		return ""
 	}
-	// The phrase planned for this turn when the answer was begun (the model
-	// was told to continue from it) serves if it is not an 嗯.
-	if planned := turn.OpenerPlanned; planned != "" && !strings.HasPrefix(planned, "嗯") {
+	isEn := func(p string) bool { return strings.HasPrefix(p, "嗯") }
+	allowed := func(p string) bool {
+		return p != "" && p != e.lastSaidOpener && !(isEn(p) && isEn(e.lastSaidOpener))
+	}
+	if planned := turn.OpenerPlanned; allowed(planned) {
 		return planned
 	}
 	question := endpoint.ReadsAsQuestion(turn.Transcript)
@@ -1351,11 +1362,12 @@ func (e *Engine) planFragmentOpener(turn *Turn) string {
 	if sc := e.openers.Match(turn.Transcript, question); sc != nil {
 		pool = sc.Phrases
 	}
-	var fresh []string
+	var fresh, any []string
 	for _, p := range pool {
-		if strings.HasPrefix(p, "嗯") {
+		if !allowed(p) {
 			continue
 		}
+		any = append(any, p)
 		recent := false
 		for _, r := range e.recentOpeners {
 			if r == p && r != turn.OpenerPlanned {
@@ -1368,7 +1380,10 @@ func (e *Engine) planFragmentOpener(turn *Turn) string {
 		}
 	}
 	if len(fresh) == 0 {
-		e.log.Debug("speak: no opener of another kind for the fragment", "turn", turn.ID, "pool", len(pool), "recent", e.recentOpeners)
+		fresh = any
+	}
+	if len(fresh) == 0 {
+		e.log.Debug("speak: no opener of another kind for the fragment", "turn", turn.ID, "pool", len(pool), "last", e.lastSaidOpener)
 		return ""
 	}
 	phrase := fresh[rand.Intn(len(fresh))]

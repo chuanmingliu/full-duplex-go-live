@@ -107,9 +107,12 @@ type Player struct {
 	turnStarted time.Time
 	playhead    time.Time
 	emittedMS   float64
-	spoken      []spokenSpan
-	pendingText string
-	pendingFrom float64
+	// drainingTurn is a backchanneled opener's turn whose queue was dropped
+	// and whose last paced audio is still in the air; the floor is free.
+	drainingTurn string
+	spoken       []spokenSpan
+	pendingText  string
+	pendingFrom  float64
 	// pendingAnnounced records that the segment in pendingText has been
 	// reported through onSegment, which happens on its first audio.
 	pendingAnnounced bool
@@ -263,6 +266,20 @@ func (p *Player) Active() bool {
 	return p.speaking || len(p.queue) > 0 || p.activeTurn != ""
 }
 
+// FreeForOpener reports whether a new turn's opener may be said now: nothing
+// is queued, and the only turn the player still holds, if any, is a
+// backchanneled opener draining its last paced milliseconds
+// (FinishOpenerAsBackchannel). Active stays true through that drain, which
+// is right for a filler and wrong for the opener of the turn that followed.
+func (p *Player) FreeForOpener() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.queue) > 0 {
+		return false
+	}
+	return p.activeTurn == "" || p.activeTurn == p.drainingTurn
+}
+
 // GraceFinishSegment lets turnID complete the sentence it is currently speaking
 // even once its generation goes stale, then drops the rest of it. Call it
 // before bumping the generation.
@@ -306,6 +323,12 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 		p.setSpeakingLocked(false)
 		return
 	}
+	// Until then the turn is draining, not speaking: the floor is free for
+	// the next turn's opener (FreeForOpener). The 22:05 simulated call of
+	// 10-27: five fragments closed 170–200 ms after their backchannel, inside
+	// the ≤300 ms (playback_lead_ms) of audio in the air, and sayOpener found
+	// the player active and said nothing — first audio 742–1131 ms.
+	p.drainingTurn = turnID
 	go func() {
 		time.Sleep(time.Duration(remaining) * time.Millisecond)
 		p.mu.Lock()
@@ -732,6 +755,7 @@ func (p *Player) fullSpokenLocked() string {
 
 func (p *Player) resetTurnLocked() {
 	p.activeTurn = ""
+	p.drainingTurn = ""
 	p.graceTurn = ""
 	p.graceMarks = 0
 	p.turnStarted = time.Time{}

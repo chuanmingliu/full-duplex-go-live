@@ -196,6 +196,9 @@ type Engine struct {
 	lastOpener string
 	// recentOpeners are the last three openers said, not to be said again.
 	recentOpeners []string
+	// lastSaidOpener is the phrase most recently said at a pause (the one a
+	// fragment's opener must differ from when it became a backchannel).
+	lastSaidOpener string
 	// openers are the lead service's scenario-keyed openers (tools.Openers),
 	// read at the session's start; empty when the profile has none.
 	openers tools.Openers
@@ -1064,7 +1067,7 @@ consume:
 			if !ok {
 				return
 			}
-			if !said && !restartFirst() {
+			if !said && !spoke && !restartFirst() {
 				return
 			}
 		case <-firstDeadline:
@@ -1096,7 +1099,7 @@ consume:
 			if !ok {
 				return
 			}
-			if !said && !restartFirst() {
+			if !said && !spoke && !restartFirst() {
 				return
 			}
 		case text, ok := <-p.in:
@@ -1117,7 +1120,7 @@ consume:
 				// A segment cut from the same delta that follows the stripped
 				// one is spoken next, in order; only when none follows is
 				// the segmenter restarted on what it still holds.
-				if !said && i == len(ready)-1 && !restartFirst() {
+				if !said && !spoke && i == len(ready)-1 && !restartFirst() {
 					return
 				}
 				if p.soft.Load() {
@@ -1219,6 +1222,9 @@ func (p *speechPipe) speak(text string) bool {
 		// A closing quote, a dash, an ellipsis: a segment the splitter cut off
 		// on its own. A synthesizer returns no audio for it, and that used to
 		// cost a round trip to find out and a dropped connection afterwards.
+		// Nothing was said, which matters for a first segment (好的…… after
+		// the engine's 好的，: the restart must still happen).
+		p.saidNothing = true
 		return true
 	}
 	if p.ctx.Err() != nil || !p.current() {
@@ -1378,6 +1384,30 @@ func (p *speechPipe) speak(text string) bool {
 		})
 	}
 
+	// A segment whose whole rendering stayed under the silence floor — a
+	// breath, an ellipsis, a vendor's off moment — was held back chunk by
+	// chunk above and never enqueued. It is audio all the same: play what was
+	// kept of it, so the segment counts as produced and the session is not
+	// dropped as having delivered nothing (review of 10-27: two reconnects
+	// and a sentence missing from the transcript).
+	if trimLead && firstChunk && len(held) > 0 && p.ctx.Err() == nil && p.current() {
+		firstChunk = false
+		pcmBytes += len(held)
+		p.e.log.Debug("speak: the segment's audio was all quiet; playing what was kept of it",
+			"turn", p.turn.ID, "chars", len([]rune(text)), "quiet_ms", leadMS,
+			"ms", time.Since(segStarted).Milliseconds())
+		p.turn.MarkFirstContent()
+		p.turn.MarkFirstAudio()
+		p.e.player.Enqueue(Segment{
+			Kind:     SegAudio,
+			Gen:      p.turn.Generation,
+			TurnID:   p.turn.ID,
+			Revision: p.turn.Revision,
+			PCM:      held,
+		})
+		held = nil
+	}
+
 	// Every check on the turn's liveness lives inside the loop body above, so a
 	// synthesis that produced no chunks at all skipped all of them and fell
 	// through to the mark. MiniMax returns exactly that channel — closed, empty,
@@ -1458,6 +1488,16 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	if err != nil || len(pcm) == 0 {
 		return true
 	}
+	leadMS := 0
+	if !p.begun {
+		// The answer's first segment, from the cache: its quiet head is cut
+		// as a synthesized one's would be, and it counts as the first — the
+		// segment after it is not the one the caller waits in silence for.
+		p.begun = true
+		rendered := len(pcm)
+		pcm = audio.TrimLeadingSilence(pcm, p.e.opts.ClientRate, -40, segmentLeadMS)
+		leadMS = int(audio.PCM16(p.e.opts.ClientRate).DurationMS(make([]byte, rendered-len(pcm))))
+	}
 	p.turn.MarkFirstSegment()
 	if !p.confirmed() {
 		return false
@@ -1478,7 +1518,8 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	p.e.log.Debug("speak: segment played from the phrase cache",
 		"turn", p.turn.ID,
 		"text", text,
-		"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)))
+		"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)),
+		"lead_ms", leadMS)
 	return true
 }
 

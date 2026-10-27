@@ -926,6 +926,17 @@ answer's first word used to wait for a 24-character strong boundary after
 it (640 and 840 ms after the first token on two turns); the segmenter is
 put back on first-segment rules (`Segmenter.RestartFirst`).
 
+**The floor is free for the next opener while a backchannel drains
+(10-27).** When an opener becomes a backchannel the player drops the turn's
+queue and lets the paced audio already in the air (up to `playback_lead_ms`,
+300) play out; through that drain `Player.Active` stayed true and `sayOpener`
+returned without a word or a log line. On the 22:05 simulated call of 10-27
+five fragments closed 170–200 ms after their backchannel, inside the drain,
+and their first audio was the model's and the synthesizer's (742–1131 ms) —
+the `opener_on_fragments` rule never got to run. `Player.FreeForOpener`
+ignores a draining backchanneled turn; the skip, when it happens, logs
+`speak: no opener; the floor is busy`.
+
 **The quiet head of a rendering is cut (10-27).** A synthesized phrase opens
 with some tens of ms of near-silence before the first syllable. The opener's
 is cut to 20 ms (`openerLeadMS`): the caller hears the word at the pause and

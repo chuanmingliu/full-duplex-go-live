@@ -372,9 +372,10 @@ type DuplexConfig struct {
 	// the tic the owner heard (10-25 23:36) — and its first audio is then the
 	// chat model's and the synthesizer's: 807–1100 ms from the last sound on
 	// 6 of 20 turns of the 21:31 simulated call of 10-27. With this on, the
-	// fragment's answer opens with a phrase of a different kind — a scenario
-	// opener that fits the words, else a statement opener that is not 嗯 —
-	// so the pair reads 嗯，… 好的，… rather than 嗯，… 嗯，….
+	// fragment's answer opens with a phrase of another kind — a scenario
+	// opener that fits the words, else a statement opener; never the phrase
+	// just said, never an 嗯 after an 嗯 — so the pair reads 嗯，… 好的，…
+	// rather than 嗯，… 嗯，….
 	OpenerOnFragments bool `json:"opener_on_fragments"`
 
 	// HoldingFiller keeps the conversation alive while the backend works.
