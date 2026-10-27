@@ -877,8 +877,12 @@ func (e *Engine) onTick() {
 type speechPipe struct {
 	// openedDone: the first segment has been checked against Turn.Opened.
 	openedDone bool
-	e          *Engine
-	turn       *Turn
+	// saidNothing is set by speak when a segment was stripped to nothing (the
+	// model's own opener after the engine's), for run to restart the first
+	// segment's rules on the text that follows.
+	saidNothing bool
+	e           *Engine
+	turn        *Turn
 	// begun is set once the pipe has asked for its first synthesis. That one
 	// is the one a caller waits on in silence; see provider.WithUrgent.
 	begun  bool
@@ -990,6 +994,46 @@ func (p *speechPipe) run() {
 	grace := time.Duration(p.e.opts.Cfg.Duplex.StreamFirstChunkGraceMS) * time.Millisecond
 	spoke := false
 
+	// say speaks one segment. When it turns out to say nothing — the model's
+	// own opener, already said at the pause and stripped — the first segment
+	// is still ahead: the segmenter is put back on first-segment rules for
+	// the text it holds (a clause may end on a comma, at
+	// stream_first_chunk_chars) and the deadline is re-armed. Without this
+	// the answer's first word waited for a strong boundary at
+	// stream_min_chunk_chars: 640 and 840 ms after the first token on two
+	// turns of the 21:31 simulated call of 10-27.
+	say := func(text string) bool {
+		p.saidNothing = false
+		if !p.speak(text) {
+			return false
+		}
+		if !p.saidNothing {
+			spoke = true
+			return true
+		}
+		p.saidNothing = false
+		spoke = false
+		firstDeadline, boundaryGrace = nil, nil
+		ready := seg.RestartFirst()
+		p.e.log.Debug("speak: the first segment said nothing; the next is the first again",
+			"turn", p.turn.ID, "pending_chars", len([]rune(seg.Pending())), "ready", len(ready))
+		for _, r := range ready {
+			spoke = true
+			if !p.speak(r) {
+				return false
+			}
+		}
+		if !spoke {
+			if seg.Pending() != "" && deadline > 0 {
+				firstDeadline = time.After(deadline)
+			}
+			if grace > 0 && seg.HasEarlyBoundary() {
+				boundaryGrace = time.After(grace)
+			}
+		}
+		return true
+	}
+
 consume:
 	for {
 		if p.soft.Load() {
@@ -1009,9 +1053,8 @@ consume:
 			}
 			p.e.log.Debug("speak: first segment cut at an early boundary",
 				"turn", p.turn.ID, "text", early, "grace_ms", grace.Milliseconds())
-			spoke = true
 			firstDeadline = nil
-			if !p.speak(early) {
+			if !say(early) {
 				return
 			}
 		case <-firstDeadline:
@@ -1038,9 +1081,8 @@ consume:
 			}
 			p.e.log.Debug("speak: first segment flushed on deadline",
 				"turn", p.turn.ID, "chars", len([]rune(forced)), "ms", deadline.Milliseconds())
-			spoke = true
 			boundaryGrace = nil
-			if !p.speak(forced) {
+			if !say(forced) {
 				return
 			}
 		case text, ok := <-p.in:
@@ -1051,10 +1093,9 @@ consume:
 				firstDeadline = time.After(deadline)
 			}
 			for _, ready := range seg.Push(text) {
-				spoke = true
 				firstDeadline = nil
 				boundaryGrace = nil
-				if !p.speak(ready) {
+				if !say(ready) {
 					return
 				}
 				if p.soft.Load() {
@@ -1145,6 +1186,11 @@ func (p *speechPipe) speak(text string) bool {
 		}
 	}
 	if text == "" {
+		// Nothing was said: the first segment was the opener, already
+		// spoken. The pipe's loop restarts the first-segment regime for
+		// what follows (saidNothing), so the first word the caller hears is
+		// not held to a later segment's length.
+		p.saidNothing = true
 		return true
 	}
 	if !speakable(text) {

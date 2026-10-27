@@ -410,3 +410,63 @@ func TestTheQuietHeadOfTheOpenerAndTheFirstSegmentIsCut(t *testing.T) {
 		t.Fatalf("the opener ran %d ms; wanted 330 of voice + 20 of head", n)
 	}
 }
+
+// The model opens with the same words as the engine's opener; they are
+// stripped, and the answer's first word must still be treated as a first
+// segment: short, allowed to end on a comma, bounded by the deadline. Until
+// 10-27 the stripped opener counted as the first segment spoken and the
+// first word waited for a strong boundary at stream_min_chunk_chars (24):
+// 640 and 840 ms after the first token on two turns of the 21:31 call.
+func TestTheFirstWordAfterAStrippedOpenerIsStillAFirstSegment(t *testing.T) {
+	Phrases().Reset()
+	t.Cleanup(Phrases().Reset)
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"好的，"}
+	cfg.opts.Cfg.Duplex.PhraseCache = true
+	cfg.opts.Cfg.Duplex.StreamFirstChunkChars = 4
+	cfg.opts.Cfg.Duplex.StreamMinChunkChars = 24
+	rate := cfg.opts.Cfg.ClientRate
+	tts := mock.NewTTS()
+	if added, err := WarmPhrases(context.Background(), cfg.opts.Cfg, tts, nil); err != nil || added == 0 {
+		t.Fatalf("warming added %d, err %v", added, err)
+	}
+	c := newCollector(rate)
+	asr := newTrailingASR("今天天气怎么样")
+	asr.msPerRune = 150
+	// The mock's answer is 好的，我听到你说今天天气怎么样。让我确认一下细节，然后给你一个完整的答复。
+	// With 好的， stripped, the first word's clause is 13 characters to a 。;
+	// the strong boundary at ≥24 is 20 characters further on.
+	llm := mock.NewLLM()
+	llm.FirstTokenDelay = 300 * time.Millisecond
+	llm.DelayPerRune = 20 * time.Millisecond
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
+		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	speak(e, rate, 1000)
+	pause(e, rate, 1500)
+	waitFor(t, "the answer", 6*time.Second, func() bool { return strings.Contains(c.allOutput(), "让我确认一下") })
+	if !strings.Contains(logs.String(), "the model's opener was already said at the pause") {
+		t.Fatal("the model's opener was not stripped; the test does not exercise the case")
+	}
+	turn := e.tracker.Current()
+	if turn == nil {
+		t.Fatal("no current turn")
+	}
+	tm := turn.Timings()
+	// 13 characters at 20 ms is ~260 ms; the whole sentence to the strong
+	// boundary is ~660.
+	if d := tm.FirstContent.Sub(tm.FirstToken); d > 450*time.Millisecond {
+		t.Fatalf("the answer's first word came %v after the first token; it waited for a later segment's boundary instead of the first segment's", d)
+	}
+	if n := strings.Count(c.allOutput(), "好的"); n != 1 {
+		t.Fatalf("the opener was said %d times: %q", n, c.allOutput())
+	}
+}
