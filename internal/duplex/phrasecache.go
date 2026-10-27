@@ -316,13 +316,20 @@ func WarmSpeech(ctx context.Context, cfg config.Config, tts provider.TTS, text, 
 	if len(texts) == 0 {
 		return 0, nil
 	}
-	_, bytes, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, voice), clientRate, language, log)
+	_, bytes, err := warmTextsPaced(ctx, cfg, tts, texts, ResolveVoice(cfg, voice), clientRate, language, log, false)
 	return bytes, err
 }
 
 // warmTexts fills the cache for segments exactly as given, and reports how many
 // it added and the size of all of them.
 func warmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, voice string, clientRate int, language string, log *slog.Logger) (added, bytes int, err error) {
+	return warmTextsPaced(ctx, cfg, tts, texts, voice, clientRate, language, log, true)
+}
+
+// warmTextsPaced is warmTexts with the pacing and the yield to live calls
+// optional: an opening line synthesized while the phone rings is on the
+// call's path and is not paced.
+func warmTextsPaced(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, voice string, clientRate int, language string, log *slog.Logger, paced bool) (added, bytes int, err error) {
 	want := SynthesisRate(cfg, clientRate)
 	key := func(text string) PhraseKey {
 		return PhraseKey{
@@ -354,12 +361,12 @@ func warmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts [
 	defer stream.Close()
 
 	for i, text := range missing {
-		if warmPace > 0 {
+		if paced && warmPace > 0 {
 			if err := waitForQuiet(ctx, log); err != nil {
 				return added, bytes, err
 			}
 		}
-		if i > 0 && warmPace > 0 {
+		if paced && i > 0 && warmPace > 0 {
 			// Paced: a batch of phrases warmed in a burst is refused by the
 			// synthesizer's rate limit (11:49 on 10-27: 16 profile phrases
 			// then 17 openers in four seconds, "1002: rate limit exceeded").
