@@ -173,6 +173,15 @@
    "cost": "The assistant says two short words across the caller's sentence (嗯，… then 好的，/a scenario phrase…) where it said one. The owner's 10-25 objection was the same word twice (嗯，嗯); the planner never repeats the kind. The owner hears it on a call and decides.",
    "guard": "Off by default; on in the telephony profile since fba0387+. Never an 嗯 after an 嗯; never one of the last three phrases.",
    "status": "on as a test (decision 15's licence: 'do whatever test you need'), 2026-10-27; the owner decides after hearing it"
+  },
+  {
+   "rank": 17,
+   "title": "Two content levers in the telephony profile as a daytime A/B: the first clause flushed at 100 ms instead of 160, and the copies raced on the first clause",
+   "gain": "The answer's own first word is close + the chat model's first token + ~320 ms (clause ~100, synthesizer ~190, queue); on the 10-27 evening calls it was p95 1151/1184/1188. Many first clauses waited the full 160 ms deadline; 100 takes 40–60 off them, and the first-clause race −28 at the median (bench 10-25). Together the ~100 ms that a good hour needs for p95 1000.",
+   "basis": "journal/retros/out-mvqsfqv2-ugvf.md; RETRO-1000 §3.2 and §7 run B; the 10-27 detail job (624) with 'first segment flushed on deadline chars=10 ms=160' on four turns.",
+   "cost": "A shorter first clause (5–7 characters instead of ~10) before the synthesizer; a few more of the losing copies' tokens. Nothing in what is recognised or in the words said.",
+   "guard": "An A/B in one daytime hour against a baseline call on 27946cc; revert if the content p95 does not move or the first clause sounds clipped.",
+   "status": "on as a test, 2026-10-28 morning; the owner keeps or reverts"
   }
  ]
 }

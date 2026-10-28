@@ -926,6 +926,15 @@ answer's first word used to wait for a 24-character strong boundary after
 it (640 and 840 ms after the first token on two turns); the segmenter is
 put back on first-segment rules (`Segmenter.RestartFirst`).
 
+**Two content levers on as a test (10-28 morning, decision 17):**
+`stream_first_chunk_deadline_ms` 160 → 100 (on the 10-27 calls many first
+clauses waited the whole 160 ms: `first segment flushed on deadline chars=10
+ms=160`) and `llm_hedge_clause_chars: 4` (the race decided on the first
+clause, lever 3.2; −28 ms at the median on the 10-25 bench). Neither touches
+what is recognised or said; both shorten the answer's own first word by
+40–90 ms on a clause-bound turn. Measured as a daytime A/B against a
+baseline call in the same hour on 27946cc; the owner keeps or reverts.
+
 **The floor is free for the next opener while a backchannel drains
 (10-27).** When an opener becomes a backchannel the player drops the turn's
 queue and lets the paced audio already in the air (up to `playback_lead_ms`,
