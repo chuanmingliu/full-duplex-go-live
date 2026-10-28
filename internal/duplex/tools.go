@@ -255,53 +255,6 @@ func lastResultLine(t *tools.Task) string {
 	return string(t.Result.Output)
 }
 
-// recordConfigChange applies the quote tool's `config` argument to the
-// working memory before the task takes its snapshot, so a change to one
-// item of the plan is a single call: quote_total with the change. On the
-// 10:46 call of 10-26 the model recorded the change with update_memory and
-// called the tool only after its own sentence had played: 3.3 s of the
-// 8.2 s the caller waited for the figure.
-func (e *Engine) recordConfigChange(c provider.ToolCall) {
-	var args struct {
-		Config  map[string]any   `json:"config"`
-		Configs []map[string]any `json:"configs"`
-	}
-	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil || len(args.Config) == 0 {
-		return
-	}
-	if len(args.Configs) > 0 {
-		// A comparison of options does not change the plan: the customer is
-		// asking, not choosing (the 10:19 simulated call of 10-28: config
-		// beside configs set the plan to 500万 nobody had picked, and the
-		// next change was priced on it).
-		e.log.Info("tools: a config beside configs is not recorded; a comparison leaves the plan as it is")
-		return
-	}
-	// Nothing new leaves the version alone, so a repeated call still folds.
-	snap, _ := e.tools.memory.Snapshot()
-	var mem struct {
-		Quote map[string]any `json:"quote"`
-	}
-	_ = json.Unmarshal(snap, &mem)
-	same := true
-	for k, v := range args.Config {
-		if cur, ok := mem.Quote[k]; !ok || fmt.Sprint(cur) != fmt.Sprint(v) {
-			same = false
-			break
-		}
-	}
-	if same {
-		return
-	}
-	patch, _ := json.Marshal(map[string]any{"quote": args.Config})
-	v, err := e.tools.memory.Patch(patch)
-	if err != nil {
-		return
-	}
-	e.log.Info("tools: the plan change in the call's config is recorded", "version", v, "keys", patchKeys(patch))
-	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: patch})
-}
-
 // recordSelection brings the working memory's plan to the selection a
 // quotation was priced on (`selection` in the lead service's answer), so a
 // later change builds on it. The default quotation is quoted with nothing
@@ -748,9 +701,12 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 // submitTask starts an async tool and answers the model at once.
 func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string) {
 	ts := e.tools
-	if ts.memory != nil {
-		e.recordConfigChange(c)
-	}
+	// A `config` in the call is not folded into the plan here: the lead
+	// service lays it over the plan itself, and the plan in memory follows
+	// what a result priced when the result is delivered (recordSelection).
+	// Folded at call time, a change the model sent beside — or a second
+	// before — a comparison of options set the plan to an option nobody had
+	// chosen (the 10:19, 10:26 and 10:33 simulated calls of 10-28).
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
 		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)

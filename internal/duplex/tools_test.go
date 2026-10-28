@@ -1114,6 +1114,24 @@ func (m *memoQuote) Execute(ctx context.Context, t tools.Tool, req tools.Request
 	m.mu.Lock()
 	m.reqs = append(m.reqs, req)
 	m.mu.Unlock()
+	// As the lead service does: the change in the call's config laid over
+	// the plan in the memory, and the priced selection in the answer.
+	var args struct {
+		Config map[string]any `json:"config"`
+	}
+	_ = json.Unmarshal(req.Arguments, &args)
+	var mem struct {
+		Quote map[string]any `json:"quote"`
+	}
+	_ = json.Unmarshal(req.Memory, &mem)
+	sel := map[string]any{}
+	for k, v := range mem.Quote {
+		sel[k] = v
+	}
+	for k, v := range args.Config {
+		sel[k] = v
+	}
+	m.statusQuote.selection = sel
 	return m.statusQuote.Execute(ctx, t, req)
 }
 
@@ -1147,8 +1165,8 @@ func TestAPlanChangeIsOneCallAndItsResultStaysWithTheMemory(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("the tool ran %d times", len(reqs))
 	}
-	if reqs[0].MemoryVersion != 1 || !strings.Contains(string(reqs[0].Memory), `"三者险":"300万"`) {
-		t.Fatalf("the change was not in the memory the task priced: v%d %s", reqs[0].MemoryVersion, reqs[0].Memory)
+	if !strings.Contains(string(reqs[0].Arguments), `"三者险":"300万"`) {
+		t.Fatalf("the change was not in the call: %s", reqs[0].Arguments)
 	}
 	done := make(chan string, 1)
 	e.post(func() { done <- e.memoryBlock() })
@@ -1156,15 +1174,12 @@ func TestAPlanChangeIsOneCallAndItsResultStaysWithTheMemory(t *testing.T) {
 	if !strings.Contains(block, "最近一次报价结果") || !strings.Contains(block, "3200") {
 		t.Fatalf("the delivered result is not beside the memory: %q", block)
 	}
-	// The same change again changes nothing, so the memory's version holds.
-	v := make(chan int, 1)
-	e.post(func() {
-		e.recordConfigChange(provider.ToolCall{Arguments: `{"config":{"三者险":"300万"}}`})
-		_, ver := e.memorySnapshot()
-		v <- ver
-	})
-	if got := <-v; got != 1 {
-		t.Fatalf("a repeated change bumped the memory to v%d", got)
+	// The plan in memory follows the priced selection once the result is
+	// delivered — not before.
+	mem := make(chan string, 1)
+	e.post(func() { snap, _ := e.memorySnapshot(); mem <- string(snap) })
+	if got := <-mem; !strings.Contains(got, `"三者险":"300万"`) {
+		t.Fatalf("the delivered change is not the plan in memory: %s", got)
 	}
 	// A readout cut short by the caller is remembered as such: the block says
 	// the total may not have been heard and asks for it to be repeated.
@@ -1294,9 +1309,10 @@ func TestSeveralOptionsAreReadOutAsOneComparison(t *testing.T) {
 	}
 }
 
-// A config beside configs is not folded into the plan: a comparison asks,
-// it does not choose.
-func TestAConfigBesideConfigsDoesNotChangeThePlan(t *testing.T) {
+// A single change is not folded into the plan when the tool is called: the
+// plan follows what a delivered result priced. So a comparison called a
+// second after a single change still compares over the plan as it was.
+func TestAChangeTakesEffectOnlyWhenItsQuotationIsDelivered(t *testing.T) {
 	opts := quoteConfig()
 	rate := opts.Cfg.ClientRate
 	c := newCollector(rate)
@@ -1304,10 +1320,11 @@ func TestAConfigBesideConfigsDoesNotChangeThePlan(t *testing.T) {
 	v := make(chan int, 1)
 	e.post(func() {
 		e.tools.memory.Patch(json.RawMessage(`{"quote":{"三者险":"200万"}}`))
-		e.recordConfigChange(provider.ToolCall{Arguments: `{"config":{"三者险":"500万"},"configs":[{"三者险":"300万"}]}`})
+		job := backendJob{turn: e.tracker.Begin("", false)}
+		e.submitTask(job, provider.ToolCall{ID: "x", Name: "quote_total", Arguments: `{"config":{"三者险":"500万"}}`}, e.tools.byName["quote_total"])
 		snap, ver := e.memorySnapshot()
-		if !strings.Contains(string(snap), `"三者险":"200万"`) {
-			t.Errorf("the plan changed: %s", snap)
+		if !strings.Contains(string(snap), `"三者险":"200万"`) || strings.Contains(string(snap), "500万") {
+			t.Errorf("the plan changed at call time: %s", snap)
 		}
 		v <- ver
 	})
