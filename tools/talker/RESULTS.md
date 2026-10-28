@@ -111,5 +111,35 @@ explicitly; let the cloud answer supply factual details. Its latency and
 acceptability remain to be measured. A modest size reduction alone should not
 be assumed to solve the ~1.3-second uncached prefill tail.
 
-The trained BF16 model has also been handed off to the separate Mac-serving
-owner; these CPU figures are not Mac serving measurements.
+## Separate Mac-serving handoff
+
+The serving owner measured the same selected Q4 model on Apple M3 Max Metal
+(29/29 layers), and verified the LAN service from the CPU box. Its report is
+`~/.local/share/golive-talker/mac-service/HANDOFF.txt`. No duplicate training.
+
+| Box-to-Mac LAN condition | Attempts | First-token p50 / p95, ms | Valid-clause p50 / p95, ms | Valid and <300 ms |
+|---|---:|---:|---:|---:|
+| Warm, no prompt cache | 16 | 47.908 / 61.156 | 67.240 / 98.710 | 14/16 |
+| Ideal prefix prefill | 16 | 32.892 / 39.373 | 61.687 / 69.488 | 14/16 |
+
+These are one timing repetition on the same 16 held-out turns / 3 calls, zero
+transport errors, two overlong clauses. Valid-clause percentiles condition on
+14 structurally valid outputs. Semantic quality remains unjudged. The compact
+TALKER prompt is used; these are not full engine-prompt measurements.
+
+Mac fresh-process launch-to-valid-clause p95 was 8,363.687 ms on five attempts;
+OS caches were not flushed. Keep the server resident. There was no concurrent
+E2E training; other Mac background load was not controlled. The serving helper
+has released the GPU measurement window to the separate E2E owner.
+
+Service: `http://192.168.71.101:18081`, alias `local-talker`. Use native
+`/completion` with `prompt_for_pair()` to preserve opener continuation. The
+service is detached, has no boot autostart, and is not wired into live calls.
+Start helper: `python3 ~/.local/share/golive-talker/mac-service/serve.py` when
+the port is free. Exact launch arguments and current PID are in `service.json`.
+Coordinate GPU use before rerunning `mac-service/measure.py`.
+
+Source verification: **80 synthetic tests pass**, Python compilation and shell
+syntax checks pass. Reports and source are committed locally; public push was
+blocked by automatic approval review because publication of operational paths
+and metadata was not explicitly authorized.
