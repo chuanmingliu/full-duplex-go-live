@@ -133,3 +133,4 @@ input.short { width: 130px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 h2.inline { display: inline; font-size: 16px; margin: 0; }
 input.short { width: 160px; }
+.logline.note .txt { color: var(--accent); font-family: inherit; font-size: 13.5px; background: var(--accent-wash); border-radius: 4px; padding: 1px 6px; }

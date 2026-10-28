@@ -333,7 +333,9 @@
     const q = state.logFilter.trim();
     const lines = q ? state.lines.filter(l => l.text.includes(q)) : state.lines;
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.replaceChildren(...lines.slice(-3000).map(l => h('div', { class: 'logline' + (/error|fail|traceback|refused|exception/i.test(l.text) ? ' bad' : /host=|device=|model=/i.test(l.text) ? ' mark' : '') },
+    // A line that starts with "note:" (or 说明：) is the agent's own words —
+    // what it decided and why — and is set apart from command output.
+    box.replaceChildren(...lines.slice(-3000).map(l => h('div', { class: 'logline' + (/^(note|说明|reply|回复)[:：]/i.test(l.text) ? ' note' : /error|fail|traceback|refused|exception/i.test(l.text) ? ' bad' : /host=|device=|model=/i.test(l.text) ? ' mark' : '') },
       h('span', { class: 'ts' }, fmtTime(l.at)), h('span', { class: 'who' }, l.who), h('span', { class: 'txt' }, l.text))));
     const meta = $('#logmeta'); if (meta) meta.textContent = state.lines.length + ' lines' + (state.lines.length ? ' · last ' + ago(state.lines[state.lines.length - 1].at) : '');
     if (state.follow || atBottom) box.scrollTop = box.scrollHeight;
@@ -347,7 +349,7 @@
           h('div', {}, h('b', {}, x.name), ' ', h('span', { class: 'muted' }, x.who)),
           h('div', { class: 'muted small' }, x.lines + ' lines · ' + ago(x.last_at)),
           x.first ? h('div', { class: 'muted small mono' }, x.first.slice(0, 90)) : null))),
-      h('p', { class: 'muted small' }, 'An agent writes here as it works: scripts/desk.sh log <stream> "line", or cmd 2>&1 | scripts/desk.sh log <stream> -. The first line of a stream says where the work runs (host=… device=…). Long digit runs are masked before storage.'));
+      h('p', { class: 'muted small' }, 'An agent writes here as it works: scripts/desk.sh log <stream> "line", or cmd 2>&1 | scripts/desk.sh log <stream> -. Lines starting with "note:" are the agent\'s own words (what it decided, why, what it answered); "reply:" lines are its answers to Claude. The first line of a stream says where the work runs (host=… device=…). Long digit runs are masked before storage.'));
     const s = state.logs.find(x => x.name === state.stream);
     const right = h('div', { class: 'logpane' },
       h('div', { class: 'row' },
