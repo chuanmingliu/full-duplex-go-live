@@ -32,9 +32,20 @@ type QuoteSpeech struct {
 	Posthook       string `json:"posthook"`
 	Template       string `json:"template,omitempty"`
 	PosthookStatus string `json:"posthook_status,omitempty"`
+	// CompareTemplate reads a result that compares several options
+	// (`variants`: label, total, diff, diff_abs, more, same, error) —
+	// organized around what changes and by how much, instead of the
+	// template read three times (the owner, 10:07 on 10-28). Empty: the
+	// built-in DefaultCompareTemplate.
+	CompareTemplate string `json:"compare_template,omitempty"`
 
 	tmpl *jinja.Template
+	cmp  *jinja.Template
 }
+
+// DefaultCompareTemplate reads a comparison: the current plan's total, then
+// each option by what it changes and the difference.
+const DefaultCompareTemplate = `现在这个方案一共{{ total | round | int }}元。{% for v in variants %}{% if v.error %}{{ v.label }}暂时算不了；{% elif v.same %}{{ v.label }}就是现在的方案；{% else %}{{ v.label }}一共{{ v.total | round | int }}元，{% if v.more %}多{% else %}少{% endif %}{{ v.diff_abs | round | int }}元{% if not loop.last %}；{% else %}。{% endif %}{% endif %}{% endfor %}`
 
 // QuoteSpeechName is the config's name on the lead service.
 const QuoteSpeechName = "quote-speech"
@@ -72,6 +83,21 @@ func ParseQuoteSpeech(raw []byte) (QuoteSpeech, error) {
 			return qs, fmt.Errorf("quote speech: template does not render: %w", err)
 		}
 	}
+	cmpSrc := strings.TrimSpace(qs.CompareTemplate)
+	if cmpSrc == "" {
+		cmpSrc = DefaultCompareTemplate
+	}
+	c, err := jinja.Parse(cmpSrc)
+	if err != nil {
+		return qs, fmt.Errorf("quote speech: compare_template: %w", err)
+	}
+	qs.cmp = c
+	if _, err := c.Render(map[string]any{"total": 10299.8, "variants": []any{
+		map[string]any{"label": "三者险300万", "total": 10524.8, "diff": 225.0, "diff_abs": 225.0, "more": true},
+		map[string]any{"label": "三者险200万", "total": 10299.8, "diff": 0.0, "diff_abs": 0.0, "same": true},
+		map[string]any{"label": "驾乘险80万", "error": "x"}}}); err != nil {
+		return qs, fmt.Errorf("quote speech: compare_template does not render: %w", err)
+	}
 	return qs, nil
 }
 
@@ -86,11 +112,21 @@ func (qs QuoteSpeech) render(vars map[string]any) (string, error) {
 // template, the status is not the posthook's, or the result does not render
 // (the model then reads the figures itself).
 func (qs QuoteSpeech) Readout(output []byte) string {
-	if qs.tmpl == nil || !qs.For(output) {
+	if !qs.For(output) {
 		return ""
 	}
 	var vars map[string]any
 	if json.Unmarshal(output, &vars) != nil {
+		return ""
+	}
+	if _, isCompare := vars["variants"]; isCompare && vars["compare"] == true && qs.cmp != nil {
+		out, err := qs.cmp.Render(vars)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(out)
+	}
+	if qs.tmpl == nil {
 		return ""
 	}
 	out, err := qs.render(vars)

@@ -27,3 +27,34 @@ func TestTheDefaultQuoteSpeechReadsAQuoteOut(t *testing.T) {
 		t.Fatalf("a bad template was accepted: %v", err)
 	}
 }
+
+// A result that compares options is read from the compare template:
+// organized around what changes and by how much, not the plan's lines
+// read three times.
+func TestAComparisonIsReadAsDifferences(t *testing.T) {
+	qs, err := ParseQuoteSpeech([]byte(DefaultQuoteSpeech))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := []byte(`{"status":"quote","compare":true,"total":10299.8,"lines":[{"coverage":"交强险","premium":950}],"variants":[
+	  {"label":"三者险200万","total":10299.8,"diff":0,"diff_abs":0,"same":true},
+	  {"label":"三者险300万","total":10524.8,"diff":225,"diff_abs":225,"more":true},
+	  {"label":"不要座位险","total":10235,"diff":-64.8,"diff_abs":64.8,"more":false},
+	  {"label":"划痕险9999","error":"x"}]}`)
+	got := qs.Readout(out)
+	want := "现在这个方案一共10300元。三者险200万就是现在的方案；三者险300万一共10525元，多225元；不要座位险一共10235元，少65元；划痕险9999暂时算不了；"
+	if got != want {
+		t.Fatalf("readout:\n%s\nwant:\n%s", got, want)
+	}
+	// The owner's own compare template, and a broken one refused.
+	own, err := ParseQuoteSpeech([]byte(`{"posthook":"算好了，","posthook_status":"quote","compare_template":"{% for v in variants %}{{ v.label }}{% if not v.error %}{{ v.total | round | int }}{% endif %}{% endfor %}"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := own.Readout(out); got != "三者险200万10300三者险300万10525不要座位险10235划痕险9999" {
+		t.Fatalf("own template: %q", got)
+	}
+	if _, err := ParseQuoteSpeech([]byte(`{"posthook":"算好了，","compare_template":"{% for v in variants %}"}`)); err == nil {
+		t.Fatal("a broken compare template was accepted")
+	}
+}

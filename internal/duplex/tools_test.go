@@ -1232,3 +1232,64 @@ func TestADeliveredQuotationSetsTheMemorysPlan(t *testing.T) {
 		t.Fatalf("an unchanged selection bumped the memory by %d", d)
 	}
 }
+
+// compareQuote answers the tool as the lead service does for several
+// options: the current plan's quotation with the variants beside it.
+type compareQuote struct{ delay time.Duration }
+
+func (c *compareQuote) Execute(ctx context.Context, t tools.Tool, req tools.Request) tools.Result {
+	select {
+	case <-time.After(c.delay):
+	case <-ctx.Done():
+		return tools.Result{Err: ctx.Err()}
+	}
+	out, _ := json.Marshal(map[string]any{"status": "quote", "compare": true, "total": 10299.8, "memory_version": req.MemoryVersion,
+		"lines":     []any{map[string]any{"coverage": "交强险", "premium": 950}},
+		"selection": map[string]any{"交强险": true, "三者险": "200万"},
+		"variants": []any{
+			map[string]any{"label": "三者险200万", "total": 10299.8, "diff": 0.0, "diff_abs": 0.0, "same": true},
+			map[string]any{"label": "三者险300万", "total": 10524.8, "diff": 225.0, "diff_abs": 225.0, "more": true},
+			map[string]any{"label": "三者险500万", "total": 10884.8, "diff": 585.0, "diff_abs": 585.0, "more": true}}})
+	return tools.Result{Output: out, Took: c.delay}
+}
+
+// Several options asked at once are one task and one readout, organized
+// around the differences, after which the plan in memory is still the
+// current one (the owner, 10:07 on 10-28).
+func TestSeveralOptionsAreReadOutAsOneComparison(t *testing.T) {
+	svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/configs/quote-speech" {
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = w.Write([]byte(`{"config":{"name":"quote-speech","version":2,"body":` + tools.DefaultQuoteSpeech + `}}`))
+	}))
+	t.Cleanup(svc.Close)
+	opts := quoteConfig()
+	opts.Cfg.ToolsBaseURL = svc.URL
+	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Speech = "quote-speech"
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	asr := newTrailingASR("一共多少钱")
+	asr.msPerRune = 150
+	llm := &quoteLLM{}
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &compareQuote{delay: 50 * time.Millisecond})
+	speak(e, rate, 750)
+	pause(e, rate, 700)
+	deadline := time.Now().Add(8 * time.Second)
+	for !strings.Contains(c.saidAll(), "报价出来了") && time.Now().Before(deadline) {
+		pause(e, rate, 100)
+	}
+	said := c.saidAll()
+	if !strings.Contains(said, "三者险300万一共10525元，多225元") || !strings.Contains(said, "三者险500万一共10885元，多585元") || !strings.Contains(said, "就是现在的方案") {
+		t.Fatalf("the comparison was not read as differences: %q", said)
+	}
+	if strings.Count(said, "保费给您计算好了") != 1 || strings.Count(said, "10300元") != 1 {
+		t.Fatalf("not one readout: %q", said)
+	}
+	done := make(chan string, 1)
+	e.post(func() { snap, _ := e.memorySnapshot(); done <- string(snap) })
+	if mem := <-done; !strings.Contains(mem, `"三者险":"200万"`) || strings.Contains(mem, "500万") {
+		t.Fatalf("the plan in memory should be the current one: %s", mem)
+	}
+}

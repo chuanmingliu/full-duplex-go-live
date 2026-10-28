@@ -216,6 +216,10 @@ type QuoteRequest struct {
 	// PlanInMemory says the tool call's working memory held a plan (its
 	// quote field); without one, a config is a change to the default plan.
 	PlanInMemory bool `json:"-"`
+	// Variants are alternative changes to compare, each laid over the plan
+	// (the caller asked "三者险200、300和500各多少钱" — one call, one answer
+	// that compares, not three readouts; the owner, 10:07 on 10-28).
+	Variants []map[string]any `json:"-"`
 	// prequote marks a request the service made itself, ahead of a caller's
 	// ask (prequote.go); recorded as such.
 	prequote bool
@@ -263,8 +267,9 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 			req.Vars[k] = v
 		}
 		var args struct {
-			Config map[string]any `json:"config"`
-			Vars   map[string]any `json:"vars"`
+			Config  map[string]any   `json:"config"`
+			Configs []map[string]any `json:"configs"`
+			Vars    map[string]any   `json:"vars"`
 		}
 		if len(tc.Arguments) > 0 && json.Unmarshal(tc.Arguments, &args) == nil {
 			for k, v := range args.Config {
@@ -272,6 +277,11 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 			}
 			for k, v := range args.Vars {
 				req.Vars[k] = v
+			}
+			for _, c := range args.Configs {
+				if len(c) > 0 {
+					req.Variants = append(req.Variants, c)
+				}
 			}
 		}
 		// No selection yet is the first thing to ask for, not an error: the

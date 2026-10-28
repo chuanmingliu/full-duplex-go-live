@@ -1217,3 +1217,69 @@ func TestSavingTheOpenersCachesThemInGolive(t *testing.T) {
 		t.Fatalf("golive asked %d times after an unrelated save", n)
 	}
 }
+
+// Several options in one call are priced over the plan and answered as one
+// comparison: the current plan's figures with a variant per option, each
+// with its total and its difference, neighbours from the cache; the plan
+// in the working memory is not changed by it (the owner, 10:07 on 10-28).
+func TestSeveralOptionsAreComparedInOneAnswer(t *testing.T) {
+	fx := newFixture(t)
+	if code, body := fx.do("POST", "/api/quote/prefetch", map[string]any{"call": "out-lead-15", "vars": map[string]any{"vehiclePrice": 300000, "vehicleAge": 2, "ncd": 1, "seats": 7, "carNum": "test"}}, nil); code != 202 {
+		t.Fatalf("prefetch: %d %s", code, body)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		fx.svc.mu.Lock()
+		n := len(fx.svc.prequotes)
+		fx.svc.mu.Unlock()
+		if n >= 9 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	call := map[string]any{"tool": "quote_total", "call_id": "c", "session": "s", "call": "out-lead-15",
+		"arguments": map[string]any{"configs": []map[string]any{{"三者险": "200万"}, {"三者险": "300万"}, {"三者险": "500万"}, {"座位险": false}}},
+		"memory": map[string]any{}, "memory_version": 2}
+	var out struct {
+		Status    string         `json:"status"`
+		Compare   bool           `json:"compare"`
+		Total     float64        `json:"total"`
+		Selection map[string]any `json:"selection"`
+		Variants  []Variant      `json:"variants"`
+		Default   *bool          `json:"default"`
+		MemoryV   int            `json:"memory_version"`
+	}
+	began := time.Now()
+	if code, body := fx.do("POST", "/api/tools/quote", call, &out); code != 200 || !out.Compare || out.Status != "quote" {
+		t.Fatalf("compare: %d %s", code, body)
+	}
+	if out.Default != nil || out.MemoryV != 2 || out.Selection["三者险"] != "200万" || len(out.Variants) != 4 {
+		t.Fatalf("the current plan's quotation is not the base: %+v", out)
+	}
+	v := out.Variants
+	if !v[0].Same || v[0].Label != "三者险200万" || v[0].Total != out.Total {
+		t.Fatalf("the plan itself: %+v", v[0])
+	}
+	if v[1].Label != "三者险300万" || v[1].Total <= out.Total || !v[1].More || v[1].DiffAbs != v[1].Total-out.Total || !v[1].Prequoted {
+		t.Fatalf("300万: %+v (base %v)", v[1], out.Total)
+	}
+	if v[2].Label != "三者险500万" || v[2].Total <= v[1].Total || !v[2].Prequoted {
+		t.Fatalf("500万: %+v", v[2])
+	}
+	if v[3].Label != "不要座位险" || v[3].More || v[3].Total >= out.Total {
+		t.Fatalf("dropping a coverage should cost less: %+v", v[3])
+	}
+	if time.Since(began) > time.Second {
+		t.Fatalf("the comparison took %s: the neighbours were not from the cache", time.Since(began))
+	}
+	// Laid over a plan in memory, and an option that cannot be priced says so.
+	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "三者险": "300万"}}
+	call["arguments"] = map[string]any{"configs": []map[string]any{{"三者险": "500万"}, {"划痕险": "9999"}}}
+	out.Selection, out.Variants = nil, nil // a map decodes by merging
+	if code, body := fx.do("POST", "/api/tools/quote", call, &out); code != 200 || len(out.Variants) != 2 || out.Selection["三者险"] != "300万" || len(out.Selection) != 2 {
+		t.Fatalf("over the plan in memory: %d %s", code, body)
+	}
+	if out.Variants[0].Error != "" || out.Variants[1].Error == "" {
+		t.Fatalf("errors: %+v", out.Variants)
+	}
+}

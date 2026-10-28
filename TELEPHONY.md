@@ -978,7 +978,11 @@ word waits for the opener to end, and four characters already render at the
 540 ms cap (the 12:03 simulated call of 10-27: 价格的话，/保额方面，/这一项，/
 理赔这块， all 540, content 920 on every scenario turn; a bare 嗯， is ~440).
 Scenarios are tried in order, so the more specific come first (顾虑 before
-价格: 便宜 is a comparison before it is a price). A batch warm of the cache
+价格: 便宜 is a comparison before it is a price). The phrase chosen is the
+least recently said of the pool, never the one said last; once a small
+scenario pool has been used up on the call the profile's generic pool joins
+the candidates (10-28, the owner heard 保费呢， twice in five price questions
+under the earlier "not in the last three" rule). A batch warm of the cache
 — start-up, a session's start, a panel save — is paced at 3 s a phrase,
 retries the synthesizer's rate limit, and waits while a call is live (11:49
 on 10-27: a burst of 33 phrases was refused with 1002 and the next call's
@@ -1646,6 +1650,20 @@ variables are reused, so only the combination and its tiers are asked), the
 async inquiry, the prehook while it runs, and the posthook and template
 when it is back. golive puts the call id on every tool request
 (`tools.Request.Call`).
+
+**Several options at once are one call and one comparison (10-28, the
+owner).** "三者险两百万、三百万和五百万各多少钱" used to be three tool calls, three
+acks and the template read three times. The model now passes the options as
+`configs` in one `quote_total` call (the profile's rule and the tool's
+parameter say so); the lead service lays each over the plan in memory (or
+the default), prices it — the neighbours from the cache — and answers the
+current plan's quotation with a `variants` list beside it (`crm/compare.go`:
+label, total, diff, diff_abs, more, same, error, prequoted). The status
+stays `quote`, so the posthook and the memory handling are as for one
+quotation and the plan in memory is left as it was; the readout comes from
+`quote-speech`'s `compare_template` (built-in default: the current total,
+then each option by what it changes and by how much — "三者险三百万一共10525元，
+多225元"; the panel can replace it).
 
 **The combinations the customer is likely to ask for next are priced ahead
 too (10-26, the owner's idea).** Once the default quotation is in, the lead

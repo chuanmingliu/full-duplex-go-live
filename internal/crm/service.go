@@ -891,6 +891,16 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
+		if len(req.Variants) > 0 {
+			// Several options at once: each priced over the plan, answered
+			// as one comparison (compare.go).
+			out, err := s.Compare(r.Context(), req)
+			if err != nil {
+				return fail(http.StatusUnprocessableEntity, "%v", err)
+			}
+			writeJSON(w, http.StatusOK, out)
+			return nil
+		}
 		if len(req.Config) == 0 {
 			// Nothing chosen: the default plan, worked out while the phone
 			// rang (prefetch.go). The customer is asked for nothing.

@@ -3,6 +3,8 @@ package duplex
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/provider/mock"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // The opener: when the caller's turn is judged over and the model's first
@@ -782,5 +785,41 @@ func TestARevisedTurnInheritsTheOpenersStamps(t *testing.T) {
 	revised.MarkFirstAudioOut()
 	if !revised.Timings().FirstAudioOut.Equal(before.FirstAudioOut) {
 		t.Fatal("the inherited first audio out was overwritten")
+	}
+}
+
+// Openers rotate: the least recently said phrase of the pool is chosen,
+// never the one said last, and once a small scenario pool has been used up
+// the profile's generic pool joins in — so five price questions in a row do
+// not hear 保费呢， twice while 费用上， waits (the owner, 10:07 on 10-28).
+func TestOpenersRotateThroughThePoolBeforeRepeating(t *testing.T) {
+	cfg := earlyFinalConfig(120)
+	cfg.opts.Cfg.Duplex.Opener = true
+	cfg.opts.Cfg.Duplex.OpenerPhrases = []string{"好的，", "嗯，"}
+	cfg.opts.Cfg.Duplex.OpenerQuestionPhrases = []string{"嗯，", "好的，"}
+	e := &Engine{opts: Options{Cfg: cfg.opts.Cfg}, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	e.openers = tools.Openers{Scenarios: []tools.OpenerScenario{{ID: "price", Keywords: []string{"多少钱"}, Phrases: []string{"价格嘛，", "保费呢，", "费用上，"}}}}
+	var said []string
+	for i := 0; i < 7; i++ {
+		turn := &Turn{ID: fmt.Sprintf("item_%d", i), Transcript: "这个多少钱"}
+		said = append(said, e.planOpener(turn))
+	}
+	// The first three are the scenario's three, each once.
+	first := map[string]bool{}
+	for _, p := range said[:3] {
+		first[p] = true
+	}
+	if len(first) != 3 || first["嗯，"] || first["好的，"] {
+		t.Fatalf("the scenario's phrases were not each said once first: %v", said)
+	}
+	// Then the generic pool joins: the next two are 嗯，/好的，, never said yet.
+	if !((said[3] == "嗯，" || said[3] == "好的，") && (said[4] == "嗯，" || said[4] == "好的，") && said[3] != said[4]) {
+		t.Fatalf("the generic pool did not join once the scenario's was used up: %v", said)
+	}
+	// Never the same twice running.
+	for i := 1; i < len(said); i++ {
+		if said[i] == said[i-1] {
+			t.Fatalf("an opener repeated at once: %v", said)
+		}
 	}
 }

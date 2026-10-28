@@ -1414,29 +1414,48 @@ func (e *Engine) planOpener(turn *Turn) string {
 	// that carries meaning (价格的话，) instead of a bare 嗯，: the ConvFill
 	// idea at the cache's latency (tools/openers.go).
 	scenario := ""
+	generic := pool
 	if sc := e.openers.Match(turn.Transcript, question); sc != nil {
 		pool, scenario = sc.Phrases, sc.ID
 	}
-	var fresh []string
+	// The least recently said phrase of the pool, never the one said last;
+	// when every phrase of a small scenario pool has been said this call,
+	// the profile's generic pool joins the candidates. Random choice among
+	// "not in the last three" let 保费呢， come twice in five price questions
+	// (the owner, 10:07 on 10-28: "I hear 保费呢 more than once").
+	if e.openerUses == nil {
+		e.openerUses = map[string]int{}
+	}
+	candidates := pool
+	allSaid := len(pool) > 0
 	for _, p := range pool {
-		recent := false
-		for _, r := range e.recentOpeners {
-			if r == p {
-				recent = true
-				break
-			}
-		}
-		if !recent {
-			fresh = append(fresh, p)
+		if e.openerUses[p] == 0 {
+			allSaid = false
 		}
 	}
-	if len(fresh) == 0 {
-		fresh = pool
+	if allSaid {
+		candidates = append(append([]string(nil), pool...), generic...)
 	}
-	if len(fresh) == 0 {
+	var phrase string
+	best := -1
+	last := ""
+	if n := len(e.recentOpeners); n > 0 {
+		last = e.recentOpeners[n-1]
+	}
+	for _, p := range rand.Perm(len(candidates)) {
+		c := candidates[p]
+		if c == last && len(candidates) > 1 {
+			continue
+		}
+		if best < 0 || e.openerUses[c] < best {
+			phrase, best = c, e.openerUses[c]
+		}
+	}
+	if phrase == "" {
 		return ""
 	}
-	phrase := fresh[rand.Intn(len(fresh))]
+	e.openerTurn++
+	e.openerUses[phrase] = e.openerTurn
 	e.recentOpeners = append(e.recentOpeners, phrase)
 	if len(e.recentOpeners) > 3 {
 		e.recentOpeners = e.recentOpeners[len(e.recentOpeners)-3:]

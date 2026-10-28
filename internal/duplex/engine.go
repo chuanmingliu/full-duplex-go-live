@@ -196,6 +196,11 @@ type Engine struct {
 	lastOpener string
 	// recentOpeners are the last three openers said, not to be said again.
 	recentOpeners []string
+	// openerUses is, per phrase, the opener turn it was last said on (0:
+	// never this call); openerTurn counts opener turns. The least recently
+	// said phrase of a pool is chosen.
+	openerUses map[string]int
+	openerTurn int
 	// lastSaidOpener is the phrase most recently said at a pause (the one a
 	// fragment's opener must differ from when it became a backchannel).
 	lastSaidOpener string
