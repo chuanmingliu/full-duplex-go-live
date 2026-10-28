@@ -669,7 +669,12 @@ quotation goes through the questions, the async inquiry and the prehook.
 **Its single changes are priced ahead as well** (`crm/prequote.go`, 10-26:
 other tiers, a coverage added or dropped, 8 by default, the plan's
 `prequote`), so a second quotation that lands on one is answered from the
-cache instead of the service's 3.5–4 s; on-demand quotations are kept too. **The quotation service** (`cmd/quotesvc`, port 8793, "The quotation
+cache instead of the service's 3.5–4 s; on-demand quotations are kept too.
+**Several options at once** (10-28): the model passes them as `configs` in
+one call; `crm/compare.go` prices each over the plan and the answer is one
+comparison read as differences (`compare_template` in `quote-speech`); the
+plan in memory follows a *delivered* result (`recordSelection`), never a
+call's `config`, so a comparison leaves it as it was. **The quotation service** (`cmd/quotesvc`, port 8793, "The quotation
 service on the box" in `TELEPHONY.md`) speaks the business's two-API
 interface with the placeholder rating over a vehicle table kept on the box;
 `quote-api`'s `base_url` points at it (`phone-brain.sh quotesvc use`) until

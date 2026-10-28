@@ -25,3 +25,15 @@ repeated responses by template"; and "I hear 保费呢 more than once").
   scenario is within the last three openers; the scenario's phrases come
   back as soon as one has left the window. The choice is the least recently
   said, never the one said last (the 09:39 call's 保费呢 twice in five).
+
+## Reruns, 10:26 (c597c18), 10:33 (c591c9a), 10:41 (cd089e0)
+
+- 10:26 and 10:33: the comparison itself right (2 then 3 variants, 0–1 ms,
+  one readout), but the model sent a single-change call a second *before*
+  its comparison call; folded into the plan at call time, it set the plan
+  to 500万 and the next change was priced on it (11118.8).
+- cd089e0: a change is no longer folded into the plan when the tool is
+  called — the lead service lays it over the plan itself, and the memory
+  follows what a delivered result priced. **10:41: default 0 ms; three tiers
+  compared in one call, 1 ms, plan unchanged (v1); 加驾乘险 priced over the
+  original plan (10533.8, a neighbour, 1 ms); plan v2 only then.**
