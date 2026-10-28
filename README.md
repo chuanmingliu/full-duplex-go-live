@@ -107,7 +107,7 @@ Package map:
 | `cmd/golivectl` | CLI harness: stream audio in, save audio out, interrupt on cue |
 | `cmd/golivebench` | A/B latency harness; drives this service and an OpenAI Realtime one |
 | `web/` | The browser demo, served at `/` — a single self-contained page |
-| `configs/` | JSON profiles: `mock.json` (no credentials), `sim.json` + `sim.env` (mocks with realistic stage latencies), and the real stack |
+| `configs/` | JSON profiles: `mock.json` (no credentials), `sim.json` + `sim.env` (mocks with realistic stage latencies), the real stack, and `telephony.json` (the real stack behind a SIP gateway) |
 | `bin/` | Prebuilt binaries for shipping (gitignored; `make dist` fills it) |
 
 ---
@@ -232,6 +232,53 @@ ws.onmessage = (e) => {
 vendor that has never heard of it. The same goes for
 `delegation.responses.model`: map OpenAI model ids to your provider's in
 `backend_models`, and an unmapped one uses `backend_model`.
+
+### On a phone line: `/v1/realtime`
+
+A SIP media gateway terminates the call and reaches its voice agent over a
+WebSocket in the one protocol it knows, which is OpenAI's Realtime API, not
+gpt-live-1. `ws://host/v1/realtime` is the same session and the same engine in
+that protocol, so golive can be the voice on a telephone line with nothing in
+between. It was written against [Active Call](https://github.com/miuda-ai/active-call)'s
+realtime client and carries the subset a gateway uses:
+
+| Direction | Events |
+| --- | --- |
+| in | `session.update` (instructions, voice, tools — starts the session), `input_audio_buffer.append`, `response.cancel`, `conversation.item.create`, `response.create` |
+| out | `session.created`, `session.updated`, `response.created`, `response.audio.delta`, `response.audio_transcript.delta`, `response.done`, `input_audio_buffer.speech_started` / `speech_stopped`, `conversation.item.input_audio_transcription.delta` / `.completed`, `response.function_call_arguments.done`, `error` |
+
+Three things about it are specific to telephony:
+
+* **The audio rate is the gateway's, and it does not say what that is.** "pcm16"
+  means 24 kHz to OpenAI and 16 kHz to Active Call. `realtime.sample_rate` sets
+  it; `?rate=` on the URL overrides it for one connection, as does the newer
+  `session.audio.input.format`. `g711_ulaw` and `g711_alaw` work as named.
+* **Barge-in stays the engine's decision.** A gateway flushes its playback the
+  instant it is told `input_audio_buffer.speech_started`. golive sends that when
+  the caller speaks into silence, and otherwise only once it has actually
+  yielded the floor — so "嗯" over the assistant does not cut it off — and
+  ignores the `response.cancel` the gateway sends straight back.
+* **An outbound call connects its agent before anyone answers.** With
+  `realtime.hold_for_opening`, a new session is deaf and silent until it is
+  released:
+
+  ```bash
+  # on dial: synthesize the opening line while the phone rings (poll until ready)
+  curl -s localhost:8765/v1/opening -d '{"greeting":"您好，我是小翠儿。","warm":true}'
+  # on answer: release every waiting session and say it, from the cache
+  curl -s localhost:8765/v1/opening -d '{"greeting":"您好，我是小翠儿。","warm":false}'
+  ```
+
+`GET /v1/pool` lists the sessions in progress, which is how a monitor finds one
+to attach to: a sideband on a Realtime session still speaks gpt-live-1, so a
+phone call can be watched — transcripts, both directions of audio,
+`golive.turn.metrics` — without being in its audio path.
+
+`./start.sh telephony` runs this arrangement: `configs/telephony.json`, bound to
+`127.0.0.1:8765`, where a gateway on the same host expects its agent. With
+`telemetry_url` set, each turn's boundaries (speech stop, final transcript,
+first token, first audio) are posted to an external latency console as they
+happen.
 
 ### Differences from gpt-live-1
 
@@ -358,6 +405,8 @@ Start from `.env.example`. The knobs that change how the thing feels:
 | `duplex.backend_prefix_warm` | Send the backend a one-token request with the conversation so far as the caller starts speaking, to load a provider's prefix cache. Off: it spends tokens, and whether it buys anything depends on the provider. Measure first. |
 | `history_max_chars` / `history_turns` | Bound the prompt. History is trimmed in steps rather than to the limit on every turn, so the front of the prompt stays byte-identical across requests and a prefix cache can hit. |
 | `voice_aliases` / `backend_models` | Map the names a gpt-live-1 client sends (`marin`, `gpt-5.5`) to your providers' own. |
+| `realtime.sample_rate` / `realtime.dialect` / `realtime.hold_for_opening` | The OpenAI-Realtime-compatible endpoint: the rate "pcm16" means on it (24000; 16000 for Active Call), `beta` or `ga` event names for assistant audio, and whether a session waits for `POST /v1/opening` before it listens. |
+| `telemetry_url` | Where to post each turn's boundary events for an external latency console. Asynchronous and lossy by design. |
 | `store_dir` / `store_ttl_hours` | Where `store: true` sessions are kept, and for how long. Unset disables storage, fork and `/content`. |
 | `duplex.legacy_audio_field` | Also send output audio under `audio`, for clients written before it moved to `delta`. |
 | `instructions` / `greeting` | The conversational prompt, and what the assistant says unprompted when a session opens. Both overridable per session; the demo page exposes them under **Session config**. |
@@ -464,6 +513,10 @@ What the suite actually pins down, beyond "it compiles":
   itself, and the assistant's holds only what was spoken;
 * a G.711 session, a sideband that steers a call it does not carry, and a stored
   session that is downloaded and forked;
+* a phone call as a media gateway conducts it, in the OpenAI Realtime protocol:
+  ringback ignored until the call is answered, the opening line played from
+  the cache at pickup, the gateway told to stop playing only when the engine
+  has yielded, and each turn's boundaries delivered to a latency console;
 * a barge-in produces a truncation whose `played_ms` never exceeds what was
   emitted and whose text is a strict prefix of the reply.
 

@@ -95,14 +95,65 @@ type ASR struct {
 	// keeps growing through silence, which no recognizer does; it is off by
 	// default only because the unit tests were timed against it.
 	VoicedOnly bool
+
+	// Phrases, when set, lets the audio choose which phrase is heard: a
+	// stream reads the pitch of its first voiced PhraseKeyMS of audio and
+	// takes Phrases[k] for a tone at PhraseBaseHz + k*PhraseStepHz. The
+	// full-duplex bench (cmd/golivefdb) speaks each utterance as such a tone,
+	// so a murmur, a question and an aside can reach the engine as different
+	// words through the one path a real caller's audio takes, with nothing on
+	// the side. Audio that is not one of those tones is heard as phrase 0.
+	// Empty, the one fixed phrase above is heard whatever is said.
+	Phrases []string
+	// PhraseBaseHz, PhraseStepHz and PhraseKeyMS are the key's parameters;
+	// zero takes the defaults (220 Hz, 40 Hz, 100 ms).
+	PhraseBaseHz, PhraseStepHz float64
+	PhraseKeyMS                float64
 }
+
+// Phrase key defaults, shared with the bench that speaks in it.
+const (
+	DefaultPhraseBaseHz = 220.0
+	DefaultPhraseStepHz = 40.0
+	DefaultPhraseKeyMS  = 100.0
+)
+
+// PhraseHz is the tone that selects Phrases[k].
+func PhraseHz(k int) float64 { return DefaultPhraseBaseHz + float64(k)*DefaultPhraseStepHz }
 
 func (a *ASR) withEnv() *ASR {
 	a.DialDelay = envMS("GOLIVE_MOCK_ASR_DIAL_MS")
 	a.Lag = envMS("GOLIVE_MOCK_ASR_LAG_MS")
 	a.FinalDelay = envMS("GOLIVE_MOCK_ASR_FINAL_MS")
 	a.VoicedOnly = envOn("GOLIVE_MOCK_ASR_VOICED_ONLY")
+	if v := strings.TrimSpace(os.Getenv("GOLIVE_MOCK_PHRASES")); v != "" {
+		for _, p := range strings.Split(v, "|") {
+			a.Phrases = append(a.Phrases, strings.TrimSpace(p))
+		}
+	}
+	if n, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv("GOLIVE_MOCK_ASR_MS_PER_RUNE")), 64); err == nil && n > 0 {
+		a.MSPerRune = n
+	}
 	return a
+}
+
+// keyed reports whether the phrase is chosen by the audio's pitch.
+func (a *ASR) keyed() bool { return len(a.Phrases) > 0 }
+
+// phraseFor maps a measured pitch to one of Phrases.
+func (a *ASR) phraseFor(hz float64) string {
+	base, step := a.PhraseBaseHz, a.PhraseStepHz
+	if base <= 0 {
+		base = DefaultPhraseBaseHz
+	}
+	if step <= 0 {
+		step = DefaultPhraseStepHz
+	}
+	k := int(math.Floor((hz-base)/step + 0.5))
+	if k < 0 || k >= len(a.Phrases) {
+		k = 0
+	}
+	return a.Phrases[k]
 }
 
 // NewASR builds a mock recognizer. An empty phrase falls back to
@@ -134,6 +185,7 @@ func (a *ASR) Open(ctx context.Context, opts provider.ASROptions) (provider.ASRS
 		rate:    rate,
 		results: make(chan provider.ASRResult, 32),
 		ctx:     ctx,
+		phrase:  a.phrase,
 	}
 	return s, nil
 }
@@ -147,6 +199,15 @@ type asrStream struct {
 	mu       sync.Mutex
 	audioMS  float64
 	lastText string
+	// phrase is what this stream hears. With a keyed recognizer it is chosen
+	// from the pitch of the first voiced audio; keyMS and keyCross accumulate
+	// that measurement until keyMS reaches the key length.
+	phrase   string
+	keyed    bool
+	keyMS    float64
+	keyCross float64
+	keyPrev  float32
+	keyHave  bool
 	// sendDone is set by CloseSend: no more audio, the final is on its way.
 	sendDone bool
 	// finished is set once the results channel has been closed.
@@ -160,7 +221,11 @@ func (s *asrStream) Write(pcm []byte) error {
 		return nil
 	}
 	s.audioMS += s.heardMS(pcm)
-	text := s.asr.prefix(s.audioMS)
+	text := s.asr.prefixOf(s.phrase, s.audioMS)
+	if s.keyed && s.keyMS < s.keyLength() {
+		// The key is not read yet; nothing is heard until it is.
+		text = ""
+	}
 	changed := text != s.lastText
 	s.lastText = text
 	s.mu.Unlock()
@@ -171,10 +236,23 @@ func (s *asrStream) Write(pcm []byte) error {
 	return nil
 }
 
-// heardMS is how much of pcm counts toward the phrase.
+// keyLength is how much voiced audio the pitch is read from.
+func (s *asrStream) keyLength() float64 {
+	if s.asr.PhraseKeyMS > 0 {
+		return s.asr.PhraseKeyMS
+	}
+	return DefaultPhraseKeyMS
+}
+
+// heardMS is how much of pcm counts toward the phrase. On a keyed
+// recognizer it also reads the pitch of the first voiced frames and, once
+// enough have been heard, settles which phrase this stream hears.
 func (s *asrStream) heardMS(pcm []byte) float64 {
 	format := audio.PCM16(s.rate)
-	if !s.asr.VoicedOnly {
+	if s.asr.keyed() && !s.keyed {
+		s.keyed = true
+	}
+	if !s.asr.VoicedOnly && !s.keyed {
 		return format.DurationMS(pcm)
 	}
 	frame := format.BytesForMS(20)
@@ -194,8 +272,29 @@ func (s *asrStream) heardMS(pcm []byte) float64 {
 		// -40 dBFS: far above digital silence, far below the synthetic speech
 		// the harnesses send.
 		if audio.RMS(samples) > 0.01 {
-			ms += format.DurationMS(pcm[off:end])
+			frameMS := format.DurationMS(pcm[off:end])
+			ms += frameMS
+			if s.keyed && s.keyMS < s.keyLength() {
+				// Crossings are counted across frame boundaries too: a tone
+				// with a whole number of cycles a frame crosses on the
+				// boundary every time, and losing those reads it a step low.
+				for _, v := range samples {
+					if s.keyHave && (s.keyPrev >= 0) != (v >= 0) {
+						s.keyCross++
+					}
+					s.keyPrev, s.keyHave = v, true
+				}
+				s.keyMS += frameMS
+				if s.keyMS >= s.keyLength() {
+					// crossings per second, halved: a sine crosses twice a cycle.
+					hz := s.keyCross / (s.keyMS / 1000) / 2
+					s.phrase = s.asr.phraseFor(hz)
+				}
+			}
 		}
+	}
+	if !s.asr.VoicedOnly {
+		return format.DurationMS(pcm)
 	}
 	return ms
 }
@@ -207,7 +306,10 @@ func (s *asrStream) CloseSend() error {
 		return nil
 	}
 	s.sendDone = true
-	text := s.asr.prefix(s.audioMS)
+	text := s.asr.prefixOf(s.phrase, s.audioMS)
+	if s.keyed && s.keyMS < s.keyLength() {
+		text = ""
+	}
 	s.mu.Unlock()
 
 	// The final never overtakes a partial still in flight.
@@ -264,8 +366,10 @@ func (s *asrStream) send(r provider.ASRResult) {
 
 // prefix maps elapsed audio to a prefix of the phrase, snapped to a rune
 // boundary so partials are never half a character.
-func (a *ASR) prefix(ms float64) string {
-	runes := []rune(a.phrase)
+func (a *ASR) prefix(ms float64) string { return a.prefixOf(a.phrase, ms) }
+
+func (a *ASR) prefixOf(phrase string, ms float64) string {
+	runes := []rune(phrase)
 	n := int(ms / a.MSPerRune)
 	if n > len(runes) {
 		n = len(runes)
@@ -467,6 +571,9 @@ type TTS struct {
 	// FirstByteDelay is how long each Synthesize takes to produce its first
 	// chunk.
 	FirstByteDelay time.Duration
+	// LeadSilence is how much near-silence opens every rendering, as a
+	// vendor's audio does before the first syllable.
+	LeadSilence time.Duration
 	// Serial makes one stream synthesize one segment at a time, like a vendor
 	// task that is a single ordered stream. A second Synthesize waits for the
 	// first to finish or be cancelled.
@@ -554,6 +661,8 @@ func (s *ttsStream) Synthesize(ctx context.Context, text string) (<-chan provide
 	runes := []rune(text)
 	totalMS := float64(len(runes)) * s.tts.MSPerRune / s.speed
 	totalSamples := int(totalMS / 1000 * float64(s.rate))
+	leadSamples := int(s.tts.LeadSilence.Seconds() * float64(s.rate))
+	totalSamples += leadSamples
 
 	out := make(chan provider.TTSChunk, 8)
 	go func() {
@@ -576,7 +685,12 @@ func (s *ttsStream) Synthesize(ctx context.Context, text string) (<-chan provide
 			}
 			buf := make([]float32, end-start)
 			for i := range buf {
-				n := start + i
+				n := start + i - leadSamples
+				if n < 0 {
+					// The quiet head: a flicker of noise, not digital zero.
+					buf[i] = float32(1.0 / 32767)
+					continue
+				}
 				// One blip per character: a 220 Hz carrier with a 3 Hz
 				// syllable envelope, kept well below full scale.
 				tSec := float64(n) / float64(s.rate)

@@ -1,0 +1,20 @@
+{
+  "layer": "L3",
+  "build": "059ae48-dirty",
+  "at": "2026-10-21T17:51:21.104668042+08:00",
+  "source": "mocks",
+  "metrics": {
+    "iqr_ms": 60,
+    "max_ms": 1110,
+    "p50_ms": 1105,
+    "p95_ms": 1110
+  },
+  "counts": {
+    "n_failed": 0,
+    "n_turns": 6
+  },
+  "thresholds": {
+    "p95_ms": "\u003c=1200"
+  },
+  "report": "bench-sim.md"
+}

@@ -75,6 +75,24 @@ func (s *Segmenter) Reset() {
 	s.early = -1
 }
 
+// RestartFirst makes the next segment a first segment again — short, allowed
+// to end on a comma, bounded by the caller's deadline — keeping the buffered
+// text, which is judged afresh under the first segment's rules: whatever is
+// already ready is returned. For a caller that discarded what the first
+// segment said (an opener already spoken at the pause) and is still waiting
+// for the first word the listener will hear.
+func (s *Segmenter) RestartFirst() []string {
+	pending := string(s.buf)
+	s.buf = s.buf[:0]
+	s.first = true
+	s.early = -1
+	s.depth = 0
+	if pending == "" {
+		return nil
+	}
+	return s.Push(pending)
+}
+
 // Pending reports buffered text not yet emitted.
 func (s *Segmenter) Pending() string { return string(s.buf) }
 

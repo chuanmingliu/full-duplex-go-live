@@ -2,6 +2,17 @@ package endpoint
 
 import "testing"
 
+func TestHesitation(t *testing.T) {
+	for text, want := range map[string]bool{
+		"呃": true, "呃。": true, "额额": true, "呃……": true, "Um.": true, "uh": true,
+		"嗯": false, "啊": false, "呃，多少钱": false, "好的": false, "": false, "。": false, "umbrella": false,
+	} {
+		if got := Hesitation(text); got != want {
+			t.Errorf("Hesitation(%q) = %v; want %v", text, got, want)
+		}
+	}
+}
+
 func TestClassify(t *testing.T) {
 	cases := []struct {
 		text string
@@ -34,6 +45,10 @@ func TestClassify(t *testing.T) {
 
 		// Trailing off.
 		{"我想问一下那个", Incomplete},
+		// Heard on a call, and answered as though it were the question.
+		{"诶，我想问你一下啊", Incomplete},
+		{"我想问您一下", Incomplete},
+		{"就是", Incomplete},
 		{"帮我查一下明天的天气然后", Incomplete},
 		{"我昨天买的那个保险但是", Incomplete},
 		{"请问", Incomplete},
@@ -67,5 +82,18 @@ func BenchmarkClassify(b *testing.B) {
 	text := "帮我查一下明天上海的天气怎么样需要带伞吗然后顺便看看后天的"
 	for i := 0; i < b.N; i++ {
 		Classify(text)
+	}
+}
+
+func TestReadsAsQuestion(t *testing.T) {
+	for _, q := range []string{"这个最低保要多少钱？", "三者险能调吗", "你们怎么收费", "有没有优惠", "这个呢"} {
+		if !ReadsAsQuestion(q) {
+			t.Errorf("%q should read as a question", q)
+		}
+	}
+	for _, s := range []string{"好的，谢谢。", "三者险调到三百万。", "我再想想", ""} {
+		if ReadsAsQuestion(s) {
+			t.Errorf("%q should not read as a question", s)
+		}
 	}
 }

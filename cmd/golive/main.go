@@ -22,6 +22,7 @@ import (
 	// Provider adapters register themselves. Each factory is lazy, so an
 	// unconfigured vendor costs nothing until a session asks for it.
 	_ "github.com/chuanmingliu/golive/internal/provider/deepseek"
+	_ "github.com/chuanmingliu/golive/internal/provider/fish"
 	_ "github.com/chuanmingliu/golive/internal/provider/minimax"
 	_ "github.com/chuanmingliu/golive/internal/provider/mock"
 	_ "github.com/chuanmingliu/golive/internal/provider/tencent"
@@ -209,7 +210,9 @@ func warmPhrases(ctx context.Context, cfg config.Config, log *slog.Logger) {
 	if err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// Paced at ~20 phrases a minute for the synthesizer's rate limit, so
+	// the profile's phrases and the openers take a couple of minutes.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	started := time.Now()
 	n, err := duplex.WarmPhrases(ctx, cfg, tts, log)
@@ -219,6 +222,13 @@ func warmPhrases(ctx context.Context, cfg config.Config, log *slog.Logger) {
 	}
 	if n > 0 {
 		log.Info("phrase cache warmed", "phrases", n, "took_ms", time.Since(started).Milliseconds())
+	}
+	// The scenario-keyed openers from the lead service, when the profile has
+	// one (tools/openers.go).
+	if o, n, err := duplex.WarmOpeners(ctx, cfg, tts, log); err != nil {
+		log.Warn("the lead service's openers were not cached", "err", err)
+	} else if len(o.Scenarios) > 0 {
+		log.Info("openers by scenario cached", "version", o.Version, "scenarios", len(o.Scenarios), "phrases", len(o.Phrases()), "added", n)
 	}
 }
 

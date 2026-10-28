@@ -35,14 +35,17 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/endpoint"
+	"github.com/chuanmingliu/golive/internal/focus"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/segment"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // Emit delivers a server event to the client. Implementations must be safe for
@@ -61,8 +64,11 @@ type Deps struct {
 
 // Options configure one session's engine.
 type Options struct {
-	Cfg          config.Config
-	SessionID    string
+	Cfg       config.Config
+	SessionID string
+	// CallID is the telephone call this session answers, when the gateway
+	// said; it goes on every tool request.
+	CallID       string
 	ClientRate   int
 	Instructions string
 	Voice        string
@@ -144,7 +150,16 @@ type Engine struct {
 	userSince   time.Time
 	speechEndAt time.Time
 	speechEndMS int64
-	asrRun      *asrRun
+	// resumeNoted keeps the "sound resumed" line to one per guess.
+	resumeNoted bool
+	// speechEndSilenceMS is the trailing silence that utterance was closed on.
+	speechEndSilenceMS int64
+	asrRun             *asrRun
+	// earlyRun is a recognition ended early, in a pause, whose final is still
+	// on its way while asrRun — its continuation — listens to what follows.
+	// See maybeEarlyFinal.
+	earlyRun    *asrRun
+	earlyFinals int
 	asrSeq      uint64
 	// asrStandby is a recognizer connection dialled on the first suspicion of
 	// speech, waiting to be adopted by the utterance if there turns out to be
@@ -178,6 +193,28 @@ type Engine struct {
 	// lastAck and lastFiller keep a phrase from being chosen twice running.
 	lastAck    string
 	lastFiller string
+	lastOpener string
+	// recentOpeners are the last three openers said, not to be said again.
+	recentOpeners []string
+	// openerUses is, per phrase, the opener turn it was last said on (0:
+	// never this call); openerTurn counts opener turns. The least recently
+	// said phrase of a pool is chosen.
+	openerUses map[string]int
+	openerTurn int
+	// lastSaidOpener is the phrase most recently said at a pause (the one a
+	// fragment's opener must differ from when it became a backchannel).
+	lastSaidOpener string
+	// openers are the lead service's scenario-keyed openers (tools.Openers),
+	// read at the session's start; empty when the profile has none.
+	openers tools.Openers
+	// skipOpenerUntil: the last opener became a backchannel (the caller went
+	// on mid-sentence); a turn that closes before this moment opens without
+	// one — 嗯, 行, 好的 on three fragments of one sentence is a tic — while a
+	// continuation that was a real stretch of speech opens normally, with a
+	// different phrase.
+	skipOpenerUntil time.Time
+	// lastActiveMS is how much of the last closed utterance was voiced.
+	lastActiveMS int64
 	// fillerSinceAnswer counts holding fillers spoken since the caller last
 	// actually heard an answer. Above zero, another one is noise.
 	fillerSinceAnswer int
@@ -225,15 +262,42 @@ type Engine struct {
 	// --- shared state ---
 	speech   atomic.Pointer[speechPipe]
 	speaking atomic.Bool
+	// uttVerdict is what the focus labels have said about the open
+	// utterance so far (see judgeUtteranceFocus).
+	uttVerdict uttVerdict
+	// uttQuietIgnored: this utterance was taken up on the caller joining and
+	// then let go at the quiet close as mostly another voice's; not taken up again.
+	uttQuietIgnored bool
+	// focus is the speaker-focus side channel, nil when off; utterStartMS is
+	// where the current utterance began, on the audio clock.
+	focus        *focusState
+	utterStartMS int64
+	// focusDial, when set, replaces the WebSocket dial (tests).
+	focusDial func(ctx context.Context) (focus.Scorer, error)
+	// tools is what the engine can do besides talk, nil when the profile
+	// declares none; toolExec, when set, replaces the HTTP executor (tests).
+	tools    *toolState
+	toolExec tools.Executor
 
 	ttsMu     sync.Mutex
 	ttsStream provider.TTSStream
 
-	latencies []int64
+	latencies        []int64
+	contentLatencies []int64
 	// specHeld and specAbandoned count this session's guesses by outcome, for
 	// the summary at close. Loop goroutine only.
 	specHeld      int
 	specAbandoned int
+	// echoReturns are the times the assistant's voice took to come back on the
+	// input, and pausesInside the lengths of the pauses callers carried on
+	// from, both in milliseconds and both for the summary at close.
+	// silentBeforeMS is the open utterance's trailing silence as of the frame
+	// before this one. Loop goroutine only. See measureLine.
+	echoReturns    []float64
+	echoMisses     int
+	floorRaises    int
+	pausesInside   []int
+	silentBeforeMS float64
 
 	inputMS   atomic.Int64
 	outputMS  atomic.Int64
@@ -260,8 +324,16 @@ type asrRun struct {
 	startMS  int64
 	endMS    int64
 	lastText string
-	openedAt time.Time
-	sendDone bool
+	// changedAt is when lastText last changed — changedAtMS the same moment
+	// on the detector's audio clock — and activeAtChange how much of the
+	// utterance had been voiced by then: together, how long the caller has
+	// gone without producing a new word, and how much sound there has been
+	// since. See maybeSettle.
+	changedAt      time.Time
+	changedAtMS    float64
+	activeAtChange float64
+	openedAt       time.Time
+	sendDone       bool
 	// sendDoneAt is when the utterance was closed and a final asked for.
 	sendDoneAt time.Time
 	// ended is set once the stream has closed its results, final or not.
@@ -280,6 +352,16 @@ type asrRun struct {
 	// while a floor hold was undecided, so the first one after it must go out
 	// even if the text has not changed since.
 	held bool
+
+	// An utterance whose recognition was ended early in a pause carries on in
+	// a continuation: prefix is what the recognitions before this one settled
+	// on, raw what this one has heard by itself, and activeAtOpen how much of
+	// the utterance had been voiced when it took over — so, how much has been
+	// since. lastText is always the whole utterance.
+	continuation bool
+	prefix       string
+	raw          string
+	activeAtOpen float64
 }
 
 // New builds an engine. Call Start before pushing audio.
@@ -315,6 +397,9 @@ func New(opts Options, deps Deps) *Engine {
 		GapToleranceMS:     opts.Cfg.VAD.GapToleranceMS,
 		BargeInMarginDB:    opts.Cfg.VAD.BargeInMarginDB,
 		BargeInMinSpeechMS: opts.Cfg.VAD.BargeInMinSpeechMS,
+		EchoTailMS:         opts.Cfg.VAD.EchoTailMS,
+		FloorTrackMS:       opts.Cfg.VAD.FloorTrackMS,
+		TraceMS:            opts.Cfg.VAD.GateTraceMS,
 	}
 	vad := audio.NewVAD(vcfg)
 
@@ -363,9 +448,13 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
+	e.setupTools()
+	e.loadOpeners()
+	e.startFocus(e.ctx)
 	// The session has just opened and nobody is waiting on anything yet, which
 	// makes this the cheapest moment in the whole call to pay for handshakes.
 	e.prewarm("session open")
+	e.post(func() { e.warmAtOpening("session open") })
 }
 
 // prewarm opens the provider connections a turn is about to need, off the
@@ -422,8 +511,12 @@ func (e *Engine) Close() {
 		e.player.Close()
 		e.wg.Wait()
 		// After wg.Wait: the loop goroutine is the only writer of e.latencies
-		// and it has exited, so reading the slice here needs no lock.
+		// and of what lineSummary reads, and it has exited, so reading them
+		// here needs no lock.
 		e.latencySummary()
+		e.lineSummary()
+		e.focusSummary()
+		e.closeTools()
 		e.ttsMu.Lock()
 		if e.ttsStream != nil {
 			_ = e.ttsStream.Close()
@@ -431,6 +524,13 @@ func (e *Engine) Close() {
 		}
 		e.ttsMu.Unlock()
 	})
+}
+
+// GateTrace is the energy gate's record of the call (see audio.GateSample):
+// the line's level against the floor and the bar, every vad.gate_trace_ms.
+// Call it after Close; the trace is the loop goroutine's until then.
+func (e *Engine) GateTrace() []audio.GateSample {
+	return append([]audio.GateSample(nil), e.vad.Trace()...)
 }
 
 // Greet speaks the configured greeting, if any.
@@ -456,6 +556,41 @@ func (e *Engine) Greet() {
 		pipe.Push(text)
 		pipe.Close()
 		turn.AppendResponse(text)
+		e.warmAtOpening("greeting")
+	})
+}
+
+// Say speaks a line the assistant was handed rather than one it composed: the
+// opening of a phone call, released when the call is answered. Like the
+// greeting it is a real turn — interruptible, truncated honestly, recorded in
+// history — and like the greeting it plays from the phrase cache when the line
+// was synthesized ahead of time, which is the point of knowing it in advance.
+func (e *Engine) Say(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	e.post(func() {
+		turn := e.tracker.Begin("", false)
+		e.specTurn = nil
+		e.commitTurn(turn)
+		e.log.Debug("speak: opening line", "turn", turn.ID, "text", text)
+		pipe := e.newSpeechPipe(turn, true)
+		pipe.Push(text)
+		pipe.Close()
+		turn.AppendResponse(text)
+		e.warmAtOpening("opening line")
+	})
+}
+
+// Interrupt stops whatever the assistant is saying or about to say, as a
+// barge-in would. It is for a client that has decided, by means of its own,
+// that the caller has taken the floor.
+func (e *Engine) Interrupt() {
+	e.post(func() {
+		if e.assistantHasFloor() && !e.hangingUp() {
+			e.interrupt()
+		}
 	})
 }
 
@@ -574,6 +709,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	if e.muted {
 		return
 	}
+	atMS := e.inputMS.Load()
 	e.inputMS.Add(int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
 
 	converted, err := audio.ResamplePCM16(pcm, e.opts.ClientRate, provider.PipelineRate)
@@ -581,12 +717,14 @@ func (e *Engine) onAudio(pcm []byte) {
 		e.deps.Emit(live.NewError("invalid_request_error", "bad_audio", err.Error(), ""))
 		return
 	}
+	e.focusPush(converted, atMS)
 	for _, frame := range e.framer.Push(converted) {
 		samples, err := audio.DecodePCM16(frame)
 		if err != nil {
 			continue
 		}
 		e.handleDecision(e.vad.Push(samples))
+		e.measureLine()
 	}
 	// Per frame, not per tick: the window between "gone quiet" and "turn over"
 	// is a couple of hundred milliseconds, and a 120 ms tick would spend most
@@ -596,7 +734,11 @@ func (e *Engine) onAudio(pcm []byte) {
 	e.expireHold()
 	e.maybePredialASR()
 	e.applyPatience()
+	e.maybeEarlyFinal()
 	e.maybeSpeculate()
+	e.maybeSettle()
+	e.maybeCloseOnCallerQuiet()
+	e.maybeOpenDuringPatience()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {
@@ -614,6 +756,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		}
 		e.userOpen = true
 		e.userSince = time.Now()
+		e.resumeNoted = false
 		e.watch.Reset()
 		e.specTurn = nil
 		e.specWhy = ""
@@ -621,6 +764,9 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// Remembered so the utterance's speech-end origin is not applied to
 		// whatever was already being said when it began.
 		e.turnBeforeUtterance = e.tracker.Current()
+		e.utterStartMS = d.StartMS
+		e.uttVerdict = uttUnjudged
+		e.uttQuietIgnored = false
 		e.log.Debug("listen: utterance opened",
 			"start_ms", d.StartMS,
 			"active_ms", int(d.ActiveMS),
@@ -663,12 +809,19 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			// The final transcript is now imminent — closing the recognizer is
 			// what asks for it. Do not time out on the last leg.
 			e.hold.sawEvidence()
+			if e.hold.kept {
+				e.hold.until = time.Now().Add(1500 * time.Millisecond)
+			}
 		}
 		// The origin for every latency this turn will report. A speculative
 		// turn is already running by now, so it is stamped here rather than at
 		// creation.
 		e.speechEndAt = time.Now()
 		e.speechEndMS = d.EndMS
+		e.speechEndSilenceMS = int64(d.SilenceMS)
+		e.lastActiveMS = int64(d.ActiveMS)
+		e.noteCallerSpoke()
+		e.enrolFocus(d.StartMS, d.EndMS, d.ActiveMS, d.BargeIn)
 		// ...but only for a turn this utterance actually produced. A turn that
 		// was already live when the caller started talking belongs to an
 		// earlier utterance, or to none at all — the greeting is the clearest
@@ -677,7 +830,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		// still in the future, so every figure came out negative. It is not
 		// waiting for anything the caller said, and it has no origin.
 		if turn := e.tracker.Current(); turn != nil && turn != e.turnBeforeUtterance {
-			turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
+			turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS, e.speechEndSilenceMS)
 		}
 		e.writeASR(d.Snapshot)
 		if e.asrRun != nil {
@@ -689,12 +842,14 @@ func (e *Engine) handleDecision(d audio.Decision) {
 			"active_ms", int(d.ActiveMS),
 			"barge_in", d.BargeIn)
 		e.deps.Emit(live.SpeechEvent{
-			Envelope: live.Envelope{Type: live.ExtSpeechStopped},
-			StartMS:  d.StartMS,
-			EndMS:    d.EndMS,
-			BargeIn:  d.BargeIn,
+			Envelope:  live.Envelope{Type: live.ExtSpeechStopped},
+			StartMS:   d.StartMS,
+			EndMS:     d.EndMS,
+			BargeIn:   d.BargeIn,
+			SilenceMS: int64(d.SilenceMS),
 		})
-		e.closeASR(false)
+		e.closeUtteranceASR(d)
+		e.focusUtteranceClosed(d.EndMS)
 		e.speculateAtClose()
 		e.publishState()
 	}
@@ -705,9 +860,14 @@ func (e *Engine) onTick() {
 	e.expireHold()
 	e.expireStandby()
 	e.expireFinalWait()
+	e.expireEarlyFinal()
 	e.observeTTFA()
 	e.maybeBackchannel()
 	e.maybeHoldingFiller()
+	e.judgeUtteranceFocus()
+	e.judgeFocus()
+	e.checkHangupRules("")
+	e.maybeDeliver()
 	e.drainDeferred()
 	// The session's lifetime is the session's business: the server bounds it
 	// with a deadline on the context it hands this engine, and says so in
@@ -723,8 +883,17 @@ func (e *Engine) onTick() {
 // speechPipe converts a stream of text deltas into paced audio. One pipe is
 // alive at a time; starting a new one aborts the old.
 type speechPipe struct {
-	e      *Engine
-	turn   *Turn
+	// openedDone: the first segment has been checked against Turn.Opened.
+	openedDone bool
+	// saidNothing is set by speak when a segment was stripped to nothing (the
+	// model's own opener after the engine's), for run to restart the first
+	// segment's rules on the text that follows.
+	saidNothing bool
+	e           *Engine
+	turn        *Turn
+	// begun is set once the pipe has asked for its first synthesis. That one
+	// is the one a caller waits on in silence; see provider.WithUrgent.
+	begun  bool
 	in     chan string
 	done   chan struct{}
 	ctx    context.Context
@@ -794,6 +963,19 @@ func (p *speechPipe) alive() bool {
 	}
 }
 
+// firstFlushRetry is how soon a first segment too short to speak at its
+// deadline is looked at again.
+const firstFlushRetry = 30 * time.Millisecond
+
+// firstFlushFloor is the least a first segment may hold when it is cut for
+// time rather than at a boundary.
+func (p *speechPipe) firstFlushFloor() int {
+	if n := p.e.opts.Cfg.Duplex.StreamFirstChunkChars; n > 3 {
+		return n
+	}
+	return 3
+}
+
 func (p *speechPipe) run() {
 	// Whatever was waiting for the floor — a function result to read back,
 	// something an application asked to have said — gets another look the
@@ -820,6 +1002,52 @@ func (p *speechPipe) run() {
 	grace := time.Duration(p.e.opts.Cfg.Duplex.StreamFirstChunkGraceMS) * time.Millisecond
 	spoke := false
 
+	// say speaks one segment and reports whether anything was said. The one
+	// way to say nothing is the model's own opener, already said at the
+	// pause and stripped; the first segment is then still ahead.
+	say := func(text string) (ok, said bool) {
+		p.saidNothing = false
+		if !p.speak(text) {
+			return false, false
+		}
+		if p.saidNothing {
+			p.saidNothing = false
+			return true, false
+		}
+		spoke = true
+		return true, true
+	}
+	// restartFirst, after the first segment said nothing and no cut segment
+	// is waiting to be spoken: the segmenter is put back on first-segment
+	// rules for the text it holds (a clause may end on a comma, at
+	// stream_first_chunk_chars; what is already ready is spoken now) and the
+	// deadline is re-armed. Without this the answer's first word waited for
+	// a strong boundary at stream_min_chunk_chars: 640 and 840 ms after the
+	// first token on two turns of the 21:31 simulated call of 10-27. It is
+	// never called while segments cut from the same delta are still to be
+	// spoken — re-pushing the buffer then would put later text before them.
+	restartFirst := func() bool {
+		spoke = false
+		firstDeadline, boundaryGrace = nil, nil
+		ready := seg.RestartFirst()
+		p.e.log.Debug("speak: the first segment said nothing; the next is the first again",
+			"turn", p.turn.ID, "pending_chars", len([]rune(seg.Pending())), "ready", len(ready))
+		for _, r := range ready {
+			if ok, _ := say(r); !ok {
+				return false
+			}
+		}
+		if !spoke {
+			if seg.Pending() != "" && deadline > 0 {
+				firstDeadline = time.After(deadline)
+			}
+			if grace > 0 && seg.HasEarlyBoundary() {
+				boundaryGrace = time.After(grace)
+			}
+		}
+		return true
+	}
+
 consume:
 	for {
 		if p.soft.Load() {
@@ -839,9 +1067,12 @@ consume:
 			}
 			p.e.log.Debug("speak: first segment cut at an early boundary",
 				"turn", p.turn.ID, "text", early, "grace_ms", grace.Milliseconds())
-			spoke = true
 			firstDeadline = nil
-			if !p.speak(early) {
+			ok, said := say(early)
+			if !ok {
+				return
+			}
+			if !said && !spoke && !restartFirst() {
 				return
 			}
 		case <-firstDeadline:
@@ -853,6 +1084,14 @@ consume:
 			// if not.
 			forced := seg.FlushFirstAtBoundary()
 			if forced == "" {
+				// Not a syllable, though. A backend that has produced one
+				// character by the deadline has it cut from its word — a real
+				// call said "加", and then "上了吗？" — and the caller is better
+				// served by the few tens of milliseconds the next ones take.
+				if floor := p.firstFlushFloor(); len([]rune(seg.Pending())) < floor {
+					firstDeadline = time.After(firstFlushRetry)
+					continue
+				}
 				forced = seg.FlushFirst()
 			}
 			if forced == "" {
@@ -860,9 +1099,12 @@ consume:
 			}
 			p.e.log.Debug("speak: first segment flushed on deadline",
 				"turn", p.turn.ID, "chars", len([]rune(forced)), "ms", deadline.Milliseconds())
-			spoke = true
 			boundaryGrace = nil
-			if !p.speak(forced) {
+			ok, said := say(forced)
+			if !ok {
+				return
+			}
+			if !said && !spoke && !restartFirst() {
 				return
 			}
 		case text, ok := <-p.in:
@@ -872,11 +1114,18 @@ consume:
 			if firstDeadline == nil && !spoke && deadline > 0 {
 				firstDeadline = time.After(deadline)
 			}
-			for _, ready := range seg.Push(text) {
-				spoke = true
+			ready := seg.Push(text)
+			for i, r := range ready {
 				firstDeadline = nil
 				boundaryGrace = nil
-				if !p.speak(ready) {
+				ok, said := say(r)
+				if !ok {
+					return
+				}
+				// A segment cut from the same delta that follows the stripped
+				// one is spoken next, in order; only when none follows is
+				// the segmenter restarted on what it still holds.
+				if !said && !spoke && i == len(ready)-1 && !restartFirst() {
 					return
 				}
 				if p.soft.Load() {
@@ -931,6 +1180,17 @@ func (p *speechPipe) confirmed() bool {
 	return p.ctx.Err() == nil && p.current()
 }
 
+// remembers reports whether text is looked for in the phrase cache and kept
+// there once said: everything a pipe of fixed phrases says, and of an ordinary
+// answer the segments short enough to be said again — its opening clauses.
+func (p *speechPipe) remembers(text string) bool {
+	if p.cacheable {
+		return true
+	}
+	d := p.e.opts.Cfg.Duplex
+	return d.PhraseCache && d.PhraseCacheLearnChars > 0 && len([]rune(text)) <= d.PhraseCacheLearnChars
+}
+
 // current reports whether this pipe may still produce. Under a soft stop the
 // turn is allowed to be stale: the player is holding a grace open for exactly
 // the sentence being synthesized here, and abandoning it now would cut the
@@ -943,7 +1203,33 @@ func (p *speechPipe) current() bool {
 // when the turn has been superseded and the pipe should stop.
 func (p *speechPipe) speak(text string) bool {
 	text = strings.TrimSpace(text)
+	if opened := p.turn.Opened; opened != "" && !p.openedDone {
+		// The engine said an opener at the pause; the model's own, if it is
+		// the same words, is said once.
+		p.openedDone = true
+		// Its own opener, or any of the pool's (嗯，好的，… after the engine's
+		// 嗯， is the tic the owner heard): one is enough.
+		d := p.e.opts.Cfg.Duplex
+		if trimmed, n := stripOpeners(text, opened, d.OpenerPhrases, d.OpenerQuestionPhrases); n > 0 {
+			p.e.log.Debug("speak: the model's opener was already said at the pause", "turn", p.turn.ID, "opener", opened, "stripped", n)
+			text = trimmed
+		}
+	}
 	if text == "" {
+		// Nothing was said: the first segment was the opener, already
+		// spoken. The pipe's loop restarts the first-segment regime for
+		// what follows (saidNothing), so the first word the caller hears is
+		// not held to a later segment's length.
+		p.saidNothing = true
+		return true
+	}
+	if !speakable(text) {
+		// A closing quote, a dash, an ellipsis: a segment the splitter cut off
+		// on its own. A synthesizer returns no audio for it, and that used to
+		// cost a round trip to find out and a dropped connection afterwards.
+		// Nothing was said, which matters for a first segment (好的…… after
+		// the engine's 好的，: the restart must still happen).
+		p.saidNothing = true
 		return true
 	}
 	if p.ctx.Err() != nil || !p.current() {
@@ -954,7 +1240,8 @@ func (p *speechPipe) speak(text string) bool {
 	// the synthesizer again — and on a hit this path needs no synthesis
 	// connection at all, which is why a cached greeting can start before the
 	// handshake with the vendor has finished.
-	if p.cacheable {
+	remembered := p.remembers(text)
+	if remembered {
 		if cached, ok := Phrases().Get(p.e.phraseKey(text)); ok {
 			return p.speakCached(text, cached)
 		}
@@ -989,7 +1276,15 @@ func (p *speechPipe) speak(text string) bool {
 	// turns — every answer after it is a fragment too.
 	segCtx, cancelSeg := context.WithCancel(p.ctx)
 	defer cancelSeg()
-	chunks, err := stream.Synthesize(segCtx, text)
+	synthCtx := segCtx
+	// first: this is the answer's first segment, the one the caller is
+	// waiting through silence for.
+	first := !p.begun
+	if first {
+		p.begun = true
+		synthCtx = provider.WithUrgent(segCtx)
+	}
+	chunks, err := stream.Synthesize(synthCtx, text)
 	if err != nil {
 		p.e.log.Error("tts synthesize failed", "err", err)
 		p.e.deps.Emit(live.NewError("server_error", "tts_error", err.Error(), ""))
@@ -1023,6 +1318,13 @@ func (p *speechPipe) speak(text string) bool {
 	// keep is the segment's audio as the provider produced it, collected only
 	// for text worth caching.
 	var keep []byte
+	// trimLead: the answer's first segment opens with a quiet head before its
+	// first syllable, as every rendering does; the caller is waiting through
+	// silence for exactly this audio, so the head is cut (to segmentLeadMS)
+	// until the first sound is in, across as many chunks as it spans.
+	trimLead := first
+	var leadMS int
+	var held []byte
 
 	for chunk := range chunks {
 		if p.ctx.Err() != nil || !p.current() {
@@ -1036,12 +1338,32 @@ func (p *speechPipe) speak(text string) bool {
 		if len(chunk.PCM) == 0 {
 			continue
 		}
-		if p.cacheable {
+		if remembered {
 			keep = append(keep, chunk.PCM...)
 		}
 		pcm, err := audio.ResamplePCM16(chunk.PCM, stream.SampleRate(), p.e.opts.ClientRate)
 		if err != nil {
 			continue
+		}
+		if trimLead {
+			if !audible(pcm) {
+				// Nothing but the head so far: hold it back and go on. Its
+				// last few ms are kept to put before the onset.
+				leadMS += int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm))
+				keepHead := audio.PCM16(p.e.opts.ClientRate).BytesForMS(segmentLeadMS)
+				if len(pcm) > keepHead {
+					pcm = pcm[len(pcm)-keepHead:]
+				}
+				held = append(held[:0], pcm...)
+				continue
+			}
+			whole := append(held, pcm...)
+			trimmed := audio.TrimLeadingSilence(whole, p.e.opts.ClientRate, -40, segmentLeadMS)
+			leadMS += int(audio.PCM16(p.e.opts.ClientRate).DurationMS(make([]byte, len(whole)-len(trimmed))))
+			leadMS -= int(audio.PCM16(p.e.opts.ClientRate).DurationMS(held))
+			pcm = trimmed
+			held = nil
+			trimLead = false
 		}
 		pcmBytes += len(pcm)
 		if firstChunk {
@@ -1049,8 +1371,14 @@ func (p *speechPipe) speak(text string) bool {
 			p.e.log.Debug("speak: first audio for segment",
 				"turn", p.turn.ID,
 				"chars", len([]rune(text)),
-				"ms", time.Since(segStarted).Milliseconds())
+				"ms", time.Since(segStarted).Milliseconds(),
+				"lead_ms", leadMS)
 		}
+		// The answer's own first word is this audio, not the request for it:
+		// stamped here, after the synthesizer's first-audio time, so the
+		// content figure on a turn the model's clause binds is not short by
+		// that time (~200 ms; it was, until 10-27).
+		p.turn.MarkFirstContent()
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
 			Kind:     SegAudio,
@@ -1059,6 +1387,30 @@ func (p *speechPipe) speak(text string) bool {
 			Revision: p.turn.Revision,
 			PCM:      pcm,
 		})
+	}
+
+	// A segment whose whole rendering stayed under the silence floor — a
+	// breath, an ellipsis, a vendor's off moment — was held back chunk by
+	// chunk above and never enqueued. It is audio all the same: play what was
+	// kept of it, so the segment counts as produced and the session is not
+	// dropped as having delivered nothing (review of 10-27: two reconnects
+	// and a sentence missing from the transcript).
+	if trimLead && firstChunk && len(held) > 0 && p.ctx.Err() == nil && p.current() {
+		firstChunk = false
+		pcmBytes += len(held)
+		p.e.log.Debug("speak: the segment's audio was all quiet; playing what was kept of it",
+			"turn", p.turn.ID, "chars", len([]rune(text)), "quiet_ms", leadMS,
+			"ms", time.Since(segStarted).Milliseconds())
+		p.turn.MarkFirstContent()
+		p.turn.MarkFirstAudio()
+		p.e.player.Enqueue(Segment{
+			Kind:     SegAudio,
+			Gen:      p.turn.Generation,
+			TurnID:   p.turn.ID,
+			Revision: p.turn.Revision,
+			PCM:      held,
+		})
+		held = nil
 	}
 
 	// Every check on the turn's liveness lives inside the loop body above, so a
@@ -1112,7 +1464,7 @@ func (p *speechPipe) speak(text string) bool {
 	})
 	// Only a segment that ran to its end is kept: the loop above returns early
 	// on every interruption, so reaching here means keep is the whole of it.
-	if p.cacheable && len(keep) > 0 {
+	if remembered && len(keep) > 0 {
 		Phrases().Put(p.e.phraseKey(text), PhraseAudio{PCM: keep, Rate: stream.SampleRate()})
 	}
 	p.e.log.Debug("speak: segment synthesized",
@@ -1123,11 +1475,33 @@ func (p *speechPipe) speak(text string) bool {
 	return true
 }
 
+// audible reports whether any sample of PCM16 audio is above -40 dBFS.
+func audible(pcm []byte) bool {
+	const thr = 327 // 32767 * 10^(-40/20)
+	for i := 0; i+1 < len(pcm); i += 2 {
+		v := int32(int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8))
+		if v > thr || v < -thr {
+			return true
+		}
+	}
+	return false
+}
+
 // speakCached plays a segment from the phrase cache.
 func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	pcm, err := audio.ResamplePCM16(cached.PCM, cached.Rate, p.e.opts.ClientRate)
 	if err != nil || len(pcm) == 0 {
 		return true
+	}
+	leadMS := 0
+	if !p.begun {
+		// The answer's first segment, from the cache: its quiet head is cut
+		// as a synthesized one's would be, and it counts as the first — the
+		// segment after it is not the one the caller waits in silence for.
+		p.begun = true
+		rendered := len(pcm)
+		pcm = audio.TrimLeadingSilence(pcm, p.e.opts.ClientRate, -40, segmentLeadMS)
+		leadMS = int(audio.PCM16(p.e.opts.ClientRate).DurationMS(make([]byte, rendered-len(pcm))))
 	}
 	p.turn.MarkFirstSegment()
 	if !p.confirmed() {
@@ -1141,6 +1515,7 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	begin.Kind, begin.Text = SegBegin, text
 	body.Kind, body.PCM = SegAudio, pcm
 	mark.Kind, mark.Text = SegMark, text
+	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(begin)
 	p.turn.MarkFirstAudio()
 	p.e.player.Enqueue(body)
@@ -1148,7 +1523,8 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	p.e.log.Debug("speak: segment played from the phrase cache",
 		"turn", p.turn.ID,
 		"text", text,
-		"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)))
+		"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)),
+		"lead_ms", leadMS)
 	return true
 }
 
@@ -1159,7 +1535,7 @@ func (e *Engine) ttsRate() int { return SynthesisRate(e.opts.Cfg, e.opts.ClientR
 func (e *Engine) phraseKey(text string) PhraseKey {
 	name := ""
 	if e.deps.TTS != nil {
-		name = e.deps.TTS.Name()
+		name = provider.VoiceName(e.deps.TTS)
 	}
 	return PhraseKey{
 		Provider: name,
@@ -1292,6 +1668,12 @@ type floorHold struct {
 	until   time.Time
 	hold    time.Duration
 	bargeIn bool
+	// words says the recognizer has already called the sound a turn, and
+	// only the focus labels are being waited for (see judgeBargeInFocus);
+	// kept that the labels said it was not the caller's, and the rest of
+	// the utterance is being let go by, unless the caller joins in.
+	words bool
+	kept  bool
 }
 
 // sawEvidence extends the hold to its ceiling, and is called once the
@@ -1415,6 +1797,21 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 	if e.hold == nil {
 		return false
 	}
+	if e.hold.kept {
+		// Not the caller's voice, so far. Each new transcript is a chance
+		// for the labels to say the caller has joined in; otherwise the
+		// utterance goes by, and the hold with it when it ends.
+		if e.judgeBargeInFocus(text) == bargeInYield {
+			e.releaseHold("the caller's voice joined in")
+			return false
+		}
+		if final && !e.userOpen {
+			e.log.Debug("listen: the sound over the answer went by; keeping the floor",
+				"held_ms", time.Since(e.hold.started).Milliseconds())
+			e.hold = nil
+		}
+		return true
+	}
 	// No words in it. The VAD heard something and the recognizer found nothing
 	// to transcribe, which is a cough, a door, or the assistant's own voice
 	// returning through a speaker — and none of those is a reason to stop
@@ -1427,6 +1824,27 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 		e.log.Debug("listen: no words in that; keeping the floor",
 			"held_ms", time.Since(e.hold.started).Milliseconds())
 		e.hold = nil
+		e.abandonSpeculation("the sound over the answer had no words in it")
+		return true
+	}
+	// A hesitation — "呃", "um" — is the sound of someone about to speak, and
+	// over the answer it is most often the sound of someone deciding not to.
+	// It was being yielded to as words that were not a murmur (the
+	// full-duplex bench's vocal-tic scenario cut the answer on every one),
+	// while the same sound into a silence was already left unanswered. Wait
+	// for its final as for a murmur, and keep the floor on one.
+	if e.opts.Cfg.Duplex.IgnoreHesitations && endpoint.Hesitation(withoutForcedStop(text)) {
+		if !final {
+			e.hold.sawEvidence()
+			return false
+		}
+		e.log.Debug("listen: a hesitation over the answer; keeping the floor", "text", text)
+		e.deps.Emit(live.InputBackchannelEvent{
+			Envelope: live.Envelope{Type: live.ExtInputBackchannel},
+			Text:     strings.TrimSpace(text),
+		})
+		e.hold = nil
+		e.abandonSpeculation("the words were a hesitation, not a turn")
 		return true
 	}
 	if e.bcSet.CouldBecome(text) {
@@ -1445,12 +1863,27 @@ func (e *Engine) judgeHold(text string, final bool) (swallow bool) {
 				Text:     strings.TrimSpace(text),
 			})
 			e.hold = nil
+			// Swallowed whole: a guess begun on it before the verdict must go
+			// too, or it is said back to the caller once the answer ends.
+			e.abandonSpeculation("the words were an acknowledgement, not a turn")
 			return true
 		}
 		// Consistent with a prefix but never completed — an utterance that
 		// trailed off. Nothing was asked, but nothing says the caller meant to
 		// keep listening either, so yield and let the empty transcript be
 		// dropped downstream.
+	}
+	// Words, and not an acknowledgement. On a quiet line that is the caller
+	// interrupting. On a noisy one the recognizer makes words of a
+	// television, a bystander, or the assistant's own voice returning, and
+	// cutting the answer on those is the wrong call: the speaker labels say
+	// whose voice it was, and are waited for a moment if they are not in
+	// yet.
+	switch e.judgeBargeInFocus(text) {
+	case bargeInKeep:
+		return true
+	case bargeInWait:
+		return false
 	}
 	e.log.Debug("listen: not a backchannel; yielding the floor",
 		"text", text, "final", final)
@@ -1477,7 +1910,28 @@ func (e *Engine) releaseHold(reason string) {
 // Continuing to talk over someone on the strength of no evidence is the worse
 // failure of the two, so silence resolves as an interruption.
 func (e *Engine) expireHold() {
-	if e.hold == nil || time.Now().Before(e.hold.until) {
+	if e.hold == nil {
+		return
+	}
+	if e.hold.kept {
+		// Let go by; cleared by the utterance's final, or a moment after
+		// its close if no final ever comes.
+		if !e.userOpen && time.Now().After(e.hold.until) {
+			e.hold = nil
+		}
+		return
+	}
+	if e.hold.words {
+		// The words have spoken; the labels are what is waited for, and
+		// they may have landed since the last transcript event.
+		switch e.judgeBargeInFocus("") {
+		case bargeInKeep, bargeInWait:
+			return
+		}
+		e.releaseHold("transcript; the labels did not say otherwise")
+		return
+	}
+	if time.Now().Before(e.hold.until) {
 		return
 	}
 	e.releaseHold("hold expired without a decisive transcript")
@@ -1489,6 +1943,34 @@ func (e *Engine) expireHold() {
 // whether the assistant still holds the floor at all.
 func (e *Engine) yieldFloor(bargeIn bool) {
 	if !e.opts.Cfg.Duplex.AllowBargeIn || !e.assistantHasFloor() {
+		return
+	}
+	if e.hangingUp() {
+		// The farewell is the last thing said and is said whole: on the
+		// 09:37 call of 10-20 (a metro station) a sound over it cut it at
+		// four characters and the line dropped on "好的，那". Nothing the
+		// caller or the room says now changes what happens next.
+		e.log.Info("hangup: a sound over the farewell; not yielding", "barge_in", bargeIn)
+		return
+	}
+	if t := e.tracker.Current(); t != nil && t.Opened != "" && !t.OpenedAt.IsZero() &&
+		e.resumedWithinOpener(t) {
+		// The caller went on within a breath of the opener: the pause was a
+		// pause inside their sentence, and the opener was, in effect, an 嗯
+		// of listening. It finishes (it is one word), the answer prepared
+		// for the half-sentence is dropped without a sound, and the
+		// continuation gets no second opener. Before this, the half-said
+		// opener was cut and the next fragment got a fresh one — eight times
+		// on the 22:52 call of 10-25, which the owner heard as rushing.
+		e.log.Info("speak: the opener became a backchannel; the caller went on",
+			"turn", t.ID, "opener_ms", t.OpenedMS, "after_ms", time.Since(t.OpenedAt).Milliseconds())
+		e.cancelBackend()
+		if pipe := e.speech.Load(); pipe != nil {
+			pipe.Abort()
+		}
+		e.gen.Bump()
+		e.player.FinishOpenerAsBackchannel(t.ID)
+		e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 		return
 	}
 	switch e.policy() {
@@ -1504,6 +1986,29 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 			"barge_in", bargeIn, "speaking", e.speaking.Load())
 		e.interrupt()
 	}
+}
+
+// openerBackchannelGraceMS is how long after the opener's end a caller who
+// goes on is still read as continuing their sentence rather than
+// interrupting the answer.
+const openerBackchannelGraceMS = 300
+
+// openerSkipAfterBackchannel is how long after an opener became a
+// backchannel the next turn goes without one.
+const openerSkipAfterBackchannel = 1500 * time.Millisecond
+
+// resumedWithinOpener says whether the caller's open utterance began within
+// the opener's playing time (plus a breath) of the opener's start. The
+// judgement that yields the floor comes hundreds of milliseconds after the
+// caller resumed (the hold waits for words), so the moment that matters is
+// when they resumed, not when the floor is yielded.
+func (e *Engine) resumedWithinOpener(t *Turn) bool {
+	sinceResume := time.Duration(e.inputMS.Load()-e.utterStartMS) * time.Millisecond
+	if !e.userOpen || sinceResume < 0 {
+		sinceResume = 0
+	}
+	gap := time.Since(t.OpenedAt) - sinceResume
+	return gap < time.Duration(t.OpenedMS+openerBackchannelGraceMS)*time.Millisecond
 }
 
 // softInterrupt stops generating further sentences but lets the one already
@@ -1573,12 +2078,14 @@ func (e *Engine) onSegmentHeard(turnID, text string, playAt time.Time) {
 
 func (e *Engine) onSpeakingChanged(speaking bool) {
 	e.speaking.Store(speaking)
+	e.post(func() { e.focusSpeaking(speaking) })
 	// The VAD raises its barge-in bar while we hold the floor. This is the
 	// closest a cascade gets to echo cancellation without a reference signal.
 	e.vad.SetAssistantSpeaking(speaking)
 }
 
 func (e *Engine) onTruncated(r TruncationReport) {
+	e.post(e.noteAssistantQuiet)
 	e.log.Info("speak: turn truncated",
 		"turn", r.TurnID,
 		"played_ms", r.PlayedMS,
@@ -1593,6 +2100,7 @@ func (e *Engine) onTruncated(r TruncationReport) {
 	})
 	e.recordTurn(r.TurnID, r.SpokenText)
 	e.post(func() {
+		e.noteReadoutCut(r.TurnID, r.SpokenText)
 		turn := e.tracker.Current()
 		if turn == nil || turn.ID != r.TurnID {
 			return
@@ -1623,6 +2131,8 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 			return
 		}
 		e.emitMetrics(turn, totalMS, false)
+		e.noteAssistantQuiet()
+		e.checkAssistantHangupRules(text)
 	})
 	e.deps.Emit(e.UsageEvent())
 }
@@ -1652,7 +2162,9 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 		Revision:        turn.Revision,
 		Speculative:     turn.Speculative,
 		SpeechEndMS:     tm.SpeechEndMS,
+		EndSilenceMS:    tm.EndSilenceMS,
 		ASRFinalMS:      ms(tm.TranscriptFinal),
+		TurnStartMS:     ms(tm.StartedAt),
 		LLMFirstTokenMS: ms(tm.FirstToken),
 		FirstSegmentMS:  ms(tm.FirstSegment),
 		TTSFirstAudioMS: ms(tm.FirstAudio),
@@ -1663,6 +2175,16 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	}
 	e.deps.Emit(ev)
 
+	// With an opener said at the pause, the first audio is the opener; the
+	// answer's own first word follows when it is ready, or when the opener
+	// ends, whichever is later.
+	contentMS := ev.FirstAudioOutMS
+	if turn.Opened != "" {
+		contentMS = ms(tm.FirstContent)
+		if end := ev.FirstAudioOutMS + turn.OpenedMS; end > contentMS {
+			contentMS = end
+		}
+	}
 	if !tm.SpeechEndAt.IsZero() {
 		metrics.Default().ObserveTurn(ev.FirstAudioOutMS)
 	}
@@ -1671,13 +2193,20 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	// figures describe nothing anyone experienced as waiting.
 	if !truncated && !tm.FirstAudioOut.IsZero() && !tm.SpeechEndAt.IsZero() {
 		e.latencies = append(e.latencies, ev.FirstAudioOutMS)
+		if turn.Opened != "" {
+			e.contentLatencies = append(e.contentLatencies, contentMS)
+		}
 	}
 	// INFO, not DEBUG: the response latency is the one number worth seeing in a
 	// default-level log.
 	e.log.Info("turn: response latency",
 		"turn", turn.ID,
 		"first_audio_out_ms", ev.FirstAudioOutMS,
+		"first_content_ms", contentMS,
+		"opener_ms", turn.OpenedMS,
+		"end_silence_ms", ev.EndSilenceMS,
 		"asr_final_ms", ev.ASRFinalMS,
+		"turn_start_ms", ev.TurnStartMS,
 		"llm_first_token_ms", ev.LLMFirstTokenMS,
 		"first_segment_ms", ev.FirstSegmentMS,
 		"tts_first_audio_ms", ev.TTSFirstAudioMS,
@@ -1716,7 +2245,107 @@ func (e *Engine) latencySummary() {
 			"p95_ms", at(0.95),
 			"max_ms", v[len(v)-1])
 	}
+	if len(e.contentLatencies) > 0 {
+		// The turns opened from the cache: when the answer itself began.
+		v := append([]int64(nil), e.contentLatencies...)
+		sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
+		at := func(q float64) int64 { return v[int(q*float64(len(v)-1))] }
+		attrs = append(attrs, "opened_turns", len(v), "content_p50_ms", at(0.5), "content_p95_ms", at(0.95))
+	}
 	e.log.Info("session: response latency summary", attrs...)
+}
+
+// insidePauseMinMS is the shortest silence counted as a pause inside an
+// utterance. Under it are the stops and unvoiced consonants of ordinary
+// speech, which no setting of duplex.early_final_ms would be near.
+const insidePauseMinMS = 60
+
+// measureLine keeps two measurements that can only be made frame by frame,
+// and is called after each one. Neither takes part in any decision.
+//
+// The first is how long the assistant's voice takes to come back as echo,
+// which is the only figure there is for the phone leg; the detector times it
+// and it is collected here.
+//
+// The second is how long callers pause inside an utterance. An early final is
+// asked for duplex.early_final_ms into a pause, so lowering it makes every
+// turn faster and splits the recognition at every pause that long or longer
+// that the caller carries on from. Choosing it takes the lengths of those
+// pauses on real calls. A pause is counted when the caller resumes: silence
+// on the frame before, voice on this one, in an utterance that is still open.
+// The last condition is what keeps out the pause that ended the turn, after
+// which the trailing silence also reads zero because there is no utterance.
+func (e *Engine) measureLine() {
+	if ms, level, ok := e.vad.TakeEchoReturn(); ok {
+		e.echoReturns = append(e.echoReturns, ms)
+		e.log.Debug("listen: the assistant's voice came back",
+			"ms", int(ms), "level_db", round1(level))
+	}
+	if from, to, ok := e.vad.TakeFloorRaise(); ok {
+		e.floorRaises++
+		e.log.Info("listen: the line never dipped under the bar; the floor is raised to its quietest",
+			"from_db", round1(from), "to_db", round1(to),
+			"over_ms", e.vad.FloorTrackMS())
+	}
+	if miss, ok := e.vad.TakeEchoMiss(); ok {
+		e.echoMisses++
+		e.log.Debug("listen: the assistant's voice coming back was not timed",
+			"reason", miss.Reason,
+			"quiet_before_ms", int(miss.QuietMS),
+			"level_db", round1(miss.LevelDB),
+			"noise_floor_db", round1(miss.NoiseFloorDB))
+	}
+	// VoicedRunMS is above zero only for an open utterance whose latest frame
+	// was voiced.
+	if e.silentBeforeMS >= insidePauseMinMS && e.vad.VoicedRunMS() > 0 {
+		e.pausesInside = append(e.pausesInside, int(e.silentBeforeMS))
+		e.log.Debug("listen: the caller paused inside the utterance",
+			"pause_ms", int(e.silentBeforeMS))
+	}
+	e.silentBeforeMS = e.vad.TrailingSilenceMS()
+}
+
+// lineSummary reports what measureLine collected, once, at close: one line
+// for each measurement that has anything in it.
+func (e *Engine) lineSummary() {
+	if n := len(e.echoReturns); n > 0 {
+		v := append([]float64(nil), e.echoReturns...)
+		sort.Float64s(v)
+		e.log.Info("listen: echo return time",
+			"n", n,
+			"p50_ms", int(v[(n-1)/2]),
+			"min_ms", int(v[0]),
+			"max_ms", int(v[n-1]),
+			"not_timed", e.echoMisses)
+	} else if e.echoMisses > 0 {
+		// Tried and never managed: say so, or it reads as a line with no echo.
+		e.log.Info("listen: echo return time", "n", 0, "not_timed", e.echoMisses)
+	}
+	if e.floorRaises > 0 {
+		e.log.Info("listen: a line that never dipped under the bar", "floor_raises", e.floorRaises,
+			"noise_floor_db", round1(e.vad.NoiseFloorDB()))
+	}
+	if n := len(e.pausesInside); n > 0 {
+		var under80, under100, under120, longer int
+		for _, ms := range e.pausesInside {
+			switch {
+			case ms < 80:
+				under80++
+			case ms < 100:
+				under100++
+			case ms < 120:
+				under120++
+			default:
+				longer++
+			}
+		}
+		e.log.Info("listen: pauses inside utterances",
+			"n", n,
+			"ms_60_79", under80,
+			"ms_80_99", under100,
+			"ms_100_119", under120,
+			"ms_120_plus", longer)
+	}
 }
 
 // --- backchannel channel ---
@@ -1975,6 +2604,44 @@ func retryable(err error) bool {
 	return false
 }
 
+// speakable reports whether text has anything in it to pronounce.
+func speakable(text string) bool {
+	for _, r := range text {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameWords reports whether two accounts of an utterance say the same thing:
+// identical once punctuation is set aside, or one the other with nothing after
+// it but the sounds people trail off on. "也可以是吧" and "也可以是吧，啊" are one
+// turn, and on a real call the answer begun on the first was thrown away and
+// begun again when the recognizer reported the second.
+func sameWords(a, b string) bool {
+	na, nb := normalizeForCompare(a), normalizeForCompare(b)
+	if na == nb {
+		return true
+	}
+	if len(na) > len(nb) {
+		na, nb = nb, na
+	}
+	if na == "" || !strings.HasPrefix(nb, na) {
+		return false
+	}
+	// One trailing sound — "啊", "嗯" — is the caller finishing, not
+	// adding. More than one is words: on a real call (10-16 09:17) an
+	// answer begun on the words before a pause was kept while two more
+	// characters followed, and it answered a shorter question than was
+	// asked.
+	rest := []rune(nb[len(na):])
+	if len(rest) != 1 || !strings.ContainsRune("啊呀哦噢哈嗯呃额唔诶欸哎", rest[0]) {
+		return false
+	}
+	return true
+}
+
 func normalizeForCompare(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -1997,4 +2664,47 @@ func rawJSON(v any) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return data
+}
+
+// withoutOpener strips an opener the engine has already said from the start
+// of the model's first clause, punctuation aside: "好的，" against "好的，没问题"
+// leaves "没问题"; against "好的。" leaves nothing. Not a prefix: unchanged.
+func withoutOpener(text, opener string) (string, bool) {
+	strip := func(s string) string {
+		return strings.TrimRight(strings.TrimSpace(s), "，。！？、,.!? ")
+	}
+	core := strip(opener)
+	if core == "" || !strings.HasPrefix(text, core) {
+		return text, false
+	}
+	rest := strings.TrimLeft(text[len(core):], "，。！？、,.!? ")
+	return rest, true
+}
+
+// stripOpeners drops the openers at the start of the model's first clause —
+// its own, or any of the pools' — longest first (嗯嗯 before 嗯) and again
+// while one still leads, up to three. 嗯， said by the engine and 嗯嗯，好的，
+// from the model used to leave "嗯，嗯，好的，" (the 09:31 call of 10-26). It
+// returns the rest and how many were dropped.
+func stripOpeners(text, opened string, pools ...[]string) (string, int) {
+	pool := []string{opened}
+	for _, p := range pools {
+		pool = append(pool, p...)
+	}
+	sort.SliceStable(pool, func(i, j int) bool { return len([]rune(pool[i])) > len([]rune(pool[j])) })
+	n := 0
+	for n < 3 {
+		stripped := false
+		for _, o := range pool {
+			if trimmed, ok := withoutOpener(text, o); ok {
+				text, stripped = trimmed, true
+				n++
+				break
+			}
+		}
+		if !stripped || text == "" {
+			break
+		}
+	}
+	return text, n
 }

@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/config"
@@ -76,6 +78,19 @@ type LLM struct {
 	APIKey       string
 	DefaultModel string
 	HTTP         *http.Client
+
+	// Extra is sent as further top-level fields of every request: what one
+	// vendor needs and another refuses, such as "enable_thinking": false for a
+	// model that reasons before it answers unless told not to. It never
+	// replaces a field the request already has.
+	Extra map[string]any
+
+	// lanes is the pool: see lane. Built on first use, so that a client put
+	// together by hand — a test, a probe — has one without asking.
+	lanesOnce sync.Once
+	lanes     []*lane
+	keys      []string
+	next      atomic.Uint64
 }
 
 // New builds a client under the shared GOLIVE_BACKEND_* overrides.
@@ -93,7 +108,7 @@ func New(keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 // — and the shared pair remains as the fallback, which keeps every existing
 // .env working unchanged.
 func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
-	key, err := config.EnvRequired(keyEnv)
+	keys, err := config.EnvKeys(keyEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -111,20 +126,25 @@ func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 	return &LLM{
 		name:         name,
 		BaseURL:      strings.TrimRight(base, "/"),
-		APIKey:       key,
+		APIKey:       keys[0],
 		DefaultModel: model,
-		HTTP: &http.Client{
-			// No overall timeout: a streaming completion is long-lived by
-			// design and the engine cancels through the context instead. The
-			// transport timeouts below still bound a hung connection.
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost:   4,
-				IdleConnTimeout:       300 * time.Second,
-				ResponseHeaderTimeout: 20 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-			},
-		},
+		HTTP:         newHTTPClient(),
+		keys:         keys,
 	}, nil
+}
+
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		// No overall timeout: a streaming completion is long-lived by
+		// design and the engine cancels through the context instead. The
+		// transport timeouts below still bound a hung connection.
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       300 * time.Second,
+			ResponseHeaderTimeout: 20 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+		},
+	}
 }
 
 // Name implements provider.LLM.
@@ -149,7 +169,7 @@ func (l *LLM) Prewarm(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp, err := l.HTTP.Do(req)
+	resp, err := l.pick(ctx).client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -237,6 +257,30 @@ func promptChars(msgs []chatMessage) int {
 	return n
 }
 
+// completionsURL is where a base URL's chat completions live.
+//
+// Most vendors serve them at <base>/v1/chat/completions and document the base
+// without the version, which is what a bare base gets. Some document it with
+// the version already on — and not always v1: Volcengine's is /api/v3, Zhipu's
+// /api/paas/v4 — and appending /v1 to those asks for a path that does not
+// exist. A base that already ends in a version segment, or in the full path,
+// is taken at its word — and so is a full path of a vendor's own naming, such
+// as MiniMax's /v1/text/chatcompletion_v2, which speaks the same protocol.
+func completionsURL(base string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/chat/completions") {
+		return base
+	}
+	last := base[strings.LastIndex(base, "/")+1:]
+	if strings.Contains(last, "completion") {
+		return base
+	}
+	if len(last) >= 2 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
+		return base + "/chat/completions"
+	}
+	return base + "/v1/chat/completions"
+}
+
 type chatChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -263,6 +307,53 @@ type chatChunk struct {
 			CachedTokens int `json:"cached_tokens"`
 		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
+}
+
+// withExtra adds a vendor's own fields to a request already written. A field
+// the request has is left as it is: Extra is for what the request lacks, not a
+// second way to set the model or the messages.
+func withExtra(body []byte, extra map[string]any) ([]byte, error) {
+	if len(extra) == 0 {
+		return body, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, err
+	}
+	for k, v := range extra {
+		if _, has := fields[k]; has {
+			continue
+		}
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("llm: extra field %q: %w", k, err)
+		}
+		fields[k] = raw
+	}
+	return json.Marshal(fields)
+}
+
+// ParseExtra reads "name=value,name=value" into fields for Extra. A value that
+// is JSON (false, 20, 0.5, "text") is sent as that; anything else as a string.
+func ParseExtra(spec string) (map[string]any, error) {
+	out := map[string]any{}
+	for _, pair := range strings.Split(spec, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("extra field %q: want name=value", pair)
+		}
+		var parsed any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(v)), &parsed); err != nil {
+			parsed = strings.TrimSpace(v)
+		}
+		out[k] = parsed
+	}
+	return out, nil
 }
 
 // Stream implements provider.LLM.
@@ -293,18 +384,22 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	if err != nil {
 		return nil, err
 	}
+	if body, err = withExtra(body, l.Extra); err != nil {
+		return nil, err
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		l.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+		completionsURL(l.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
+	ln := l.pick(ctx)
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+l.APIKey)
+	httpReq.Header.Set("Authorization", "Bearer "+ln.key)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	started := time.Now()
-	resp, err := l.HTTP.Do(httpReq)
+	resp, err := ln.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("llm: request failed: %w", err)
 	}
@@ -314,8 +409,9 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		// message is surfaced to operators, so it must never carry the request
 		// text back out.
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("llm: %s returned HTTP %d: %s",
-			l.BaseURL, resp.StatusCode, summarizeError(snippet))
+		l.rest(ln, resp.StatusCode)
+		return nil, fmt.Errorf("llm: %s returned HTTP %d on key %d of %d: %s",
+			l.BaseURL, resp.StatusCode, ln.keyN+1, len(l.keys), summarizeError(snippet))
 	}
 
 	// prompt_chars, not just the message count, because size is what costs.
@@ -332,6 +428,8 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	// the latency it buys makes the trade visible on every turn.
 	slog.Debug("llm: stream open",
 		"base_url", l.BaseURL,
+		"lane", ln.n,
+		"key", ln.keyN+1,
 		"model", model,
 		"messages", len(msgs),
 		"prompt_chars", promptChars(msgs),

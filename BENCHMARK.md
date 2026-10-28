@@ -314,3 +314,17 @@ At INFO level each turn logs one line, and the session logs a summary at close:
 turn: response latency  turn=item_1 first_audio_out_ms=1204 asr_final_ms=41 …
 session: response latency summary  turns=9 min_ms=780 p50_ms=910 p95_ms=1204 max_ms=1290
 ```
+
+## No recordings to hand
+
+Synthetic audio exercises the engine but a real recognizer transcribes it to
+nothing. `-speak` has the first stack say each sentence with its own
+synthesizer, trims the result to the words, and plays those back as the caller:
+
+```bash
+bin/golivebench -a golive=ws://127.0.0.1:8765/v1/live -rate 16000 \
+    -speak '你好，今天天气怎么样？|帮我查一下明天上午去上海的航班有哪些。' -runs 15 -v
+```
+
+`-keep-clips dir` writes them out as WAV, to listen to or to reuse with `-clips`.
+

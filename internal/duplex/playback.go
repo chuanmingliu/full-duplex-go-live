@@ -107,9 +107,12 @@ type Player struct {
 	turnStarted time.Time
 	playhead    time.Time
 	emittedMS   float64
-	spoken      []spokenSpan
-	pendingText string
-	pendingFrom float64
+	// drainingTurn is a backchanneled opener's turn whose queue was dropped
+	// and whose last paced audio is still in the air; the floor is free.
+	drainingTurn string
+	spoken       []spokenSpan
+	pendingText  string
+	pendingFrom  float64
 	// pendingAnnounced records that the segment in pendingText has been
 	// reported through onSegment, which happens on its first audio.
 	pendingAnnounced bool
@@ -263,6 +266,20 @@ func (p *Player) Active() bool {
 	return p.speaking || len(p.queue) > 0 || p.activeTurn != ""
 }
 
+// FreeForOpener reports whether a new turn's opener may be said now: nothing
+// is queued, and the only turn the player still holds, if any, is a
+// backchanneled opener draining its last paced milliseconds
+// (FinishOpenerAsBackchannel). Active stays true through that drain, which
+// is right for a filler and wrong for the opener of the turn that followed.
+func (p *Player) FreeForOpener() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.queue) > 0 {
+		return false
+	}
+	return p.activeTurn == "" || p.activeTurn == p.drainingTurn
+}
+
 // GraceFinishSegment lets turnID complete the sentence it is currently speaking
 // even once its generation goes stale, then drops the rest of it. Call it
 // before bumping the generation.
@@ -271,6 +288,56 @@ func (p *Player) GraceFinishSegment(turnID string) {
 	p.graceTurn = turnID
 	p.graceMarks = 1
 	p.mu.Unlock()
+}
+
+// FinishOpenerAsBackchannel keeps only what turnID is saying this instant —
+// its opener — and lets the turn go: anything queued behind it is dropped,
+// and if the opener has already played out the turn ends now, so the floor
+// reads free for the next turn's opener. The caller went on inside the
+// opener's breath; the word stands as an 嗯 of listening and nothing of the
+// guessed answer follows it. Before this, a turn whose opener had finished
+// kept the player "active" with nothing to play, and the next turn — the
+// continuation the caller finished — opened with nothing (the 10:07
+// simulated call of 10-26: eleven such turns). No truncation is reported:
+// the whole of what was said was heard.
+func (p *Player) FinishOpenerAsBackchannel(turnID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	kept := p.queue[:0]
+	for _, q := range p.queue {
+		if q.TurnID != turnID {
+			kept = append(kept, q)
+		}
+	}
+	p.queue = kept
+	if p.activeTurn != turnID {
+		return
+	}
+	// The opener's mark has usually passed by now (it is one word, and the
+	// caller went on after it), so a grace on the next mark would never
+	// resolve; what may remain is paced audio still in the air. Let that
+	// play out, then end the turn.
+	remaining := p.emittedMS - p.heardMSLocked()
+	if remaining <= 0 {
+		p.resetTurnLocked()
+		p.setSpeakingLocked(false)
+		return
+	}
+	// Until then the turn is draining, not speaking: the floor is free for
+	// the next turn's opener (FreeForOpener). The 22:05 simulated call of
+	// 10-27: five fragments closed 170–200 ms after their backchannel, inside
+	// the ≤300 ms (playback_lead_ms) of audio in the air, and sayOpener found
+	// the player active and said nothing — first audio 742–1131 ms.
+	p.drainingTurn = turnID
+	go func() {
+		time.Sleep(time.Duration(remaining) * time.Millisecond)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.activeTurn == turnID && len(p.queue) == 0 {
+			p.resetTurnLocked()
+			p.setSpeakingLocked(false)
+		}
+	}()
 }
 
 // Enqueue adds an item to the speak channel, and reports whether it was
@@ -688,6 +755,7 @@ func (p *Player) fullSpokenLocked() string {
 
 func (p *Player) resetTurnLocked() {
 	p.activeTurn = ""
+	p.drainingTurn = ""
 	p.graceTurn = ""
 	p.graceMarks = 0
 	p.turnStarted = time.Time{}
