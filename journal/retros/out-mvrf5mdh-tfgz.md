@@ -26,6 +26,17 @@ over every answered turn; numbers only, from the log.
   → restart — the fba0387 path, working live), 3 sounds judged another
   voice's.
 
+## The synthesizer's share, checked (job 647)
+
+Every first segment of the call (23) was raced across both accounts at once
+(`tts hedge: asking both connections at once`), never staggered, never
+refused, never without room; 18 had a winner (12 account 1, 6 account 2) at
+159–222 ms, median ~185; the 5 without one were superseded by a cut turn.
+Account 2 reached its limit three times and the session moved to account 1
+without a gap. So the ~185 ms synthesizer share on a clause-bound turn is
+the vendor's first-audio time with the race already applied; the race buys
+availability here, not speed. Nothing left in golive on that term.
+
 ## Against the goal
 
 **Headline (caller's last sound → first audio, the owner's definition):
