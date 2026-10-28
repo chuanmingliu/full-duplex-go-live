@@ -1239,7 +1239,7 @@ func TestSeveralOptionsAreComparedInOneAnswer(t *testing.T) {
 	}
 	call := map[string]any{"tool": "quote_total", "call_id": "c", "session": "s", "call": "out-lead-15",
 		"arguments": map[string]any{"configs": []map[string]any{{"三者险": "200万"}, {"三者险": "300万"}, {"三者险": "500万"}, {"座位险": false}}},
-		"memory": map[string]any{}, "memory_version": 2}
+		"memory":    map[string]any{}, "memory_version": 2}
 	var out struct {
 		Status    string         `json:"status"`
 		Compare   bool           `json:"compare"`
