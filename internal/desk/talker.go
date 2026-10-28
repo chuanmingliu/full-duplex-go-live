@@ -393,8 +393,8 @@ func (t *Talker) complete(ctx context.Context, body []byte, onToken func(string,
 				PredictMs float64 `json:"predicted_ms"`
 				CacheN    int     `json:"cache_n"`
 			} `json:"timings"`
-			TokensCached int `json:"tokens_cached"`
-			TokensPred   int `json:"tokens_predicted"`
+			TokensCached int  `json:"tokens_cached"`
+			TokensPred   int  `json:"tokens_predicted"`
 			StoppedEOS   bool `json:"stopped_eos"`
 			StoppedWord  bool `json:"stopped_word"`
 		}
