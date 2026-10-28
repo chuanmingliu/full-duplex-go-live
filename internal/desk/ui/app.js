@@ -338,7 +338,60 @@
     box.replaceChildren(...lines.slice(-3000).map(l => h('div', { class: 'logline' + (/^(note|说明|reply|回复)[:：]/i.test(l.text) ? ' note' : /error|fail|traceback|refused|exception/i.test(l.text) ? ' bad' : /host=|device=|model=/i.test(l.text) ? ' mark' : '') },
       h('span', { class: 'ts' }, fmtTime(l.at)), h('span', { class: 'who' }, l.who), h('span', { class: 'txt' }, l.text))));
     const meta = $('#logmeta'); if (meta) meta.textContent = state.lines.length + ' lines' + (state.lines.length ? ' · last ' + ago(state.lines[state.lines.length - 1].at) : '');
+    renderProgress();
     if (state.follow || atBottom) box.scrollTop = box.scrollHeight;
+  };
+  // Progress, from the stream's own lines: "stage: <name> started|done|failed",
+  // "progress: <stage> <k>/<n>" (or <pct>%), "metric: k=v k=v …" (numbers,
+  // plotted over time). The agent prints them; the page draws them.
+  const progressOf = (lines) => {
+    const stages = []; const byName = {}; const metrics = {}; let host = '';
+    const stage = (name) => { if (!byName[name]) { byName[name] = { name, status: 'pending', done: 0, total: 0 }; stages.push(byName[name]); } return byName[name]; };
+    for (const l of lines) {
+      const t = l.text;
+      let m;
+      if (!host && /host=/.test(t)) host = t;
+      if ((m = /^stage[:：]\s*(\S+)\s+(started|running|done|ok|failed|skipped)/i.exec(t))) {
+        const st = stage(m[1]); const w = m[2].toLowerCase();
+        st.status = w === 'started' || w === 'running' ? 'running' : w === 'done' || w === 'ok' ? 'done' : w; st.at = l.at;
+        if (st.status === 'done') { st.done = st.total || 1; st.total = st.total || 1; }
+      } else if ((m = /^progress[:：]\s*(\S+)\s+(\d+)\s*\/\s*(\d+)/i.exec(t))) {
+        const st = stage(m[1]); st.done = +m[2]; st.total = +m[3]; st.at = l.at; if (st.status === 'pending') st.status = 'running'; if (st.done >= st.total && st.total > 0) st.status = 'done';
+      } else if ((m = /^progress[:：]\s*(\S+)\s+(\d+(?:\.\d+)?)\s*%/i.exec(t))) {
+        const st = stage(m[1]); st.done = +m[2]; st.total = 100; st.at = l.at; if (st.status === 'pending') st.status = 'running'; if (st.done >= 100) st.status = 'done';
+      } else if ((m = /^metric[:：]\s*(.+)$/i.exec(t))) {
+        for (const kv of m[1].matchAll(/([A-Za-z_][\w./-]*)\s*=\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)/g)) {
+          (metrics[kv[1]] = metrics[kv[1]] || []).push({ n: l.n, at: l.at, v: +kv[2] });
+        }
+      }
+    }
+    return { stages, metrics, host };
+  };
+  const sparkline = (name, pts) => {
+    const W = 260, H = 60, P = 6;
+    const vs = pts.map(p => p.v); const lo = Math.min(...vs), hi = Math.max(...vs);
+    const x = (i) => P + (pts.length > 1 ? i * (W - 2 * P) / (pts.length - 1) : (W - 2 * P) / 2);
+    const y = (v) => hi === lo ? H / 2 : H - P - (v - lo) * (H - 2 * P) / (hi - lo);
+    const d = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1)).join(' ');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'spark');
+    svg.innerHTML = '<path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+      '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(vs[vs.length - 1]).toFixed(1) + '" r="2.5" fill="currentColor"/>';
+    const last = vs[vs.length - 1];
+    return h('div', { class: 'metric' }, h('div', { class: 'row' }, h('b', {}, name), h('span', { class: 'muted small' }, 'last ' + last + ' · min ' + lo + ' · max ' + hi + ' · ' + pts.length + ' points')), svg);
+  };
+  const renderProgress = () => {
+    const box = $('#logprogress'); if (!box) return;
+    const p = progressOf(state.lines);
+    if (!p.stages.length && !Object.keys(p.metrics).length) { box.replaceChildren(h('p', { class: 'muted small' }, 'No progress marks yet. The agent prints "stage: <name> started|done", "progress: <stage> k/n" and "metric: loss=… step=…" lines; they are drawn here as they arrive.')); return; }
+    const chips = h('div', { class: 'stages' }, ...p.stages.map(st => {
+      const pct = st.total ? Math.min(100, Math.round(100 * st.done / st.total)) : (st.status === 'done' ? 100 : 0);
+      return h('div', { class: 'stage ' + st.status },
+        h('div', { class: 'row' }, h('span', { class: 'dot' }), h('b', {}, st.name), h('span', { class: 'muted small' }, st.status + (st.total ? ' · ' + st.done + '/' + st.total : '') + (st.at ? ' · ' + ago(st.at) : ''))),
+        h('div', { class: 'bar' }, h('div', { class: 'fill', style: 'width:' + pct + '%' })));
+    }));
+    const charts = h('div', { class: 'metrics' }, ...Object.entries(p.metrics).map(([k, pts]) => sparkline(k, pts)));
+    box.replaceChildren(chips, charts);
   };
   const renderLogs = () => {
     const left = h('div', {},
@@ -358,6 +411,7 @@
         h('span', { class: 'muted', id: 'logmeta' }, ''),
         h('input', { type: 'text', placeholder: 'filter', value: state.logFilter, class: 'short', oninput: (e) => { state.logFilter = e.target.value; renderLogLines(); } }),
         h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: state.follow ? '' : null, onchange: (e) => { state.follow = e.target.checked; renderLogLines(); } }), ' follow')),
+      h('div', { id: 'logprogress', class: 'progress' }),
       h('div', { id: 'loglines', class: 'loglines', onscroll: (e) => { const b = e.target; state.follow = b.scrollHeight - b.scrollTop - b.clientHeight < 40; } }));
     $('#main').replaceChildren(h('div', { class: 'grid' }, left, right));
     renderLogLines();
