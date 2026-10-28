@@ -18,7 +18,8 @@
   try { token = localStorage.getItem('desk.token') || ''; } catch (e) {}
   const state = { me: '', control: {}, notes: [], seq: 0, seen: {}, open: {}, thread: '', filter: 'all', es: null,
     view: 'notes', calls: [], journalPort: 8790, call: '', callsAt: 0,
-    scenarios: [], scenario: '', edit: null, editName: '', realCalls: [], scenariosAt: 0 };
+    scenarios: [], scenario: '', edit: null, editName: '', realCalls: [], scenariosAt: 0,
+    logs: [], logsAt: 0, stream: '', lines: [], tail: null, follow: true, logFilter: '' };
 
   const api = async (path, opts = {}) => {
     const r = await fetch(path, { ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -112,9 +113,11 @@
   // The page: notes, or the calls placed to the simulated customer.
   const route = () => {
     const p = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean);
-    state.view = p[0] === 'calls' ? 'calls' : p[0] === 'scenarios' ? 'scenarios' : 'notes';
+    state.view = p[0] === 'calls' ? 'calls' : p[0] === 'scenarios' ? 'scenarios' : p[0] === 'logs' ? 'logs' : 'notes';
     if (state.view === 'calls' && p[1]) state.call = decodeURIComponent(p[1]);
     if (state.view === 'scenarios' && p[1]) state.scenario = decodeURIComponent(p[1]);
+    if (state.view === 'logs' && p[1] && p[1] !== state.stream) { state.stream = decodeURIComponent(p[1]); state.lines = []; if (state.tail) { state.tail.close(); state.tail = null; } }
+    if (state.view !== 'logs' && state.tail) { state.tail.close(); state.tail = null; }
     if (state.me) render();
   };
   window.addEventListener('hashchange', route);
@@ -293,8 +296,75 @@
 
   const journalURL = (call) => location.protocol + '//' + location.hostname + ':' + state.journalPort + '/#/call/' + encodeURIComponent(call);
 
+  // ----- the work log: what an agent is doing, as it does it -----
+  const loadLogs = async () => {
+    const d = await api('/api/logs');
+    state.logs = d.streams || []; state.logsAt = Date.now();
+    if (!state.stream && state.logs.length) state.stream = state.logs[0].name;
+  };
+  const tailLog = () => {
+    if (state.tail || !state.stream) return;
+    const stream = state.stream;
+    const ctl = new AbortController();
+    state.tail = { close: () => ctl.abort(), stream };
+    (async () => {
+      try {
+        const after = state.lines.length ? state.lines[state.lines.length - 1].n : 0;
+        const r = await fetch('/api/logs/' + encodeURIComponent(stream) + '/tail?after=' + after, { headers: { 'Authorization': 'Bearer ' + token }, signal: ctl.signal });
+        const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i; let changed = false;
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+            let ev = '', data = '';
+            for (const line of chunk.split('\n')) { if (line.startsWith('event: ')) ev = line.slice(7); else if (line.startsWith('data: ')) data += line.slice(6); }
+            if (ev === 'line') { const l = JSON.parse(data); if (!state.lines.length || l.n > state.lines[state.lines.length - 1].n) { state.lines.push(l); changed = true; } }
+          }
+          if (changed && state.view === 'logs' && state.stream === stream) renderLogLines();
+        }
+      } catch (e) { if (!ctl.signal.aborted) { state.tail = null; setTimeout(() => { if (state.view === 'logs' && state.stream === stream) tailLog(); }, 3000); } }
+    })();
+  };
+  const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString(undefined, { hour12: false }); };
+  const renderLogLines = () => {
+    const box = $('#loglines'); if (!box) return;
+    const q = state.logFilter.trim();
+    const lines = q ? state.lines.filter(l => l.text.includes(q)) : state.lines;
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.replaceChildren(...lines.slice(-3000).map(l => h('div', { class: 'logline' + (/error|fail|traceback|refused|exception/i.test(l.text) ? ' bad' : /host=|device=|model=/i.test(l.text) ? ' mark' : '') },
+      h('span', { class: 'ts' }, fmtTime(l.at)), h('span', { class: 'who' }, l.who), h('span', { class: 'txt' }, l.text))));
+    const meta = $('#logmeta'); if (meta) meta.textContent = state.lines.length + ' lines' + (state.lines.length ? ' · last ' + ago(state.lines[state.lines.length - 1].at) : '');
+    if (state.follow || atBottom) box.scrollTop = box.scrollHeight;
+  };
+  const renderLogs = () => {
+    const left = h('div', {},
+      h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { try { await loadLogs(); render(); } catch (e) { tip(e.message, true); } } }, 'Refresh'),
+        h('span', { class: 'muted' }, state.logs.length + (state.logs.length === 1 ? ' stream' : ' streams'))),
+      h('div', { class: 'list' }, ...state.logs.map(x =>
+        h('button', { 'aria-current': String(state.stream === x.name), onclick: () => { location.hash = '#/logs/' + encodeURIComponent(x.name); } },
+          h('div', {}, h('b', {}, x.name), ' ', h('span', { class: 'muted' }, x.who)),
+          h('div', { class: 'muted small' }, x.lines + ' lines · ' + ago(x.last_at)),
+          x.first ? h('div', { class: 'muted small mono' }, x.first.slice(0, 90)) : null))),
+      h('p', { class: 'muted small' }, 'An agent writes here as it works: scripts/desk.sh log <stream> "line", or cmd 2>&1 | scripts/desk.sh log <stream> -. The first line of a stream says where the work runs (host=… device=…). Long digit runs are masked before storage.'));
+    const s = state.logs.find(x => x.name === state.stream);
+    const right = h('div', { class: 'logpane' },
+      h('div', { class: 'row' },
+        h('h2', { class: 'inline' }, state.stream || 'no stream'),
+        s && s.first ? h('span', { class: 'chip mono' }, s.first.slice(0, 120)) : null,
+        h('span', { class: 'muted', id: 'logmeta' }, ''),
+        h('input', { type: 'text', placeholder: 'filter', value: state.logFilter, class: 'short', oninput: (e) => { state.logFilter = e.target.value; renderLogLines(); } }),
+        h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: state.follow ? '' : null, onchange: (e) => { state.follow = e.target.checked; renderLogLines(); } }), ' follow')),
+      h('div', { id: 'loglines', class: 'loglines', onscroll: (e) => { const b = e.target; state.follow = b.scrollHeight - b.scrollTop - b.clientHeight < 40; } }));
+    $('#main').replaceChildren(h('div', { class: 'grid' }, left, right));
+    renderLogLines();
+    tailLog();
+  };
+
   const render = () => {
     $('#nav-notes').setAttribute('aria-current', state.view === 'notes' ? 'page' : 'false');
+    $('#nav-logs').setAttribute('aria-current', state.view === 'logs' ? 'page' : 'false');
     $('#nav-calls').setAttribute('aria-current', state.view === 'calls' ? 'page' : 'false');
     $('#nav-scenarios').setAttribute('aria-current', state.view === 'scenarios' ? 'page' : 'false');
     $('#who').replaceChildren(h('span', { class: 'me' }, state.me));
@@ -314,6 +384,11 @@
         catch (err) { tip(err.message, true); }
       } }, ...['manual', 'auto'].map(m => h('option', { value: m, selected: c.mode === m ? '' : null }, m))) : null);
 
+    if (state.view === 'logs') {
+      if (Date.now() - state.logsAt > 15000) loadLogs().then(renderLogs).catch(e => tip(e.message, true));
+      renderLogs();
+      return;
+    }
     if (state.view === 'scenarios') {
       if (!state.scenariosAt) loadScenarios().then(() => { if (state.scenario && !state.edit) openScenario(state.scenario).catch(() => render()); else render(); }).catch(e => tip(e.message, true));
       renderScenarios();

@@ -720,7 +720,10 @@ reserves scenarios, and drafts one from a real call's transcript through
 the chat model (the simulator's own key; the transcript stays on the box);
 `synthesize` makes a set from several calls with *effects* (barge_in,
 backchannel, rapid, busy, abrupt: the simulator's scheduled actions in the
-caller's own words) and a suite manifest.
+caller's own words) and a suite manifest. **`#/logs` is the work log**
+(`internal/desk/worklog.go`, 10-28): a stream per task that an agent posts
+its steps to as it works (`desk.sh log <stream> -`), tailed live; the first
+line says `host=… device=…`. Codex's local-model training logs there.
 **`call` is the real call, `call sim` the simulated one — the owner's
 words, 10-16.**
 

@@ -368,6 +368,20 @@ in and the pause is the owner's hand on it. A scheduler would read `mode`
 and the open tasks per agent; nothing does yet, and no agent is started by
 the desk.
 
+**The work log (10-28).** Notes are for outcomes; the work log is for the
+steps between them, so the owner can watch what an agent is doing as it
+does it. A stream per task under `<desk dir>/logs/<stream>.log`,
+append-only, one line per command or progress mark, posted by whoever does
+the work: `scripts/desk.sh log <stream> "line"`, or
+`cmd 2>&1 | scripts/desk.sh log <stream> -` to pipe a command's output in as
+it comes (from the Mac: `DESK_URL=http://<box>:8792 DESK_AS=codex`). The
+desk's **Work log** page (`#/logs`) lists the streams and tails one live
+(`GET /api/logs/{stream}/tail`, server-sent events; `scripts/desk.sh tail`
+is the same from a shell). The first line of a stream says where the work
+runs — `host=… device=… model=…` — so "where is it trained" has one
+answer; runs of seven or more digits are masked before storage. Nothing
+posted here is executed by anyone.
+
 ## A call on a rendered prompt: the lead service
 
 `scripts/phone-brain.sh crm start` runs a small service (`bin/crm`, port 8791

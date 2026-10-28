@@ -11,6 +11,9 @@
 #                                              a note in that thread, addressed to its author
 #   scripts/desk.sh done <note id>             close a task or a question
 #   scripts/desk.sh watch                      print notes as they arrive (the event stream)
+#   scripts/desk.sh log <stream> <line…>       a line of the work log (what I am doing now)
+#   cmd 2>&1 | scripts/desk.sh log <stream> -  every line of a command's output, as it comes
+#   scripts/desk.sh logs | tail <stream> [n]   the streams; a live tail of one
 #   scripts/desk.sh pause | resume             the owner's switch (owner token only)
 #
 #   DESK_URL=http://127.0.0.1:8792             the desk (on the box: 127.0.0.1; from the
@@ -79,6 +82,19 @@ case "$cmd" in
       "$author" "$kind" "$id" "$body" "$refs" > /tmp/desk-post.$$
     api POST /api/notes --data-binary @/tmp/desk-post.$$ | show; rm -f /tmp/desk-post.$$ ;;
   done) api POST "/api/notes/${1:?note id}/done" -d '{}' | show ;;
+  log)
+    # log <stream> <line…>      one line; log <stream> -   every line of stdin, as it comes.
+    stream=${1:?stream name (letters, digits, dots, dashes)}; shift || true
+    if [ "${1:-}" = "-" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        printf '%s\n' "$line"
+        printf '%s' "$line" | curl -sS --max-time 5 -X POST -H @<(printf 'Authorization: Bearer %s\n' "$(tr -d '[:space:]' < "$DESK_TOKEN_FILE")") -H 'Content-Type: text/plain; charset=utf-8' --data-binary @- "$DESK_URL/api/logs/$stream" >/dev/null || true
+      done
+    else
+      printf '%s' "$*" | curl -sS --max-time 5 -X POST -H @<(printf 'Authorization: Bearer %s\n' "$(tr -d '[:space:]' < "$DESK_TOKEN_FILE")") -H 'Content-Type: text/plain; charset=utf-8' --data-binary @- "$DESK_URL/api/logs/$stream"; echo
+    fi ;;
+  logs) api GET "/api/logs" ;;
+  tail) api GET "/api/logs/${1:?stream}/tail?after=${2:-0}" -N ;;
   watch) api GET /api/events -N ;;
   pause) api PUT /api/control -d '{"paused":true}' ;;
   resume) api PUT /api/control -d '{"paused":false}' ;;

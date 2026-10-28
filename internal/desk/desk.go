@@ -125,6 +125,9 @@ type Service struct {
 	control Control
 	seen    map[string]time.Time
 	subs    map[chan Note]struct{}
+	// work is the work log: what each participant is doing, as it does it
+	// (worklog.go).
+	work *workLog
 }
 
 // Open reads the log and the tokens, making tokens that are missing.
@@ -152,6 +155,7 @@ func Open(cfg Config) (*Service, error) {
 		return nil, err
 	}
 	s.events = events
+	s.work = newWorkLog(cfg.Dir)
 	if torn > 0 {
 		s.log.Warn("desk: cut a half-written line off the log", "bytes", torn)
 	}
@@ -556,6 +560,7 @@ func (s *Service) Handler() http.Handler {
 			}
 		}
 	}))
+	s.mountWorkLog(mux)
 	s.cfg.Calls.Mount(mux, s.authed)
 	if s.cfg.Calls != nil {
 		s.cfg.Scenarios.Mount(mux, s.authed, s.cfg.Calls)

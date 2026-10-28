@@ -120,3 +120,16 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
 input.short { width: 130px; }
+
+/* the work log */
+.logpane { min-width: 0; }
+.loglines { height: 70vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 8px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
+.logline { display: grid; grid-template-columns: 66px 52px 1fr; gap: 8px; white-space: pre-wrap; word-break: break-word; }
+.logline .ts { color: var(--ink-3); }
+.logline .who { color: var(--ink-3); }
+.logline.bad .txt { color: #b42318; }
+.logline.mark .txt { font-weight: 600; }
+.small { font-size: 12px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+h2.inline { display: inline; font-size: 16px; margin: 0; }
+input.short { width: 160px; }
