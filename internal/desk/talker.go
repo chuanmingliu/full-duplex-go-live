@@ -334,7 +334,12 @@ func (s *Service) mountTalker(mux *http.ServeMux) {
 			_, _ = io.WriteString(w, "event: "+ev+"\ndata: "+string(b)+"\n\n")
 			fl.Flush()
 		}
-		res, err := t.complete(ctx, body, func(text string, ms float64) { send("token", map[string]any{"text": text, "ms": ms}) })
+		// The request as sent, and every line the server answers, raw: the
+		// owner asked (19:01) to see the API's own output beside the clause.
+		send("request", map[string]any{"url": strings.TrimRight(t.URL, "/") + "/completion", "body": json.RawMessage(body)})
+		res, err := t.complete(ctx, body,
+			func(text string, ms float64) { send("token", map[string]any{"text": text, "ms": ms}) },
+			func(line string, ms float64) { send("raw", map[string]any{"line": line, "ms": ms}) })
 		if err != nil {
 			send("error", map[string]any{"error": err.Error()})
 			return nil
@@ -356,7 +361,7 @@ func (r talkerRequest) maxTurns() int {
 }
 
 // complete streams llama-server's native /completion and times it.
-func (t *Talker) complete(ctx context.Context, body []byte, onToken func(string, float64)) (talkerResult, error) {
+func (t *Talker) complete(ctx context.Context, body []byte, onToken, onRaw func(string, float64)) (talkerResult, error) {
 	var res talkerResult
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(t.URL, "/")+"/completion", bytes.NewReader(body))
 	if err != nil {
@@ -371,6 +376,9 @@ func (t *Talker) complete(ctx context.Context, body []byte, onToken func(string,
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if onRaw != nil {
+			onRaw(fmt.Sprintf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))), float64(time.Since(start).Microseconds())/1000)
+		}
 		return res, fmt.Errorf("the talker answered HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	var text strings.Builder
@@ -379,6 +387,9 @@ func (t *Talker) complete(ctx context.Context, body []byte, onToken func(string,
 	clauseAt := 0.0
 	for sc.Scan() {
 		line := sc.Text()
+		if onRaw != nil && strings.TrimSpace(line) != "" {
+			onRaw(line, float64(time.Since(start).Microseconds())/1000)
+		}
 		data, ok := strings.CutPrefix(line, "data: ")
 		if !ok {
 			continue

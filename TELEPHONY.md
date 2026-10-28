@@ -399,7 +399,9 @@ training's `prompt.py` (`testdata/talker_golden.json` is that script's
 output on the test's cases) and the clause judged by its rule: ok, ack,
 long (over 12 visible characters), incomplete, special. Each attempt's
 numbers go to the work-log stream `talker-web`; the words stay in the
-browser and on the Mac.
+browser and on the Mac. "Raw API output" on the page is the request the
+desk sent and every server-sent line llama-server answered, as received,
+with the desk's clock beside each (the owner, 19:01).
 
 ## A call on a rendered prompt: the lead service
 

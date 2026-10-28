@@ -20,7 +20,7 @@
     view: 'notes', calls: [], journalPort: 8790, call: '', callsAt: 0,
     scenarios: [], scenario: '', edit: null, editName: '', realCalls: [], scenariosAt: 0,
     logs: [], logsAt: 0, stream: '', lines: [], tail: null, follow: true, logFilter: '',
-    talker: null, talkerAt: 0, tk: { context: [], caller: '', opener: '', auto: true, turns: 6, live: '', result: null, running: false, history: [], prompt: '', showPrompt: false, error: '' } };
+    talker: null, talkerAt: 0, tk: { context: [], caller: '', opener: '', auto: true, turns: 6, live: '', result: null, running: false, history: [], prompt: '', showPrompt: false, error: '', raw: [], request: null, showRaw: true } };
 
   const api = async (path, opts = {}) => {
     const r = await fetch(path, { ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -440,7 +440,7 @@
   const talkerAsk = async () => {
     const tk = state.tk;
     if (tk.running || !tk.caller.trim()) return;
-    tk.running = true; tk.live = ''; tk.result = null; tk.error = ''; renderTalker();
+    tk.running = true; tk.live = ''; tk.result = null; tk.error = ''; tk.raw = []; tk.request = null; renderTalker();
     const body = { context: tk.context, caller: tk.caller, opener: openerNow(), max_context_turns: tk.turns };
     try {
       const r = await fetch('/api/talker', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -455,6 +455,8 @@
           let ev = '', data = '';
           for (const line of chunk.split('\n')) { if (line.startsWith('event: ')) ev = line.slice(7); else if (line.startsWith('data: ')) data += line.slice(6); }
           if (ev === 'token') { tk.live += JSON.parse(data).text; renderTalkerLive(); }
+          else if (ev === 'raw') { tk.raw.push(JSON.parse(data)); renderTalkerRaw(); }
+          else if (ev === 'request') { tk.request = JSON.parse(data); renderTalkerRaw(); }
           else if (ev === 'done') { tk.result = JSON.parse(data); tk.result.opener = body.opener; tk.result.at = Date.now(); tk.history.unshift(tk.result); if (tk.history.length > 40) tk.history.length = 40; }
           else if (ev === 'error') { tk.error = JSON.parse(data).error; }
         }
@@ -479,6 +481,15 @@
         h('span', { class: 'mark goal', style: 'left:' + pct(1000) + '%' }, 'goal 1000'),
         h('span', { class: 'mark end', style: 'left:100%' }, '1200 ms')));
   };
+  // The API's own output: the request the desk sent and every line
+  // llama-server answered, with the desk's clock beside each.
+  const rawText = () => {
+    const tk = state.tk; const out = [];
+    if (tk.request) out.push('POST ' + tk.request.url, JSON.stringify(tk.request.body, null, 1).replace(/\n\s*/g, ' '), '');
+    for (const r of tk.raw) out.push(String(Math.round(r.ms)).padStart(5) + ' ms  ' + r.line);
+    return out.join('\n') || (tk.running ? 'waiting for the first line…' : 'nothing yet — ask the talker');
+  };
+  const renderTalkerRaw = () => { const el = $('#tk-raw'); if (el) { el.textContent = rawText(); el.scrollTop = el.scrollHeight; } };
   const renderTalkerLive = () => {
     const el = $('#tk-live'); if (!el) return;
     el.textContent = state.tk.live || '…';
@@ -531,6 +542,10 @@
         renderTalker();
       } }, tk.showPrompt ? 'hide' : 'show')),
       tk.showPrompt ? h('pre', { class: 'pre' }, tk.prompt) : h('p', { class: 'muted small' }, 'Qwen ChatML as the training rendered it: the system line, up to ' + tk.turns + ' prior exchanges (oldest dropped to fit ' + 768 + ' characters), the caller\'s words, a no-thinking prefill, then the opener already said. The model continues from the opener.'));
+    const rawBox = h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('h2', { class: 'inline' }, 'Raw API output'), h('span', { class: 'muted small' }, 'llama-server /completion, server-sent events as received; the ms column is the desk\'s clock from the request'),
+        h('button', { class: 'btn btn-quiet', onclick: () => { tk.showRaw = !tk.showRaw; renderTalker(); } }, tk.showRaw ? 'hide' : 'show')),
+      tk.showRaw ? h('pre', { class: 'pre raw', id: 'tk-raw' }, rawText()) : null);
     const hist = h('div', { class: 'card' },
       h('div', { class: 'row' }, h('h2', { class: 'inline' }, 'This session'), h('span', { class: 'muted' }, tk.history.length + (tk.history.length === 1 ? ' attempt' : ' attempts')),
         tk.history.length ? h('span', { class: 'muted num' }, 'first token p50 ' + q(tk.history.map(x => x.ttft_ms), 0.5) + ' · p95 ' + q(tk.history.map(x => x.ttft_ms), 0.95) + ' · clause p50 ' + q(tk.history.filter(x => x.clause_ms).map(x => x.clause_ms), 0.5) + ' · ok ' + tk.history.filter(x => x.verdict === 'ok').length + '/' + tk.history.length) : null),
@@ -550,7 +565,7 @@
         h('p', { class: 'muted small', id: 'tk-scn' }, tk.auto ? (m && m.scenario ? m.scenario.name + ' (' + m.scenario.id + ')' : 'no scenario → 嗯，') : 'chosen by hand'),
         h('div', { class: 'row' }, ask, h('span', { class: 'muted small' }, 'Enter asks; Shift+Enter is a newline'))));
     $('#main').replaceChildren(h('div', { class: 'tk-head' }, h('h1', {}, 'The talker'), h('p', { class: 'sub' }, 'Codex\'s Qwen3-0.6B talker, trained and served on the Mac: given the conversation, the caller\'s words and the opener already said at the pause, it writes the answer\'s first short clause. Try it as the engine would use it.'), status),
-      h('div', { class: 'grid tk' }, left, h('div', {}, result, promptBox, hist)));
+      h('div', { class: 'grid tk' }, left, h('div', {}, result, rawBox, promptBox, hist)));
   };
   const q = (vs, p) => { if (!vs.length) return '—'; const s = [...vs].sort((a, b) => a - b); return Math.round(s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))]); };
 

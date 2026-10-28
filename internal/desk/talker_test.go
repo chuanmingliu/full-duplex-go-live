@@ -118,7 +118,8 @@ func TestATalkerAttemptIsStreamedAndTimed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var tokens []string
+	var tokens, raw []string
+	var request string
 	var done talkerResult
 	sc := bufio.NewScanner(resp.Body)
 	ev := ""
@@ -134,6 +135,12 @@ func TestATalkerAttemptIsStreamedAndTimed(t *testing.T) {
 				tokens = append(tokens, v.Text)
 			case "done":
 				_ = json.Unmarshal([]byte(d), &done)
+			case "raw":
+				var v struct{ Line string }
+				_ = json.Unmarshal([]byte(d), &v)
+				raw = append(raw, v.Line)
+			case "request":
+				request = d
 			case "error":
 				t.Fatalf("error event: %s", d)
 			}
@@ -153,6 +160,13 @@ func TestATalkerAttemptIsStreamedAndTimed(t *testing.T) {
 	}
 	if !strings.Contains(gotPrompt, "<|im_start|>user\n三者险一百万多少钱<|im_end|>\n"+talkerPrefill+"价格嘛，\n") {
 		t.Errorf("the Mac got the prompt %q", gotPrompt)
+	}
+	// The API's own lines reach the page as they were, and the request too.
+	if len(raw) != 5 || !strings.HasPrefix(raw[0], `data: {"content":"三千"`) || !strings.Contains(raw[4], `"stopped_eos":true`) {
+		t.Errorf("raw lines %q", raw)
+	}
+	if !strings.Contains(request, `"n_predict":48`) || !strings.Contains(request, "/completion") {
+		t.Errorf("request event %q", request)
 	}
 	lines, _, _ := s.work.read("talker-web", 0, 10)
 	if len(lines) != 1 || !strings.HasPrefix(lines[0].Text, "metric: ttft=") || strings.Contains(lines[0].Text, "三者") {
