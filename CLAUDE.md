@@ -47,6 +47,13 @@ hour. Compare only calls since ddf25e2 with each other. Count every
 answered turn, not only the opened ones: on that call 6 of 20 turns had
 no opener (fragments after a backchannel) and their first audio was
 807–1100 — `opener_on_fragments` (fba0387+) is the answer to that.**
+**Where it stands on 10-28 morning (4131de7): the headline is met with
+margin — first audio 380 at p95 over 20 of 20 answered turns, 60 of 61
+over the four `kb-coverage-nerd` calls since 27946cc. The answer's own
+first word is not under 1000 at p95 on any honest call (1151 / 1184 /
+1188 at night, 1039 / 1257 by day): it is close + the chat model's first
+token + ~220 ms, and the first token's p95 from the close was 381–667 in
+those calls; it would need ~300. That is lever 3.3, the owner's.**
 
 Two definitions are in use. **The headline is always the first, caller's
 last sound → first audio** (the owner settled it on 10-16: it is what the
@@ -146,6 +153,8 @@ Phone calls through golive, last sound → first audio, from the log:
 | 10-27 21:31 | ddf25e2 (content stamped on the audio; quiet heads cut), **simulated** (`kb-coverage-nerd`), the slow hour (first token 224 / 455 from the close); 20 answered turns, 14 with an opener, 6 fragments after a backchannel without one: opened turns first audio 380 / 380 / 561, **content p50 950 / p95 1151 / max 1186, 5 over 1000 — the first honest content figure**; the 6 no-opener turns first audio 807–1100; opener heads 110–220 ms and first-segment heads 84–172 cut; two turns lost 640/840 ms to a stripped duplicate opener (fixed fba0387) | 20 | 380 (content 950) | 1100 (content 1186, p95 1151) | 3 (content: 5 over 1000) |
 | 10-27 22:05 | a4cb23a (fragment opener; stripped-opener restart), **simulated** (`kb-coverage-nerd`), same hour (257 / 419); 21 answered turns, 16 opened, **5 fragments closed inside the backchannel's 300 ms drain and got no opener (ISS-060): first audio p50 380 / p95 1063 / max 1131**; content 955 / 1184 / 1274, 7 over 1000; 8 fragments opened with a phrase of another kind | 21 | 380 (content 955) | 1131 (content 1274, p95 1184) | 2 (content: 7 over 1000) |
 | 10-27 22:34 | 27946cc (the floor is free for the opener while a backchannel drains; review fixes), **simulated** (`kb-coverage-nerd`), same hour (239 / 491); 21 answered turns, **20 opened at the pause: first audio p50 380 / p95 381 / max 1286 — under 1000 on the headline over every answered turn**; the answer's own first word 947 / 1188 / 1286, 8 over 1000 (the model's hour: content ≈ close + first token + ~320); 11 fragments opened with a phrase of another kind, 5 stripped openers followed by 7/20/12-character first segments | 21 | 380 (content 947) | 1286 (content 1286, p95 1188) | 1 (content: 8 over 1000) |
+| 10-28 08:47 | 27946cc, **simulated** (`kb-coverage-nerd`), daytime (first token 171 / 381 from the close), the A/B baseline; 20 answered turns, 19 opened: **first audio 380 / 381 / 1059; content p50 890 / p95 1039 / max 1059, 3 over 1000** (a 700 ms patience wait, a real barge-in without an opener, a clause-bound turn at first token 381) | 20 | 380 (content 890) | 1059 (content 1059, p95 1039) | 1 (content: 3 over 1000) |
+| 10-28 08:56 | 4131de7 (first clause flushed at 100 ms; copies raced on the first clause — decision 17), **simulated** (`kb-coverage-nerd`), the model in a slow spell (301 / 667); **20 of 20 opened: first audio 380 / 380 / 495**; content 981 / 1257 / 1269, 8 over 1000 — golive's share after the first token ~290 → ~220 ms at the median, the model +130 / +286 | 20 | 380 (content 981) | 495 (content 1269, p95 1257) | 0 (content: 8 over 1000) |
 | | **b1e3c88 outside the 23:00 hour (14:28 and 21:15)** | **53** | | 1072 | **0** |
 
 By the console's definition: 13:09 p50 482, worst 1002; 14:22 p50 592, p95

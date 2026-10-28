@@ -181,7 +181,7 @@
    "basis": "journal/retros/out-mvqsfqv2-ugvf.md; RETRO-1000 §3.2 and §7 run B; the 10-27 detail job (624) with 'first segment flushed on deadline chars=10 ms=160' on four turns.",
    "cost": "A shorter first clause (5–7 characters instead of ~10) before the synthesizer; a few more of the losing copies' tokens. Nothing in what is recognised or in the words said.",
    "guard": "An A/B in one daytime hour against a baseline call on 27946cc; revert if the content p95 does not move or the first clause sounds clipped.",
-   "status": "on as a test, 2026-10-28 morning; the owner keeps or reverts"
+   "status": "on since 2026-10-28 08:55 (4131de7); A/B in the same hour: golive's share after the first token ~290 → ~220 ms at the median; the model's own spell moved the content p95 the other way (1039 → 1257 with first token p95 381 → 667). The owner keeps or reverts (the 27946cc tarball)."
   }
  ]
 }
