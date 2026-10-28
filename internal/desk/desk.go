@@ -109,6 +109,9 @@ type Config struct {
 	// (scenarios.go).
 	Calls     *Calls
 	Scenarios *Scenarios
+	// Talker, when set, adds the page that tries the local talker model
+	// served on the Mac (talker.go).
+	Talker *Talker
 }
 
 // Service is the desk.
@@ -561,6 +564,7 @@ func (s *Service) Handler() http.Handler {
 		}
 	}))
 	s.mountWorkLog(mux)
+	s.mountTalker(mux)
 	s.cfg.Calls.Mount(mux, s.authed)
 	if s.cfg.Calls != nil {
 		s.cfg.Scenarios.Mount(mux, s.authed, s.cfg.Calls)

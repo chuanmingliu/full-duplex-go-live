@@ -47,6 +47,7 @@ func run() error {
 		journal = flag.String("journal", "http://127.0.0.1:8790", "the call journal, as this process reaches it")
 		jport   = flag.Int("journal-port", 8790, "the journal's port as a browser on the home network reaches it, on this host; the page embeds its call view")
 		simDir  = flag.String("sim-dir", filepath.Join(home, "golive-sim"), "the simulated customer's directory: scenarios/, data/last-run, providers.env")
+		talker  = flag.String("talker", os.Getenv("TALKER_URL"), "llama-server serving the local talker model, e.g. http://<mac>:18081; the page #/talker tries it (empty: no page)")
 		verify  = flag.Bool("verify", false, "check the log and exit")
 		showVer = flag.Bool("version", false, "print the version and exit")
 	)
@@ -82,7 +83,11 @@ func run() error {
 		scenarios = &desk.Scenarios{Dir: filepath.Join(*simDir, "scenarios"), LastRun: filepath.Join(*simDir, "data", "last-run"),
 			ProvidersEnv: filepath.Join(*simDir, "providers.env")}
 	}
-	s, err := desk.Open(desk.Config{Dir: *dir, Log: log, Calls: calls, Scenarios: scenarios})
+	var talk *desk.Talker
+	if *talker != "" {
+		talk = &desk.Talker{URL: *talker}
+	}
+	s, err := desk.Open(desk.Config{Dir: *dir, Log: log, Calls: calls, Scenarios: scenarios, Talker: talk})
 	if err != nil {
 		return err
 	}

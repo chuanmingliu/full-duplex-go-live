@@ -124,6 +124,9 @@ CRM_URL="http://127.0.0.1:$CRM_PORT"
 # in DESK_DIR (owner.token, claude.token, codex.token).
 DESK_PORT="${DESK_PORT:-8792}"
 DESK_DIR="${DESK_DIR:-$HOME/golive-desk}"
+# The local talker model, served by llama-server on the owner's Mac (Codex
+# trains and serves it there); the desk's #/talker page tries it.
+TALKER_URL="${TALKER_URL:-http://192.168.71.101:18081}"
 if [ -z "${DESK_ADDR:-}" ]; then _ip="$(lan_ip)"; DESK_ADDR="127.0.0.1:$DESK_PORT${_ip:+,$_ip:$DESK_PORT}"; fi
 # The edge gateway: self-hosted speech models (under EDGE_HOME) behind an
 # OpenAI-compatible API, on this machine and the home network, token in
@@ -334,7 +337,8 @@ kstart() {
   # The journal listens on the home-network address, not loopback; the desk
   # reads it there and tells the page which port to embed.
   setsid nohup "$KBIN" -addr "$DESK_ADDR" -dir "$DESK_DIR" -journal "http://$JOURNAL_ADDR" -journal-port "${JOURNAL_ADDR##*:}" \
-    -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" -sim-tokens "${SIM_DIR:-$HOME/golive-sim}/tokens.env" >> "$KLOG" 2>&1 < /dev/null &
+    -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" -sim-tokens "${SIM_DIR:-$HOME/golive-sim}/tokens.env" \
+    -talker "$TALKER_URL" >> "$KLOG" 2>&1 < /dev/null &
   echo $! > "$KPID"
   sleep 1
   if krunning; then say "the desk is up on $DESK_ADDR (pid $(cat "$KPID")); tokens in $DESK_DIR/{owner,claude,codex}.token"

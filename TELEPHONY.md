@@ -382,6 +382,25 @@ runs — `host=… device=… model=…` — so "where is it trained" has one
 answer; runs of seven or more digits are masked before storage. Nothing
 posted here is executed by anyone.
 
+### The talker, tried from the web
+
+`#/talker` on the desk (`internal/desk/talker.go`, 10-28). Codex's local
+talker — Qwen3-0.6B tuned on the Mac and served there by llama-server
+(`TALKER_URL` in `phone-brain.sh`, `-talker` on the desk) — writes the
+answer's first short clause from the conversation, the caller's words and
+the opener the engine already said at the pause. The page is the engine's
+seat: the conversation so far (each accepted answer becomes a turn), the
+caller's words, the opener chosen by the caller's words as the engine
+chooses it (the default `openers` scenarios) or by hand, then the clause
+streamed as it arrives with the first token, the complete clause and the
+whole answer timed from the desk's request, drawn against the 380 ms pause
+and the 1000 goal. The prompt is rendered to the character of the
+training's `prompt.py` (`testdata/talker_golden.json` is that script's
+output on the test's cases) and the clause judged by its rule: ok, ack,
+long (over 12 visible characters), incomplete, special. Each attempt's
+numbers go to the work-log stream `talker-web`; the words stay in the
+browser and on the Mac.
+
 ## A call on a rendered prompt: the lead service
 
 `scripts/phone-brain.sh crm start` runs a small service (`bin/crm`, port 8791

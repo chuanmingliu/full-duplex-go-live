@@ -19,7 +19,8 @@
   const state = { me: '', control: {}, notes: [], seq: 0, seen: {}, open: {}, thread: '', filter: 'all', es: null,
     view: 'notes', calls: [], journalPort: 8790, call: '', callsAt: 0,
     scenarios: [], scenario: '', edit: null, editName: '', realCalls: [], scenariosAt: 0,
-    logs: [], logsAt: 0, stream: '', lines: [], tail: null, follow: true, logFilter: '' };
+    logs: [], logsAt: 0, stream: '', lines: [], tail: null, follow: true, logFilter: '',
+    talker: null, talkerAt: 0, tk: { context: [], caller: '', opener: '', auto: true, turns: 6, live: '', result: null, running: false, history: [], prompt: '', showPrompt: false, error: '' } };
 
   const api = async (path, opts = {}) => {
     const r = await fetch(path, { ...opts, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -113,7 +114,7 @@
   // The page: notes, or the calls placed to the simulated customer.
   const route = () => {
     const p = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean);
-    state.view = p[0] === 'calls' ? 'calls' : p[0] === 'scenarios' ? 'scenarios' : p[0] === 'logs' ? 'logs' : 'notes';
+    state.view = p[0] === 'calls' ? 'calls' : p[0] === 'scenarios' ? 'scenarios' : p[0] === 'logs' ? 'logs' : p[0] === 'talker' ? 'talker' : 'notes';
     if (state.view === 'calls' && p[1]) state.call = decodeURIComponent(p[1]);
     if (state.view === 'scenarios' && p[1]) state.scenario = decodeURIComponent(p[1]);
     if (state.view === 'logs' && p[1] && p[1] !== state.stream) { state.stream = decodeURIComponent(p[1]); state.lines = []; if (state.tail) { state.tail.close(); state.tail = null; } }
@@ -418,11 +419,147 @@
     tailLog();
   };
 
+  /* The talker: Codex's local model on the Mac, tried from here. The desk
+     renders the training's prompt from the conversation below, the caller's
+     words and the opener the engine would have said at the pause, streams
+     the model's first clause as it comes and times it. */
+  const PAUSE_MS = 380;
+  const loadTalker = async () => { state.talker = await api('/api/talker'); state.talkerAt = Date.now(); };
+  const matchOpener = (text) => {
+    const t = (text || '').trim(); if (!t || !state.talker) return '';
+    const q = /[?？]$|吗|呢|多少|怎么|什么|哪|几|能不能|要不要|是不是/.test(t);
+    for (const sc of state.talker.openers || []) {
+      if (sc.enabled === false) continue;
+      if (sc.kind === 'question' && !q) continue;
+      if (sc.kind === 'statement' && q) continue;
+      if ((sc.keywords || []).some(k => t.includes(k))) return { scenario: sc, phrase: sc.phrases[0] };
+    }
+    return { scenario: null, phrase: '嗯，' };
+  };
+  const openerNow = () => state.tk.auto ? matchOpener(state.tk.caller).phrase : state.tk.opener;
+  const talkerAsk = async () => {
+    const tk = state.tk;
+    if (tk.running || !tk.caller.trim()) return;
+    tk.running = true; tk.live = ''; tk.result = null; tk.error = ''; renderTalker();
+    const body = { context: tk.context, caller: tk.caller, opener: openerNow(), max_context_turns: tk.turns };
+    try {
+      const r = await fetch('/api/talker', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || ('HTTP ' + r.status)); }
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          let ev = '', data = '';
+          for (const line of chunk.split('\n')) { if (line.startsWith('event: ')) ev = line.slice(7); else if (line.startsWith('data: ')) data += line.slice(6); }
+          if (ev === 'token') { tk.live += JSON.parse(data).text; renderTalkerLive(); }
+          else if (ev === 'done') { tk.result = JSON.parse(data); tk.result.opener = body.opener; tk.result.at = Date.now(); tk.history.unshift(tk.result); if (tk.history.length > 40) tk.history.length = 40; }
+          else if (ev === 'error') { tk.error = JSON.parse(data).error; }
+        }
+      }
+    } catch (e) { tk.error = e.message; }
+    tk.running = false; renderTalker();
+  };
+  const verdictWord = (v) => ({ ok: 'a clause the engine would say', ack: 'a bare acknowledgement — the opener already was one', long: 'over the 12-character cap', incomplete: 'no clause boundary before the model stopped', empty: 'nothing', special: 'a template token leaked' })[v] || v;
+  const pct = (ms) => Math.max(0, Math.min(100, 100 * ms / 1200));
+  const timeBar = (r) => {
+    // The figures, then one bar 0–1200 ms from the request: the first token
+    // and the clause as filled segments, the 380 ms pause the opener covers
+    // and the 1000 goal as ticks.
+    const stat = (label, ms, cls) => h('div', { class: 'stat ' + (cls || '') }, h('div', { class: 'v num' }, ms ? Math.round(ms) : '—'), h('div', { class: 'k' }, label));
+    return h('div', {},
+      h('div', { class: 'stats' }, stat('first token', r.ttft_ms, 'ttft'), stat('complete clause', r.clause_ms, 'clause'), stat('done', r.total_ms), stat('prompt eval', r.prompt_ms), stat('predict', r.predict_ms)),
+      h('div', { class: 'tbar' },
+        h('div', { class: 'seg total', style: 'width:' + pct(r.total_ms) + '%' }),
+        r.clause_ms ? h('div', { class: 'seg clause', style: 'width:' + pct(r.clause_ms) + '%' }) : null,
+        h('div', { class: 'seg ttft', style: 'width:' + pct(r.ttft_ms) + '%' }),
+        h('span', { class: 'mark pause', style: 'left:' + pct(PAUSE_MS) + '%' }, 'pause ends ' + PAUSE_MS),
+        h('span', { class: 'mark goal', style: 'left:' + pct(1000) + '%' }, 'goal 1000'),
+        h('span', { class: 'mark end', style: 'left:100%' }, '1200 ms')));
+  };
+  const renderTalkerLive = () => {
+    const el = $('#tk-live'); if (!el) return;
+    el.textContent = state.tk.live || '…';
+  };
+  const renderTalker = () => {
+    const t = state.talker, tk = state.tk;
+    if (!t) { $('#main').replaceChildren(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'asking the desk about the talker…'))); return; }
+    if (!t.enabled) { $('#main').replaceChildren(h('div', { class: 'card' }, h('h1', {}, 'The talker'), h('p', { class: 'sub' }, 'No talker is configured on this desk: start it with -talker http://<mac>:18081 (TALKER_URL in phone-brain.sh).'))); return; }
+    const m = tk.auto ? matchOpener(tk.caller) : null;
+    const status = h('div', { class: 'row' },
+      h('span', { class: 'chip ' + (t.up ? 'good' : 'bad') }, t.up ? 'up' : 'not reachable'),
+      h('span', { class: 'mono muted' }, t.url + (t.model ? ' · ' + t.model : '') + (t.up ? ' · probe ' + t.probe_ms + ' ms' : '')),
+      h('button', { class: 'btn btn-quiet', onclick: async () => { try { await loadTalker(); renderTalker(); } catch (e) { tip(e.message, true); } } }, 'Recheck'));
+    const conv = h('div', { class: 'conv' }, tk.context.length ? tk.context.map((msg, i) =>
+      h('div', { class: 'turn ' + msg.role },
+        h('span', { class: 'role' }, msg.role === 'user' ? '来电者' : '助手'),
+        h('span', { class: 'words' }, msg.content),
+        h('button', { class: 'btn btn-quiet small', title: 'remove this turn', onclick: () => { tk.context.splice(i, 1); renderTalker(); } }, '×'))) :
+      h('p', { class: 'muted small' }, 'No earlier turns. The model sees up to ' + tk.turns + ' prior exchanges; add them here, or let each answer you accept become one.'));
+    const callerIn = h('textarea', { class: 'words-in', placeholder: '来电者刚说的话，比如：三者险一百万多少钱？', oninput: (e) => { tk.caller = e.target.value; if (tk.auto) { const mm = matchOpener(tk.caller); $('#tk-opener').value = mm.phrase || ''; $('#tk-scn').textContent = mm.scenario ? mm.scenario.name + ' (' + mm.scenario.id + ')' : 'no scenario → 嗯，'; } },
+      onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); talkerAsk(); } } }, tk.caller);
+    const openerIn = h('input', { type: 'text', id: 'tk-opener', value: openerNow(), disabled: tk.auto ? '' : null, oninput: (e) => { tk.opener = e.target.value; } });
+    const openerPick = h('select', { onchange: (e) => { if (e.target.value) { tk.auto = false; tk.opener = e.target.value; renderTalker(); } } },
+      h('option', { value: '' }, 'pick…'), ...(t.openers || []).flatMap(sc => sc.phrases.map(p => h('option', { value: p }, p + '  — ' + sc.name))), h('option', { value: '嗯，' }, '嗯，  — no scenario'));
+    const ask = h('button', { class: 'btn btn-primary', disabled: tk.running || !t.up ? '' : null, onclick: talkerAsk }, tk.running ? 'asking…' : 'Ask the talker');
+    const r = tk.result;
+    const result = h('div', { class: 'card tk-result' },
+      h('div', { class: 'spoken' },
+        h('span', { class: 'opener' }, r ? r.opener : openerNow()),
+        h('span', { class: 'clause', id: 'tk-live' }, r ? (r.clause || r.text || '') : (tk.running ? '…' : '')),
+        r && r.clause && r.text.trim() !== r.clause ? h('span', { class: 'rest muted' }, ' ' + r.text.trim().slice(r.clause.length)) : null),
+      tk.error ? h('div', { class: 'msg err' }, tk.error) : null,
+      r ? h('div', {},
+        h('div', { class: 'row' },
+          h('span', { class: 'chip ' + (r.verdict === 'ok' ? 'good' : r.verdict === 'incomplete' || r.verdict === 'long' ? 'warn' : 'bad') }, r.verdict),
+          h('span', { class: 'muted' }, verdictWord(r.verdict)),
+          h('span', { class: 'muted num' }, r.tokens + ' tokens · prompt ' + r.prompt_tokens + ' (' + r.cached_tokens + ' cached) · ' + r.prompt_chars + ' chars')),
+        timeBar(r),
+        h('p', { class: 'muted small' }, 'Times are from the desk\'s request to the Mac. On a call the opener covers the 380 ms pause; a clause back before it ends would be said right behind the opener, where the chat model\'s first token (p95 400–650 from the close) is waited for today.'),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', disabled: r.verdict !== 'ok' && r.verdict !== 'long' ? '' : null, onclick: () => {
+            tk.context.push({ role: 'user', content: tk.caller }, { role: 'assistant', content: (r.opener + r.clause).trim() });
+            tk.caller = ''; tk.result = null; tk.live = ''; renderTalker();
+          } }, 'Accept as the turn and continue'),
+          h('button', { class: 'btn', onclick: () => { tk.result = null; tk.live = ''; renderTalker(); } }, 'Clear'))) : null);
+    const promptBox = h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('h2', { class: 'inline' }, 'The prompt'), h('button', { class: 'btn btn-quiet', onclick: async () => {
+        tk.showPrompt = !tk.showPrompt;
+        if (tk.showPrompt) { try { const v = await api('/api/talker/prompt', { method: 'POST', body: JSON.stringify({ context: tk.context, caller: tk.caller || '（来电者的话）', opener: openerNow(), max_context_turns: tk.turns }) }); tk.prompt = v.prompt + '\n\n— ' + v.chars + ' characters'; } catch (e) { tk.prompt = e.message; } }
+        renderTalker();
+      } }, tk.showPrompt ? 'hide' : 'show')),
+      tk.showPrompt ? h('pre', { class: 'pre' }, tk.prompt) : h('p', { class: 'muted small' }, 'Qwen ChatML as the training rendered it: the system line, up to ' + tk.turns + ' prior exchanges (oldest dropped to fit ' + 768 + ' characters), the caller\'s words, a no-thinking prefill, then the opener already said. The model continues from the opener.'));
+    const hist = h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('h2', { class: 'inline' }, 'This session'), h('span', { class: 'muted' }, tk.history.length + (tk.history.length === 1 ? ' attempt' : ' attempts')),
+        tk.history.length ? h('span', { class: 'muted num' }, 'first token p50 ' + q(tk.history.map(x => x.ttft_ms), 0.5) + ' · p95 ' + q(tk.history.map(x => x.ttft_ms), 0.95) + ' · clause p50 ' + q(tk.history.filter(x => x.clause_ms).map(x => x.clause_ms), 0.5) + ' · ok ' + tk.history.filter(x => x.verdict === 'ok').length + '/' + tk.history.length) : null),
+      tk.history.length ? h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'opener + clause'), h('th', {}, 'verdict'), h('th', { class: 'n' }, 'first token'), h('th', { class: 'n' }, 'clause'), h('th', { class: 'n' }, 'total'), h('th', { class: 'n' }, 'cached'))),
+        h('tbody', {}, ...tk.history.map(x => h('tr', {}, h('td', {}, h('span', { class: 'opener-sm' }, x.opener), x.clause || h('span', { class: 'muted' }, x.text.slice(0, 30))), h('td', {}, h('span', { class: 'chip ' + (x.verdict === 'ok' ? 'good' : 'warn') }, x.verdict)),
+          h('td', { class: 'n' }, Math.round(x.ttft_ms)), h('td', { class: 'n' }, x.clause_ms ? Math.round(x.clause_ms) : '—'), h('td', { class: 'n' }, Math.round(x.total_ms)), h('td', { class: 'n' }, x.cached_tokens + '/' + (x.prompt_tokens + x.cached_tokens)))))) :
+        h('p', { class: 'muted small' }, 'Each attempt\'s numbers also go to the work log stream talker-web, where they chart; the words stay here.'));
+    const left = h('div', {},
+      h('div', { class: 'card' },
+        h('h2', { style: 'margin-top:0' }, 'The conversation so far'), conv,
+        h('div', { class: 'row' }, h('button', { class: 'btn btn-quiet', onclick: () => { tk.context = []; renderTalker(); } }, 'Start over'),
+          h('label', { class: 'row', style: 'margin:0' }, 'turns kept ', h('input', { type: 'number', class: 'short', min: 0, max: 12, value: tk.turns, style: 'width:60px', oninput: (e) => { tk.turns = Math.max(0, Math.min(12, parseInt(e.target.value) || 0)); } }))),
+        h('h2', {}, 'The caller says'), callerIn,
+        h('h2', {}, 'The opener the engine said at the pause'),
+        h('div', { class: 'row' }, openerIn, openerPick,
+          h('label', { class: 'row', style: 'margin:0' }, h('input', { type: 'checkbox', checked: tk.auto ? '' : null, onchange: (e) => { tk.auto = e.target.checked; renderTalker(); } }), ' by the caller\'s words')),
+        h('p', { class: 'muted small', id: 'tk-scn' }, tk.auto ? (m && m.scenario ? m.scenario.name + ' (' + m.scenario.id + ')' : 'no scenario → 嗯，') : 'chosen by hand'),
+        h('div', { class: 'row' }, ask, h('span', { class: 'muted small' }, 'Enter asks; Shift+Enter is a newline'))));
+    $('#main').replaceChildren(h('div', { class: 'tk-head' }, h('h1', {}, 'The talker'), h('p', { class: 'sub' }, 'Codex\'s Qwen3-0.6B talker, trained and served on the Mac: given the conversation, the caller\'s words and the opener already said at the pause, it writes the answer\'s first short clause. Try it as the engine would use it.'), status),
+      h('div', { class: 'grid tk' }, left, h('div', {}, result, promptBox, hist)));
+  };
+  const q = (vs, p) => { if (!vs.length) return '—'; const s = [...vs].sort((a, b) => a - b); return Math.round(s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))]); };
+
   const render = () => {
     $('#nav-notes').setAttribute('aria-current', state.view === 'notes' ? 'page' : 'false');
     $('#nav-logs').setAttribute('aria-current', state.view === 'logs' ? 'page' : 'false');
     $('#nav-calls').setAttribute('aria-current', state.view === 'calls' ? 'page' : 'false');
     $('#nav-scenarios').setAttribute('aria-current', state.view === 'scenarios' ? 'page' : 'false');
+    $('#nav-talker').setAttribute('aria-current', state.view === 'talker' ? 'page' : 'false');
     $('#who').replaceChildren(h('span', { class: 'me' }, state.me));
     $('#seen').replaceChildren(...['owner', 'claude', 'codex'].map(p =>
       h('span', {}, h('b', {}, p), ' ' + ago(state.seen[p]) + (state.open[p] ? ' · ' + state.open[p] + ' open' : ''))));
@@ -440,6 +577,11 @@
         catch (err) { tip(err.message, true); }
       } }, ...['manual', 'auto'].map(m => h('option', { value: m, selected: c.mode === m ? '' : null }, m))) : null);
 
+    if (state.view === 'talker') {
+      if (Date.now() - state.talkerAt > 20000) loadTalker().then(renderTalker).catch(e => tip(e.message, true));
+      renderTalker();
+      return;
+    }
     if (state.view === 'logs') {
       if (Date.now() - state.logsAt > 15000) loadLogs().then(renderLogs).catch(e => tip(e.message, true));
       renderLogs();
