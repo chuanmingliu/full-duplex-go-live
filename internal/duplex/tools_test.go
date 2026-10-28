@@ -1315,3 +1315,21 @@ func TestAConfigBesideConfigsDoesNotChangeThePlan(t *testing.T) {
 		t.Fatalf("memory version %d, want 1 (the patch alone)", got)
 	}
 }
+
+// A single change called beside a comparison in the same response is
+// folded into the comparison and not carried out.
+func TestASingleChangeBesideAComparisonIsFolded(t *testing.T) {
+	calls := []provider.ToolCall{
+		{ID: "a", Name: "quote_total", Arguments: `{"config":{"三者险":"500万"}}`},
+		{ID: "b", Name: "quote_total", Arguments: `{"configs":[{"三者险":"300万"},{"三者险":"500万"}]}`},
+		{ID: "c", Name: "update_memory", Arguments: `{"patch":{"x":1}}`},
+	}
+	got := foldedIntoComparison(calls)
+	if !got["a"] || got["b"] || got["c"] {
+		t.Fatalf("folded: %v", got)
+	}
+	// Without a comparison nothing is folded.
+	if got := foldedIntoComparison(calls[:1]); len(got) != 0 {
+		t.Fatalf("folded without a comparison: %v", got)
+	}
+}

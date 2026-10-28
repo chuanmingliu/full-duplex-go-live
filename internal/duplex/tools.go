@@ -350,6 +350,34 @@ func (e *Engine) recordSelection(output []byte) {
 	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: patch})
 }
 
+// foldedIntoComparison names the calls of a response that carry a single
+// `config` to a tool another call of the same response is comparing options
+// with (`configs`): they are answered as part of the comparison, not run.
+func foldedIntoComparison(calls []provider.ToolCall) map[string]bool {
+	comparing := map[string]bool{}
+	type shape struct {
+		Config  map[string]any   `json:"config"`
+		Configs []map[string]any `json:"configs"`
+	}
+	shapes := map[string]shape{}
+	for _, c := range calls {
+		var sh shape
+		_ = json.Unmarshal([]byte(c.Arguments), &sh)
+		shapes[c.ID] = sh
+		if len(sh.Configs) > 0 {
+			comparing[c.Name] = true
+		}
+	}
+	out := map[string]bool{}
+	for _, c := range calls {
+		sh := shapes[c.ID]
+		if comparing[c.Name] && len(sh.Configs) == 0 && len(sh.Config) > 0 {
+			out[c.ID] = true
+		}
+	}
+	return out
+}
+
 // isServerTool says whether a call is one the engine carries out.
 func (e *Engine) isServerTool(name string) bool {
 	if e.tools == nil {
@@ -366,11 +394,19 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 	ts := e.tools
 	e.ensureUserRecorded(job.turn)
 	p := &pendingResponse{delegationID: job.delegationID, turn: job.turn, calls: calls, outputs: map[string]string{}, createdAt: time.Now()}
+	folded := foldedIntoComparison(calls)
 	var wait []provider.ToolCall
 	for _, c := range calls {
 		ts.calls++
 		t := ts.byName[c.Name]
 		switch {
+		case folded[c.ID]:
+			// A single change called beside a comparison of options in the
+			// same response (the 10:26 simulated call of 10-28, twice): the
+			// comparison answers it; carried out, it would set the plan to
+			// an option nobody chose.
+			e.log.Info("tools: a single change beside a comparison is folded into it", "tool", c.Name, "call", c.ID)
+			p.outputs[c.ID] = `{"status":"merged","note":"该改动已并入同一次对比，方案未变；对比结果念出后请问客户选哪个"}`
 		case t.Builtin == "update_memory":
 			p.outputs[c.ID] = e.applyMemoryCall(c)
 		case t.Builtin == "end_call":
