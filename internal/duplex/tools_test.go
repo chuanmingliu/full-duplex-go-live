@@ -922,10 +922,11 @@ func (s *statusQuote) Execute(ctx context.Context, t tools.Tool, req tools.Reque
 	return tools.Result{Output: out, Took: s.delay}
 }
 
-// A quote that is back at once (the placeholder rules take 15 ms) is still
-// announced: ack, then the opening, then the model's words, in that order
-// (the owner, 23:15 on 10-23: "where is 请您稍等").
-func TestAnInstantQuoteStillGetsTheAckThenTheOpening(t *testing.T) {
+// A quote that is back at once (a pre-quotation hit, or the placeholder
+// rules) gets no ack: the opening announces it, then the model's words.
+// (The owner's 10-23 rule had the ack said too; revised 11:31 on 10-28 after
+// 保费 was heard three times in one breath on a cached hit.)
+func TestAnInstantQuoteSkipsTheAckAndGetsTheOpening(t *testing.T) {
 	opts := quoteConfig()
 	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].Ack = "这会儿正在给您计算保费，请您稍等。"
 	opts.Cfg.Tools[len(opts.Cfg.Tools)-1].ResultOpening = "保费给您计算好了，"
@@ -943,8 +944,8 @@ func TestAnInstantQuoteStillGetsTheAckThenTheOpening(t *testing.T) {
 	}
 	said := c.saidAll()
 	a, o, m := strings.Index(said, "请您稍等"), strings.Index(said, "保费给您计算好了"), strings.Index(said, "报价出来了")
-	if a < 0 || o < 0 || m < 0 || !(a < o && o < m) {
-		t.Fatalf("wanted ack, opening, then the model's words; said %q", said)
+	if a >= 0 || o < 0 || m < 0 || !(o < m) {
+		t.Fatalf("wanted the opening then the model's words, no ack; said %q", said)
 	}
 }
 
@@ -968,7 +969,7 @@ func TestTheQuoteIsReadOutFromThePanelsTemplate(t *testing.T) {
 	asr := newTrailingASR("一共多少钱")
 	asr.msPerRune = 150
 	llm := &quoteLLM{}
-	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &statusQuote{delay: 10 * time.Millisecond, status: "quote"})
+	e := startQuoteEngine(t, opts, Deps{ASR: asr, LLM: llm, Emit: c.emit}, &statusQuote{delay: 700 * time.Millisecond, status: "quote"} /* slow enough for the prehook */)
 	if d := e.tools.byName["quote_total"]; d.Ack != "马上给您算。" || d.Speech == nil {
 		t.Fatalf("the panel's speech was not applied: %+v", d)
 	}

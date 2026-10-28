@@ -11,7 +11,6 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
-	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // This file is the think channel: delegation in both of gpt-live-1's modes,
@@ -777,20 +776,16 @@ func (e *Engine) sayAck(p *pendingResponse) {
 	}
 	delete(ts.ackPending, p.scriptedTask)
 	if ts.tasks[p.scriptedTask] == nil {
-		// Done within the grace. A real result (the status the opening is
-		// for — a quote) is still announced: the owner wants the caller told
-		// the premium was worked out, however quickly (23:15 on 10-23). A
-		// `need` or an error is not a computation and gets no "请您稍等".
-		announce := false
-		for _, t := range ts.deliveries {
-			if t.ID == p.scriptedTask {
-				announce = t.Result.Err == nil && t.Tool.OpeningFor(t.Result.Output) != "" && !tools.ResultIsDefault(t.Result.Output)
-			}
-		}
-		if !announce {
-			e.log.Info("tools: the task finished within the ack's grace with nothing to announce; not saying the ack", "task", p.scriptedTask)
-			return
-		}
+		// Done within the grace: no "请您稍等" for a wait that did not happen.
+		// The owner's rule of 23:15 on 10-23 had a quick real result still
+		// announced with the ack, for the 15 ms placeholder rules; with the
+		// pre-quotations (10-26) a cached hit is the common case, and the
+		// caller heard 保费呢，→ 正在给您计算保费 → 保费给您计算好了 before the
+		// figure (the 09:39 call of 10-28). The posthook still says the
+		// premium was worked out; the ack only delayed it by 3–4 s. Revised
+		// by the owner, 11:31 on 10-28.
+		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", p.scriptedTask)
+		return
 	}
 	if e.hangingUp() {
 		return

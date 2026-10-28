@@ -1611,11 +1611,15 @@ not cut the ack. The reply that delivers a result of the named status
 the cache before the model's first token, and the model is told to carry on
 after it. Both lines are synthesized at start-up (`WarmPhrases`), so neither
 costs a synthesis on the call. The ack is decided 400 ms after the model's
-sentence has played (`ackGrace`): a task still running, or one that came back
-with a result of the opening's status (a quote, however quickly the rules
-made it), gets the ack and then the result; a `need` or an error is not a
-computation and gets the question instead, with no "请您稍等". The result is
-held until the ack has been said. And the tool is not to be called on a bare "报个价": with
+sentence has played (`ackGrace`): a task still running gets the ack and
+then the result; one that is back inside the grace — a pre-quotation hit,
+the placeholder rules — gets no ack at all, only the posthook and the
+figures (the owner, 11:31 on 10-28: with the cache a hit is the common
+case, and 保费呢，→ 正在给您计算保费 → 保费给您计算好了 was heard before every
+figure; until then a quick real quote still had the ack, the owner's rule
+of 23:15 on 10-23). A `need` or an error is not a computation and gets the
+question instead, with no "请您稍等". A result that waited is held until
+the ack has been said. And the tool is not to be called on a bare "报个价": with
 `brief: "quote-plans"` the default plan's coverages, tiers and must fields are
 read from the lead service at call start and written into the tool's
 description, so the model asks for them first; `need` stays the safety net.
