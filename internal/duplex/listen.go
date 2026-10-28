@@ -1427,13 +1427,22 @@ func (e *Engine) planOpener(turn *Turn) string {
 		e.openerUses = map[string]int{}
 	}
 	candidates := pool
-	allSaid := len(pool) > 0
+	allRecent := len(pool) > 0
 	for _, p := range pool {
-		if e.openerUses[p] == 0 {
-			allSaid = false
+		recent := false
+		for _, r := range e.recentOpeners {
+			if r == p {
+				recent = true
+			}
+		}
+		if !recent {
+			allRecent = false
 		}
 	}
-	if allSaid {
+	if allRecent {
+		// Every phrase of this scenario was said in the last three turns:
+		// the generic pool joins for this turn; the scenario's own phrases
+		// come back as soon as one of them has fallen out of the window.
 		candidates = append(append([]string(nil), pool...), generic...)
 	}
 	var phrase string

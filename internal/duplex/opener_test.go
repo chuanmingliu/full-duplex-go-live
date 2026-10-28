@@ -812,9 +812,14 @@ func TestOpenersRotateThroughThePoolBeforeRepeating(t *testing.T) {
 	if len(first) != 3 || first["嗯，"] || first["好的，"] {
 		t.Fatalf("the scenario's phrases were not each said once first: %v", said)
 	}
-	// Then the generic pool joins: the next two are 嗯，/好的，, never said yet.
-	if !((said[3] == "嗯，" || said[3] == "好的，") && (said[4] == "嗯，" || said[4] == "好的，") && said[3] != said[4]) {
-		t.Fatalf("the generic pool did not join once the scenario's was used up: %v", said)
+	// Then the generic pool joins while all three are within the last three
+	// turns: the fourth is 嗯，/好的，; by the fifth the first scenario phrase
+	// has left the window and comes back.
+	if said[3] != "嗯，" && said[3] != "好的，" {
+		t.Fatalf("the generic pool did not join once the scenario's was all recent: %v", said)
+	}
+	if said[4] != said[0] {
+		t.Fatalf("the scenario's phrase did not come back once out of the window: %v", said)
 	}
 	// Never the same twice running.
 	for i := 1; i < len(said); i++ {

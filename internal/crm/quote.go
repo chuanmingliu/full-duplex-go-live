@@ -283,6 +283,23 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 					req.Variants = append(req.Variants, c)
 				}
 			}
+			if len(req.Variants) > 0 && len(args.Config) > 0 {
+				// A comparison is over the plan as it is; a config beside
+				// configs is one more option, not a change to the base.
+				for k := range args.Config {
+					delete(req.Config, k)
+				}
+				for k, v := range tc.Memory {
+					if k == "quote" {
+						if m, ok := v.(map[string]any); ok {
+							for ck, cv := range m {
+								req.Config[ck] = cv
+							}
+						}
+					}
+				}
+				req.Variants = append([]map[string]any{args.Config}, req.Variants...)
+			}
 		}
 		// No selection yet is the first thing to ask for, not an error: the
 		// intake answers need with the plan's coverages (10-21: the model

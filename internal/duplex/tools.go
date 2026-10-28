@@ -263,9 +263,18 @@ func lastResultLine(t *tools.Task) string {
 // 8.2 s the caller waited for the figure.
 func (e *Engine) recordConfigChange(c provider.ToolCall) {
 	var args struct {
-		Config map[string]any `json:"config"`
+		Config  map[string]any   `json:"config"`
+		Configs []map[string]any `json:"configs"`
 	}
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil || len(args.Config) == 0 {
+		return
+	}
+	if len(args.Configs) > 0 {
+		// A comparison of options does not change the plan: the customer is
+		// asking, not choosing (the 10:19 simulated call of 10-28: config
+		// beside configs set the plan to 500万 nobody had picked, and the
+		// next change was priced on it).
+		e.log.Info("tools: a config beside configs is not recorded; a comparison leaves the plan as it is")
 		return
 	}
 	// Nothing new leaves the version alone, so a repeated call still folds.

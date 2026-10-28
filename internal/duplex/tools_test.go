@@ -1293,3 +1293,25 @@ func TestSeveralOptionsAreReadOutAsOneComparison(t *testing.T) {
 		t.Fatalf("the plan in memory should be the current one: %s", mem)
 	}
 }
+
+// A config beside configs is not folded into the plan: a comparison asks,
+// it does not choose.
+func TestAConfigBesideConfigsDoesNotChangeThePlan(t *testing.T) {
+	opts := quoteConfig()
+	rate := opts.Cfg.ClientRate
+	c := newCollector(rate)
+	e := startQuoteEngine(t, opts, Deps{ASR: newTrailingASR("x"), LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: time.Millisecond, status: "quote"})
+	v := make(chan int, 1)
+	e.post(func() {
+		e.tools.memory.Patch(json.RawMessage(`{"quote":{"三者险":"200万"}}`))
+		e.recordConfigChange(provider.ToolCall{Arguments: `{"config":{"三者险":"500万"},"configs":[{"三者险":"300万"}]}`})
+		snap, ver := e.memorySnapshot()
+		if !strings.Contains(string(snap), `"三者险":"200万"`) {
+			t.Errorf("the plan changed: %s", snap)
+		}
+		v <- ver
+	})
+	if got := <-v; got != 1 {
+		t.Fatalf("memory version %d, want 1 (the patch alone)", got)
+	}
+}
