@@ -41,6 +41,9 @@ type fakeT2A struct {
 	// is_final, so any task_flushed it sends arrives behind that.
 	lateFlushAck bool
 	pendingFlush bool
+	// beforeContinue can hold a reply while a test establishes that the
+	// synthesis is active; it runs before any audio or final frame is sent.
+	beforeContinue func()
 }
 
 func (f *fakeT2A) record(event string) {
@@ -101,6 +104,9 @@ func (f *fakeT2A) handler() http.HandlerFunc {
 			case "task_start":
 				_ = write(map[string]any{"event": "task_started"})
 			case "task_continue":
+				if f.beforeContinue != nil {
+					f.beforeContinue()
+				}
 				_ = write(map[string]any{
 					"event": "task_continued",
 					"data":  map[string]any{"audio": audio, "status": 1},
@@ -144,13 +150,18 @@ func newFakeT2AMode(t *testing.T, bidi, streaming bool) (*fakeT2A, string) {
 func newFakeT2AFull(t *testing.T, bidi, streaming, lateFlushAck bool) (*fakeT2A, string) {
 	t.Helper()
 	f := &fakeT2A{bidi: bidi, streaming: streaming, lateFlushAck: lateFlushAck}
+	return f, serveFakeT2A(t, f)
+}
+
+func serveFakeT2A(t *testing.T, f *fakeT2A) string {
+	t.Helper()
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
 	base := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/v1/t2a_v2"
-	if bidi {
+	if f.bidi {
 		base += "_bidi"
 	}
-	return f, base
+	return base
 }
 
 func testClient(endpoint string) *TTS {
@@ -362,33 +373,74 @@ func TestAbandonedChannelDoesNotWedgeTheConnection(t *testing.T) {
 // reading out however much audio the vendor had already queued.
 func TestAbandonedTurnIsCancelledOnBidiAndDrainedOtherwise(t *testing.T) {
 	for _, bidi := range []bool{false, true} {
-		fake, endpoint := newFakeT2A(t, bidi)
-		tts := testClient(endpoint)
-		st, err := tts.Open(context.Background(), provider.TTSOptions{SampleRate: 24000, Voice: "v1", Speed: 1})
-		if err != nil {
-			t.Fatalf("open (bidi=%v): %v", bidi, err)
+		name := "legacy"
+		if bidi {
+			name = "bidi"
 		}
+		t.Run(name, func(t *testing.T) {
+			active, release := make(chan struct{}), make(chan struct{})
+			var first, released sync.Once
+			unblock := func() { released.Do(func() { close(release) }) }
+			fake := &fakeT2A{bidi: bidi, streaming: bidi, beforeContinue: func() {
+				first.Do(func() { close(active); <-release })
+			}}
+			endpoint := serveFakeT2A(t, fake)
+			t.Cleanup(unblock)
+			tts := testClient(endpoint)
+			st, err := tts.Open(context.Background(), provider.TTSOptions{SampleRate: 24000, Voice: "v1", Speed: 1})
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			defer st.Close()
 
-		// Cancel the context mid-synthesis, as a barge-in does.
-		ctx, cancel := context.WithCancel(context.Background())
-		chunks, err := st.Synthesize(ctx, "这是一个会被打断的长句子。")
-		if err != nil {
-			t.Fatalf("synthesize (bidi=%v): %v", bidi, err)
-		}
-		cancel()
-		for range chunks {
-		}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			chunks, err := st.Synthesize(ctx, "这是一个会被打断的长句子。")
+			if err != nil {
+				t.Fatalf("synthesize: %v", err)
+			}
+			select {
+			case <-active:
+			case <-time.After(2 * time.Second):
+				t.Fatal("the fake server did not receive the active synthesis")
+			}
+			// Cancellation precedes every response frame. The non-final audio
+			// wakes a reader already in recv; it must then cancel or drain.
+			// Bidi stays active until task_cancel; legacy releases its final.
+			cancel()
+			unblock()
+			for range chunks {
+			}
+			if got := fake.saw("task_cancel"); got != bidi {
+				t.Fatalf("task_cancel sent = %v, want %v (events: %v)", got, bidi, fake.events())
+			}
 
-		// The abandonment path runs on the reader goroutine; give it a moment.
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) && !fake.saw("task_cancel") {
-			time.Sleep(20 * time.Millisecond)
-		}
-		if got := fake.saw("task_cancel"); got != bidi {
-			t.Errorf("bidi=%v: task_cancel sent = %v, want %v (events: %v)",
-				bidi, got, bidi, fake.events())
-		}
-		_ = st.Close()
+			// Both paths must leave the same connection ready for the next
+			// segment, with no stale audio or final frame ahead of its reply.
+			chunks, err = st.Synthesize(context.Background(), "第二段")
+			if err != nil {
+				t.Fatalf("synthesize after abandonment: %v", err)
+			}
+			got := 0
+			for c := range chunks {
+				if c.Err != nil {
+					t.Fatalf("synthesis after abandonment: %v", c.Err)
+				}
+				got += len(c.PCM)
+			}
+			if want := 2 * 24000 * 20 / 1000; got != want {
+				t.Fatalf("audio after abandonment = %d bytes, want %d", got, want)
+			}
+			starts := 0
+			for _, event := range fake.events() {
+				if event == "task_start" {
+					starts++
+				}
+			}
+			if starts != 1 {
+				t.Fatalf("the next synthesis reconnected instead of reusing the drained stream: %v", fake.events())
+			}
+		})
 	}
 }
 

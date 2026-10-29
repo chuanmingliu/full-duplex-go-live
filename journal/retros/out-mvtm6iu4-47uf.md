@@ -19,6 +19,11 @@ There are 20 metric rows: 14 answered, four non-speech and two without
 content. Four answered turns were interrupted. No duplicate, malformed or
 unverified rows were found.
 
+The existing journal headline uses its older turn grouping (17 turns,
+719 ms maximum first audio), whereas this table uses the strict reporting
+script and explicit speech/output flags. The filler-panel change does not
+replace that headline or make it a content-latency acceptance gate.
+
 ## Measurement boundary and recordings
 
 These are server-output timings during a real call, not physical handset
