@@ -1507,8 +1507,8 @@
     (call.quotation || []).forEach(function (q) {
       var what, cls = 'q-' + q.kind;
       switch (q.kind) {
-        case 'memory': what = 'recorded ' + (q.keys || '?') + ' → memory v' + q.version; break;
-        case 'asked': asks++; what = q.tool + ' asked (' + q.task + ', on memory v' + q.version + ')'; break;
+        case 'memory': what = 'recorded ' + (q.keys || '?') + ' → memory v' + (q.version === undefined ? 0 : q.version); break;
+        case 'asked': asks++; what = q.tool + ' asked (' + q.task + ', on memory v' + (q.version === undefined ? 0 : q.version) + ')'; break;
         case 'need': needs++; what = 'lead service: fields missing — ' + (q.missing || '?') + (q.plan ? ' (plan ' + q.plan + ')' : ''); break;
         case 'quote': quotes++; what = 'lead service: quote ' + (q.total ? q.total.toFixed(2) : '0') + ', ' + plural(q.lines || 0, 'line') + (q.skipped ? ', skipped ' + q.skipped : '') + (q.source ? ' (' + q.source + ')' : ''); break;
         case 'error': errors++; what = 'lead service: ' + (q.error || 'error'); break;
@@ -1663,7 +1663,7 @@
       pager('top'),
       h('div', { class: 'call-title' }, h('h1', null, (d.sim_run ? 'Simulated call of ' : 'Call of '), h('span', { class: 'num' }, when(call.started_at))), d.sim_run ? h('span', { class: 'sim-badge' }, 'sim') : null, verdictChip(st), intervalGauge(st)),
       h('nav', { class: 'jump', 'aria-label': 'On this page' },
-        [['Read the conversation', 'sec-conversation', 'jump-main'], ['Turn by turn', 'sec-turns'], ['Where the time goes', 'sec-stages'], ['Retrospective', 'sec-retro'], ['Your notes', 'sec-notes']].map(function (j) {
+        [['Read the conversation', 'sec-conversation', 'jump-main'], ['Turn by turn', 'sec-turns'], ['Talker / fillers', 'sec-fillers'], ['Where the time goes', 'sec-stages'], ['Retrospective', 'sec-retro'], ['Your notes', 'sec-notes']].map(function (j) {
           var b = h('button', { type: 'button', class: 'linkbtn' + (j[2] ? ' ' + j[2] : '') }, j[0]);
           b.addEventListener('click', function () { var e = document.getElementById(j[1]); if (e) e.scrollIntoView({ block: 'start' }); });
           return b;
@@ -1718,6 +1718,7 @@
     function add(id, sec) { sec.id = id; view.appendChild(sec); }
     state.conv = conversation(call, target, state.player, state);
     add('sec-conversation', section('Conversation', 'What was said, in order. Between a caller’s line and its answer is the wait: last sound → first audio.', state.conv.el));
+    add('sec-fillers', section('Talker / fillers', 'The filler evidence recorded for this call. Click a time to hear it.', window.JournalFillers(call, { h: h, pos: pos, player: state.player, api: api })));
     add('sec-turns', section('Turn by turn', plural((call.turns || []).length, 'answered turn') + ', from the caller’s last sound. A row opens what was said.', waterfall(call, target, state.player, state)));
     add('sec-stages', section('Where the time goes', 'This call’s median turn, stage by stage.', stageMedians(call)));
     add('sec-events', section('What else happened', 'Counted from the log, besides the answered turns.', eventsBlock(call)));

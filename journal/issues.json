@@ -1006,6 +1006,38 @@
     "2f5db50"
    ],
    "effect": "The callback no longer races reassignment of its application-call batch. Simulated PBX smoke call passed; this particular callback path is established by targeted tests, not claimed from the scenario."
+  },
+  {
+   "id": "ISS-064",
+   "title": "Ready tool results waited for the acknowledgement grace timer",
+   "area": "tools",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "22:03 real call and deterministic handoff regressions",
+   "found_call": "out-mvtm6iu4-47uf",
+   "symptom": "Two cached quotation tasks completed in 0–2 ms but waited roughly 400 ms for the acknowledgement to be skipped before result delivery.",
+   "cause": "ackPending was released only when the grace timer fired, even after the calling clause had yielded and the result was ready.",
+   "fix": "Release the acknowledgement wait as soon as a ready result can follow the original calling clause. Keep that clause protected, make stale callbacks no-ops, and log the result turn ID beside the task ID.",
+   "verified": "Three regressions reproduced the delay before the fix and pass afterward; focused duplex race suite passes. Full CI and deployment verification pending.",
+   "verified_call": "",
+   "commits": [],
+   "effect": "Removes the artificial grace wait in deterministic tests. No new-call latency improvement claimed."
+  },
+  {
+   "id": "ISS-065",
+   "title": "Cached quotation responses lost or reused request-specific exclusions",
+   "area": "quotation",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "review after the 22:03 call and cache-order regressions",
+   "found_call": "out-mvtm6iu4-47uf",
+   "symptom": "A later request adding an excluded coverage could receive the cached price without its exclusion warning; the reverse order could leak a stale exclusion into a base-only request.",
+   "cause": "The effective-selection cache mixed request-specific intake exclusions with pricing results and did not add the current request's exclusions on a cache hit.",
+   "fix": "Cache the pricing result and append each request's intake exclusions to a copied response and slice.",
+   "verified": "Both cache orders failed before the fix. Rules/API paths and slice-isolation tests now pass, including the CRM race suite. Full CI and deployment verification pending.",
+   "verified_call": "",
+   "commits": [],
+   "effect": "Exclusion reporting is correct in regressions. The call's promised-rider/unchanged-quote inconsistency is observed, but trimmed tool arguments prevent proving this bug caused that exact instance."
   }
  ]
 }

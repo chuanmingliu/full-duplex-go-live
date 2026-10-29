@@ -247,7 +247,9 @@ type Call struct {
 	// working memory recorded (which keys), a quote asked for, what came
 	// back (a need with its fields, a quote with its total, an error), and
 	// its delivery to the model. Numbers and names only.
-	Quotation []QuoteStep `json:"quotation,omitempty"`
+	Quotation        []QuoteStep   `json:"quotation,omitempty"`
+	Fillers          []FillerEvent `json:"fillers,omitempty"`
+	FillerLogVersion int           `json:"filler_log_version,omitempty"`
 }
 
 // QuoteStep is one step of a quotation, from the log.
@@ -363,7 +365,8 @@ type callBuild struct {
 		asked, refused bool
 		winner         int
 	}
-	copyWins map[int]int
+	copyWins        map[int]int
+	openerScenarios map[string]string
 
 	// logFrom and logTo are where this call's lines begin and end in the log,
 	// in bytes: what the archive copies as the call's own slice of it.
@@ -551,6 +554,7 @@ func (ix *Indexer) Feed(l Line) {
 	}
 
 	ev := &cb.call.Events
+	cb.readFiller(l)
 	switch l.Msg {
 	case "realtime: session.update":
 		cb.call.PromptChars = l.N("instructions_chars")
@@ -816,6 +820,8 @@ func (ix *Indexer) Calls() []*Call {
 
 func (cb *callBuild) finish() *Call {
 	c := cb.call
+	c.FillerLogVersion = 1
+	c.Fillers = append([]FillerEvent(nil), cb.call.Fillers...)
 	c.Turns, c.Markers = nil, append([]Marker(nil), cb.call.Markers...)
 	if !c.EndedAt.IsZero() {
 		c.DurationS = math.Round(c.EndedAt.Sub(c.StartedAt).Seconds()*10) / 10

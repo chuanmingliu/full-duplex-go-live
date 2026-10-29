@@ -235,7 +235,7 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 			}
 			if p.err == nil && p.quote != nil && p.fresh() {
 				s.log.Info("crm: quotation answered from the cache", "call", req.Call, "ahead", p.ahead, "priced_ms", p.took.Milliseconds(), "waited_ms", time.Since(p.started).Milliseconds())
-				return markPrequoted(p.quote, p, req.MemoryVersion), nil
+				return markPrequoted(quoteWithSkipped(p.quote, req.Skipped), p, req.MemoryVersion), nil
 			}
 			// It failed for whoever asked first, or has expired; price it afresh.
 			s.forgetPrequote(key)
@@ -265,7 +265,7 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 			kept.quote = q
 		}
 	}
-	return q, err
+	return quoteWithSkipped(q, req.Skipped), err
 }
 
 // selectedConfig is the selection with the declined coverages left out.
@@ -285,11 +285,7 @@ func (s *Service) quoteNow(req QuoteRequest) (any, error) {
 	if api, v := s.quoteAPI(); api != nil {
 		return s.quoteViaAPI(api, v, req)
 	}
-	q, err := s.quoteViaRules(req)
-	if err == nil && q != nil && len(req.Skipped) > 0 {
-		q.Skipped = append(q.Skipped, req.Skipped...)
-	}
-	return q, err
+	return s.quoteViaRules(req)
 }
 
 // intake checks the request against the quote plan it runs on, and says
@@ -375,9 +371,6 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 	rec.ComputeMS = time.Since(began).Milliseconds()
 	if q != nil {
 		rec.Total, rec.InsureFlowCode, rec.QuotePriceID = q.Total, q.InsureFlowCode, q.QuotePriceID
-		// What the intake left out (outside the plan, or unanswered) is
-		// named beside what the service has no code for.
-		q.Skipped = append(q.Skipped, req.Skipped...)
 	}
 	if err != nil {
 		rec.Error = err.Error()

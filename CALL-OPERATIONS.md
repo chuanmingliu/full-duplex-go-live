@@ -18,6 +18,12 @@ The journal normally binds the LAN address, e.g. `http://192.168.71.9:8790`, **n
 
 ## After a call: prove text and both audio channels exist in the permanent archive
 
+For the owner's real-call workflow, `call` places a real call and `call sim`
+uses the simulator. After a real call, wait for the owner's **done** message
+before beginning the deep review, fixes, GitHub push and box deployment.
+An ended-call status alone does not replace that signal. Keep the selected
+call ID throughout the review so a newer call cannot silently replace it.
+
 The journal watches every 20 seconds once the service log has been quiet for 8 seconds. It archives only ended calls and only copies audio once `session.json.closed_at` is set. Poll the selected call after it ends, with a bounded wait; do not equate a temporary recording or HTTP audio availability with archival completion.
 
 Set `TASK_CALL` to the returned `out-...` call ID and `TASK_JOURNAL` to the confirmed journal base URL. This read-only verifier triggers the journal's normal GET refresh, checks the selected manifest and its file hashes, validates the WAV and confirms both transcript speakers without printing their words:
@@ -119,3 +125,12 @@ Sources: `TELEPHONY.md:536,627`; `scripts/phone-brain.sh:88,251,472,881,1102`; `
 5. Build an identifiable bundle and retain the actual running executable plus replaced files for rollback. Preserve the running process options/environment and journal paths internally without printing credentials. `phone-brain.sh restart` also restarts the journal and any enabled browser demo: require both main service and demo to be idle. Check the running version, recording configuration, completed warming in one stable process, and journal archive/retention settings. Preserve the CRM, simulator and retained data. A failed startup may be rolled back once the service is proven stopped; an unknown or unresponsive process is not evidence that it is idle.
 6. Repeat the same scenario, verify the complete archive as above, publish the sanitized per-call retro and issue status, and verify the journal reads the new notes. The desk work log may contain build/call IDs and numeric outcomes; never pipe raw logs into it.
 7. A first-audio pass is distinct from content latency. Report both; leave any unverified phone leg or unobserved performance effect explicit. Current content timestamps mark answer audio emitted by the player, not synthesis readiness or an inferred opener duration. Older content estimates are not directly comparable at interruptions or when audio waits behind an opener. The receiver still measures first audio, including openers; it does not establish when meaningful answer content reaches a handset.
+
+When a release changes CRM code, replace and restart the CRM explicitly:
+the ordinary phone-service restart retains an already-running CRM. Back up
+its actual running executable and preserve its exact arguments, environment
+and data directory. Allow its HTTP shutdown to drain before starting its
+replacement; the launcher's short stop wait is not proof that shutdown has
+finished. Verify the new CRM version and executable hash. Verify a journal
+update by its running executable hash: the journal's overview build is the
+phone service's build, not the journal binary's identity.

@@ -751,6 +751,18 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		// but only if there is a wait: a task that is done within the grace
 		// (a `need` from the rules takes 15 ms) gets no "请您稍等" (the owner,
 		// 22:31 on 10-23); its result is delivered as usual.
+		ts := e.tools
+		if ts == nil {
+			return
+		}
+		if ts.tasks[p.scriptedTask] == nil {
+			e.sayAck(p) // already ready: release the result without a timer
+			return
+		}
+		if ts.ackGraceStarted == nil {
+			ts.ackGraceStarted = map[string]bool{}
+		}
+		ts.ackGraceStarted[p.scriptedTask] = true
 		grace := ackGrace
 		time.AfterFunc(grace, func() { e.post(func() { e.sayAck(p) }) })
 		return
@@ -773,10 +785,11 @@ var ackGrace = 400 * time.Millisecond
 // floor is free. Loop goroutine.
 func (e *Engine) sayAck(p *pendingResponse) {
 	ts := e.tools
-	if ts == nil {
+	if ts == nil || !ts.ackPending[p.scriptedTask] {
 		return
 	}
 	delete(ts.ackPending, p.scriptedTask)
+	delete(ts.ackGraceStarted, p.scriptedTask)
 	if ts.tasks[p.scriptedTask] == nil {
 		// Done within the grace: no "请您稍等" for a wait that did not happen.
 		// The owner's rule of 23:15 on 10-23 had a quick real result still
@@ -798,6 +811,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		// dropped). The ack waits for the floor, as long as the task runs.
 		if ts.tasks[p.scriptedTask] != nil {
 			ts.ackPending[p.scriptedTask] = true
+			ts.ackGraceStarted[p.scriptedTask] = true
 			time.AfterFunc(150*time.Millisecond, func() { e.post(func() { e.sayAck(p) }) })
 			return
 		}

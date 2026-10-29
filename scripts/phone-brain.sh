@@ -264,8 +264,10 @@ jstart() {
   jstop
   mkdir -p "$JOURNAL_DATA" "$ARCHIVE_DIR" && chmod 700 "$JOURNAL_DATA" "$ARCHIVE_DIR"
   local store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
+  local playground="${TALKER_PLAYGROUND_URL-http://${DESK_ADDR##*,}/#/talker}"
   setsid nohup "$JBIN" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
     -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" \
+    -talker "$TALKER_URL" -talker-playground "$playground" \
     -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" -target "$JOURNAL_TARGET_MS" >> "$JLOG" 2>&1 < /dev/null &
   echo $! > "$JPID"
   sleep 1

@@ -74,6 +74,10 @@ type toolState struct {
 	// ackPending holds a task's delivery until its ack has been said or
 	// passed over (the ack comes first, the result after it).
 	ackPending map[string]bool
+	// ackGraceStarted means the calling clause has released the floor and
+	// its continuation is only waiting to decide whether an ack is needed.
+	// A completion may release that wait, but must not cut the calling clause.
+	ackGraceStarted map[string]bool
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []*tools.Task
 	// lastResult is the latest result read out to the caller, kept beside
@@ -763,6 +767,11 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 		return // superseded or the session is over
 	}
 	delete(ts.tasks, task.ID)
+	if ts.ackGraceStarted[task.ID] {
+		delete(ts.ackPending, task.ID)
+		delete(ts.ackGraceStarted, task.ID)
+		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", task.ID)
+	}
 	if ts.latest[task.Tool.Name] == task.ID {
 		delete(ts.latest, task.Tool.Name)
 	}
@@ -832,8 +841,6 @@ func (e *Engine) maybeDeliver() {
 			note.WriteString("\n请现在自然地把结果告诉用户，简洁，报总价和关键构成即可。")
 		}
 	}
-	e.log.Info("tools: delivering a task's result", "tool", task.Tool.Name, "task", task.ID,
-		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "delivered",
 		MemoryVersion: task.Request.MemoryVersion, WaitedMS: waited.Milliseconds(), Interrupting: busy})
 	e.history = append(e.history, provider.Message{Role: provider.RoleSystem, Content: note.String()})
@@ -841,6 +848,8 @@ func (e *Engine) maybeDeliver() {
 		e.recordSelection(task.Result.Output)
 	}
 	turn := e.tracker.Begin("", false)
+	e.log.Info("tools: delivering a task's result", "tool", task.Tool.Name, "task", task.ID, "turn", turn.ID,
+		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver)
 	e.specTurn = nil
 	e.commitTurn(turn)
 	if task.Result.Err == nil && task.Tool.OpeningFor(task.Result.Output) != "" {
