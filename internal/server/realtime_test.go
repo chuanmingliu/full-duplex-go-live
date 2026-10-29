@@ -2,11 +2,14 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -207,7 +210,50 @@ func gatewayServer(t *testing.T, mutate func(*config.Config)) (*httptest.Server,
 	})
 	seen := &engineSpy{}
 	srv.Factory = seen.factory
+	// httptest.Close does not wait for hijacked WebSocket handlers. Drain
+	// after the clients close, before cleanup can remove their recordings.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Drain(ctx)
+		srv.mu.Lock()
+		remaining := len(srv.sessions)
+		srv.mu.Unlock()
+		if remaining != 0 {
+			t.Errorf("realtime fixture cleanup left %d session(s) running", remaining)
+		}
+	})
 	return ts, seen, cfg
+}
+
+func TestRealtimeGatewayCleanupFinalizesStoredCalls(t *testing.T) {
+	dir := t.TempDir()
+	t.Run("call", func(t *testing.T) {
+		ts, _, _ := gatewayServer(t, func(c *config.Config) {
+			c.StoreDir = dir
+			c.Realtime.StoreCalls = true
+		})
+		c := dialRealtime(t, ts, "/v1/realtime")
+		sendRaw(t, c.conn, activeCallSessionUpdate)
+		c.first("session.updated", 2*time.Second)
+	})
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("stored sessions after cleanup: %d, %v", len(entries), err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name(), "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta struct {
+		ClosedAt time.Time `json:"closed_at"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.ClosedAt.IsZero() {
+		t.Fatal("the realtime fixture returned before its recording was finalized")
+	}
 }
 
 // --- a call, as the gateway sees it ---
