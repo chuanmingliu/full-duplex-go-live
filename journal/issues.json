@@ -956,43 +956,56 @@
    "id": "ISS-061",
    "title": "A primary synthesizer blocked during startup delayed the fallback deadline",
    "area": "tts",
-   "status": "testing",
+   "status": "fixed",
    "found": "2026-10-29",
    "found_on": "code-path investigation and deterministic startup-stall regression",
    "found_call": "",
    "symptom": "The second vendor could not respond at its configured deadline while the primary Synthesize call waited for a busy connection or reconnect.",
    "cause": "The primary was started synchronously before the fallback timer existed.",
    "fix": "Start the primary asynchronously and start the deadline when synthesis is requested; cancel and drain late primary results, preserving the existing fallback delay and voices.",
-   "verified": "Regression fails on the previous implementation; provider tests and focused race tests pass. Live stall frequency and p95 effect remain unmeasured.",
-   "verified_call": ""
+   "verified": "Startup-stall regression fails before the fix and passes afterward; provider tests and the full normal/race CI suites pass on deployed runtime d784730. Same-scenario simulated PBX call archived and verified.",
+   "verified_call": "out-mvtlnvdn-8wp8",
+   "commits": [
+    "cbc7eb2"
+   ],
+   "effect": "Receiver first-audio p95 635 ms over 25 valid observations, versus baseline 640 ms. No deliberate live startup stall; no measured tail-latency improvement attributed to this fix."
   },
   {
    "id": "ISS-062",
    "title": "First-audio-only reports and ambiguous zero timestamps could mask slow or absent content",
    "area": "telemetry",
-   "status": "testing",
+   "status": "fixed",
    "found": "2026-10-29",
    "found_on": "latency report review against recorded calls and synthetic regression fixtures",
    "found_call": "",
    "symptom": "The reporting script omitted content latency and always returned success; absent timestamps could look like instant audio. Synthesized content queued behind an opener could count as delivered even when interrupted before output.",
    "cause": "No explicit output-presence flags or acceptance exit status; synthesis readiness was used as evidence of content output, and aggregation methods selected different turns.",
    "fix": "Stamp content when the player emits answer audio, retaining the separate synthesis-ready timestamp. Emit explicit speech-origin and audio/content presence flags; report first audio and content with the turn pause; add nearest-rank p95 gates that reject incomplete/ambiguous data.",
-   "verified": "16 CLI regression cases and five metrics-presence cases pass; historical logs remain estimates and cannot pass the strict gate.",
-   "verified_call": ""
+   "verified": "23 Python reporting cases, metrics-presence cases, and synthesized/cached interrupted-content regressions pass. Call out-mvtlnvdn-8wp8 has 26 verified answers, no incomplete records, and passes strict first-audio/content p95 <1200 ms.",
+   "verified_call": "out-mvtlnvdn-8wp8",
+   "commits": [
+    "cbc7eb2",
+    "d784730"
+   ],
+   "effect": "First-audio output p95 381 ms; actual content-output p95 1026 ms. Legacy readiness/opener-duration content estimates are not directly comparable; receiver first audio and handset latency remain separate."
   },
   {
    "id": "ISS-063",
    "title": "Application tool-call registration raced a reassigned backend slice",
    "area": "tools",
-   "status": "testing",
+   "status": "fixed",
    "found": "2026-10-29",
    "found_on": "GitHub Actions race run 40878080613 and a deterministic application-call regression",
    "found_call": "",
    "symptom": "The engine loop read the application-call batch concurrently with the backend reassigning the captured slice variable.",
    "cause": "A posted callback captured the mutable calls variable instead of the settled application-call batch.",
    "fix": "Capture theirs directly when registering application calls. Synchronize independent test log/scorer helpers and query hangup state on the engine loop so the race suite can validate runtime behavior.",
-   "verified": "New registration regression reproduced the race before the fix and passed ten race runs afterward; speculative and server wire tool-call tests pass under the race detector. Full CI and deployed validation pending.",
-   "verified_call": ""
+   "verified": "New registration regression reproduced the race before the fix and passed ten race runs afterward. Speculative/server wire cases and full normal/race CI run40883399469 pass; runtime d784730 deployed.",
+   "verified_call": "",
+   "commits": [
+    "2f5db50"
+   ],
+   "effect": "The callback no longer races reassignment of its application-call batch. Simulated PBX smoke call passed; this particular callback path is established by targeted tests, not claimed from the scenario."
   }
  ]
 }
