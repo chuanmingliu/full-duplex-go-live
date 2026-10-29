@@ -182,6 +182,15 @@
    "cost": "A shorter first clause (5–7 characters instead of ~10) before the synthesizer; a few more of the losing copies' tokens. Nothing in what is recognised or in the words said.",
    "guard": "An A/B in one daytime hour against a baseline call on 27946cc; revert if the content p95 does not move or the first clause sounds clipped.",
    "status": "on since 2026-10-28 08:55 (4131de7); A/B in the same hour: golive's share after the first token ~290 → ~220 ms at the median; the model's own spell moved the content p95 the other way (1039 → 1257 with first token p95 381 → 667). The owner keeps or reverts (the 27946cc tarball)."
+  },
+  {
+   "rank": 18,
+   "title": "Codex maintains the call, recording, diagnosis, GitHub and box deployment loop for go-gpt-live-1",
+   "gain": "Repeatable call evidence and deployment traceability toward the current p95 below 1200 ms target.",
+   "basis": "Owner instructions on 2026-10-29: go-gpt-live-1 is the emphasis; learn call placement, preserve chat/audio, maintain external systems, fix call issues, push GitHub and deploy automatically.",
+   "cost": "Real-provider test usage and a brief idle-service restart for validated releases.",
+   "guard": "Use the existing runner and prompt; distinguish real and simulated calls; preserve recordings privately; publish only technical findings. Report first audio and content separately and do not claim handset E2E from server or simulator timings. Keep the recognizer-owned turn-ending direction; no VAD-threshold tuning in this change.",
+   "status": "Active for this work. The current task target is p95 <1200 ms; older 1000 ms experiments remain historical evidence."
   }
  ]
 }

@@ -2179,8 +2179,11 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	// answer's own first word follows when it is ready, or when the opener
 	// ends, whichever is later.
 	contentMS := ev.FirstAudioOutMS
+	contentPresent := !tm.FirstAudioOut.IsZero()
 	if turn.Opened != "" {
 		contentMS = ms(tm.FirstContent)
+		// The opener's end is a timing floor, not evidence that content arrived.
+		contentPresent = !tm.FirstContent.IsZero()
 		if end := ev.FirstAudioOutMS + turn.OpenedMS; end > contentMS {
 			contentMS = end
 		}
@@ -2201,6 +2204,10 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	// default-level log.
 	e.log.Info("turn: response latency",
 		"turn", turn.ID,
+		"response_to_speech", !tm.SpeechEndAt.IsZero(),
+		"first_audio_present", !tm.FirstAudioOut.IsZero(),
+		"first_content_present", contentPresent,
+		"opened", turn.Opened != "",
 		"first_audio_out_ms", ev.FirstAudioOutMS,
 		"first_content_ms", contentMS,
 		"opener_ms", turn.OpenedMS,

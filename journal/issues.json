@@ -951,6 +951,34 @@
    "symptom": "Five of 21 answered turns had no opener and their first audio was 742–1131 ms from the last sound (p95 1063 over all turns). Each closed 170–200 ms after the previous opener became a backchannel; sayOpener returned before any of its logging.",
    "cause": "FinishOpenerAsBackchannel drops the turn's queue but keeps the turn active while the paced audio already in the air (up to playback_lead_ms, 300) drains; sayOpener refused on Player.Active().",
    "fix": "Player.FreeForOpener ignores a draining backchanneled turn; the skip logs 'speak: no opener; the floor is busy'. Verified on out-mvqsfqv2-ugvf (22:34, 27946cc): 20 of 21 turns opened at the pause, first audio p95 381; the one miss logged the busy floor (a different case, first token 565). Test TestTheFloorIsFreeForTheNextOpenerWhileABackchannelDrains."
+  },
+  {
+   "id": "ISS-061",
+   "title": "A primary synthesizer blocked during startup delayed the fallback deadline",
+   "area": "tts",
+   "status": "testing",
+   "found": "2026-10-29",
+   "found_on": "code-path investigation and deterministic startup-stall regression",
+   "found_call": "",
+   "symptom": "The second vendor could not respond at its configured deadline while the primary Synthesize call waited for a busy connection or reconnect.",
+   "cause": "The primary was started synchronously before the fallback timer existed.",
+   "fix": "Start the primary asynchronously and start the deadline when synthesis is requested; cancel and drain late primary results, preserving the existing fallback delay and voices.",
+   "verified": "Regression fails on the previous implementation; provider tests and focused race tests pass. Live stall frequency and p95 effect remain unmeasured.",
+   "verified_call": ""
+  },
+  {
+   "id": "ISS-062",
+   "title": "First-audio-only reports and ambiguous zero timestamps could mask slow or absent content",
+   "area": "telemetry",
+   "status": "testing",
+   "found": "2026-10-29",
+   "found_on": "latency report review against recorded calls and synthetic regression fixtures",
+   "found_call": "",
+   "symptom": "The reporting script omitted content latency and always returned success; absent timestamps could look like instant audio.",
+   "cause": "No explicit output-presence flags and no acceptance exit status; different aggregation methods selected different turns.",
+   "fix": "Emit explicit speech-origin and audio/content presence flags; report first audio and content with the turn pause; add nearest-rank p95 gates that reject incomplete/ambiguous data.",
+   "verified": "16 CLI regression cases and five metrics-presence cases pass; historical logs remain estimates and cannot pass the strict gate.",
+   "verified_call": ""
   }
  ]
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -514,6 +515,10 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 		return true
 	})
 	var stopNs, sentNs int64
+	clockSource := "wall"
+	if runtime.GOOS == "linux" {
+		clockSource = "monotonic"
+	}
 	for _, point := range chain {
 		ev, _ := sink.find("point", point)
 		if ev["schemaVersion"] != float64(1) || ev["callId"] != call || ev["backend"] != "local" || ev["chain"] != "turn" {
@@ -526,11 +531,24 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 			t.Errorf("%s has no eventId", point)
 		}
 		clock, _ := ev["clockId"].(string)
-		mono, _ := ev["monotonicNs"].(string)
-		if !strings.HasPrefix(clock, "boot:") || mono == "" {
-			t.Errorf("%s carries clockId=%q monotonicNs=%q; spans across processes need both", point, clock, mono)
+		var ns int64
+		if runtime.GOOS == "linux" {
+			mono, _ := ev["monotonicNs"].(string)
+			var err error
+			ns, err = strconv.ParseInt(mono, 10, 64)
+			if !strings.HasPrefix(clock, "boot:") || err != nil || ns <= 0 {
+				t.Errorf("%s carries clockId=%q monotonicNs=%q; spans across processes need both", point, clock, mono)
+			}
+		} else {
+			// Off Linux hostClock deliberately offers wall time only; these
+			// events must not pretend to share the gateway's monotonic clock.
+			mono, present := ev["monotonicNs"]
+			wallMS, ok := ev["wallTimeMs"].(float64)
+			if clock != "golive:local" || !present || mono != nil || !ok || wallMS <= 0 {
+				t.Errorf("%s has invalid wall-clock fallback: clockId=%q monotonicNs=%v wallTimeMs=%v", point, clock, mono, ev["wallTimeMs"])
+			}
+			ns = int64(wallMS) * int64(time.Millisecond)
 		}
-		ns, _ := strconv.ParseInt(mono, 10, 64)
 		switch point {
 		case "vad.speech_stopped":
 			stopNs = ns
@@ -556,7 +574,7 @@ func TestRealtimeTurnBoundariesReachTheLatencyConsole(t *testing.T) {
 	}
 	sink.mu.Unlock()
 	if e2e := (sentNs - stopNs) / 1e6; e2e < 0 || e2e > 3000 {
-		t.Errorf("speech stopped to audio sent comes to %d ms on the monotonic clock", e2e)
+		t.Errorf("speech stopped to audio sent comes to %d ms on the %s clock", e2e, clockSource)
 	}
 	// One per turn, not one per chunk.
 	if n := sink.count("point", "phone.audio_sent"); n != 1 {

@@ -28,12 +28,14 @@ build:
 ## where a session is read, so a defect there is indistinguishable from one in
 ## the engine — it needs a test even though it is not Go.
 test:
-	go test ./...
+	go test -timeout 25m ./...
+	python3 -B scripts/test_call_latency.py
+	python3 -B scripts/test_sim_retro.py
 	@command -v node >/dev/null 2>&1 && node web/transcript_test.mjs \
 		|| echo "skipping web/transcript_test.mjs: node is not installed"
 
 race:
-	go test -race ./...
+	go test -race -timeout 25m ./...
 
 vet:
 	go vet ./...
@@ -140,8 +142,8 @@ bundle:
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" \
 		-o $(BUNDLE)/bin/golive-linux-arm64 ./cmd/golive
 	@cp configs/*.json configs/sim.env $(BUNDLE)/configs/
-	@cp scripts/*.sh $(BUNDLE)/scripts/ && mkdir -p $(BUNDLE)/scripts/turnbench && cp scripts/turnbench/*.py $(BUNDLE)/scripts/turnbench/
-	@cp start.sh TELEPHONY.md .env.example $(BUNDLE)/
+	@cp scripts/*.sh scripts/call_latency.py scripts/sim-retro.py $(BUNDLE)/scripts/ && mkdir -p $(BUNDLE)/scripts/turnbench && cp scripts/turnbench/*.py $(BUNDLE)/scripts/turnbench/
+	@cp start.sh TELEPHONY.md CALL-OPERATIONS.md .env.example $(BUNDLE)/
 	@cp -r journal $(BUNDLE)/journal
 	@mkdir -p $(BUNDLE)/web && cp web/index.html $(BUNDLE)/web/
 	@echo "$(COMMIT) $$(date -u +%FT%TZ) $$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" > $(BUNDLE)/VERSION

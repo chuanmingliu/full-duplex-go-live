@@ -1076,11 +1076,15 @@ func TestTheModelsWordsInTheCallingTurnEndAtTheClauseInFlight(t *testing.T) {
 		pause(e, rate, 100)
 	}
 	said := c.saidAll()
-	if !strings.Contains(said, "请您稍等") || !strings.Contains(said, "保费给您计算好了") {
-		t.Fatalf("the script was not said: %q", said)
+	// If the result is ready by the time the clause releases the floor, its
+	// opening replaces the now-obsolete ack. Either path must deliver the
+	// result, without letting the model's remaining clauses delay it.
+	opening, result := strings.Index(said, "保费给您计算好了"), strings.Index(said, "三千二百")
+	if opening < 0 || result < opening {
+		t.Fatalf("the result opening and result were not said in order: %q", said)
 	}
-	if strings.Contains(said, "您稍微等一下就好") {
-		t.Fatalf("the model's sentence was said to its end before the script: %q", said)
+	if strings.Contains(said, "这个方案是按您的车辆信息来算的") || strings.Contains(said, "您稍微等一下就好") {
+		t.Fatalf("the model's later clauses were said before the script: %q", said)
 	}
 }
 

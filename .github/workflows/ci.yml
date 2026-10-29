@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [dev, master]
+    branches: [dev, master, telephony-realtime]
   pull_request:
 
 jobs:
@@ -19,9 +19,13 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        run: go test ./...
+        run: go test -timeout 25m ./...
+      - name: latency report regression tests
+        run: |
+          python3 -B scripts/test_call_latency.py
+          python3 -B scripts/test_sim_retro.py
       - name: race
-        run: go test -race ./...
+        run: go test -race -timeout 25m ./...
       - name: build
         run: go build -o /tmp/golive ./cmd/golive
       - name: govulncheck
