@@ -39,16 +39,32 @@ func TestTurnMetricsLogPresence(t *testing.T) {
 				Opened: "acknowledgement", OpenedMS: 420,
 			},
 			responseToSpeech: true, audioPresent: true, opened: true,
-			contentMS: 420,
 		},
 		{
-			name: "content ready during opener is present even at zero milliseconds",
+			name: "content ready during opener has not necessarily been emitted",
 			turn: &Turn{
 				speechEndAt: origin, firstAudioOut: origin, firstContent: origin,
 				endSilenceMS: 380, Opened: "acknowledgement", OpenedMS: 420,
 			},
+			responseToSpeech: true, audioPresent: true, opened: true,
+		},
+		{
+			name: "content emitted at speech close is present even at zero milliseconds",
+			turn: &Turn{
+				speechEndAt: origin, firstAudioOut: origin, firstContent: origin, firstContentOut: origin,
+				endSilenceMS: 380, Opened: "acknowledgement", OpenedMS: 420,
+			},
 			responseToSpeech: true, audioPresent: true, contentPresent: true, opened: true,
-			contentMS: 420,
+		},
+		{
+			name: "content timestamp includes time held by the player",
+			turn: &Turn{
+				speechEndAt: origin, firstAudioOut: origin, firstContent: origin,
+				firstContentOut: origin.Add(600 * time.Millisecond),
+				endSilenceMS:    380, Opened: "acknowledgement", OpenedMS: 420,
+			},
+			responseToSpeech: true, audioPresent: true, contentPresent: true, opened: true,
+			contentMS: 600,
 		},
 		{
 			name:         "greeting or unsolicited result has audio but no speech origin",
@@ -83,7 +99,7 @@ func TestTurnMetricsLogPresence(t *testing.T) {
 				"first_content_ms":   tc.contentMS,
 			} {
 				if got, ok := fields[key].(float64); !ok || got != want {
-					t.Errorf("%s = %v, want unchanged timing %v", key, fields[key], want)
+					t.Errorf("%s = %v, want output timing %v", key, fields[key], want)
 				}
 			}
 		})

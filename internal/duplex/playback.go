@@ -41,6 +41,9 @@ type Segment struct {
 	Revision int
 	Text     string
 	PCM      []byte
+	// onFirstAudio observes output, after pacing and cancellation checks.
+	// A queued segment that is discarded never invokes it.
+	onFirstAudio func()
 }
 
 // TruncationReport describes how a turn was cut short.
@@ -627,6 +630,9 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 		}
 		p.mu.Unlock()
 
+		if off == 0 && seg.onFirstAudio != nil {
+			seg.onFirstAudio()
+		}
 		p.emit(seg.TurnID, chunk, playAt)
 
 		p.mu.Lock()

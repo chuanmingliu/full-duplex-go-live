@@ -1381,11 +1381,12 @@ func (p *speechPipe) speak(text string) bool {
 		p.turn.MarkFirstContent()
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
-			Kind:     SegAudio,
-			Gen:      p.turn.Generation,
-			TurnID:   p.turn.ID,
-			Revision: p.turn.Revision,
-			PCM:      pcm,
+			Kind:         SegAudio,
+			Gen:          p.turn.Generation,
+			TurnID:       p.turn.ID,
+			Revision:     p.turn.Revision,
+			PCM:          pcm,
+			onFirstAudio: p.turn.MarkFirstContentOut,
 		})
 	}
 
@@ -1404,11 +1405,12 @@ func (p *speechPipe) speak(text string) bool {
 		p.turn.MarkFirstContent()
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
-			Kind:     SegAudio,
-			Gen:      p.turn.Generation,
-			TurnID:   p.turn.ID,
-			Revision: p.turn.Revision,
-			PCM:      held,
+			Kind:         SegAudio,
+			Gen:          p.turn.Generation,
+			TurnID:       p.turn.ID,
+			Revision:     p.turn.Revision,
+			PCM:          held,
+			onFirstAudio: p.turn.MarkFirstContentOut,
 		})
 		held = nil
 	}
@@ -1514,6 +1516,7 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, text
 	body.Kind, body.PCM = SegAudio, pcm
+	body.onFirstAudio = p.turn.MarkFirstContentOut
 	mark.Kind, mark.Text = SegMark, text
 	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(begin)
@@ -2175,18 +2178,15 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	}
 	e.deps.Emit(ev)
 
-	// With an opener said at the pause, the first audio is the opener; the
-	// answer's own first word follows when it is ready, or when the opener
-	// ends, whichever is later.
+	// With an opener said at the pause, answer audio has its own output
+	// stamp. Ready audio can still be discarded from the player's queue, and
+	// pacing can delay it. Both figures here stop at the output boundary;
+	// the client's buffered playback is outside this measurement.
 	contentMS := ev.FirstAudioOutMS
 	contentPresent := !tm.FirstAudioOut.IsZero()
 	if turn.Opened != "" {
-		contentMS = ms(tm.FirstContent)
-		// The opener's end is a timing floor, not evidence that content arrived.
-		contentPresent = !tm.FirstContent.IsZero()
-		if end := ev.FirstAudioOutMS + turn.OpenedMS; end > contentMS {
-			contentMS = end
-		}
+		contentMS = ms(tm.FirstContentOut)
+		contentPresent = !tm.FirstContentOut.IsZero()
 	}
 	if !tm.SpeechEndAt.IsZero() {
 		metrics.Default().ObserveTurn(ev.FirstAudioOutMS)
@@ -2196,7 +2196,7 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 	// figures describe nothing anyone experienced as waiting.
 	if !truncated && !tm.FirstAudioOut.IsZero() && !tm.SpeechEndAt.IsZero() {
 		e.latencies = append(e.latencies, ev.FirstAudioOutMS)
-		if turn.Opened != "" {
+		if turn.Opened != "" && contentPresent {
 			e.contentLatencies = append(e.contentLatencies, contentMS)
 		}
 	}

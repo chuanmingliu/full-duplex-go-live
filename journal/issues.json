@@ -974,9 +974,9 @@
    "found": "2026-10-29",
    "found_on": "latency report review against recorded calls and synthetic regression fixtures",
    "found_call": "",
-   "symptom": "The reporting script omitted content latency and always returned success; absent timestamps could look like instant audio.",
-   "cause": "No explicit output-presence flags and no acceptance exit status; different aggregation methods selected different turns.",
-   "fix": "Emit explicit speech-origin and audio/content presence flags; report first audio and content with the turn pause; add nearest-rank p95 gates that reject incomplete/ambiguous data.",
+   "symptom": "The reporting script omitted content latency and always returned success; absent timestamps could look like instant audio. Synthesized content queued behind an opener could count as delivered even when interrupted before output.",
+   "cause": "No explicit output-presence flags or acceptance exit status; synthesis readiness was used as evidence of content output, and aggregation methods selected different turns.",
+   "fix": "Stamp content when the player emits answer audio, retaining the separate synthesis-ready timestamp. Emit explicit speech-origin and audio/content presence flags; report first audio and content with the turn pause; add nearest-rank p95 gates that reject incomplete/ambiguous data.",
    "verified": "16 CLI regression cases and five metrics-presence cases pass; historical logs remain estimates and cannot pass the strict gate.",
    "verified_call": ""
   },

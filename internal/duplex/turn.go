@@ -124,6 +124,7 @@ type Turn struct {
 	firstAudio      time.Time
 	firstAudioOut   time.Time
 	firstContent    time.Time
+	firstContentOut time.Time
 	completedAt     time.Time
 }
 
@@ -141,7 +142,10 @@ type Timings struct {
 	// FirstContent is when the first segment of the answer itself — not the
 	// opener said at the pause — was ready to play.
 	FirstContent time.Time
-	CompletedAt  time.Time
+	// FirstContentOut is when answer audio first left the player. Being
+	// ready in its queue does not establish that the answer was emitted.
+	FirstContentOut time.Time
+	CompletedAt     time.Time
 }
 
 // Timings returns the turn's milestones.
@@ -159,6 +163,7 @@ func (t *Turn) Timings() Timings {
 		FirstAudio:      t.firstAudio,
 		FirstAudioOut:   t.firstAudioOut,
 		FirstContent:    t.firstContent,
+		FirstContentOut: t.firstContentOut,
 		CompletedAt:     t.completedAt,
 	}
 }
@@ -295,6 +300,9 @@ func (t *Turn) MarkFirstAudio() { t.stampOnce(&t.firstAudio) }
 // MarkFirstContent records when the answer's own first segment (after any
 // opener) was ready.
 func (t *Turn) MarkFirstContent() { t.stampOnce(&t.firstContent) }
+
+// MarkFirstContentOut records the answer's first audio at the output boundary.
+func (t *Turn) MarkFirstContentOut() { t.stampOnce(&t.firstContentOut) }
 
 // MarkCompleted records when the turn finished, and reports whether this call
 // was the one that finished it. A turn can be handed to both completion paths —
