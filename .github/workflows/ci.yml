@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,15 +18,31 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: vet
         run: go vet ./...
-      - name: test
-        run: go test -timeout 25m ./...
       - name: latency report regression tests
         run: |
           python3 -B scripts/test_call_latency.py
           python3 -B scripts/test_sim_retro.py
-      - name: race
-        run: go test -race -timeout 25m ./...
       - name: build
         run: go build -o /tmp/golive ./cmd/golive
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  test:
+    name: Go tests (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: normal
+            flags: ''
+          - mode: race
+            flags: '-race'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: test
+        run: go test -timeout 25m ${{ matrix.flags }} ./...

@@ -528,7 +528,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				// when all are in.
 				e.post(func() { e.onServerCallsAmong(job, mine, theirs) })
 			} else {
-				e.post(func() { e.onToolCalls(job, calls) })
+				// Capture the settled application batch; calls is reassigned
+				// below while this callback may already be running.
+				e.post(func() { e.onToolCalls(job, theirs) })
 			}
 			calls = theirs
 			for i, call := range calls {

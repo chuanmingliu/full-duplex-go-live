@@ -57,9 +57,10 @@ func (f *fakeScorer) Push(pcm []byte, atMS int64) error {
 	fr := focus.Frame{StartMS: atMS, EndMS: atMS + dur, P: p}
 	deliver := func() {
 		f.mu.Lock()
-		closed := f.closed
-		f.mu.Unlock()
-		if closed {
+		defer f.mu.Unlock()
+		// Close uses the same lock: it must not close frames between this
+		// check and the nonblocking send, including delayed deliveries.
+		if f.closed {
 			return
 		}
 		select {

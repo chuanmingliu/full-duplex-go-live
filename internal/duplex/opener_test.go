@@ -21,6 +21,24 @@ import (
 	"github.com/chuanmingliu/golive/internal/tools"
 )
 
+// openerLogBuffer lets tests inspect logs while engine goroutines are writing.
+type openerLogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *openerLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *openerLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // The opener: when the caller's turn is judged over and the model's first
 // clause is not in yet, the engine says a warmed opener from the phrase cache
 // at the pause; the model's own opening, if it is the same words, is said
@@ -43,7 +61,7 @@ func TestTheAnswerOpensFromTheCacheAtThePause(t *testing.T) {
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 700 * time.Millisecond // a slow turn: the model's clause is well after the pause
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -139,7 +157,7 @@ func TestAnOpenerBecomesABackchannelWhenTheCallerGoesOn(t *testing.T) {
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 600 * time.Millisecond
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -288,7 +306,7 @@ func TestTheOpenerFitsTheCallersWordsFromTheLeadServicesScenarios(t *testing.T) 
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 700 * time.Millisecond
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -343,7 +361,7 @@ func TestTheContentFigureIsTheAnswersFirstAudioNotItsRequest(t *testing.T) {
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 700 * time.Millisecond // the clause, not the opener, binds
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -386,7 +404,7 @@ func TestTheQuietHeadOfTheOpenerAndTheFirstSegmentIsCut(t *testing.T) {
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 300 * time.Millisecond
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -445,7 +463,7 @@ func TestTheFirstWordAfterAStrippedOpenerIsStillAFirstSegment(t *testing.T) {
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 300 * time.Millisecond
 	llm.DelayPerRune = 20 * time.Millisecond
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -499,7 +517,7 @@ func TestAFragmentAfterABackchannelOpensWithAPhraseOfAnotherKind(t *testing.T) {
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 900 * time.Millisecond // the answer itself is late; the opener must not wait for it
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -588,7 +606,7 @@ func TestSegmentsStayInOrderWhenOneDeltaCarriesSeveralAndTheFirstIsStripped(t *t
 	asr := newTrailingASR("今天天气怎么样")
 	asr.msPerRune = 150
 	llm := &oneDeltaLLM{text: "好的，我听到你说今天天气怎么样。让我确认一下细节，然后给你一个完整的答复。好的，再见。", delay: 300 * time.Millisecond}
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
@@ -674,7 +692,7 @@ func TestAnAllQuietFirstSegmentStillCounts(t *testing.T) {
 	asr.msPerRune = 150
 	llm := mock.NewLLM()
 	llm.FirstTokenDelay = 300 * time.Millisecond
-	var logs bytes.Buffer
+	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
 		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})

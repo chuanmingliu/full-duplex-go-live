@@ -979,6 +979,20 @@
    "fix": "Emit explicit speech-origin and audio/content presence flags; report first audio and content with the turn pause; add nearest-rank p95 gates that reject incomplete/ambiguous data.",
    "verified": "16 CLI regression cases and five metrics-presence cases pass; historical logs remain estimates and cannot pass the strict gate.",
    "verified_call": ""
+  },
+  {
+   "id": "ISS-063",
+   "title": "Application tool-call registration raced a reassigned backend slice",
+   "area": "tools",
+   "status": "testing",
+   "found": "2026-10-29",
+   "found_on": "GitHub Actions race run 40878080613 and a deterministic application-call regression",
+   "found_call": "",
+   "symptom": "The engine loop read the application-call batch concurrently with the backend reassigning the captured slice variable.",
+   "cause": "A posted callback captured the mutable calls variable instead of the settled application-call batch.",
+   "fix": "Capture theirs directly when registering application calls. Synchronize independent test log/scorer helpers and query hangup state on the engine loop so the race suite can validate runtime behavior.",
+   "verified": "New registration regression reproduced the race before the fix and passed ten race runs afterward; speculative and server wire tool-call tests pass under the race detector. Full CI and deployed validation pending.",
+   "verified_call": ""
   }
  ]
 }
