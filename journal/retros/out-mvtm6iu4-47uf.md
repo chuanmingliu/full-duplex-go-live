@@ -88,10 +88,40 @@ measurement, not phone audio latency or evidence that Talker ran in the
 call. Per-call filler evidence and this distinction belong in the call
 journal.
 
-## Next verification
+## Deployment and next verification
 
-Deploy the tested engine, CRM and journal changes after CI. Confirm their
-running executables and recording/retention settings. Repeat the real
-call with the same stored prompt and wait for **done** before its deep
-review. Measure content and first audio separately; physical handset
-latency remains unverified until the phone leg is observed.
+Runtime `1869e549150c503bcb6ab685b50875a8bcbc453f` passed quality checks
+and the full normal/race suites in GitHub Actions run `40894903434`.
+The first CI attempt found a scheduling-dependent MiniMax test fixture:
+its fake could finish synthesis before the test cancelled it. The test
+now holds the first response until cancellation and checks connection
+reuse; 100 focused race repetitions and the MiniMax race package passed
+before the successful full rerun. Production code is unchanged from
+`6307ad6` by that test-only correction.
+
+The box successfully deployed the engine, CRM, journal and launcher at
+23:08:36 Asia/Shanghai. All three running executable hashes were verified,
+along with their arguments/environment, recording, 720-hour retention,
+journal archive configuration and completed phrase/scenario warming.
+The desk and simulator processes were preserved. Rollback executables and
+the deployment manifest are retained in
+`~/golive-releases/codex-1869e54-20261029-230704`.
+
+The first deployment attempt rolled back after a listener lacked a visible
+process owner during CRM startup. The old services were independently
+verified healthy, with their original executable hashes and warmed audio
+caches. The retry waits up to three seconds for ownership to become
+visible, still rejects unresolved ownership, and records failure phases.
+Recovery does not depend on successful diagnostic writes. This changes
+deployment checks only; it does not relax idle or process-identity guards.
+
+Live journal verification found 21 cached fillers, two converted to
+backchannels and eight matched continuations. Recording seek/play/pause
+worked; the Talker status probe succeeded; all five required archive files
+still matched their manifests. These checks establish deployment and
+recording integrity, not a latency improvement on a new call.
+
+Repeat the real call with the same stored prompt and wait for **done**
+before its deep review. Measure content and first audio separately;
+physical handset latency remains unverified until the phone leg is
+observed. The reported measurements above still describe runtime d784730.
