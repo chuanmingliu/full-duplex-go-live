@@ -94,6 +94,13 @@ The channel check proves non-silent signal, not intelligibility or acoustic end-
 
 New calls log a versioned private assistant transcript at the Player first-output boundary. The journal uses this stream for ordinary speech, prepared quotations, openers and fillers, with sequence deduplication and the existing truncation records. Queued speech that never starts output is excluded. This boundary does not prove handset audibility. Older calls use the legacy reconstruction; the c582781 quotation replay lacks its prepared prefixes in those old logs (ISS-082), so installing the new parser cannot reconstruct them.
 
+When a result turn queues an authoritative quotation before model output,
+the model may still repeat it despite the instruction in its context. An
+exact, sentence-terminated copy at the beginning of that model stream is
+suppressed once. Changed amounts or wording, partial matches and subsequent
+text are retained. This guard does not validate a paraphrased quotation or
+enforce a total-only answer; those still need semantic review of each call.
+
 `archive verify` verifies every **listed** file against the manifest; by itself it can pass an archive containing only text. The explicit five-file/audio/transcript checks above establish selected-call completeness. `archive status` is only an aggregate inventory. `archive mirror DEST` copies to an already established backup destination without deletion; do not invent a destination. Audio, session record and raw log are written once; parsed text is refreshed when the journal's reading changes. All are on one local disk unless mirrored.
 
 Useful read-only endpoints, consumed through a filter rather than dumped:

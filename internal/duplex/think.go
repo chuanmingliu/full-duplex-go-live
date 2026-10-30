@@ -446,6 +446,22 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		full.WriteString(turn.Readout)
 		turn.AppendResponse(turn.Readout)
 	}
+	// Fixed prefixes are already in Turn.Response; append only the model's
+	// continuation when this backend completes.
+	fixedBytes := full.Len()
+	repeatedReadout := newReadoutRepeatFilter(turn.Readout)
+	pushText := func(text string) {
+		if text == "" {
+			return
+		}
+		full.WriteString(text)
+		report(map[string]any{
+			"type":        "response.output_text.delta",
+			"response_id": job.responseID,
+			"delta":       text,
+		})
+		pipe.Push(text)
+	}
 	var calls []provider.ToolCall
 	var usage provider.TokenUsage
 	started := time.Now()
@@ -485,13 +501,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				"model", req.Model,
 				"ms", time.Since(started).Milliseconds())
 		}
-		full.WriteString(d.Text)
-		report(map[string]any{
-			"type":        "response.output_text.delta",
-			"response_id": job.responseID,
-			"delta":       d.Text,
-		})
-		pipe.Push(d.Text)
+		pushText(repeatedReadout.Push(d.Text))
 	}
 
 	// A stream that ended because it was cancelled did not complete, and what
@@ -501,8 +511,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		return
 	}
 
+	pushText(repeatedReadout.Flush())
 	text := full.String()
-	turn.AppendResponse(text)
+	turn.AppendResponse(text[fixedBytes:])
 	e.log.Debug("think: backend complete",
 		"turn", turn.ID,
 		"chars", len([]rune(text)),

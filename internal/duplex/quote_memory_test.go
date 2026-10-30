@@ -103,8 +103,8 @@ func TestExtraQuoteMemoryHasAnExplicitSizeBound(t *testing.T) {
 }
 
 // This checks the actual request context after history trimming, not a model's
-// compliance. Total-only answers must remain scoped without losing the facts
-// needed when a caller explicitly asks for line items or a comparison.
+// compliance. Whole and split follow-ups must carry the total-only instruction
+// without losing facts needed for requested coverage details or comparisons.
 func TestQuoteFollowupRequestCarriesScopeAndPrices(t *testing.T) {
 	qs, err := tools.ParseQuoteSpeech([]byte(`{"posthook_status":"quote","template":"CUSTOM total {{ total }}","compare_template":"CUSTOM comparison"}`))
 	if err != nil {
@@ -117,25 +117,33 @@ func TestQuoteFollowupRequestCarriesScopeAndPrices(t *testing.T) {
 		cut  bool
 	}{{"completed", false}, {"interrupted", true}} {
 		for _, question := range []struct {
-			name string
-			text string
+			name  string
+			parts []string
 		}{
-			{"repeat_total", "这个方案合计多少，再说一下。"},
-			{"line_item", "请告诉我 liability 这一项的保费。"},
-			{"comparison", "请比较两个方案的合计和每项明细。"},
+			{"repeat_total", []string{"这个方案合计多少，再说一下。"}},
+			{"split_repeat_total", []string{"这个方案合计多少。", "再说一下就好。"}},
+			{"line_item", []string{"请告诉我 liability 这一项的保费。"}},
+			{"coverage_limit", []string{"这个方案合计多少，liability 的保障额度是多少？"}},
+			{"split_configuration", []string{"这个方案合计多少。", "也确认一下包含哪些保障。"}},
+			{"comparison", []string{"请比较两个方案的合计和每项明细。"}},
 		} {
 			t.Run(state.name+"/"+question.name, func(t *testing.T) {
 				const ownerPrompt = "SAVED BUSINESS INSTRUCTIONS"
-				e := &Engine{instr: ownerPrompt, tools: &toolState{lastResult: task, lastResultCut: state.cut, lastResultHeard: "CUSTOM"}}
-				turn := &Turn{ID: "followup", Transcript: question.text}
+				e := &Engine{instr: ownerPrompt, tools: &toolState{lastResult: task, lastResultCut: state.cut, lastResultHeard: "CUSTOM"}, recordedUser: map[string]bool{}}
+				if len(question.parts) > 1 {
+					// A prior fragment with no audible answer stays in history.
+					e.ensureUserRecorded(&Turn{ID: "prior-fragment", Transcript: question.parts[0]})
+				}
+				turn := &Turn{ID: "followup", Transcript: question.parts[len(question.parts)-1]}
 				req := e.backendRequest(e.snapshotMessages(turn, false), false)
-				if len(req.Messages) != 2 || req.Messages[0].Role != provider.RoleSystem || req.Messages[1].Role != provider.RoleUser || req.Messages[1].Content != question.text {
+				if len(req.Messages) != 2 || req.Messages[0].Role != provider.RoleSystem || req.Messages[1].Role != provider.RoleUser || req.Messages[1].Content != strings.Join(question.parts, "\n") {
 					t.Fatalf("follow-up question missing from trimmed request: %+v", req.Messages)
 				}
 				context := req.Messages[0].Content
 				for _, guidance := range []string{
 					"仅问总价或合计（包括要求重复）时，只答所问方案的合计及必要的未报价说明，不逐项重报险种",
-					"同时要求明细、单项价格或方案比较时，按其要求补充对应内容",
+					"只问合计时，保障额度、保额及“包含某项保障”的配置确认也属于不应附带补充的明细",
+					"同时要求明细、单项价格、保障额度、配置确认或方案比较时，按其要求补充对应内容",
 					"金额只用工具明细",
 					"未返回的明细须查询",
 				} {
@@ -155,6 +163,20 @@ func TestQuoteFollowupRequestCarriesScopeAndPrices(t *testing.T) {
 					t.Fatalf("follow-up policy changed initial custom readout: %q", got)
 				}
 			})
+		}
+	}
+}
+
+// A partial quotation must still identify its missing items in the request;
+// suppressing extra coverage detail must not turn a partial total into a full one.
+func TestTotalOnlyGuidanceKeepsPartialQuoteWarning(t *testing.T) {
+	raw := []byte(`{"status":"quote","total":50,"lines":[{"coverage":"known","premium":50}],"skipped":["not-priced"]}`)
+	e := &Engine{tools: &toolState{lastResult: &tools.Task{Result: tools.Result{Output: raw}}}}
+	req := e.backendRequest(e.snapshotMessages(&Turn{ID: "total", Transcript: "只说这个方案的合计。"}, false), false)
+	context := req.Messages[0].Content
+	for _, want := range []string{"合计及必要的未报价说明", "已报价部分合计=50", "未报价=not-priced", "known=50"} {
+		if !strings.Contains(context, want) {
+			t.Errorf("total-only context lost partial-quote warning or source fact %q", want)
 		}
 	}
 }
