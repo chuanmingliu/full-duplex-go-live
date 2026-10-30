@@ -1157,7 +1157,7 @@
         box.appendChild(gap);
         rows.push({ el: gap, answered: true, gap: true });
       }
-      var note = l.kind === 'greeting' ? 'opening line' : (caller && !answered ? 'not answered' : (!caller && l.interrupted ? 'cut short by the caller' : ''));
+      var note = l.kind === 'greeting' ? 'opening line' : (caller && !answered ? 'reply timing unavailable' : (!caller && l.interrupted ? 'cut short by the caller' : ''));
       if (caller && l.focus === 'vetoed') note = 'another voice; the answer was dropped unheard';
       else if (caller && l.focus === 'late') note = 'another voice; judged after the answer began';
       else if (caller && l.focus === 'other') note = 'another voice (observing only)';
@@ -1199,7 +1199,7 @@
     function applyFilter() { rows.forEach(function (r) { r.el.hidden = !shown(r); }); count.textContent = countText(); }
     function countText() {
       var said = rows.filter(function (r) { return !r.gap && shown(r); }).length;
-      return plural(said, 'line') + (answeredOnly ? ' in ' : ', ') + plural(Object.keys(byTurn).length, 'answered turn');
+      return plural(said, 'line') + (answeredOnly ? ' in ' : ', ') + plural(Object.keys(byTurn).length, 'linked turn');
     }
     function plain() {
       return rows.filter(function (r) { return !r.gap && shown(r); }).map(function (r) {
@@ -1214,7 +1214,7 @@
 
     // controls
     var filter = h('span', { class: 'seg', role: 'group', 'aria-label': 'What to show' });
-    [['Everything said', false], ['Answered turns only', true]].forEach(function (o) {
+    [['Everything said', false], ['Replies with timing', true]].forEach(function (o) {
       var b = h('button', { type: 'button', 'aria-pressed': String(o[1] === answeredOnly) }, o[0]);
       b.addEventListener('click', function () {
         answeredOnly = o[1];
@@ -1720,7 +1720,7 @@
     state.conv = conversation(call, target, state.player, state);
     add('sec-conversation', section('Conversation', 'What was said, in order. Between a caller’s line and its answer is the wait: last sound → first audio.', state.conv.el));
     add('sec-fillers', section('Talker / fillers', 'The filler evidence recorded for this call. Click a time to hear it.', window.JournalFillers(call, { h: h, pos: pos, player: state.player, api: api })));
-    add('sec-turns', section('Turn by turn', plural((call.turns || []).length, 'answered turn') + ', from the caller’s last sound. A row opens what was said.', waterfall(call, target, state.player, state)));
+    add('sec-turns', section('Turn by turn', plural((call.turns || []).length, 'response with first audio', 'responses with first audio') + ', from the caller’s last sound. A row opens what was said.', waterfall(call, target, state.player, state)));
     add('sec-stages', section('Where the time goes', 'This call’s median turn, stage by stage.', stageMedians(call)));
     add('sec-events', section('What else happened', 'Counted from the log, besides the answered turns.', eventsBlock(call)));
     if (call.quotation && call.quotation.length) add('sec-quote', section('Quotation', 'Every step of the quotation, in order: what the assistant recorded (which fields, never the values), each ask, what the lead service answered, and when the model was told. Click a time to hear it.', quotationBlock(call, state)));
