@@ -37,6 +37,12 @@ test:
 race:
 	go test -race -timeout 25m ./...
 
+.PHONY: handset-test
+handset-test:
+	python3 -B scripts/test_handset_latency.py
+	python3 -B scripts/test_handset_capture_server.py
+	node --test web/handset-capture/*.test.mjs
+
 vet:
 	go vet ./...
 

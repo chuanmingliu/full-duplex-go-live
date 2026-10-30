@@ -22,6 +22,8 @@ jobs:
         run: |
           python3 -B scripts/test_call_latency.py
           python3 -B scripts/test_sim_retro.py
+      - name: handset evidence regression tests
+        run: make handset-test
       - name: build
         run: go build -o /tmp/golive ./cmd/golive
       - name: govulncheck
