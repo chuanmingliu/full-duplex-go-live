@@ -4,27 +4,29 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 )
 
 // LatencyEvidence separates heard fillers from answer content. These are
 // server-output measurements; neither distribution includes handset playout.
 type LatencyEvidence struct {
-	Version      int                   `json:"version"`
-	Recomputed   bool                  `json:"recomputed,omitempty"`
-	FirstAudio   LatencyDistribution   `json:"first_audio"`
-	FirstContent LatencyDistribution   `json:"first_content"`
-	ToolResult   LatencyDistribution   `json:"tool_result"`
-	ResultRows   []ToolResultLatency   `json:"tool_result_rows"`
-	QuoteReadout LatencyDistribution   `json:"quote_readout"`
-	QuoteRows    []QuoteReadoutLatency `json:"quote_readout_rows"`
-	QuoteMissing int                   `json:"quote_readouts_missing"`
-	QuoteUnknown int                   `json:"quote_readouts_unverified"`
-	Missing      int                   `json:"missing"`
-	Unverified   int                   `json:"unverified"`
-	Duplicates   int                   `json:"duplicates"`
-	Cancelled    int                   `json:"cancelled"`
-	Joined       int                   `json:"tool_results_joined"`
-	InvalidLinks int                   `json:"invalid_tool_links"`
+	Version              int                   `json:"version"`
+	Recomputed           bool                  `json:"recomputed,omitempty"`
+	FirstAudio           LatencyDistribution   `json:"first_audio"`
+	FirstContent         LatencyDistribution   `json:"first_content"`
+	ToolResult           LatencyDistribution   `json:"tool_result"`
+	ResultRows           []ToolResultLatency   `json:"tool_result_rows"`
+	QuoteReadout         LatencyDistribution   `json:"quote_readout"`
+	QuoteRows            []QuoteReadoutLatency `json:"quote_readout_rows"`
+	QuoteMissing         int                   `json:"quote_readouts_missing"`
+	QuoteUnknown         int                   `json:"quote_readouts_unverified"`
+	Missing              int                   `json:"missing"`
+	Unverified           int                   `json:"unverified"`
+	Duplicates           int                   `json:"duplicates"`
+	Cancelled            int                   `json:"cancelled"`
+	Joined               int                   `json:"tool_results_joined"`
+	InvalidLinks         int                   `json:"invalid_tool_links"`
+	MissingOutputRecords int                   `json:"missing_output_records,omitempty"`
 }
 
 // ToolResultLatency measures a linked result turn's first content. That can
@@ -183,6 +185,32 @@ func (cb *callBuild) latencyEvidence() LatencyEvidence {
 	return e
 }
 
+// A canonical output record proves that audio started, not its latency from
+// the caller. Only an explicit greeting/backchannel classification explains
+// a missing metric; generic speculation cancellation does not erase output.
+func (cb *callBuild) missingOutputLatencyRecords() int {
+	n := 0
+	for id, t := range cb.turns {
+		if len(t.outputText) > 0 && t.latency == nil && !t.outputNonanswer && !strings.HasPrefix(id, "bc_") {
+			n++
+		}
+	}
+	return n
+}
+
+func withOutputLatencyEvidence(c *Call) *Call {
+	if !c.outputLatencyChecked || c.Latency == nil || c.Latency.Version >= 4 {
+		return c
+	}
+	copy := *c
+	evidence := *c.Latency
+	evidence.Version = 4
+	evidence.MissingOutputRecords = c.missingOutputRecords
+	evidence.Unverified += c.missingOutputRecords
+	copy.Latency = &evidence
+	return &copy
+}
+
 // joinedContent requires the explicit monotonic relationship. Log wall times,
 // adjacency and a result's zero-ms cached audio cannot supply a caller origin.
 func (cb *callBuild) joinedContent(e *LatencyEvidence) map[string]int {
@@ -246,7 +274,10 @@ func (cb *callBuild) joinedContent(e *LatencyEvidence) map[string]int {
 // Enrich an older saved call from its immutable archive. Re-indexing is
 // limited to this session and never replaces the archive's source files.
 func (s *Server) withLatencyEvidence(c *Call) *Call {
-	if (c.Latency != nil && c.Latency.Version >= 3) || s.archive == nil || c.Session == "" {
+	if c.outputLatencyChecked {
+		return withOutputLatencyEvidence(c)
+	}
+	if (c.Latency != nil && c.Latency.Version >= 4) || s.archive == nil || c.Session == "" {
 		return c
 	}
 	f, err := os.Open(s.archive.Path(c.ID, archLog))
@@ -267,9 +298,11 @@ func (s *Server) withLatencyEvidence(c *Call) *Call {
 			copy := *c
 			copy.Latency = indexed.Latency
 			copy.Latency.Recomputed = true
+			copy.outputLatencyChecked = indexed.outputLatencyChecked
+			copy.missingOutputRecords = indexed.missingOutputRecords
 			copy.Turns, copy.Summary = indexed.Turns, indexed.Summary
 			copy.StageMedians, copy.Transcript, copy.Markers = indexed.StageMedians, indexed.Transcript, indexed.Markers
-			return &copy
+			return withOutputLatencyEvidence(&copy)
 		}
 	}
 	return c

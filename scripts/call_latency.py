@@ -2,6 +2,7 @@
 """Read golive's numeric turn logs; never output transcripts or raw log lines."""
 import argparse
 from collections import Counter
+from datetime import datetime
 import json
 import math
 from pathlib import Path
@@ -13,6 +14,10 @@ import sys
 
 MESSAGE = "turn: response latency"
 TOOL_DELIVERY = "tools: delivering a task's result"
+OUTPUT_STARTED = "transcript: assistant segment started"
+NONANSWER_MESSAGES = ("speak: the opener became a backchannel; the caller went on",
+                      "speak: opening line", "speak: greeting")
+EVIDENCE_MESSAGES = (MESSAGE, TOOL_DELIVERY, OUTPUT_STARTED, *NONANSWER_MESSAGES)
 
 
 def integer(row, key):
@@ -23,6 +28,26 @@ def integer(row, key):
         return value
     if isinstance(value, str) and re.fullmatch(r"-?\d+", value):
         return int(value)
+    return None
+
+
+def canonical_integer(row, key):
+    """Match the deployed Go parser's signed 64-bit ASCII decimal domain."""
+    value = row.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        if not re.fullmatch(r"[+-]?[0-9]+", value):
+            return None
+        negative = value.startswith("-")
+        digits = value.lstrip("+-").lstrip("0") or "0"
+        # Reject overflow before conversion; arbitrarily many leading zeros
+        # remain valid, without hitting Python's decimal conversion limit.
+        if len(digits) > 19:
+            return None
+        value = int(digits) * (-1 if negative else 1)
+    if isinstance(value, int) and -(1 << 63) <= value < (1 << 63):
+        return value
     return None
 
 
@@ -47,7 +72,30 @@ def parse(line):
             raise ValueError("not an object")
     else:
         row = dict(word.split("=", 1) for word in shlex.split(line) if "=" in word)
-    return row if row.get("msg") in (MESSAGE, TOOL_DELIVERY) else None
+    return row if row.get("msg") in EVIDENCE_MESSAGES else None
+
+
+def output_identity(row, sequences):
+    """Accept the same versioned first-output evidence as the journal.
+
+    These timestamps establish that output started, never its caller-relative
+    latency. An absent terminal metric must remain unknown rather than being
+    reconstructed from wall clocks or silently excluded from the gate.
+    """
+    session, turn = row.get("session"), row.get("turn")
+    sequence, stamp, text = canonical_integer(row, "seq"), row.get("play_at"), row.get("text")
+    if (canonical_integer(row, "version") != 1 or not isinstance(session, str) or not session or
+            not isinstance(turn, str) or not turn or sequence is None or
+            sequence <= sequences.get(session, 0) or not isinstance(text, str) or not text.strip() or
+            not isinstance(stamp, str) or not re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})", stamp)):
+        return None
+    try:
+        datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    sequences[session] = sequence
+    return session, turn
 
 
 def quote_readout(child, link, result, counts):
@@ -189,11 +237,12 @@ def analyse(lines, pause, target):
         "records", "answered", "non_speech", "cancelled", "interrupted_answers",
         "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause",
         "tool_result_links", "tool_results_joined", "invalid_tool_links",
-        "quote_readouts_missing", "quote_readouts_unverified")})
+        "quote_readouts_missing", "quote_readouts_unverified", "missing_output_records")})
     seen, rows, audio, content, reply = set(), [], [], [], []
     records, links = [], []
+    output, nonanswers, sequences = set(), set(), {}
     for line in lines:
-        if MESSAGE not in line and TOOL_DELIVERY not in line:
+        if not any(message in line for message in EVIDENCE_MESSAGES):
             continue
         try:
             row = parse(line)
@@ -202,7 +251,21 @@ def analyse(lines, pause, target):
             continue
         if row is None:
             continue
-        (records if row["msg"] == MESSAGE else links).append(row)
+        if row["msg"] == OUTPUT_STARTED:
+            identity = output_identity(row, sequences)
+            if identity is not None:
+                output.add(identity)
+        elif row["msg"] in NONANSWER_MESSAGES:
+            session, turn = row.get("session"), row.get("turn")
+            if isinstance(session, str) and isinstance(turn, str):
+                nonanswers.add((session, turn))
+        else:
+            (records if row["msg"] == MESSAGE else links).append(row)
+    measured = {(str(row.get("session", "")), str(row.get("turn", ""))) for row in records}
+    missing_output = {identity for identity in output - measured - nonanswers
+                      if not identity[1].startswith("bc_")}
+    counts["missing_output_records"] = len(missing_output)
+    counts["unverified"] += len(missing_output)
     tool_results, quote_readouts = join_tool_results(records, links, counts)
     for row in records:
         counts["records"] += 1
@@ -371,7 +434,7 @@ def print_report(report, rows, gated):
         print("Tool-result content is joined to the original caller using explicit monotonic offsets; "
               "the caller's pause is added once and result turns are not extra caller samples.")
     if report["counts"]["unverified"]:
-        print("Legacy/ambiguous records are estimates; their speech origin and audio presence are not verified.")
+        print("Legacy/ambiguous records or started output without a latency record cannot certify the gate.")
     if gated:
         print("Gate: " + ("PASS" if report["gate"]["passed"] else "FAIL — " + "; ".join(report["gate"]["reasons"])))
 

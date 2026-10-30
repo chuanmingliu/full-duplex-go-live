@@ -365,7 +365,7 @@ func TestLatencyArchiveBackfillPreservesSourcesAndKeepsSessionsSeparate(t *testi
 	}
 	old.Latency = &LatencyEvidence{Version: 2, FirstContent: latencyDistribution([]int{1}), QuoteReadout: latencyDistribution([]int{1})}
 	upgraded := s.withLatencyEvidence(old)
-	if upgraded.Latency.Version != 3 || upgraded.Latency.ToolResult.N != 1 || *upgraded.Latency.ToolResult.P95 != 830 || old.Latency.Version != 2 || upgraded.Latency.QuoteReadout.N != 0 || upgraded.Latency.QuoteUnknown != 1 {
+	if upgraded.Latency.Version != 4 || upgraded.Latency.ToolResult.N != 1 || *upgraded.Latency.ToolResult.P95 != 830 || old.Latency.Version != 2 || upgraded.Latency.QuoteReadout.N != 0 || upgraded.Latency.QuoteUnknown != 1 {
 		t.Fatalf("old evidence not upgraded independently: %+v", upgraded.Latency)
 	}
 	old.Latency = nil

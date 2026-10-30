@@ -133,6 +133,15 @@ not confirmation of socket delivery or audible handset playback. Corrected
 ownership can expose interrupted-turn records that older builds omitted;
 do not treat a change in that sample population as a latency improvement.
 
+Shutdown retains active playback and pending completion records, so a reply
+cut by disconnect still reports its existing output timestamps. For older
+canonical-output logs, a started answer without a latency record is marked
+unverified after excluding explicit greetings and backchannels. Known-row
+percentiles remain visible, but this missing evidence fails the strict gate.
+The journal applies this check in its version-4 response view; archived
+source files remain unchanged. No missing latency is inferred from transcript
+timestamps.
+
 ## Desk integration
 
 `DESK_AS=codex scripts/desk.sh me` safely reads the identity and owner control switches; never use the default `claude` identity. `scripts/phone-brain.sh desk verify` verifies the append-only note chain. `GET /api/calls` on the desk, with the Codex token read from its file internally, lists **simulated** calls paired via `~/golive-sim/data/dials.jsonl`; `GET /api/calls/<run>/report` retrieves their simulator report. Real calls belong in the journal. These APIs do not independently persist call audio.

@@ -46,6 +46,14 @@ def quote_pair(**child_changes):
     return tool_pair(**flags)
 
 
+def output(index, seq=1, **changes):
+    row = dict(msg="transcript: assistant segment started", version=1,
+               session="sess_test", turn=f"item_{index}", seq=seq,
+               play_at="2026-10-29T20:00:01+08:00", text="synthetic output")
+    row.update(changes)
+    return row
+
+
 class CallLatencyTests(unittest.TestCase):
     def run_report(self, rows, *flags, text=False):
         with tempfile.TemporaryDirectory() as directory:
@@ -68,6 +76,80 @@ class CallLatencyTests(unittest.TestCase):
         self.assertEqual(report["first_audio"]["p95_ms"], 380)
         self.assertEqual(report["first_content"]["p95_ms"], 1400)
         self.assertEqual(self.run_report(rows, "--gate")[0], 0)
+
+    def test_started_answer_without_entire_latency_record_fails_closed(self):
+        rows = [turn(i) for i in range(20)] + [output(20), output(20, seq=2)]
+        code, report = self.run_report(rows, "--gate", "--metric", "both")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["missing_output_records"], 1)
+        self.assertEqual(report["counts"]["unverified"], 1)
+        self.assertEqual(report["counts"]["records"], 20)
+        self.assertEqual(report["first_content"]["n"], 20)
+        self.assertEqual(report["first_content"]["p95_ms"], 880)
+        self.assertEqual(self.run_report(rows, "--gate", "--metric", "both", text=True),
+                         (code, report))
+
+    def test_missing_output_record_exempts_only_explicit_nonanswers(self):
+        for name, extra in (
+                ("completed", [turn(20)]),
+                ("backchannel", [dict(msg="speak: the opener became a backchannel; the caller went on",
+                                      session="sess_test", turn="item_20")]),
+                ("opening line", [dict(msg="speak: opening line", session="sess_test", turn="item_20")]),
+                ("greeting", [dict(msg="speak: greeting", session="sess_test", turn="item_20")])):
+            with self.subTest(name=name):
+                code, report = self.run_report([turn(i) for i in range(20)] +
+                                               [output(20), output(20)] + extra, "--gate")
+                self.assertEqual(code, 0)
+                self.assertEqual(report["counts"]["missing_output_records"], 0)
+        code, report = self.run_report([turn(i) for i in range(20)] +
+                                      [output(20, turn="bc_20")], "--gate")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["counts"]["missing_output_records"], 0)
+
+    def test_invalid_canonical_sequence_cannot_hide_missing_answer(self):
+        invalid = (2**63, str(2**63), "9" * 5000, "\u0669", -1, "-1", 1.5, "1.5", float("inf"), "Inf", True)
+        for index, sequence in enumerate(invalid):
+            with self.subTest(case=index):
+                rows = [turn(i) for i in range(20)] + [output(20, seq=sequence, turn="bc_fixture"), output(20)]
+                code, report = self.run_report(rows, "--gate", "--metric", "both")
+                self.assertEqual(code, 1)
+                self.assertEqual(report["counts"]["missing_output_records"], 1)
+                self.assertEqual(report["counts"]["unverified"], 1)
+
+    def test_canonical_integers_accept_go_signs_and_reject_non_ascii_version(self):
+        for changes in ({"version": "+1", "seq": "+1"}, {"seq": "0" * 5000 + "1"}, {"seq": 2**63 - 1}):
+            with self.subTest(case=list(changes)):
+                code, report = self.run_report([turn(i) for i in range(20)] + [output(20, **changes)], "--gate")
+                self.assertEqual(code, 1)
+                self.assertEqual(report["counts"]["missing_output_records"], 1)
+        code, report = self.run_report([turn(i) for i in range(20)] + [output(20, version="\u0661")], "--gate")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["counts"]["missing_output_records"], 0)
+
+    def test_generic_abandonment_does_not_explain_started_output(self):
+        rows = [turn(i) for i in range(20)] + [output(20),
+                dict(msg="think: abandoning the speculative turn", session="sess_test", turn="item_20")]
+        code, report = self.run_report(rows, "--gate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["missing_output_records"], 1)
+
+    def test_malformed_nonanswer_identity_cannot_hide_or_crash_output_check(self):
+        rows = [turn(i) for i in range(20)] + [output(20),
+                dict(msg="speak: opening line", session="sess_test", turn=["item_20"])]
+        code, report = self.run_report(rows, "--gate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["missing_output_records"], 1)
+
+    def test_unmatched_output_is_session_scoped_and_requires_valid_output(self):
+        rows = [turn(i) for i in range(20)] + [output(1, session="sess_other")]
+        code, report = self.run_report(rows, "--gate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["missing_output_records"], 1)
+        for changes in ({"version": 9}, {"seq": 0}, {"play_at": "bad"}, {"text": ""}, {"turn": ""}):
+            with self.subTest(changes=changes):
+                code, report = self.run_report([turn(i) for i in range(20)] + [output(20, **changes)], "--gate")
+                self.assertEqual(code, 0)
+                self.assertEqual(report["counts"]["missing_output_records"], 0)
 
     def test_target_is_strict_and_non_gate_remains_a_report(self):
         rows = [turn(i, first_content_ms=820) for i in range(20)]

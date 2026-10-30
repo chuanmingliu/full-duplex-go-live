@@ -251,6 +251,11 @@ type Call struct {
 	Quotation        []QuoteStep   `json:"quotation,omitempty"`
 	Fillers          []FillerEvent `json:"fillers,omitempty"`
 	FillerLogVersion int           `json:"filler_log_version,omitempty"`
+
+	// Response-only evidence must not rewrite a previously archived call when
+	// a newer reader detects an absent whole latency record in its old log.
+	outputLatencyChecked bool
+	missingOutputRecords int
 }
 
 // QuoteStep is one step of a quotation, from the log.
@@ -281,32 +286,33 @@ type QuoteStep struct {
 // --- reading the log ---
 
 type turnBuild struct {
-	id           string
-	callerText   string
-	said         []string
-	outputText   []string
-	outputAt     time.Time
-	heardText    string
-	heardMS      int
-	interrupted  bool
-	firstAudioAt time.Time
-	openerAt     time.Time
-	openerText   string
-	firstIsCache bool
-	sawFirst     bool
-	ttsMS        int
-	winner, of   int
-	headersMS    int
-	askPause     int
-	asrTook      int
-	hedgeAsked   bool
-	hedgeRefused bool
-	hedgeWinner  int
-	focus        *FocusMark
-	latency      *Line
-	latencyCount int
-	taskResult   bool
-	bodyReplaced bool
+	id              string
+	callerText      string
+	said            []string
+	outputText      []string
+	outputAt        time.Time
+	heardText       string
+	heardMS         int
+	interrupted     bool
+	firstAudioAt    time.Time
+	openerAt        time.Time
+	openerText      string
+	firstIsCache    bool
+	sawFirst        bool
+	ttsMS           int
+	winner, of      int
+	headersMS       int
+	askPause        int
+	asrTook         int
+	hedgeAsked      bool
+	hedgeRefused    bool
+	hedgeWinner     int
+	focus           *FocusMark
+	latency         *Line
+	latencyCount    int
+	taskResult      bool
+	bodyReplaced    bool
+	outputNonanswer bool
 }
 
 type heardLine struct {
@@ -586,6 +592,9 @@ func (ix *Indexer) Feed(l Line) {
 		}
 	case "speak: opening line":
 		cb.call.Greeting = l.Get("text")
+		cb.turn(l.Get("turn")).outputNonanswer = true
+	case "speak: greeting", "speak: the opener became a backchannel; the caller went on":
+		cb.turn(l.Get("turn")).outputNonanswer = true
 	case "client audio":
 		if n, b := l.N("frames"), l.N("bytes"); n > 0 && b > 0 {
 			cb.call.AudioIn = append(cb.call.AudioIn, AudioMark{TS: cb.at(l.Time), Frames: n, Bytes: b})
@@ -872,6 +881,8 @@ func (cb *callBuild) finish() *Call {
 	c.Summary = Summarise(c.Turns)
 	latency := cb.latencyEvidence()
 	c.Latency = &latency
+	c.outputLatencyChecked = true
+	c.missingOutputRecords = cb.missingOutputLatencyRecords()
 	c.StageMedians = stageMedians(c.Turns)
 	for i := range c.Turns {
 		if c.Turns[i].Over {

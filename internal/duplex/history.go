@@ -246,8 +246,10 @@ func (e *Engine) History() []provider.Message {
 		return nil
 	}
 	// The loop has exited. If it ran the request on its way out, that is the
-	// answer; otherwise nothing owns the state any more and it can be read
-	// here.
+	// answer; otherwise read the stopped state under the shutdown lock,
+	// since Close may still be committing its final playback receipt.
+	e.stoppedStateMu.RLock()
+	defer e.stoppedStateMu.RUnlock()
 	select {
 	case h := <-done:
 		return h

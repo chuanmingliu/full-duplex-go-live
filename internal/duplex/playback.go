@@ -489,13 +489,25 @@ func (p *Player) reportTruncation(r TruncationReport) {
 }
 
 // Close stops the player.
-func (p *Player) Close() {
+func (p *Player) Close() { p.closeWithReport() }
+
+// closeWithReport captures the final exact playback owner before clearing it.
+// It stops at the same boundary as Close; it neither drains nor emits audio.
+// An opener explicitly reclassified as a backchannel is not an unfinished reply.
+func (p *Player) closeWithReport() PlaybackReport {
 	p.mu.Lock()
+	var report PlaybackReport
+	if !p.closed && p.activeTurn != "" && p.drainingTurn != p.activeTurn && p.emittedMS > 0 {
+		played := p.heardMSLocked()
+		report = PlaybackReport{owner: p.owner, Generation: p.activeGen, Revision: p.activeRevision,
+			TurnID: p.activeTurn, PlayedMS: int64(played), TotalMS: int64(p.emittedMS), SpokenText: p.spokenPrefixLocked(played)}
+	}
 	p.closed = true
 	p.queue = nil
 	p.resetTurnLocked()
 	p.mu.Unlock()
 	p.cond.Broadcast()
+	return report
 }
 
 // Speaking reports whether audio is currently going out.

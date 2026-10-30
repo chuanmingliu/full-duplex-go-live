@@ -136,9 +136,14 @@ type Engine struct {
 	ctrlMu  sync.Mutex
 	ctrlQ   []func()
 	ctrlSig chan struct{}
-	// loopDone closes when the loop goroutine has exited, after which its
-	// state can be read from anywhere.
+	// Playback receipts survive cancellation of the general control queue.
+	playbackMu      sync.Mutex
+	playbackPending []*playbackCompletion
+	// loopDone closes when the loop goroutine has exited. Post-loop history
+	// reads also take stoppedStateMu while Close finalizes playback.
 	loopDone chan struct{}
+	// Serializes post-loop history snapshots with shutdown accounting.
+	stoppedStateMu sync.RWMutex
 
 	// backendPending counts backend requests that have been started and have
 	// not yet produced a speech pipe: the gap in which an answer is certainly
@@ -510,15 +515,17 @@ func (e *Engine) prewarm(reason string) {
 // Close stops the engine and releases provider connections.
 func (e *Engine) Close() {
 	e.closeOnce.Do(func() {
+		e.stoppedStateMu.Lock()
+		defer e.stoppedStateMu.Unlock()
 		if e.cancel != nil {
 			e.cancel()
 		}
-		e.player.Close()
+		lastPlayback := e.player.closeWithReport()
 		e.quoteAudio.close()
 		e.wg.Wait()
-		// After wg.Wait: the loop goroutine is the only writer of e.latencies
-		// and of what lineSummary reads, and it has exited, so reading them
-		// here needs no lock.
+		e.finishPlaybackAtClose(lastPlayback)
+		// The loop and final playback accounting have finished; no producer
+		// writes the summary state after this point.
 		e.latencySummary()
 		e.lineSummary()
 		e.focusSummary()
@@ -681,6 +688,9 @@ func (e *Engine) runPosted() {
 			return
 		}
 		for _, f := range batch {
+			if e.ctx.Err() != nil {
+				return
+			}
 			f()
 		}
 	}
@@ -2161,18 +2171,7 @@ func (e *Engine) onTruncated(r TruncationReport) {
 		TotalMS:  r.TotalMS,
 		Text:     r.SpokenText,
 	})
-	e.post(func() {
-		e.noteAckPlayback(r.TurnID, false)
-		e.noteReadoutCut(r.TurnID, r.SpokenText)
-		if !turn.MarkCompleted() {
-			return
-		}
-		e.recordTurn(turn, r.TurnID, r.SpokenText)
-		e.emitMetrics(turn, r.PlayedMS, true)
-		if e.tracker.Current() == turn {
-			e.noteAssistantQuiet()
-		}
-	})
+	e.postPlaybackCompletion(r, true)
 }
 
 func (e *Engine) onTurnDone(r PlaybackReport) {
@@ -2180,34 +2179,8 @@ func (e *Engine) onTurnDone(r PlaybackReport) {
 	if turn == nil {
 		return
 	}
-	turnID, totalMS, text := r.TurnID, r.TotalMS, r.SpokenText
-	e.log.Debug("speak: turn complete", "turn", turnID, "audio_ms", totalMS, "chars", len([]rune(text)))
-	e.post(func() {
-		defer func() {
-			if e.tools != nil && e.tools.handoff == turn {
-				e.tools.handoff = nil
-			}
-		}()
-		// A superseded revision drains with nothing behind it, and its turn ID
-		// still matches the live revision. Letting that count as the turn's
-		// completion both published a set of all-zero latencies and, worse,
-		// consumed the one completion slot the real answer needed.
-		if totalMS == 0 {
-			return
-		}
-		if !turn.markCompletedNaturally() {
-			return
-		}
-		e.recordTurn(turn, turnID, text)
-		e.noteAckPlayback(turnID, true)
-		e.emitMetrics(turn, totalMS, false)
-		if e.tracker.Current() == turn {
-			e.noteAssistantQuiet()
-		}
-		if e.tracker.IsCurrent(turn) {
-			e.checkAssistantHangupRules(text)
-		}
-	})
+	e.log.Debug("speak: turn complete", "turn", r.TurnID, "audio_ms", r.TotalMS, "chars", len([]rune(r.SpokenText)))
+	e.postPlaybackCompletion(r, false)
 	// Synthesis may have finished while the player was still draining audio.
 	// Its completion now releases deferred tool results without a tick.
 	e.wake()

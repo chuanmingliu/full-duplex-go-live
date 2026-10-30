@@ -229,7 +229,6 @@ func (s *Session) Serve(ctx context.Context) {
 	record := resolved
 	if engine != nil {
 		if rec != nil {
-			history = engine.History()
 			// As they stand now, with whatever session.instructions.append
 			// added: a fork continues this conversation, under these rules.
 			record.Instructions = engine.Instructions()
@@ -242,6 +241,9 @@ func (s *Session) Serve(ctx context.Context) {
 		}
 		engine.Close()
 		if rec != nil {
+			// Close accounts for the final partial reply and pending playback
+			// completions before the stored conversation is snapshotted.
+			history = engine.History()
 			gate = engine.GateTrace()
 		}
 	}
