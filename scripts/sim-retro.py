@@ -143,6 +143,7 @@ out.append("## What golive measured")
 out.append("")
 out.append("The target's definition, **caller's last sound → first audio**, is the headline; first content is reported beside it. Each turn's own pause is added to both figures. The stage columns are from the turn closing (the console's definition).")
 out.append("These measurements stop at audio leaving golive; the PBX, gateway, carrier and handset leg is not measured.")
+out.append("First content excludes opening fillers but may be an explanatory lead-in. Linked tool-result timing separately measures the result of a quotation request.")
 out.append("")
 out.append("| turn | at | begun before close | chat model first token | first clause | synth first audio | first audio | pause | **last sound → first audio** | **last sound → first content** |")
 out.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
@@ -165,6 +166,10 @@ for key, title, label in (("first_audio", "First audio", "first audio"),
     out.append("- %s: **%d** measured turns; last sound → %s p50 **%s**, p95 **%s**, max %s ms; **%d at or above 1200**." % (
         title, stats["n"], label, fmt(stats["p50_ms"]), fmt(stats["p95_ms"]),
         fmt(stats["max_ms"]), stats["at_or_above_target"]))
+result_stats = measurements["tool_result"]
+out.append("- Linked tool results: **%d** measured results; last sound → result content p50 **%s**, p95 **%s**, max %s ms; **%d at or above 1200**. These are not extra caller turns; content/both gates also check their p95." % (
+    result_stats["n"], fmt(result_stats["p50_ms"]), fmt(result_stats["p95_ms"]),
+    fmt(result_stats["max_ms"]), result_stats["at_or_above_target"]))
 reply = measurements["reply"]
 out.append("- Console's definition: p50 %s, max %s ms. p50 is the ordinary median; p90/p95 use nearest rank. These are sample statistics, not a sustained p95 acceptance claim." % (fmt(reply["p50_ms"]), fmt(reply["max_ms"])))
 counts = measurements["counts"]

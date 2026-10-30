@@ -201,6 +201,8 @@ class CallLatencyTests(unittest.TestCase):
         self.assertEqual(report["first_audio"]["p95_ms"], 642)
         self.assertEqual(report["first_content"]["p95_ms"], 1050)
         self.assertEqual(report["first_content"]["n"], 1)
+        self.assertEqual(report["tool_result"]["p95_ms"], 1050)
+        self.assertEqual(report["tool_result_rows"][0]["end_silence_ms"], 600)
         self.assertEqual(self.run_report(rows), self.run_report(rows, text=True))
 
     def test_slow_tool_result_cannot_hide_behind_a_fast_filler(self):
@@ -224,12 +226,14 @@ class CallLatencyTests(unittest.TestCase):
                 self.assertEqual(report["counts"]["tool_results_joined"], 0)
                 self.assertGreaterEqual(report["counts"]["missing"], 1)
                 self.assertGreaterEqual(report["counts"]["unverified"], 1)
+                self.assertEqual(report["tool_result"]["n"], 0)
 
     def test_interruption_after_result_audio_counts_but_unplayed_result_does_not(self):
         origin, child = tool_pair(truncated=True)
         _, report = self.run_report([origin, delivery(), child])
         self.assertEqual(report["counts"]["answered"], 1)
         self.assertEqual(report["counts"]["interrupted_answers"], 1)
+        self.assertTrue(report["tool_result_rows"][0]["interrupted"])
         child["first_content_present"] = False
         _, report = self.run_report([origin, delivery(), child])
         self.assertEqual(report["counts"]["answered"], 0)
@@ -239,6 +243,7 @@ class CallLatencyTests(unittest.TestCase):
         _, report = self.run_report([origin, delivery(), child])
         self.assertEqual(report["counts"]["tool_results_joined"], 0)
         self.assertEqual(report["counts"]["cancelled"], 1)
+        self.assertEqual(report["tool_result"]["n"], 0)
 
     def test_missing_or_legacy_handoff_never_uses_wallclock_estimates(self):
         origin, child = tool_pair()
@@ -265,6 +270,7 @@ class CallLatencyTests(unittest.TestCase):
                 self.assertEqual(report["counts"]["tool_results_joined"], 0)
                 self.assertEqual(report["counts"]["missing"], 1)
                 self.assertGreaterEqual(report["counts"]["invalid_tool_links"], 1)
+                self.assertEqual(report["tool_result"]["n"], 0)
         for duplicate in (origin, child):
             _, report = self.run_report([origin, delivery(), child, duplicate])
             self.assertEqual(report["counts"]["tool_results_joined"], 0)
@@ -282,12 +288,70 @@ class CallLatencyTests(unittest.TestCase):
         self.assertEqual(report["first_content"]["n"], 2)
         self.assertEqual(report["first_content"]["p50_ms"], 730)
         self.assertEqual(report["counts"]["unverified"], 0)
+        self.assertEqual(report["tool_result"]["n"], 2)
+        self.assertEqual(report["tool_result"]["p50_ms"], 730)
 
     def test_existing_caller_content_is_not_replaced_by_later_tool_result(self):
         _, child = tool_pair()
         _, report = self.run_report([turn(1), delivery(origin_to_result_start_ms=5000), child])
         self.assertEqual(report["counts"]["tool_results_joined"], 0)
         self.assertEqual(report["first_content"]["p95_ms"], 880)
+        self.assertEqual(report["tool_result"]["p95_ms"], 5380)
+
+    def test_slow_result_fails_content_gate_even_after_fast_direct_content(self):
+        # A pre-result sentence meets first-content timing; the result does not.
+        origin = turn(1, first_content_ms=702)
+        _, child = tool_pair(first_audio_out_ms=153, first_content_ms=153)
+        rows = [origin, delivery(origin_to_result_start_ms=3015), child]
+        for metric in ("content", "both"):
+            code, report = self.run_report(rows, "--gate", "--metric", metric, "--min-turns", "1")
+            self.assertEqual(code, 1)
+            self.assertEqual(report["counts"]["answered"], 1)
+            self.assertEqual(report["counts"]["non_speech"], 1)
+            self.assertEqual(report["counts"]["tool_results_joined"], 0)
+            self.assertEqual(report["first_content"]["n"], 1)
+            self.assertEqual(report["first_content"]["p95_ms"], 1082)
+            self.assertEqual(report["tool_result"]["n"], 1)
+            self.assertEqual(report["tool_result"]["p95_ms"], 3548)
+            self.assertEqual(report["gate"]["reasons"], ["tool_result: p95 3548 ms is not below 1200 ms"])
+            self.assertEqual(report["tool_result_rows"][0]["total_ms"], 3548)
+        self.assertEqual(self.run_report(rows, "--gate", "--min-turns", "1")[0], 0)
+
+    def test_result_subset_does_not_need_twenty_extra_caller_samples(self):
+        rows = [turn(i) for i in range(20)]
+        _, child = tool_pair()
+        child["turn"] = "item_result"
+        rows.extend([delivery(child="result"), child])
+        code, report = self.run_report(rows, "--gate", "--metric", "both")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["first_content"]["n"], 20)
+        self.assertEqual(report["tool_result"]["n"], 1)
+
+    def test_result_gate_threshold_and_legacy_link_fail_closed(self):
+        _, child = tool_pair()
+        for offset, expected in ((819, 0), (820, 1)):
+            code, _ = self.run_report([turn(1), delivery(origin_to_result_start_ms=offset), child],
+                                      "--gate", "--metric", "both", "--min-turns", "1")
+            self.assertEqual(code, expected)
+        legacy = delivery()
+        del legacy["origin_to_result_start_ms"]
+        code, report = self.run_report([turn(1), legacy, child], "--gate", "--metric", "both", "--min-turns", "1")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["first_content"]["p95_ms"], 880)
+        self.assertEqual(report["tool_result"]["n"], 0)
+        self.assertEqual(report["counts"]["unverified"], 1)
+
+    def test_result_rows_do_not_echo_arbitrary_identifier_text(self):
+        origin, child = tool_pair()
+        link = delivery()
+        for row in (origin, child, link):
+            row["session"] = "private session text"
+        origin["turn"] = link["origin_turn"] = "private caller text"
+        child["turn"] = link["turn"] = "private result text"
+        link["task"] = "private task text"
+        _, report = self.run_report([origin, link, child])
+        self.assertEqual(report["tool_result"]["n"], 1)
+        self.assertNotIn("private", json.dumps(report))
 
     def test_offset_must_be_explicit_nonnegative_integer(self):
         for value in (-1, True, 1.5, "invalid", None):

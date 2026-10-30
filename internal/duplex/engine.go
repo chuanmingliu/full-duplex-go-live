@@ -1148,6 +1148,7 @@ consume:
 	if p.ctx.Err() == nil && (p.soft.Load() || p.e.tracker.IsCurrent(p.turn)) {
 		p.e.player.Enqueue(Segment{
 			Kind:     SegEnd,
+			content:  true,
 			Gen:      p.turn.Generation,
 			TurnID:   p.turn.ID,
 			Revision: p.turn.Revision,
@@ -1307,6 +1308,7 @@ func (p *speechPipe) speak(text string) bool {
 	}
 	p.e.player.Enqueue(Segment{
 		Kind:     SegBegin,
+		content:  true,
 		Gen:      p.turn.Generation,
 		TurnID:   p.turn.ID,
 		Revision: p.turn.Revision,
@@ -1382,6 +1384,7 @@ func (p *speechPipe) speak(text string) bool {
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
 			Kind:         SegAudio,
+			content:      true,
 			Gen:          p.turn.Generation,
 			TurnID:       p.turn.ID,
 			Revision:     p.turn.Revision,
@@ -1406,6 +1409,7 @@ func (p *speechPipe) speak(text string) bool {
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
 			Kind:         SegAudio,
+			content:      true,
 			Gen:          p.turn.Generation,
 			TurnID:       p.turn.ID,
 			Revision:     p.turn.Revision,
@@ -1435,6 +1439,7 @@ func (p *speechPipe) speak(text string) bool {
 		// stale SegAbandon is dropped by the player at no cost.
 		p.e.player.Enqueue(Segment{
 			Kind:     SegAbandon,
+			content:  true,
 			Gen:      p.turn.Generation,
 			TurnID:   p.turn.ID,
 			Revision: p.turn.Revision,
@@ -1459,6 +1464,7 @@ func (p *speechPipe) speak(text string) bool {
 
 	p.e.player.Enqueue(Segment{
 		Kind:     SegMark,
+		content:  true,
 		Gen:      p.turn.Generation,
 		TurnID:   p.turn.ID,
 		Revision: p.turn.Revision,
@@ -1512,7 +1518,7 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	if !IsBackchannel(p.turn.ID) && p.e.player.PreemptBackchannel() {
 		p.e.log.Debug("speak: cutting the filler short; the answer is ready", "turn", p.turn.ID)
 	}
-	seg := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, Revision: p.turn.Revision}
+	seg := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, Revision: p.turn.Revision, content: true}
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, text
 	body.Kind, body.PCM = SegAudio, pcm
@@ -1656,6 +1662,9 @@ func (e *Engine) policy() string {
 // arrived on top of their second; and it meant something waiting for a free
 // floor took it, only to be cut off mid-word when that answer turned up.
 func (e *Engine) assistantHasFloor() bool {
+	if e.tools != nil && e.tools.handoff != nil && e.tracker.IsCurrent(e.tools.handoff) && e.tools.handoff.Timings().CompletedAt.IsZero() {
+		return true
+	}
 	if e.player.Active() || e.backendPending.Load() > 0 {
 		return true
 	}
@@ -2119,6 +2128,11 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 	e.log.Debug("speak: turn complete", "turn", turnID, "audio_ms", totalMS, "chars", len([]rune(text)))
 	e.recordTurn(turnID, text)
 	e.post(func() {
+		defer func() {
+			if e.tools != nil && e.tools.handoff != nil && e.tools.handoff.ID == turnID {
+				e.tools.handoff = nil
+			}
+		}()
 		turn := e.tracker.Current()
 		if turn == nil || turn.ID != turnID {
 			return

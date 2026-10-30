@@ -35,6 +35,11 @@ def boolean(row, key):
     return None
 
 
+def record_identifier(value, prefix):
+    """Keep generated identifiers in reports without echoing arbitrary text."""
+    return value if re.fullmatch(prefix + r"[A-Za-z0-9_-]{1,80}", value) else "-"
+
+
 def parse(line):
     if line.lstrip().startswith("{"):
         row = json.loads(line)
@@ -53,6 +58,7 @@ def join_tool_results(records, links, counts):
     Wall-clock timestamps and adjacency are deliberately never consulted.
     """
     by_turn, by_task, by_origin, by_result = {}, Counter(), Counter(), Counter()
+    results = []
     for row in records:
         key = (str(row.get("session", "")), str(row.get("turn", "")))
         by_turn.setdefault(key, []).append(row)
@@ -111,6 +117,17 @@ def join_tool_results(records, links, counts):
                 offset + child_content < origin_audio):
             invalid()
             continue
+        # Measure the authoritative result even if a spoken preamble already
+        # satisfied first-content timing. It is not another caller sample.
+        results.append(dict(session=record_identifier(session, "sess_"),
+                            task=record_identifier(task, r"(?:task_|t)"),
+                            origin_turn=record_identifier(link["origin_turn"], r"(?:item_|turn_)"),
+                            result_turn=record_identifier(link["turn"], r"(?:item_|turn_)"),
+                            end_silence_ms=pause,
+                            origin_to_result_start_ms=offset,
+                            child_first_content_ms=child_content,
+                            total_ms=pause + offset + child_content,
+                            interrupted=boolean(child, "truncated")))
         # A caller that already received content needs no replacement timestamp.
         if original_content is True:
             continue
@@ -118,6 +135,7 @@ def join_tool_results(records, links, counts):
         origin["first_content_present"] = True
         origin["_tool_result_interrupted"] = boolean(child, "truncated")
         counts["tool_results_joined"] += 1
+    return results
 
 
 def distribution(values, target):
@@ -148,7 +166,7 @@ def analyse(lines, pause, target):
         if row is None:
             continue
         (records if row["msg"] == MESSAGE else links).append(row)
-    join_tool_results(records, links, counts)
+    tool_results = join_tool_results(records, links, counts)
     for row in records:
         counts["records"] += 1
         identity = (str(row.get("session", "")), str(row.get("turn", "")))
@@ -231,7 +249,10 @@ def analyse(lines, pause, target):
     return dict(scope="last_sound_to_golive_output", target_ms=target,
                 percentile="nearest_rank", counts=dict(counts),
                 first_audio=distribution(audio, target), first_content=distribution(content, target),
-                reply=distribution(reply, target)), rows
+                reply=distribution(reply, target),
+                tool_result=distribution([r["total_ms"] for r in tool_results], target),
+                tool_result_scope="last_sound_to_linked_result_content_at_golive_output",
+                tool_result_rows=tool_results), rows
 
 
 def gate_reasons(report, minimum, metric):
@@ -248,6 +269,13 @@ def gate_reasons(report, minimum, metric):
             reasons.append(f"{name}: {stats['n']} samples, need {minimum}")
         if stats["p95_ms"] is not None and stats["p95_ms"] >= report["target_ms"]:
             reasons.append(f"{name}: p95 {stats['p95_ms']} ms is not below {report['target_ms']} ms")
+    # Result calls are a subset of the caller sample, not extra turns. A fast
+    # preamble cannot hide their slow result; no result calls means no extra
+    # requirement. The existing minimum still applies to caller responses.
+    if metric in ("content", "both"):
+        stats = report["tool_result"]
+        if stats["p95_ms"] is not None and stats["p95_ms"] >= report["target_ms"]:
+            reasons.append(f"tool_result: p95 {stats['p95_ms']} ms is not below {report['target_ms']} ms")
     return reasons
 
 
@@ -276,12 +304,21 @@ def print_report(report, rows, gated):
           ", ".join(f"{key}={value}" for key, value in report["counts"].items() if key != "answered"))
     for name, label in (("first_audio", "last sound → first audio"),
                         ("first_content", "last sound → first content"),
+                        ("tool_result", "last sound → linked tool result content"),
                         ("reply", "turn judged over → first audio")):
         stats = report[name]
         print(f"{label}: p50 {format_number(stats['p50_ms'])}  p90 {format_number(stats['p90_ms'])}"
               f"  p95 {format_number(stats['p95_ms'])}  max {format_number(stats['max_ms'])} ms;"
               f" n={stats['n']}, {stats['at_or_above_target']} at or above {report['target_ms']} ms")
     print("Scope: audio leaving golive; the PBX, carrier and handset leg is not measured.")
+    print("First content excludes opening fillers but can be an explanatory lead-in. "
+          "For a quotation request, linked tool-result timing measures the result.")
+    if report["tool_result_rows"]:
+        print("Linked tool results (separate from first content; included in content/both gates):")
+        for i, result in enumerate(report["tool_result_rows"], 1):
+            print(f"  result {i}: pause {result['end_silence_ms']} + origin-to-result "
+                  f"{result['origin_to_result_start_ms']} + result content {result['child_first_content_ms']}"
+                  f" = {result['total_ms']} ms")
     if report["counts"]["tool_results_joined"]:
         print("Tool-result content is joined to the original caller using explicit monotonic offsets; "
               "the caller's pause is added once and result turns are not extra caller samples.")
@@ -305,8 +342,9 @@ def main():
     parser.add_argument("--gate", action="store_true", help="exit 1 unless the measured p95 is strictly below target")
     parser.add_argument("--target-ms", type=positive, default=1200)
     parser.add_argument("--min-turns", type=positive, default=20)
-    parser.add_argument("--metric", choices=("first-audio", "content", "both"), default="first-audio")
-    parser.add_argument("--json", action="store_true", help="output numeric summary only")
+    parser.add_argument("--metric", choices=("first-audio", "content", "both"), default="first-audio",
+                        help="content and both also gate the p95 of verified linked tool results")
+    parser.add_argument("--json", action="store_true", help="output timings and record identifiers without transcripts")
     args = parser.parse_args()
     try:
         with Path(args.log).open(encoding="utf-8") as stream:

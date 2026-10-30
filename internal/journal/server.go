@@ -787,7 +787,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("download") != "" {
 			w.Header().Set("Content-Disposition", `attachment; filename="`+fileStem(c)+`.txt"`)
 		}
-		_, _ = io.WriteString(w, TranscriptText(c))
+		_, _ = io.WriteString(w, TranscriptText(s.withLatencyEvidence(c)))
 	case "peaks":
 		rec, err := s.recording(c)
 		if err != nil {

@@ -288,6 +288,8 @@ type turnBuild struct {
 	heardMS      int
 	interrupted  bool
 	firstAudioAt time.Time
+	openerAt     time.Time
+	openerText   string
 	firstIsCache bool
 	sawFirst     bool
 	ttsMS        int
@@ -302,6 +304,7 @@ type turnBuild struct {
 	latency      *Line
 	latencyCount int
 	taskResult   bool
+	bodyReplaced bool
 }
 
 type heardLine struct {
@@ -346,8 +349,8 @@ type callBuild struct {
 	idle  []float64
 	// heard is what the caller said, each utterance as it stood when it ended.
 	heard []heardLine
-	// openedAt is when the detector last opened on speech that no line has
-	// claimed yet.
+	// openedAt is when the detector opened on the current utterance. An
+	// empty recognition does not lend its start to the next utterance.
 	openedAt time.Time
 	warn     map[string]*Warning
 	warnOrd  []string
@@ -583,9 +586,7 @@ func (ix *Indexer) Feed(l Line) {
 		}
 	case "listen: utterance opened":
 		ev.Utterances++
-		if cb.openedAt.IsZero() {
-			cb.openedAt = l.Time
-		}
+		cb.openedAt = l.Time
 		if f, ok := l.Float("noise_floor_db"); ok {
 			cb.noise = append(cb.noise, f)
 		}
@@ -706,15 +707,28 @@ func (ix *Indexer) Feed(l Line) {
 		}
 	case "speak: segment synthesized":
 		t := cb.turn(l.Get("turn"))
-		t.said = append(t.said, l.Get("text"))
+		if !t.bodyReplaced {
+			t.said = append(t.said, l.Get("text"))
+		}
 		ev.Segments++
 	case "speak: segment played from the phrase cache":
 		t := cb.turn(l.Get("turn"))
-		t.said = append(t.said, l.Get("text"))
+		if !t.bodyReplaced {
+			t.said = append(t.said, l.Get("text"))
+		}
 		ev.CachePlays++
 		if !t.sawFirst {
 			t.sawFirst, t.firstAudioAt, t.firstIsCache = true, l.Time, true
 		}
+	case "speak: opened the answer from the phrase cache at the pause":
+		t := cb.turn(l.Get("turn"))
+		if t.openerAt.IsZero() {
+			t.openerAt, t.openerText = l.Time, l.Get("text")
+		}
+	case "tools: ready result replaced the unplayed calling body":
+		t := cb.turn(l.Get("turn"))
+		t.bodyReplaced = true
+		t.said = nil // rendered body audio never reached output; the opener remains
 	case "speak: turn truncated":
 		t := cb.turn(l.Get("turn"))
 		t.interrupted, t.heardText, t.heardMS = true, l.Get("heard_text"), l.N("played_ms")
@@ -893,13 +907,20 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 	for _, id := range cb.order {
 		t := cb.turns[id]
 		text := strings.Join(t.said, "")
+		if t.confirmedOpener() {
+			text = t.openerText + text
+		}
 		if t.interrupted && t.heardText != "" {
 			text = t.heardText
 		}
-		if text == "" || t.firstAudioAt.IsZero() {
+		at := cb.at(t.firstAudioAt)
+		if turn := byID[id]; turn != nil && turn.AudioOutS >= 0 {
+			at = turn.AudioOutS
+		}
+		if text == "" || at < 0 {
 			continue
 		}
-		line := Said{TS: cb.at(t.firstAudioAt), Who: "assistant", Text: text, Kind: "greeting", Interrupted: t.interrupted}
+		line := Said{TS: at, Who: "assistant", Text: text, Kind: "greeting", Interrupted: t.interrupted}
 		if turn := byID[id]; turn != nil {
 			line.Kind, line.Turn, line.TotalMS, line.Over = "answer", turn.N, turn.TotalMS, turn.Over
 			if turn.AudioOutS >= 0 {
@@ -993,12 +1014,16 @@ func (cb *callBuild) turnOf(t *turnBuild, n int) Turn {
 	llm, seg := l.N("llm_first_token_ms"), l.N("first_segment_ms")
 	tts, out := l.N("tts_first_audio_ms"), l.N("first_audio_out_ms")
 	spec := l.Get("speculative") == "true"
+	assistantText := strings.Join(t.said, "")
+	if t.confirmedOpener() {
+		assistantText = t.openerText + assistantText
+	}
 
 	turn := Turn{
 		ID: t.id, N: n, PauseMS: pause,
 		ReplyMS: out, TotalMS: out + pause, Over: out+pause > TargetMS,
-		CallerText: t.callerText, AssistantText: strings.Join(t.said, ""),
-		Speculative: spec, CacheHit: t.firstIsCache,
+		CallerText: t.callerText, AssistantText: assistantText,
+		Speculative: spec, CacheHit: t.firstIsCache || t.confirmedOpener(),
 		Interrupted: t.interrupted, HeardMS: t.heardMS,
 		WinnerCopy: t.winner, Copies: t.of,
 		HedgeAsked: t.hedgeAsked, HedgeRefused: t.hedgeRefused, HedgeWinner: t.hedgeWinner,
@@ -1068,12 +1093,16 @@ func (cb *callBuild) turnOf(t *turnBuild, n int) Turn {
 		}
 	}
 
-	if !t.firstAudioAt.IsZero() {
+	firstAudioAt := t.firstAudioAt
+	if t.confirmedOpener() {
+		firstAudioAt = t.openerAt
+	}
+	if !firstAudioAt.IsZero() {
 		rel := tts
-		if t.firstIsCache {
+		if t.firstIsCache && !t.confirmedOpener() {
 			rel = out
 		}
-		closed := t.firstAudioAt.Add(-time.Duration(rel) * time.Millisecond)
+		closed := firstAudioAt.Add(-time.Duration(rel) * time.Millisecond)
 		turn.LastSoundS = cb.at(closed.Add(-time.Duration(pause) * time.Millisecond))
 		turn.AudioOutS = cb.at(closed.Add(time.Duration(out) * time.Millisecond))
 	}

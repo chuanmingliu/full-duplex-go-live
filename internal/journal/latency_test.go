@@ -90,6 +90,9 @@ func TestLatencyToolResultAddsOffsetAndCallerPauseExactlyOnce(t *testing.T) {
 	if c.Summary.Turns != 1 || c.Summary.P95 != 642 {
 		t.Fatalf("filler summary was replaced by result: %+v", c.Summary)
 	}
+	if e.ToolResult.N != 1 || *e.ToolResult.P95 != 1050 || len(e.ResultRows) != 1 || e.ResultRows[0].PauseMS != 600 {
+		t.Fatalf("result offset or pause changed: %+v", e)
+	}
 }
 
 func TestLatencyResultSpeechRemainsInTranscriptWithoutBecomingAGreeting(t *testing.T) {
@@ -149,6 +152,9 @@ func TestLatencyMissingAndAmbiguousLinksCannotFillContent(t *testing.T) {
 			if name != "missing link" && e.Unverified == 0 {
 				t.Fatalf("invalid link was not marked: %+v", e)
 			}
+			if e.ToolResult.N != 0 || len(e.ResultRows) != 0 {
+				t.Fatalf("invalid link became result evidence: %+v", e)
+			}
 		})
 	}
 }
@@ -203,6 +209,24 @@ func TestLatencyDirectContentIsNeverReplacedAndBadLinksRemainUnverified(t *testi
 	}
 }
 
+func TestLatencySlowToolResultRemainsVisibleAfterFastDirectContent(t *testing.T) {
+	_, child := latencyToolPair()
+	child.kv["first_audio_out_ms"], child.kv["first_content_ms"] = "153", "153"
+	origin := latencyMetric("item_1", map[string]string{"first_content_ms": "702"})
+	c := latencyCall(t, origin, latencyDelivery(map[string]string{"origin_to_result_start_ms": "3015"}), child)
+	e := c.Latency
+	if e.FirstContent.N != 1 || *e.FirstContent.P95 != 1082 || e.Joined != 0 || c.Summary.Turns != 1 {
+		t.Fatalf("first content or caller count changed: %+v", e)
+	}
+	if e.ToolResult.N != 1 || *e.ToolResult.P95 != 3548 || e.ToolResult.Over != 1 || len(e.ResultRows) != 1 {
+		t.Fatalf("slow result hidden: %+v", e)
+	}
+	r := e.ResultRows[0]
+	if r.OriginTurn != "item_1" || r.ResultTurn != "item_2" || r.PauseMS != 380 || r.OffsetMS != 3015 || r.ChildContentMS != 153 || r.TotalMS != 3548 {
+		t.Fatalf("result decomposition %+v", r)
+	}
+}
+
 func latencyLog(lines []Line) string {
 	var b strings.Builder
 	for _, l := range lines {
@@ -246,6 +270,12 @@ func TestLatencyArchiveBackfillPreservesSourcesAndKeepsSessionsSeparate(t *testi
 	if old.Latency != nil || old.Summary.Turns != 99 {
 		t.Fatal("backfill mutated the in-memory source")
 	}
+	old.Latency = &LatencyEvidence{Version: 1, FirstContent: latencyDistribution([]int{1})}
+	upgraded := s.withLatencyEvidence(old)
+	if upgraded.Latency.Version != 2 || upgraded.Latency.ToolResult.N != 1 || *upgraded.Latency.ToolResult.P95 != 830 || old.Latency.Version != 1 {
+		t.Fatalf("old evidence not upgraded independently: %+v", upgraded.Latency)
+	}
+	old.Latency = nil
 	after, err := os.ReadFile(s.archive.Path(old.ID, archCall))
 	if err != nil || string(before) != string(after) {
 		t.Fatal("backfill changed the archived call")

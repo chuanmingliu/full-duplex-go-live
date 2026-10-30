@@ -83,6 +83,9 @@ type toolState struct {
 	ackGraceStarted map[string]bool
 	// deliveries are finished tasks waiting for a gap in the conversation.
 	deliveries []taskDelivery
+	// handoff keeps the original floor until its clean completion has been
+	// recorded, even if the aborted producer's wake reaches the loop first.
+	handoff *Turn
 	// lastResult is the latest result read out to the caller, kept beside
 	// the working memory so the model still has the figures once the
 	// result note has left a trimmed history (10:48 on 10-26: the second
@@ -826,6 +829,7 @@ func (e *Engine) maybeDeliver() {
 	}
 	delivery := ts.deliveries[0]
 	task := delivery.task
+	e.tryReadyQuoteHandoff(delivery)
 	if ts.ackPending[task.ID] {
 		return // its ack first
 	}
@@ -936,6 +940,7 @@ func (e *Engine) closeTools() {
 	clear(ts.origins)
 	clear(ts.ackPending)
 	clear(ts.ackGraceStarted)
+	ts.handoff = nil
 	ts.deliveries = nil
 	if ts.calls > 0 || ts.memory != nil && !ts.memory.Empty() {
 		_, ver := e.memorySnapshot()

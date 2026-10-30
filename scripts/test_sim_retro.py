@@ -132,6 +132,21 @@ class SimRetroTests(unittest.TestCase):
         self.assertIn("completed=1", out)
         self.assertIn("unknown=1", out)
 
+    def test_result_after_preamble_is_reported_without_an_extra_caller(self):
+        rows = [turn(1, first_content_ms=702),
+                dict(time="2026-10-29T21:00:01+08:00", session=SID,
+                     msg="tools: delivering a task's result", task="task_1",
+                     origin_turn="item_1", turn="item_2", origin_to_result_start_ms=3015),
+                turn(2, response_to_speech=False, opened=False, opener_ms=0,
+                     end_silence_ms=0, first_audio_out_ms=153, first_content_ms=153)]
+        out = self.retro(rows)
+        self.assertIn("First content: **1** measured turns", out)
+        self.assertIn("first content p50 **1082**", out)
+        self.assertIn("Linked tool results: **1** measured results", out)
+        self.assertIn("result content p50 **3548**, p95 **3548**", out)
+        self.assertIn("answered 1; non-speech 1", out)
+        self.assertIn("explanatory lead-in", out)
+
     def test_receiver_gaps_require_valid_numeric_application_boundary_evidence(self):
         def gap(value, **changes):
             row = dict(valid=True, evidence="application_audio_boundary", value_ms=value)

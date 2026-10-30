@@ -41,6 +41,9 @@ type Segment struct {
 	Revision int
 	Text     string
 	PCM      []byte
+	// content distinguishes the model/result body from the opener already
+	// spoken at the pause. Only an entirely unplayed body may be handed off.
+	content bool
 	// onFirstAudio observes output, after pacing and cancellation checks.
 	// A queued segment that is discarded never invokes it.
 	onFirstAudio func()
@@ -120,6 +123,10 @@ type Player struct {
 	// reported through onSegment, which happens on its first audio.
 	pendingAnnounced bool
 	speaking         bool
+	pendingContent   bool
+	contentStarted   bool
+	handoffTurn      string
+	handoffGen       uint64
 }
 
 type spokenSpan struct {
@@ -204,7 +211,7 @@ func (p *Player) Run(gen *Generation) {
 // means its generation is current; a turn under grace is the one exception.
 func (p *Player) allowed(seg Segment, gen *Generation) bool {
 	p.mu.Lock()
-	if p.dropTurn != "" && p.dropTurn == seg.TurnID {
+	if (p.dropTurn != "" && p.dropTurn == seg.TurnID) || p.contentSuppressedLocked(seg) {
 		p.mu.Unlock()
 		return false
 	}
@@ -371,6 +378,9 @@ func (p *Player) Enqueue(seg Segment) bool {
 	if p.closed {
 		return false
 	}
+	if p.contentSuppressedLocked(seg) {
+		return false
+	}
 	if IsBackchannel(seg.TurnID) && (p.dropTurn == seg.TurnID || p.realTurnHoldsFloorLocked()) {
 		// Drop this one and everything else already queued for it, so a
 		// SegBegin that slipped in earlier cannot leave the turn half-open.
@@ -508,10 +518,14 @@ func (p *Player) ensureTurnLocked(turnID string) {
 func (p *Player) beginSegment(seg Segment) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.contentSuppressedLocked(seg) {
+		return
+	}
 	p.ensureTurnLocked(seg.TurnID)
 	p.pendingText = seg.Text
 	p.pendingFrom = p.emittedMS
 	p.pendingAnnounced = false
+	p.pendingContent = seg.content
 }
 
 // abandonSegment drops the text announced by a SegBegin that produced no audio.
@@ -523,16 +537,17 @@ func (p *Player) beginSegment(seg Segment) {
 func (p *Player) abandonSegment(seg Segment) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.activeTurn != seg.TurnID {
+	if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
 		return
 	}
 	p.pendingText = ""
 	p.pendingFrom = p.emittedMS
+	p.pendingContent = false
 }
 
 func (p *Player) markSegment(seg Segment) {
 	p.mu.Lock()
-	if p.activeTurn != seg.TurnID {
+	if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
 		p.mu.Unlock()
 		return
 	}
@@ -545,6 +560,7 @@ func (p *Player) markSegment(seg Segment) {
 	}
 	p.pendingText = ""
 	p.pendingFrom = p.emittedMS
+	p.pendingContent = false
 
 	if p.graceTurn != seg.TurnID {
 		p.mu.Unlock()
@@ -587,6 +603,10 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 	chunkBytes -= chunkBytes % audio.BytesPerSample
 
 	p.mu.Lock()
+	if p.contentSuppressedLocked(seg) {
+		p.mu.Unlock()
+		return
+	}
 	p.ensureTurnLocked(seg.TurnID)
 	p.setSpeakingLocked(true)
 	p.mu.Unlock()
@@ -616,12 +636,17 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 		}
 
 		p.mu.Lock()
-		if p.activeTurn != seg.TurnID {
+		if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
 			// The turn was cut while this chunk waited its turn.
 			p.mu.Unlock()
 			return
 		}
 		playAt := p.playhead
+		// Reserve the first body output under the same lock that can hand an
+		// unplayed body over to a ready result. Once reserved, it must finish.
+		if seg.content {
+			p.contentStarted = true
+		}
 		if !p.pendingAnnounced && p.pendingText != "" {
 			p.pendingAnnounced = true
 			if p.onSegment != nil {
@@ -647,7 +672,7 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 // "on" until the listener has actually heard the last chunk, then reports it.
 func (p *Player) finishTurn(seg Segment) {
 	p.mu.Lock()
-	if p.activeTurn != seg.TurnID {
+	if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
 		p.mu.Unlock()
 		return
 	}
@@ -771,6 +796,8 @@ func (p *Player) resetTurnLocked() {
 	p.pendingText = ""
 	p.pendingFrom = 0
 	p.pendingAnnounced = false
+	p.pendingContent = false
+	p.contentStarted = false
 }
 
 func (p *Player) setSpeakingLocked(state bool) {
