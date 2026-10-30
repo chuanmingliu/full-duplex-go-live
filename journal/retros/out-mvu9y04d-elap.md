@@ -97,7 +97,10 @@ assistant) and 207.54 seconds of 16 kHz stereo PCM audio, with signal on both
 channels. All five required files passed size and SHA256 checks. The
 recording is on the input clock; 220 ms of dropped input was reported and
 was not subtracted from latency. Private conversation, audio and prompt
-remain outside GitHub.
+remain outside GitHub. Caller input has 787 saturation samples (0.0237%),
+with a maximum consecutive run of 0.188 ms; the assistant channel has none.
+There is no evidence of sustained clipping, and these energy checks do not
+establish intelligibility. No audio-path change was made.
 
 The exact-session echo probe found no reliable handset return: strongest
 significance 2.5 against required 6, zero significant stretches of 31
@@ -110,8 +113,40 @@ results. The journal retains that distinction.
 
 ## Release verification
 
-Targeted regressions pass. Full CI, identifiable engine/CRM/journal build,
-idle-gated box deployment and live verification are pending for this
-revision. Repeat the real call with the same saved prompt after deployment
-and wait for **done** before reviewing it. New telemetry must be collected
-on that runtime; it cannot retroactively supply missing historical offsets.
+Runtime `914fa0ef32b1a7e6cb4831711ba7a1ecd78cfbac` passed quality checks
+and the full normal/race suites in GitHub Actions run `40986488788`.
+The earlier run exposed a scheduling-dependent synthesizer test: it
+asserted cancellation before the losing fake observed it. Test-only commit
+`2f37079` adds a bounded observation wait, retaining the exact-count
+assertion. It passed 600 normal and 300 race repetitions plus the provider
+race package; production synthesis code is unchanged.
+
+The engine, CRM and journal deployed successfully at 09:52:28
+Asia/Shanghai. Their actual executable hashes and launch configuration
+were verified, along with recording, 720-hour retention and completed
+phrase/scenario warming. Desk and simulator processes were preserved.
+The release and rollback copies are retained at
+`~/golive-releases/codex-914fa0e-20261030-095057`.
+
+The first attempt started the correct services but rejected their startup
+banner: the bundle's VERSION contains the full commit while the check
+expected the short version. It restored 1869e54. Independent verification
+confirmed all 12 baseline file hashes, all service binaries/configuration,
+recording and warm caches. The retry requires the exact full commit in
+the banner; its regression failed before correction and all 14 deployment
+checks passed. The first attempt remains recorded at
+`~/golive-releases/codex-914fa0e-20261030-094539`.
+
+After deployment, all five selected archive files remain checksum-valid.
+The live journal and deployed analyzer agree on 19 first-audio and 16 content
+samples, three missing/unverified handoffs and a failed strict gate. All 51
+transcript lines and 26 filler events remain available. The journal's
+conversation label now says reply timing is unavailable when a recorded
+quotation reply has no verified caller timing link. Talker is reachable
+(model `local-talker`, 10 ms status probe); no new live-call generation
+is claimed. The desk's 43-entry checksum chain is intact.
+
+Repeat the real call with the same saved prompt and wait for **done**
+before reviewing it. New telemetry must be collected on the deployed
+runtime; it cannot retroactively supply missing historical offsets. The
+physical handset latency target remains unverified.

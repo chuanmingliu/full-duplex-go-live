@@ -1054,8 +1054,11 @@
    "symptom": "A cached task completed immediately but was delivered about295ms later; its calling clause ended before acknowledgement release, then another120ms tick elapsed.",
    "cause": "The periodic loop checked result delivery before draining the acknowledgement; player completion did not promptly recheck both.",
    "fix": "Recheck delivery on task completion, skipped acknowledgement and player-floor release while retaining calling-clause, scripted-ack, caller-busy and shutdown guards.",
-   "verified": "Three event-order regressions failed on1869e54 and pass with the fix; targeted repeated race tests and broader tool/ack regressions pass. Full CI/deployment pending.",
-   "effect": "Removes the extra scheduler wait in regressions. New-call effect remains to be measured."
+   "verified": "Three event-order regressions failed on1869e54 and pass with the fix; targeted repeated race tests and broader tool/ack regressions pass. Quality and full normal/race CI passed for runtime914fa0e in run40986488788. Engine, CRM and journal binary/configuration checks passed after deployment at09:52 on2026-10-30, with recording enabled and both audio caches warm.",
+   "effect": "Removes the extra scheduler wait in regressions. New-call effect remains to be measured.",
+   "commits": [
+    "06c9f50"
+   ]
   },
   {
    "id": "ISS-067",
@@ -1068,8 +1071,11 @@
    "symptom": "The assistant gave an individual premium inconsistent with a later authoritative quote and repeatedly answered single-coverage questions with plan totals.",
    "cause": "Comparison variants dropped line items; retained memory reduced results to their configured spoken readout. Interrupted-readout guidance explicitly requested repetition of totals.",
    "fix": "Preserve authoritative lines for comparison variants and compact price facts beside retained memory. Match the current question scope, retain unknown/error/exclusion states and leave the configured readout unchanged.",
-   "verified": "Rules/API and custom-readout regressions fail before the fix and pass afterward; CRM race suite and focused duplex race tests pass. Extra retained facts are capped4096characters, with whole-option omission warnings. Full CI/deployment pending.",
-   "effect": "Authoritative individual prices survive history trimming. Accuracy and question-scope behavior still require a new call."
+   "verified": "Rules/API and custom-readout regressions fail before the fix and pass afterward; CRM race suite and focused duplex race tests pass. Extra retained facts are capped4096characters, with whole-option omission warnings. Quality and full normal/race CI passed for runtime914fa0e in run40986488788. Engine, CRM and journal binary/configuration checks passed after deployment at09:52 on2026-10-30, with recording enabled and both audio caches warm.",
+   "effect": "Authoritative individual prices survive history trimming. Accuracy and question-scope behavior still require a new call.",
+   "commits": [
+    "06c9f50"
+   ]
   },
   {
    "id": "ISS-068",
@@ -1082,8 +1088,12 @@
    "symptom": "Three quotation-origin rows lacked content while separate result rows had no speech origin. The journal excluded zero-ASR/LLM caller rows and counted their result rows with an invented pause.",
    "cause": "Delivery logs identified task/result but not a monotonic offset from the originating caller turn. The journal relied on legacy stage-value heuristics.",
    "fix": "Emit bounded task-origin metadata and monotonic origin-to-result-start timing. Strict reporting joins only unique verified links, counts the caller once and adds its pause once. Journal charts use explicit speech flags and expose a separate content-evidence panel.",
-   "verified": "Synthetic zero-ms cached-result, missing/duplicate/conflicting linkage, interrupted-result and session-isolation regressions pass. The current historical call remains incomplete; no timestamp is inferred from wall-clock adjacency. Full CI/deployment pending.",
-   "effect": "Prevents a quick cached child result or filler from hiding caller wait. Does not measure handset playout."
+   "verified": "Synthetic zero-ms cached-result, missing/duplicate/conflicting linkage, interrupted-result and session-isolation regressions pass. The current historical call remains incomplete; no timestamp is inferred from wall-clock adjacency. Quality and full normal/race CI passed for runtime914fa0e in run40986488788. Engine, CRM and journal binary/configuration checks passed after deployment at09:52 on2026-10-30, with recording enabled and both audio caches warm. Live journal and deployed report agree on the historical call:19audio/16content samples,3missing and3unverified handoffs; the gate remains failed.",
+   "effect": "Prevents a quick cached child result or filler from hiding caller wait. Does not measure handset playout.",
+   "commits": [
+    "06c9f50",
+    "914fa0e"
+   ]
   },
   {
    "id": "ISS-069",

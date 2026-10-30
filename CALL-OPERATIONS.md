@@ -136,3 +136,8 @@ replacement; the launcher's short stop wait is not proof that shutdown has
 finished. Verify the new CRM version and executable hash. Verify a journal
 update by its running executable hash: the journal's overview build is the
 phone service's build, not the journal binary's identity.
+
+Startup banner verification must use the first space-delimited field of the
+bundle's VERSION file, exactly as phone-brain.sh does. New bundles may put a
+full commit there while /healthz uses the short build version; verify both
+against their intended identifiers rather than assuming they are identical.
