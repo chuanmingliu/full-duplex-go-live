@@ -800,6 +800,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		// premium was worked out; the ack only delayed it by 3–4 s. Revised
 		// by the owner, 11:31 on 10-28.
 		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", p.scriptedTask)
+		e.maybeDeliver()
 		return
 	}
 	if e.hangingUp() {
@@ -1020,7 +1021,14 @@ func (e *Engine) AppendCommentary(delegationID, content, clientEventID string) {
 
 // wake asks the loop to look again at whatever is waiting for the floor. It
 // never blocks: the tick is the fallback.
-func (e *Engine) wake() { e.post(e.drainDeferred) }
+func (e *Engine) wake() {
+	e.post(func() {
+		// Match the periodic check's ordering. If the deferred ack is what
+		// releases a result, sayAck performs that delivery itself.
+		e.maybeDeliver()
+		e.drainDeferred()
+	})
+}
 
 // drainDeferred starts the next thing that has been waiting for a quiet caller
 // and a free floor: a function result to read back, then something an

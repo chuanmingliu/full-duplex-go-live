@@ -231,10 +231,11 @@ type Call struct {
 	Lanes       int    `json:"lanes,omitempty"`
 	Greeting    string `json:"greeting,omitempty"`
 
-	Summary      Stats   `json:"summary"`
-	StageMedians []Stage `json:"stage_medians"`
-	Turns        []Turn  `json:"turns"`
-	Transcript   []Said  `json:"transcript"`
+	Summary      Stats            `json:"summary"`
+	Latency      *LatencyEvidence `json:"latency,omitempty"`
+	StageMedians []Stage          `json:"stage_medians"`
+	Turns        []Turn           `json:"turns"`
+	Transcript   []Said           `json:"transcript"`
 	// AudioIn is the caller's audio as it arrived, a mark every few seconds.
 	AudioIn []AudioMark `json:"audio_in,omitempty"`
 	// Utterances is every time the energy gate opened on the caller's side,
@@ -299,6 +300,8 @@ type turnBuild struct {
 	hedgeWinner  int
 	focus        *FocusMark
 	latency      *Line
+	latencyCount int
+	taskResult   bool
 }
 
 type heardLine struct {
@@ -367,6 +370,7 @@ type callBuild struct {
 	}
 	copyWins        map[int]int
 	openerScenarios map[string]string
+	deliveries      []Line
 
 	// logFrom and logTo are where this call's lines begin and end in the log,
 	// in bytes: what the archive copies as the call's own slice of it.
@@ -718,7 +722,8 @@ func (ix *Indexer) Feed(l Line) {
 		cb.mark(l.Time, "interrupted", "The caller spoke over the answer; it was cut")
 	case "turn: response latency":
 		line := l
-		cb.turn(l.Get("turn")).latency = &line
+		t := cb.turn(l.Get("turn"))
+		t.latency, t.latencyCount = &line, t.latencyCount+1
 	case "listen: the caller paused inside the utterance":
 		ev.PausesInside = append(ev.PausesInside, l.N("pause_ms"))
 	case "listen: the assistant's voice came back":
@@ -800,6 +805,10 @@ func (ix *Indexer) Feed(l Line) {
 		}
 		cb.call.Quotation = append(cb.call.Quotation, st)
 	case "tools: delivering a task's result":
+		cb.deliveries = append(cb.deliveries, l)
+		if id := l.Get("turn"); id != "" {
+			cb.turn(id).taskResult = true
+		}
 		cb.call.Quotation = append(cb.call.Quotation, QuoteStep{TS: cb.at(l.Time), Kind: "delivered", Task: l.Get("task"), Tool: l.Get("tool"), WaitedMS: l.N("waited_for_gap_ms"), Interrupting: l.Get("interrupting") == "true"})
 	}
 }
@@ -833,8 +842,7 @@ func (cb *callBuild) finish() *Call {
 			continue
 		}
 		l := *t.latency
-		asr, llm := l.N("asr_final_ms"), l.N("llm_first_token_ms")
-		if asr == 0 && llm == 0 {
+		if !answeredSpeech(l) {
 			continue // an opening line: nobody was waiting
 		}
 		n++
@@ -842,6 +850,8 @@ func (cb *callBuild) finish() *Call {
 	}
 	c.Transcript = cb.transcript(c.Turns)
 	c.Summary = Summarise(c.Turns)
+	latency := cb.latencyEvidence()
+	c.Latency = &latency
 	c.StageMedians = stageMedians(c.Turns)
 	for i := range c.Turns {
 		if c.Turns[i].Over {
@@ -895,7 +905,7 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 			if turn.AudioOutS >= 0 {
 				line.TS = turn.AudioOutS
 			}
-		} else if t.latency == nil {
+		} else if t.latency == nil || t.taskResult {
 			line.Kind = "answer"
 		}
 		out = append(out, line)
@@ -976,7 +986,7 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 func (cb *callBuild) turnOf(t *turnBuild, n int) Turn {
 	l := *t.latency
 	pause := l.N("end_silence_ms")
-	if pause <= 0 {
+	if _, present := l.Int("end_silence_ms"); !present || pause < 0 || (pause == 0 && !boolKnown(l, "response_to_speech")) {
 		pause = defaultPauseMS
 	}
 	start, hasStart := l.Int("turn_start_ms")

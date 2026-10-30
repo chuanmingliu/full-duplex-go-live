@@ -106,6 +106,20 @@ class SimRetroTests(unittest.TestCase):
         rows = [turn(0), turn(1, first_content_ms=1200)]
         self.assertEqual(self.retro(rows), self.retro(rows, json_log=True))
 
+    def test_complete_session_retains_strict_tool_handoff(self):
+        rows = [turn(1, first_content_present=False, first_content_ms=0),
+                dict(time="2026-10-29T21:00:01+08:00", session=SID,
+                     msg="tools: delivering a task's result", task="task_1",
+                     origin_turn="item_1", turn="item_2", origin_to_result_start_ms=700),
+                turn(2, response_to_speech=False, opened=False, opener_ms=0,
+                     end_silence_ms=0, first_content_ms=0)]
+        out = self.retro(rows)
+        self.assertIn("First content: **1** measured turns", out)
+        self.assertIn("first content p50 **1080**", out)
+        self.assertIn("answered 1; non-speech 1", out)
+        self.assertIn("1 linked caller responses; 0 unverified links", out)
+        self.assertEqual(out, self.retro(rows, json_log=True))
+
     def test_report_free_text_is_not_published(self):
         private = "PRIVATE_TRANSCRIPT_DO_NOT_PRINT"
         out = self.retro([turn(0)], report={

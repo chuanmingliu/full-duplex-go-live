@@ -1019,9 +1019,11 @@
    "cause": "ackPending was released only when the grace timer fired, even after the calling clause had yielded and the result was ready.",
    "fix": "Release the acknowledgement wait as soon as a ready result can follow the original calling clause. Keep that clause protected, make stale callbacks no-ops, and log the result turn ID beside the task ID.",
    "verified": "Three regressions reproduced the delay before the fix and pass afterward. Full normal/race suites and quality checks passed on1869e54 in CI run40894903434; engine, CRM and journal deployed and verified at23:08 on2026-10-29. New-call effect remains unmeasured.",
-   "verified_call": "",
-   "commits": ["6307ad6"],
-   "effect": "Removes the artificial grace wait in deterministic tests. No new-call latency improvement claimed."
+   "verified_call": "out-mvu9y04d-elap",
+   "commits": [
+    "6307ad6"
+   ],
+   "effect": "The next real call delivered two ready results 14/47 ms after completion. A third retained an additional scheduler-tick delay after the calling clause ended; tracked separately as ISS-066. No physical handset improvement established."
   },
   {
    "id": "ISS-065",
@@ -1036,8 +1038,66 @@
    "fix": "Cache the pricing result and append each request's intake exclusions to a copied response and slice.",
    "verified": "Both cache orders failed before the fix. Rules/API paths and slice-isolation tests pass. Full normal/race suites and quality checks passed on1869e54 in CI run40894903434; the CRM running executable and version were verified after deployment.",
    "verified_call": "",
-   "commits": ["6307ad6"],
-   "effect": "Exclusion reporting is correct in regressions. The call's promised-rider/unchanged-quote inconsistency is observed, but trimmed tool arguments prevent proving this bug caused that exact instance."
+   "commits": [
+    "6307ad6"
+   ],
+   "effect": "Exclusion reporting is correct in regressions. The next real call requested no excluded coverage, so it did not exercise this fix. Trimmed historical tool arguments prevent attributing the earlier promised-rider discrepancy to this exact defect."
+  },
+  {
+   "id": "ISS-066",
+   "title": "A ready quotation waited another scheduler tick after its acknowledgement was released",
+   "area": "tools",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:09 real call and event-order regressions",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "A cached task completed immediately but was delivered about295ms later; its calling clause ended before acknowledgement release, then another120ms tick elapsed.",
+   "cause": "The periodic loop checked result delivery before draining the acknowledgement; player completion did not promptly recheck both.",
+   "fix": "Recheck delivery on task completion, skipped acknowledgement and player-floor release while retaining calling-clause, scripted-ack, caller-busy and shutdown guards.",
+   "verified": "Three event-order regressions failed on1869e54 and pass with the fix; targeted repeated race tests and broader tool/ack regressions pass. Full CI/deployment pending.",
+   "effect": "Removes the extra scheduler wait in regressions. New-call effect remains to be measured."
+  },
+  {
+   "id": "ISS-067",
+   "title": "Comparison memory lost individual coverage prices and repeated totals for single-coverage questions",
+   "area": "quotation",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:09 real call and rules/API/retained-memory regressions",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "The assistant gave an individual premium inconsistent with a later authoritative quote and repeatedly answered single-coverage questions with plan totals.",
+   "cause": "Comparison variants dropped line items; retained memory reduced results to their configured spoken readout. Interrupted-readout guidance explicitly requested repetition of totals.",
+   "fix": "Preserve authoritative lines for comparison variants and compact price facts beside retained memory. Match the current question scope, retain unknown/error/exclusion states and leave the configured readout unchanged.",
+   "verified": "Rules/API and custom-readout regressions fail before the fix and pass afterward; CRM race suite and focused duplex race tests pass. Extra retained facts are capped4096characters, with whole-option omission warnings. Full CI/deployment pending.",
+   "effect": "Authoritative individual prices survive history trimming. Accuracy and question-scope behavior still require a new call."
+  },
+  {
+   "id": "ISS-068",
+   "title": "Tool-result latency lacked a measured relationship to the original caller turn",
+   "area": "telemetry",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:09 call lifecycle compared with metric-only reports and journal grouping",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "Three quotation-origin rows lacked content while separate result rows had no speech origin. The journal excluded zero-ASR/LLM caller rows and counted their result rows with an invented pause.",
+   "cause": "Delivery logs identified task/result but not a monotonic offset from the originating caller turn. The journal relied on legacy stage-value heuristics.",
+   "fix": "Emit bounded task-origin metadata and monotonic origin-to-result-start timing. Strict reporting joins only unique verified links, counts the caller once and adds its pause once. Journal charts use explicit speech flags and expose a separate content-evidence panel.",
+   "verified": "Synthetic zero-ms cached-result, missing/duplicate/conflicting linkage, interrupted-result and session-isolation regressions pass. The current historical call remains incomplete; no timestamp is inferred from wall-clock adjacency. Full CI/deployment pending.",
+   "effect": "Prevents a quick cached child result or filler from hiding caller wait. Does not measure handset playout."
+  },
+  {
+   "id": "ISS-069",
+   "title": "The assistant continued purchase guidance after the caller asked to end the conversation",
+   "area": "conversation",
+   "status": "open",
+   "found": "2026-10-30",
+   "found_on": "09:09 real call, closing exchange",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "Two closing requests were followed by more purchase guidance; an explicit final farewell eventually triggered the assistant-goodbye fallback.",
+   "cause": "Active hangup-rules v3 already covers goodbye and completed business. No end_call invocation was logged; this is model adherence rather than a missing configured rule.",
+   "fix": "Pending: reproduce against the existing business prompt and evaluate closing-intent behavior without prematurely ending unfinished questions.",
+   "verified": "Read the deployed v3 rule conditions and the selected call lifecycle. No hangup configuration changed.",
+   "effect": "Unresolved conversational behavior, independent of the measured scheduler defect."
   }
  ]
 }

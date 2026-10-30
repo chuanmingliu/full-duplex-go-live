@@ -12,6 +12,7 @@ import sys
 
 
 MESSAGE = "turn: response latency"
+TOOL_DELIVERY = "tools: delivering a task's result"
 
 
 def integer(row, key):
@@ -41,7 +42,82 @@ def parse(line):
             raise ValueError("not an object")
     else:
         row = dict(word.split("=", 1) for word in shlex.split(line) if "=" in word)
-    return row if row.get("msg") == MESSAGE else None
+    return row if row.get("msg") in (MESSAGE, TOOL_DELIVERY) else None
+
+
+def join_tool_results(records, links, counts):
+    """Fill missing caller content only with an explicit monotonic handoff.
+
+    The offset starts at the originating turn's close, not its last sound.
+    The ordinary analyzer adds that caller's end silence once afterwards.
+    Wall-clock timestamps and adjacency are deliberately never consulted.
+    """
+    by_turn, by_task, by_origin, by_result = {}, Counter(), Counter(), Counter()
+    for row in records:
+        key = (str(row.get("session", "")), str(row.get("turn", "")))
+        by_turn.setdefault(key, []).append(row)
+    for link in links:
+        session = str(link.get("session", ""))
+        by_task[(session, str(link.get("task", "")))] += 1
+        by_origin[(session, str(link.get("origin_turn", "")))] += 1
+        by_result[(session, str(link.get("turn", "")))] += 1
+
+    def invalid():
+        counts["invalid_tool_links"] += 1
+        counts["unverified"] += 1
+
+    for link in links:
+        counts["tool_result_links"] += 1
+        if any(not isinstance(link.get(key), str) or not link[key]
+               for key in ("session", "task", "turn", "origin_turn")):
+            invalid()
+            continue
+        session, task = link["session"], link["task"]
+        origin_key, result_key = (session, link["origin_turn"]), (session, link["turn"])
+        origins, children = by_turn.get(origin_key, []), by_turn.get(result_key, [])
+        if len(origins) != 1 or origin_key == result_key:
+            invalid()
+            continue
+        origin = origins[0]
+        offset = integer(link, "origin_to_result_start_ms")
+        if (offset is None or offset < 0 or len(children) != 1 or
+                by_task[(session, task)] != 1 or by_origin[origin_key] != 1 or
+                by_result[result_key] != 1):
+            invalid()
+            continue
+        child = children[0]
+        origin_audio = integer(origin, "first_audio_out_ms")
+        pause = integer(origin, "end_silence_ms")
+        child_audio = integer(child, "first_audio_out_ms")
+        child_content = integer(child, "first_content_ms")
+        original_content = boolean(origin, "first_content_present")
+        # An opener canceled before content remains a backchannel. A later
+        # result must not silently turn it back into an answered caller turn.
+        cancelled_origin = original_content is False and boolean(origin, "truncated") is True
+        if (boolean(origin, "response_to_speech") is not True or
+                original_content is None or cancelled_origin or
+                boolean(origin, "first_audio_present") is not True or
+                boolean(origin, "opened") is None or
+                boolean(origin, "truncated") is None or
+                origin_audio is None or pause is None or pause < 0 or
+                origin_audio + pause < 0 or
+                boolean(child, "response_to_speech") is not False or
+                boolean(child, "first_audio_present") is not True or
+                boolean(child, "first_content_present") is not True or
+                boolean(child, "opened") is None or boolean(child, "truncated") is None or
+                integer(child, "end_silence_ms") != 0 or
+                child_audio is None or child_content is None or
+                child_audio < 0 or child_content < child_audio or
+                offset + child_content < origin_audio):
+            invalid()
+            continue
+        # A caller that already received content needs no replacement timestamp.
+        if original_content is True:
+            continue
+        origin["first_content_ms"] = offset + child_content
+        origin["first_content_present"] = True
+        origin["_tool_result_interrupted"] = boolean(child, "truncated")
+        counts["tool_results_joined"] += 1
 
 
 def distribution(values, target):
@@ -57,10 +133,12 @@ def distribution(values, target):
 def analyse(lines, pause, target):
     counts = Counter({key: 0 for key in (
         "records", "answered", "non_speech", "cancelled", "interrupted_answers",
-        "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause")})
+        "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause",
+        "tool_result_links", "tool_results_joined", "invalid_tool_links")})
     seen, rows, audio, content, reply = set(), [], [], [], []
+    records, links = [], []
     for line in lines:
-        if MESSAGE not in line:
+        if MESSAGE not in line and TOOL_DELIVERY not in line:
             continue
         try:
             row = parse(line)
@@ -69,6 +147,9 @@ def analyse(lines, pause, target):
             continue
         if row is None:
             continue
+        (records if row["msg"] == MESSAGE else links).append(row)
+    join_tool_results(records, links, counts)
+    for row in records:
         counts["records"] += 1
         identity = (str(row.get("session", "")), str(row.get("turn", "")))
         if identity[1] and identity in seen:
@@ -93,7 +174,7 @@ def analyse(lines, pause, target):
         legacy = spoken is None or audio_present is None or content_present is None or opened is None
         if opened is None:
             opened = opener_ms is not None and opener_ms > 0
-        truncated = boolean(row, "truncated") is True
+        truncated = boolean(row, "truncated") is True or row.get("_tool_result_interrupted") is True
         if truncated and (audio_present is False or content_present is False):
             # An opener cut off before any answer is a backchannel, not an answer.
             counts["cancelled"] += 1
@@ -201,6 +282,9 @@ def print_report(report, rows, gated):
               f"  p95 {format_number(stats['p95_ms'])}  max {format_number(stats['max_ms'])} ms;"
               f" n={stats['n']}, {stats['at_or_above_target']} at or above {report['target_ms']} ms")
     print("Scope: audio leaving golive; the PBX, carrier and handset leg is not measured.")
+    if report["counts"]["tool_results_joined"]:
+        print("Tool-result content is joined to the original caller using explicit monotonic offsets; "
+              "the caller's pause is added once and result turns are not extra caller samples.")
     if report["counts"]["unverified"]:
         print("Legacy/ambiguous records are estimates; their speech origin and audio presence are not verified.")
     if gated:

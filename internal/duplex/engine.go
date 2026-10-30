@@ -2137,6 +2137,9 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 		e.noteAssistantQuiet()
 		e.checkAssistantHangupRules(text)
 	})
+	// Synthesis may have finished while the player was still draining audio.
+	// Its completion now releases deferred tool results without a tick.
+	e.wake()
 	e.deps.Emit(e.UsageEvent())
 }
 

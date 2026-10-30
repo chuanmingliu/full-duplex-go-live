@@ -1671,7 +1671,7 @@
       meta,
       h('div', { class: 'defs' },
         h('div', { class: 'def' },
-          h('h3', null, 'Caller’s last sound → first audio', h('span', { class: 'def-tag' }, 'the target’s definition')),
+          h('h3', null, 'Caller’s last sound → first audio', h('span', { class: 'def-tag' }, 'includes fillers')),
           h('div', { class: 'figs' },
             fig('p50', num(st.p50), { unit: ' ms' }), fig('p90', num(st.p90)),
             fig(t.label, num(t.v), { mark: tailMark(st, target), cls: t.v > target ? 'is-over' : '' }),
@@ -1682,7 +1682,8 @@
           h('h3', null, 'Turn judged over → first audio', h('span', { class: 'def-tag' }, 'the latency console’s definition')),
           h('div', { class: 'figs' }, fig('p50', num(st.reply_p50), { unit: ' ms' }), fig('p90', num(st.reply_p90)), fig('p95', num(st.reply_p95))),
           h('p', { class: 'standing-note' }, 'Does not include the pause that ended the turn.'))),
-      h('p', { class: 'legnote' }, 'The phone leg (exchange, gateway, carrier, both ways) is on top of either figure and is not included.')));
+      window.JournalLatency(call, h, target),
+      h('p', { class: 'legnote' }, 'The phone leg (exchange, gateway, carrier, both ways) is on top of these figures and is not included.')));
 
     // recording
     var recBody;

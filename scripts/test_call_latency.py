@@ -22,6 +22,23 @@ def turn(index, **changes):
     return row
 
 
+def delivery(origin=1, child=2, **changes):
+    row = dict(time="2026-10-29T20:00:01+08:00", level="INFO", session="sess_test",
+               msg="tools: delivering a task's result", task="task_1",
+               origin_turn=f"item_{origin}", turn=f"item_{child}",
+               origin_to_result_start_ms=400)
+    row.update(changes)
+    return row
+
+
+def tool_pair(**child_changes):
+    origin = turn(1, first_content_present=False, first_content_ms=0)
+    child = turn(2, response_to_speech=False, opened=False, opener_ms=0,
+                 end_silence_ms=0, first_content_ms=0, turn_start_ms=0)
+    child.update(child_changes)
+    return origin, child
+
+
 class CallLatencyTests(unittest.TestCase):
     def run_report(self, rows, *flags, text=False):
         with tempfile.TemporaryDirectory() as directory:
@@ -165,6 +182,124 @@ class CallLatencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "call.log"
             path.write_text('{"msg":"turn: response latency", "private":"do-not-print"\n')
+            result = subprocess.run(["bash", str(SCRIPT), str(path), "--gate", "--json"],
+                                    text=True, capture_output=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("do-not-print", result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["counts"]["malformed"], 1)
+
+    def test_tool_result_zero_is_joined_once_with_original_audio_and_pause(self):
+        origin, child = tool_pair()
+        origin.update(first_audio_out_ms=42, end_silence_ms=600)
+        rows = [child, delivery(origin_to_result_start_ms=450), origin]
+        code, report = self.run_report(rows, "--gate", "--metric", "content", "--min-turns", "1")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["counts"]["records"], 2)
+        self.assertEqual(report["counts"]["non_speech"], 1)
+        self.assertEqual(report["counts"]["answered"], 1)
+        self.assertEqual(report["counts"]["tool_results_joined"], 1)
+        self.assertEqual(report["first_audio"]["p95_ms"], 642)
+        self.assertEqual(report["first_content"]["p95_ms"], 1050)
+        self.assertEqual(report["first_content"]["n"], 1)
+        self.assertEqual(self.run_report(rows), self.run_report(rows, text=True))
+
+    def test_slow_tool_result_cannot_hide_behind_a_fast_filler(self):
+        origin, child = tool_pair(first_content_ms=100)
+        code, report = self.run_report([origin, delivery(origin_to_result_start_ms=900), child],
+                                       "--gate", "--metric", "content", "--min-turns", "1")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["first_audio"]["p95_ms"], 380)
+        self.assertEqual(report["first_content"]["p95_ms"], 1380)
+
+    def test_unplayed_or_ambiguous_child_cannot_fill_missing_content(self):
+        cases = [dict(first_content_present=False), dict(first_audio_present=False),
+                 dict(first_content_ms="bad"), dict(first_content_ms=-1),
+                 dict(first_audio_out_ms=20, first_content_ms=0),
+                 dict(response_to_speech=True), dict(end_silence_ms=380),
+                 dict(first_content_present=None)]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                origin, child = tool_pair(**changes)
+                _, report = self.run_report([origin, delivery(), child])
+                self.assertEqual(report["counts"]["tool_results_joined"], 0)
+                self.assertGreaterEqual(report["counts"]["missing"], 1)
+                self.assertGreaterEqual(report["counts"]["unverified"], 1)
+
+    def test_interruption_after_result_audio_counts_but_unplayed_result_does_not(self):
+        origin, child = tool_pair(truncated=True)
+        _, report = self.run_report([origin, delivery(), child])
+        self.assertEqual(report["counts"]["answered"], 1)
+        self.assertEqual(report["counts"]["interrupted_answers"], 1)
+        child["first_content_present"] = False
+        _, report = self.run_report([origin, delivery(), child])
+        self.assertEqual(report["counts"]["answered"], 0)
+        self.assertEqual(report["counts"]["missing"], 1)
+        origin["truncated"] = True
+        child["first_content_present"] = True
+        _, report = self.run_report([origin, delivery(), child])
+        self.assertEqual(report["counts"]["tool_results_joined"], 0)
+        self.assertEqual(report["counts"]["cancelled"], 1)
+
+    def test_missing_or_legacy_handoff_never_uses_wallclock_estimates(self):
+        origin, child = tool_pair()
+        legacy = delivery()
+        del legacy["origin_to_result_start_ms"]
+        older = dict(legacy)
+        del older["origin_turn"]
+        for rows in ([origin, child], [origin, delivery()], [origin, legacy, child],
+                     [origin, older, child], [delivery(), child]):
+            with self.subTest(records=len(rows)):
+                code, report = self.run_report(rows, "--gate", "--min-turns", "1")
+                self.assertEqual(code, 1)
+                self.assertEqual(report["counts"]["tool_results_joined"], 0)
+                self.assertEqual(report["first_content"]["n"], 0)
+
+    def test_duplicate_or_conflicting_handoffs_are_not_guessed(self):
+        origin, child = tool_pair()
+        for links in ([delivery(), delivery()],
+                      [delivery(), delivery(origin_to_result_start_ms=401)],
+                      [delivery(), delivery(task="task_2")],
+                      [delivery(), delivery(origin=3)]):
+            with self.subTest(links=links):
+                _, report = self.run_report([origin, *links, child])
+                self.assertEqual(report["counts"]["tool_results_joined"], 0)
+                self.assertEqual(report["counts"]["missing"], 1)
+                self.assertGreaterEqual(report["counts"]["invalid_tool_links"], 1)
+        for duplicate in (origin, child):
+            _, report = self.run_report([origin, delivery(), child, duplicate])
+            self.assertEqual(report["counts"]["tool_results_joined"], 0)
+            self.assertEqual(report["counts"]["duplicates"], 1)
+
+    def test_task_identity_is_scoped_to_session(self):
+        origin, child = tool_pair(first_content_ms=100)
+        other_origin, other_child = tool_pair()
+        other_origin.update(session="sess_other", end_silence_ms=280)
+        other_child["session"] = "sess_other"
+        _, report = self.run_report([origin, child, delivery(), other_origin, other_child,
+                                    delivery(session="sess_other", origin_to_result_start_ms=300)])
+        self.assertEqual(report["counts"]["tool_results_joined"], 2)
+        self.assertEqual(report["counts"]["non_speech"], 2)
+        self.assertEqual(report["first_content"]["n"], 2)
+        self.assertEqual(report["first_content"]["p50_ms"], 730)
+        self.assertEqual(report["counts"]["unverified"], 0)
+
+    def test_existing_caller_content_is_not_replaced_by_later_tool_result(self):
+        _, child = tool_pair()
+        _, report = self.run_report([turn(1), delivery(origin_to_result_start_ms=5000), child])
+        self.assertEqual(report["counts"]["tool_results_joined"], 0)
+        self.assertEqual(report["first_content"]["p95_ms"], 880)
+
+    def test_offset_must_be_explicit_nonnegative_integer(self):
+        for value in (-1, True, 1.5, "invalid", None):
+            origin, child = tool_pair()
+            _, report = self.run_report([origin, delivery(origin_to_result_start_ms=value), child])
+            self.assertEqual(report["counts"]["tool_results_joined"], 0)
+            self.assertEqual(report["counts"]["missing"], 1)
+
+    def test_malformed_handoff_is_counted_without_echoing_private_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "call.log"
+            path.write_text('{"msg":"tools: delivering a task\'s result", "private":"do-not-print"\n')
             result = subprocess.run(["bash", str(SCRIPT), str(path), "--gate", "--json"],
                                     text=True, capture_output=True)
         self.assertEqual(result.returncode, 1)

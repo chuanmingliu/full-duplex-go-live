@@ -736,7 +736,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 	switch what {
 	case "":
 		writeJSON(w, http.StatusOK, map[string]any{
-			"call":          s.withFillerEvidence(c),
+			"call":          s.withFillerEvidence(s.withLatencyEvidence(c)),
 			"target_ms":     TargetMS,
 			"repo_url":      s.cfg.RepoURL,
 			"audio":         s.audioOf(c),

@@ -170,6 +170,9 @@ out.append("- Console's definition: p50 %s, max %s ms. p50 is the ordinary media
 counts = measurements["counts"]
 out.append("- Records: answered %d; non-speech %d; cancelled %d; interrupted answers %d; missing %d; unverified %d; duplicates %d; malformed %d." % tuple(counts[key] for key in (
     "answered", "non_speech", "cancelled", "interrupted_answers", "missing", "unverified", "duplicates", "malformed")))
+if counts["tool_result_links"]:
+    out.append("- Tool-result handoffs: %d linked caller responses; %d unverified links. Only explicit monotonic offsets join result content to its original caller; the caller's pause is added once." % (
+        counts["tool_results_joined"], counts["invalid_tool_links"]))
 if counts["unverified"]:
     out.append("- Legacy/ambiguous records are estimates: speech origin and audio presence are unverified; a missing pause assumes 380 ms. They cannot establish acceptance.")
 out.append("- Chat model, fastest of the copies, %d answers: p50 %s, p90 %s, max %s ms. Synthesizer first audio, %d segments: p50 %s, p90 %s, max %s ms." % (
