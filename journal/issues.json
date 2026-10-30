@@ -1239,9 +1239,11 @@
    "symptom": "The third quotation started readout896ms after result delivery because a standard readiness posthook was added after the waiting acknowledgement.",
    "cause": "The omission guard required the original caller to be current; the same task's scripted acknowledgement had replaced it.",
    "fix": "Track the same task's acknowledgement provenance and permit omission only after that exact acknowledgement emitted audio and naturally completed. The original caller opener also requires natural completion; soft truncation invalidates proof even when the generic completion timestamp is set. Preserve caller/memory/floor and custom-wording guards.",
-   "verified": "Failing-before regressions reproduced missing acknowledgement omission and unsafe direct/ack linking after soft truncation. Expanded tests passed twenty repeated race runs; the broader focused race suite passed in 19.219 seconds. Independent review found no remaining issue. A legacy greeting-metrics timeout also reproduced on unchanged HEAD; its behavior was not altered. Full candidate CI, deployment and fresh call verification remain pending.",
-   "effect": "Not yet verified on a new call.",
-   "commits": []
+   "verified": "Failing-before regressions reproduced missing acknowledgement omission and unsafe direct/ack linking after soft truncation. Expanded tests passed twenty repeated race runs; the broader focused race suite passed in 19.219 seconds. Independent review and full quality/normal/race CI passed (run 41014100115). Runtime 380c1a7 was deployed and verified. In simulator out-mvuluygh-p1vy, all three tasks finished within acknowledgement grace, so no waiting acknowledgement was emitted and the new same-task path was not exercised. Ordinary posthook omission was observed on all three deliveries, including two explicitly classified nondefault quotes. Physical handset latency remains unmeasured.",
+   "effect": "The ordinary posthook omission worked for all three quotation deliveries; the new completed-acknowledgement path has regression-test evidence but no execution evidence from this replay.",
+   "commits": [
+    "380c1a7"
+   ]
   },
   {
    "id": "ISS-078",
@@ -1254,9 +1256,11 @@
    "symptom": "The first two quote tasks completed at0ms, but a further selection change took3040ms in backend calculation.",
    "cause": "Only startup default neighbors are prepared; all eight initial requests were used. The configured quote API polls every500ms and fronts the local quotesvc with an intentional seconds-long pricing workload. A requested two-change combination was not prepared.",
    "fix": "Add default-disabled follow_selection_max (0–32), a cumulative extra cache-claim budget per call around explicit quoted selections. Foreground work has next-slot priority; unchanged cache/in-flight matches spend no budget. Preserve the original initial limit and pricing workload, invalidate stale queued generations and bound tracked calls to 512. Pin pricing source/version through computation and preserve replacement cache ownership when an expired reader retries.",
-   "verified": "Failing-before tests reproduced missing neighbor preparation and an API result entering a claimed rules cache key during configuration change. Full CRM race tests passed in 8.016 seconds; vet and diff checks passed. Coverage includes cumulative budget, expiry ownership, source/version changes, cancellation, priority and shutdown. Independent review passed, including a separate run of the source-pinning race tests. Runtime policy is still disabled; full CI, deployment and a repeat call remain pending.",
-   "effect": "Not yet verified on a new call.",
-   "commits": []
+   "verified": "Failing-before tests reproduced missing neighbor preparation and an API result entering a rules cache claim during configuration change. Full CRM race tests passed in 8.016 seconds; vet, independent review and full quality/normal/race CI passed (run 41014100115). Runtime 380c1a7 and quote-plans v7 were verified with follow_selection_max=8; all other configuration snapshots were unchanged. CRM records for out-mvuluygh-p1vy show one foreground/default, eight initial and eight follow-selection computations with zero errors. Quote 401 was prepared by follow-selection memory 1: its 4509 ms computation finished 8.98 seconds before demand. Task durations were 0/1/1 ms versus 0/0/3040 ms previously. Readouts were 1103/1192/972 ms versus 1094/1135/4848 ms. The third readout improved by 3876 ms: 3160 ms less origin-side waiting and 716 ms less child readout time; it is not all attributable to preparation. The diagnostic passed; the strict gate failed only because five caller samples are fewer than twenty. Physical handset latency remains unmeasured.",
+   "effect": "The requested follow-up combination was prepared before demand, preserving the authoritative pricing workload. All three quotation readouts were below 1200 ms in this short simulator run; the strict n20 gate and physical handset target remain unproven.",
+   "commits": [
+    "380c1a7"
+   ]
   },
   {
    "id": "ISS-079",
@@ -1266,11 +1270,11 @@
    "found": "2026-10-30",
    "found_on": "14:14 targeted quotation simulator call and source review",
    "found_call": "out-mvukudco-7zrb",
-   "symptom": "The assistant repeated every coverage and then the total after a request to repeat only the total.",
+   "symptom": "The assistant repeated every coverage and then the total after a request to repeat the total without asking for coverage details.",
    "cause": "The response followed the detailed quotation context more broadly than the requested scope.",
    "fix": "Pending: improve scope adherence for total-only follow-ups while preserving authoritative pricing and requested detailed comparisons.",
-   "verified": "Evidence reviewed; implementation and verification pending.",
-   "effect": "Not yet verified on a new call.",
+   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call.",
+   "effect": "Still open after runtime 380c1a7; the replay confirms the scope mismatch.",
    "commits": []
   }
  ]

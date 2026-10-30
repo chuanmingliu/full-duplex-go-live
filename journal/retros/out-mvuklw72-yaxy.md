@@ -68,3 +68,40 @@ One regional claims-provider answer followed a passage that conflicts with
 other text in the same saved prompt. ISS-076 records the ambiguity. The
 authoritative business rule is unknown; the saved prompt remains unchanged.
 Private business wording and the full transcript are not included here.
+
+
+## Observed follow-up release and simulator replay — 380c1a7
+
+Evidence collected at 2026-10-30T06:45:18.605787+00:00. Commit `380c1a7350ec73094f01cc19006acff08b587719` passed the complete
+quality, normal and race CI jobs ([run 41014100115](https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41014100115)).
+The engine, CRM and journal executable hashes matched the reviewed build;
+the deployed release completed its cache, recording and journal checks.
+Historical call audio, session and log fingerprints remained unchanged.
+
+The separate guarded configuration change enabled only standard-plan
+`prequote.follow_selection_max=8` in quote-plans v7
+(SHA `f2142bd9cddd`). The original initial limit remains
+implicit eight. All other configuration snapshots were unchanged.
+
+The subsequent simulator replay was `out-mvuluygh-p1vy`, session `sess_fe205c981a9694ecd25c6acc`,
+run `sim-ed7527b2b5e18a97e6184bcb`, using the same `sim-prequote-hit` scenario and saved
+business prompt (SHA prefix `639dcecf24dd`). All five archive files passed
+size and SHA-256 checks; both recorded audio channels contained signal.
+
+| Replay measurement | Observed result |
+| --- | --- |
+| Server first audio, including fillers | n=5, p50=380, p95=380, max=380 ms |
+| Server first non-opener content | n=5, p50=994, p95=1192, max=1192 ms |
+| Linked result content | n=3, p50=1103, p95=1192, max=1192 ms |
+| Explicit quotation readout output | n=3, p50=1103, p95=1192, max=1192 ms |
+| Receiver first-audio boundary | n=7, p95=667 ms |
+
+The targeted quotation exercise **passed** with
+3 observed readouts and 2
+confirmed guarded nondefault posthook omissions. The separate strict
+twenty-sample server gate **failed**. Its recorded reasons were:
+first_audio: 5 samples, need 20; first_content: 5 samples, need 20.
+These observations alone do not prove that a completed waiting
+acknowledgement or additional prefetch was exercised; use delivery logs
+for that narrower attribution. This replay is simulator evidence. The
+physical handset target remains unproven.
