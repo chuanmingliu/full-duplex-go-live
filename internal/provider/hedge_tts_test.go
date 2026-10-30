@@ -190,6 +190,12 @@ func TestHedgedFirstSegmentIsTheConnectionThatSpokeFirst(t *testing.T) {
 	if first > 200*time.Millisecond {
 		t.Errorf("first audio after %v; the faster connection had it at 20 ms", first)
 	}
+	// Cancellation precedes winner audio, but the losing fake observes it on
+	// its own goroutine. Draining the winner does not wait for that observation.
+	deadline := time.Now().Add(time.Second)
+	for f.stream(0).cancelled.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if f.stream(0).cancelled.Load() != 1 {
 		t.Error("the connection that lost was not told to stop")
 	}
