@@ -1266,17 +1266,18 @@
    "id": "ISS-079",
    "title": "A total-only repeat request received all coverage details",
    "area": "conversation",
-   "status": "open",
+   "status": "watching",
    "found": "2026-10-30",
    "found_on": "14:14 targeted quotation simulator call and source review",
    "found_call": "out-mvukudco-7zrb",
    "symptom": "The assistant repeated every coverage and then the total after a request to repeat the total without asking for coverage details.",
    "cause": "The response followed the detailed quotation context more broadly than the requested scope.",
    "fix": "Retained authoritative quote context now tells the model to answer total-repeat requests with the requested total and necessary unquoted-coverage caveats, while allowing itemized details and comparisons when requested. Saved business instructions, quote facts and initial custom readout remain unchanged. The subsequent candidate explicitly excludes appended coverage names, coverage lists and individual premiums on total-only requests.",
-   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Candidate CI, deployment and model-behavior replay were subsequently completed as recorded below. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: On deployed bbdb7a3, replay out-mvumm8e2-t8in item_10 gave the authoritative total first, then still named all six coverages. It no longer repeated individual premiums. The request did not ask for the coverage list, so the guidance change is only a partial improvement. This stronger wording has not yet been validated in a model replay; the issue remains open.",
-   "effect": "Reopened after live simulator verification: answer scope remains too broad despite correct values.",
+   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Candidate CI, deployment and model-behavior replay were subsequently completed as recorded below. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: On deployed bbdb7a3, replay out-mvumm8e2-t8in item_10 gave the authoritative total first, then still named all six coverages. It no longer repeated individual premiums. The request did not ask for the coverage list, so the guidance change is only a partial improvement. This stronger wording has not yet been validated in a model replay; the issue remains open. Follow-up on runtime c582781, simulator out-mvuoo3dk-dzip, CI run 41022216798: Matched replay out-mvuoo3dk-dzip item_9 completed at 16:02:32.607 after the split repeat request. The 12-character response contained exactly one monetary amount equal to the latest authoritative total under the configured rounding rule, with no coverage names or itemized list. This verifies the desired scope in this case; alternate repeat wording and detailed-comparison requests were not exercised.",
+   "effect": "The observed total-only repeat now stays within the requested scope and preserves the authoritative total. Keep watching broader conversation coverage.",
    "commits": [
-    "bbdb7a3"
+    "bbdb7a3",
+    "c582781"
    ]
   },
   {
@@ -1306,8 +1307,25 @@
    "symptom": "The accepted end_call diagnostic stored the full turn object under the turn field rather than a scalar turn ID.",
    "cause": "The log argument used job.turn after playback ownership moved to exact Turn pointers.",
    "fix": "Log only job.turn.ID. A regression exercises accepted hangup with private sentinel fields through both text and JSON log handlers.",
-   "verified": "Both handler tests failed before the change and passed afterward. Focused hangup regressions passed with race detection; the combined quote, playback, preparation and hangup regression suite passed in 7.506 seconds. Full candidate CI, deployment and replay are pending.",
-   "effect": "The accepted-hangup diagnostic retains its identifier without serializing the private turn payload.",
+   "verified": "Both handler tests failed before the change and passed afterward. Focused hangup regressions passed with race detection; the combined quote, playback, preparation and hangup regression suite passed in 7.506 seconds. Full candidate CI, deployment and replay are pending. Follow-up on runtime c582781, simulator out-mvuoo3dk-dzip, CI run 41022216798: The matched c582781 call did not invoke end_call and produced zero accepted-hangup diagnostic events. Receiver termination was customer_hangup; the final generated response had begun but lacked a completion/latency record at disconnect. This call does not provide live validation of the scalar-turn logging fix.",
+   "effect": "The implementation remains covered by its prior regression tests; accepted-hangup logging still needs a live exercised case. Zero diagnostic events are not verification.",
+   "commits": [
+    "c582781"
+   ]
+  },
+  {
+   "id": "ISS-082",
+   "title": "Journal quotation transcript omits the prepared first segment",
+   "area": "journal",
+   "status": "open",
+   "found": "2026-10-30",
+   "found_on": "Post-call canonical-history and journal comparison on c582781",
+   "found_call": "out-mvuoo3dk-dzip",
+   "symptom": "Each of the three completed quotation journal rows omits a 13-character prepared prefix. The retained final canonical response includes the first priced-coverage segment that is absent from its journal row.",
+   "cause": "Prepared first-segment text is missing from the reconstructed journal transcript despite being retained in canonical response history. The source repair is under review.",
+   "fix": "Pending source fix, deployment and replay verification. Preserve the prepared segment when reconstructing the complete quotation transcript.",
+   "verified": "Observed on out-mvuoo3dk-dzip: generated quotation character counts were 80, 77 and 80; journal rows contained 67, 64 and 67 characters. The retained final journal row exactly equals the canonical history suffix after its first 13 characters. All six authoritative final line premiums are present in canonical history under the configured rounding rule.",
+   "effect": "Journal-only semantic review understates quotation content. This transcript defect alone does not prove missing audible output; the issue remains open until the deployed correction is verified.",
    "commits": []
   }
  ]

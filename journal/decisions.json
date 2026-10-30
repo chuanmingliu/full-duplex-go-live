@@ -206,13 +206,13 @@
   {
    "rank": 20,
    "title": "Prepare bounded call-private audio for completed authoritative quotations",
-   "gain": "Remove the first readout synthesis wait when an exact validated prefix is already prepared. The preceding replay measured 171–189 ms in this stage; this is an opportunity, not a measured gain.",
+   "gain": "Observed result-start to readout output was 0/1/0 ms, versus 189/171/184 ms in the preceding matched bbdb7a3 replay. Total readouts were 918/1305/999 ms; the slower model/tool-decision path outweighed the TTS-stage improvement on the second quote. This small, non-paired sample does not prove an overall p95 gain.",
    "basis": "On bbdb7a3, out-mvumm8e2-t8in had 0/1/1 ms pricing tasks but readouts of 1016/1231/1061 ms. The slowest quote spent 171 ms after result delivery before first readout output.",
    "cost": "The telephony trial permits four unique attempted syntheses per call. First use also opens one strict-account connection; every physical provider operation is accounted. Poll the authenticated completed-quote snapshot every two seconds, at most 300 times.",
    "guard": "General default zero, validated 0–8. Same-call budget cannot reset across sessions; 1024 retained claims per server lifetime. No new pricing, prompt or VAD change. Exact foreground result text is authoritative; PCM is call-private, complete, bounded and expires with the quote. Optional work shares known finite account admission and yields to foreground; no background hedge/fallback/reconnect.",
    "undo": "Set duplex.quote_readout_warm_max to0 in the telephony profile and use the guarded restart workflow; preserve other profile fields.",
-   "needs": "Pass full CI and controlled deployment, verify exact profile delta and archives, replay the same quotation scenario, inspect preparation/cache-hit counts and actual readout latency, then obtain physical handset evidence.",
-   "status": "Implemented and independently reviewed with focused race, ownership, admission, source/expiry and no-speech/memory-side-effect tests. Full candidate CI, deployment and measured effect are pending."
+   "needs": "Repair and verify ISS-082 journal omission, measure the model/tool-decision phases, run the longer matched coverage check, and obtain at least 20 valid responses with actual handset recording before claiming the target.",
+   "status": "Deployed as c582781 after full CI; the matched simulator replay exercised four successful preparation attempts and three prepared readouts. The strict gate remains failed, and handset latency is unverified."
   }
  ]
 }
