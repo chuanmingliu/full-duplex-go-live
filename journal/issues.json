@@ -1266,16 +1266,18 @@
    "id": "ISS-079",
    "title": "A total-only repeat request received all coverage details",
    "area": "conversation",
-   "status": "fixed",
+   "status": "open",
    "found": "2026-10-30",
    "found_on": "14:14 targeted quotation simulator call and source review",
    "found_call": "out-mvukudco-7zrb",
    "symptom": "The assistant repeated every coverage and then the total after a request to repeat the total without asking for coverage details.",
    "cause": "The response followed the detailed quotation context more broadly than the requested scope.",
    "fix": "Retained authoritative quote context now tells the model to answer total-repeat requests with the requested total and necessary unquoted-coverage caveats, while allowing itemized details and comparisons when requested. Saved business instructions, quote facts and initial custom readout remain unchanged.",
-   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Full candidate CI, deployment and model-behavior replay remain pending.",
-   "effect": "Source guidance is corrected; the latest deployed call still shows the mismatch. A fresh model response is required to verify improvement.",
-   "commits": []
+   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Candidate CI, deployment and model-behavior replay were subsequently completed as recorded below. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: On deployed bbdb7a3, replay out-mvumm8e2-t8in item_10 gave the authoritative total first, then still named all six coverages. It no longer repeated individual premiums. The request did not ask for the coverage list, so the guidance change is only a partial improvement.",
+   "effect": "Reopened after live simulator verification: answer scope remains too broad despite correct values.",
+   "commits": [
+    "bbdb7a3"
+   ]
   },
   {
    "id": "ISS-080",
@@ -1287,9 +1289,11 @@
    "symptom": "An old playback completion could arrive after the tracker advanced, dropping its metric or assigning audio and natural-completion proof to a newer revision with the same public ID.",
    "cause": "Player callbacks carried only a public turn ID, and deferred handlers looked up the current tracker instead of retaining the exact audio owner.",
    "fix": "Carry exact Turn ownership through production segments and both completion reports. Transfer only an inherited opener explicitly; keep stale body/end work invalid. Commit output accounting and audio/content/readout stamps atomically to that owner before emitting audio. Unknown owners never borrow the current turn; backchannels remain excluded.",
-   "verified": "All eight before/after-receipt, natural/truncated, new-turn/revision cases failed on unchanged 380c1a7 before the fix. Focused provenance and existing quote/handoff regressions passed twenty race repetitions; selected integration race tests and all-package compilation passed. Independent review resolved inactive-opener cancellation and output-stamp ordering findings. Full candidate CI and deployment are pending. After applying the reviewed ownership and total-repeat fixes together, the combined focused race suite including the unchanged greeting test passed in 3.025 seconds.",
-   "effect": "Measurement correctness fix only; no claim of lower handset latency.",
-   "commits": []
+   "verified": "All eight before/after-receipt, natural/truncated, new-turn/revision cases failed on unchanged 380c1a7 before the fix. Focused provenance and existing quote/handoff regressions passed twenty race repetitions; selected integration race tests and all-package compilation passed. Independent review resolved inactive-opener cancellation and output-stamp ordering findings. Candidate CI and deployment were subsequently completed as recorded below. After applying the reviewed ownership and total-repeat fixes together, the combined focused race suite including the unchanged greeting test passed in 3.025 seconds. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: Full quality/normal/race CI passed for bbdb7a3 in run 41016283585. Exact engine/CRM/journal binaries, unchanged v7 policy and all historical archives were verified after deployment. Replay out-mvumm8e2-t8in had nine correctly accounted rows: five caller responses, three result deliveries and one greeting, with no missing, duplicate, interrupted or unverified output rows. Two split questions became backchannels plus joined responses; abandoned closing speculation added no metric. This replay does not exhaustively test every callback-race interleaving. Coverage replay out-mvumqi79-ghis added twenty complete response samples and one greeting with no orphan or duplicate metric row. Eight converted prefixes, four with short spoken fragments, and three abandoned speculations were accounted for separately; the duration-limit cutoff was not a completed response.",
+   "effect": "Exact ownership is deployed with regression and limited live accounting evidence. This corrects attribution; it does not by itself reduce or prove handset latency.",
+   "commits": [
+    "bbdb7a3"
+   ]
   }
  ]
 }

@@ -45,3 +45,10 @@ The 93.648-second stereo recording retained seven caller and nine assistant tran
 All three spoken totals matched the available authoritative results and the earlier baseline. The first quote's changed individual-line source was trimmed, so its full line-item correctness cannot be certified from retained evidence. The second quote's five items matched the third quote's source; all six third-quote items and selection continuity were correct. The two extra caller entries were hesitation or a split query, not a dropped substantive request.
 
 ISS-079 persists: the total-only repeat at item_12 still included all six coverage details. Its separate fix was not deployed for this call. The final recognized utterance was a bare acknowledgement; no end_call tool was invoked, and the receiver ended after its farewell action. This establishes neither a new closing failure nor successful server-side closing behavior. Receiver semantic checks were indeterminate. No additional confirmed conversation defect was found.
+
+
+## Follow-up on runtime bbdb7a3
+
+New simulator call `out-mvumm8e2-t8in` used the same scenario and saved prompt. The targeted quotation diagnostic passed; the separate strict server gate failed. Readout samples=3, p95=1231 ms. The physical handset target remains unproven.
+
+Runtime bbdb7a3 passed full CI and was deployed with the same v7 quote policy. Replay out-mvumm8e2-t8in measured quotation readouts of 1016/1231/1061 ms: the second exceeded 1200 ms and only five caller samples were available. Pricing remained cached at 0/1/1 ms; timing variation before result delivery explains the observed increase, without establishing a code-caused regression. Total-repeat output improved but still named unwanted coverages. Exact playback ownership produced complete, nonduplicate timing rows on this replay; physical handset latency remains unverified.
