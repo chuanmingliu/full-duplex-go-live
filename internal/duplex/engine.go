@@ -1181,6 +1181,7 @@ consume:
 			content:  true,
 			Gen:      p.turn.Generation,
 			TurnID:   p.turn.ID,
+			owner:    p.turn,
 			Revision: p.turn.Revision,
 		})
 	}
@@ -1341,6 +1342,7 @@ func (p *speechPipe) speak(text string) bool {
 		content:  true,
 		Gen:      p.turn.Generation,
 		TurnID:   p.turn.ID,
+		owner:    p.turn,
 		Revision: p.turn.Revision,
 		Text:     text,
 	})
@@ -1413,13 +1415,14 @@ func (p *speechPipe) speak(text string) bool {
 		p.turn.MarkFirstContent()
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
-			Kind:         SegAudio,
-			content:      true,
-			Gen:          p.turn.Generation,
-			TurnID:       p.turn.ID,
-			Revision:     p.turn.Revision,
-			PCM:          pcm,
-			onFirstAudio: p.outputObserver(),
+			Kind:     SegAudio,
+			content:  true,
+			Gen:      p.turn.Generation,
+			TurnID:   p.turn.ID,
+			owner:    p.turn,
+			Revision: p.turn.Revision,
+			PCM:      pcm,
+			readout:  p.readout,
 		})
 	}
 
@@ -1438,13 +1441,14 @@ func (p *speechPipe) speak(text string) bool {
 		p.turn.MarkFirstContent()
 		p.turn.MarkFirstAudio()
 		p.e.player.Enqueue(Segment{
-			Kind:         SegAudio,
-			content:      true,
-			Gen:          p.turn.Generation,
-			TurnID:       p.turn.ID,
-			Revision:     p.turn.Revision,
-			PCM:          held,
-			onFirstAudio: p.outputObserver(),
+			Kind:     SegAudio,
+			content:  true,
+			Gen:      p.turn.Generation,
+			TurnID:   p.turn.ID,
+			owner:    p.turn,
+			Revision: p.turn.Revision,
+			PCM:      held,
+			readout:  p.readout,
 		})
 		held = nil
 	}
@@ -1472,6 +1476,7 @@ func (p *speechPipe) speak(text string) bool {
 			content:  true,
 			Gen:      p.turn.Generation,
 			TurnID:   p.turn.ID,
+			owner:    p.turn,
 			Revision: p.turn.Revision,
 		})
 	}
@@ -1497,6 +1502,7 @@ func (p *speechPipe) speak(text string) bool {
 		content:  true,
 		Gen:      p.turn.Generation,
 		TurnID:   p.turn.ID,
+		owner:    p.turn,
 		Revision: p.turn.Revision,
 		Text:     text,
 	})
@@ -1548,11 +1554,11 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	if !IsBackchannel(p.turn.ID) && p.e.player.PreemptBackchannel() {
 		p.e.log.Debug("speak: cutting the filler short; the answer is ready", "turn", p.turn.ID)
 	}
-	seg := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, Revision: p.turn.Revision, content: true}
+	seg := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, owner: p.turn, Revision: p.turn.Revision, content: true}
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, text
 	body.Kind, body.PCM = SegAudio, pcm
-	body.onFirstAudio = p.outputObserver()
+	body.readout = p.readout
 	mark.Kind, mark.Text = SegMark, text
 	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(begin)
@@ -2083,12 +2089,7 @@ func (e *Engine) interrupt() {
 func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
 	ms := audio.PCM16(e.opts.ClientRate).DurationMS(pcm)
 	e.outputMS.Add(int64(ms))
-	// The first byte on the wire is the moment the caller stops waiting, so it
-	// is stamped here rather than when synthesis produced it — the paced player
-	// sits between the two.
-	if turn := e.tracker.Current(); turn != nil && turn.ID == itemID {
-		turn.MarkFirstAudioOut()
-	}
+
 	start := playAt.Sub(e.startAt).Milliseconds()
 	if start < 0 {
 		start = 0
@@ -2127,7 +2128,10 @@ func (e *Engine) onSpeakingChanged(speaking bool) {
 }
 
 func (e *Engine) onTruncated(r TruncationReport) {
-	e.post(e.noteAssistantQuiet)
+	turn := r.validTurn()
+	if turn == nil {
+		return
+	}
 	e.log.Info("speak: turn truncated",
 		"turn", r.TurnID,
 		"played_ms", r.PlayedMS,
@@ -2140,34 +2144,33 @@ func (e *Engine) onTruncated(r TruncationReport) {
 		TotalMS:  r.TotalMS,
 		Text:     r.SpokenText,
 	})
-	e.recordTurn(r.TurnID, r.SpokenText)
 	e.post(func() {
 		e.noteAckPlayback(r.TurnID, false)
 		e.noteReadoutCut(r.TurnID, r.SpokenText)
-		turn := e.tracker.Current()
-		if turn == nil || turn.ID != r.TurnID {
-			return
-		}
 		if !turn.MarkCompleted() {
 			return
 		}
+		e.recordTurn(turn, r.TurnID, r.SpokenText)
 		e.emitMetrics(turn, r.PlayedMS, true)
+		if e.tracker.Current() == turn {
+			e.noteAssistantQuiet()
+		}
 	})
 }
 
-func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
+func (e *Engine) onTurnDone(r PlaybackReport) {
+	turn := r.validTurn()
+	if turn == nil {
+		return
+	}
+	turnID, totalMS, text := r.TurnID, r.TotalMS, r.SpokenText
 	e.log.Debug("speak: turn complete", "turn", turnID, "audio_ms", totalMS, "chars", len([]rune(text)))
-	e.recordTurn(turnID, text)
 	e.post(func() {
 		defer func() {
-			if e.tools != nil && e.tools.handoff != nil && e.tools.handoff.ID == turnID {
+			if e.tools != nil && e.tools.handoff == turn {
 				e.tools.handoff = nil
 			}
 		}()
-		turn := e.tracker.Current()
-		if turn == nil || turn.ID != turnID {
-			return
-		}
 		// A superseded revision drains with nothing behind it, and its turn ID
 		// still matches the live revision. Letting that count as the turn's
 		// completion both published a set of all-zero latencies and, worse,
@@ -2178,10 +2181,15 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 		if !turn.markCompletedNaturally() {
 			return
 		}
+		e.recordTurn(turn, turnID, text)
 		e.noteAckPlayback(turnID, true)
 		e.emitMetrics(turn, totalMS, false)
-		e.noteAssistantQuiet()
-		e.checkAssistantHangupRules(text)
+		if e.tracker.Current() == turn {
+			e.noteAssistantQuiet()
+		}
+		if e.tracker.IsCurrent(turn) {
+			e.checkAssistantHangupRules(text)
+		}
 	})
 	// Synthesis may have finished while the player was still draining audio.
 	// Its completion now releases deferred tool results without a tick.
@@ -2196,6 +2204,11 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 // backend started before the user finished, which is exactly what speculation
 // buys. The sign is information, not an error, so it is not clamped.
 func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
+	// Standalone fillers never formed response metrics under tracker lookup.
+	// Retaining their playback owner must not introduce zero-origin samples.
+	if IsBackchannel(turn.ID) {
+		return
+	}
 	tm := turn.Timings()
 	origin := tm.SpeechEndAt
 	if origin.IsZero() {

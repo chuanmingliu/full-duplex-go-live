@@ -15,7 +15,7 @@ func (p *Player) contentSuppressedLocked(seg Segment) bool {
 func (p *Player) finishBeforeContent(turn *Turn) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed || p.activeTurn != turn.ID || p.emittedMS < 1 || p.contentStarted ||
+	if p.closed || p.activeTurn != turn.ID || p.owner != turn || p.emittedMS < 1 || p.contentStarted ||
 		p.graceTurn != "" || p.drainingTurn != "" || p.dropTurn == turn.ID ||
 		(p.handoffTurn == turn.ID && p.handoffGen == turn.Generation) {
 		return false
@@ -39,7 +39,7 @@ func (p *Player) finishBeforeContent(turn *Turn) bool {
 		}
 	}
 	clear(p.queue[len(kept):])
-	p.queue = append(kept, Segment{Kind: SegEnd, TurnID: turn.ID, Gen: turn.Generation, Revision: turn.Revision})
+	p.queue = append(kept, Segment{Kind: SegEnd, TurnID: turn.ID, owner: turn, Gen: turn.Generation, Revision: turn.Revision})
 	p.cond.Signal()
 	return true
 }

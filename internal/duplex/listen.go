@@ -1144,6 +1144,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		} else {
 			e.abortSpeech()
 		}
+		e.player.mu.Lock()
 		revised := e.tracker.Revise(spec.ID, text, true)
 		e.specTurn = nil
 		e.specAbandoned++
@@ -1153,12 +1154,15 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 				// Said already, at the pause; the revised answer follows it,
 				// and the opener's audio stamps come with it.
 				revised.InheritOpener(spec)
+				e.player.adoptOpenerLocked(spec, revised)
 			}
+			e.player.mu.Unlock()
 			e.sayOpener(revised)
 			e.commitTurn(revised)
 			e.beginGeneration(revised, "revision", true)
 			return
 		}
+		e.player.mu.Unlock()
 	}
 
 	e.specTurn = nil
@@ -1324,7 +1328,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
 	e.lastSaidOpener = phrase
 	turn.MarkFirstSegment()
-	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
+	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, owner: turn, Revision: turn.Revision}
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, phrase
 	body.Kind, body.PCM = SegAudio, pcm

@@ -16,18 +16,6 @@ func (p *speechPipe) PushFixed(text string, readout bool) {
 	}
 }
 
-// outputObserver captures the segment's role now, not when queued audio is
-// eventually emitted and the pipe may already be processing model text.
-func (p *speechPipe) outputObserver() func() {
-	readout := p.readout
-	return func() {
-		p.turn.MarkFirstContentOut()
-		if readout {
-			p.turn.MarkFirstReadoutOut()
-		}
-	}
-}
-
 func (e *Engine) quoteResultPrefix(delivery taskDelivery, version int, busy bool) (opening, readout string, skipped bool) {
 	task := delivery.task
 	if task.Result.Err != nil || task.Request.MemoryVersion != version {

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/chuanmingliu/golive/internal/crm"
+	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/tools"
 )
 
@@ -99,4 +100,61 @@ func TestExtraQuoteMemoryHasAnExplicitSizeBound(t *testing.T) {
 		t.Fatal("an option was cut into an ambiguous partial record")
 	}
 	t.Logf("oversized comparison: retained facts=%d characters; limit=%d", utf8.RuneCountInString(got), maxQuoteMemoryChars)
+}
+
+// This checks the actual request context after history trimming, not a model's
+// compliance. Total-only answers must remain scoped without losing the facts
+// needed when a caller explicitly asks for line items or a comparison.
+func TestQuoteFollowupRequestCarriesScopeAndPrices(t *testing.T) {
+	qs, err := tools.ParseQuoteSpeech([]byte(`{"posthook_status":"quote","template":"CUSTOM total {{ total }}","compare_template":"CUSTOM comparison"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"status":"quote","currency":"CNY","compare":true,"total":150,"lines":[{"coverage":"liability","choice":"low","premium":100},{"coverage":"other","premium":50}],"variants":[{"label":"higher limit","total":170,"lines":[{"coverage":"liability","choice":"high","premium":120},{"coverage":"other","premium":50}]}]}`)
+	task := &tools.Task{Tool: tools.Tool{Name: "quote_total"}.WithSpeech(qs), Result: tools.Result{Output: raw}}
+	for _, state := range []struct {
+		name string
+		cut  bool
+	}{{"completed", false}, {"interrupted", true}} {
+		for _, question := range []struct {
+			name string
+			text string
+		}{
+			{"repeat_total", "这个方案合计多少，再说一下。"},
+			{"line_item", "请告诉我 liability 这一项的保费。"},
+			{"comparison", "请比较两个方案的合计和每项明细。"},
+		} {
+			t.Run(state.name+"/"+question.name, func(t *testing.T) {
+				const ownerPrompt = "SAVED BUSINESS INSTRUCTIONS"
+				e := &Engine{instr: ownerPrompt, tools: &toolState{lastResult: task, lastResultCut: state.cut, lastResultHeard: "CUSTOM"}}
+				turn := &Turn{ID: "followup", Transcript: question.text}
+				req := e.backendRequest(e.snapshotMessages(turn, false), false)
+				if len(req.Messages) != 2 || req.Messages[0].Role != provider.RoleSystem || req.Messages[1].Role != provider.RoleUser || req.Messages[1].Content != question.text {
+					t.Fatalf("follow-up question missing from trimmed request: %+v", req.Messages)
+				}
+				context := req.Messages[0].Content
+				for _, guidance := range []string{
+					"仅问总价或合计（包括要求重复）时，只答所问方案的合计及必要的未报价说明，不逐项重报险种",
+					"同时要求明细、单项价格或方案比较时，按其要求补充对应内容",
+					"金额只用工具明细",
+					"未返回的明细须查询",
+				} {
+					if !strings.Contains(context, guidance) {
+						t.Errorf("follow-up request lacks scope or authoritative-price guidance: %q", guidance)
+					}
+				}
+				for _, fact := range []string{"CUSTOM comparison", "当前方案：合计=150", "liability[low]=100", "other=50", "higher limit：合计=170", "liability[high]=120"} {
+					if !strings.Contains(context, fact) {
+						t.Errorf("scoped follow-up lost required quotation fact: %q", fact)
+					}
+				}
+				if e.instr != ownerPrompt || !strings.HasPrefix(context, ownerPrompt+"\n\n") {
+					t.Error("follow-up policy changed or displaced the saved business instructions")
+				}
+				if got := task.Tool.ReadoutFor(raw); got != "CUSTOM comparison" {
+					t.Fatalf("follow-up policy changed initial custom readout: %q", got)
+				}
+			})
+		}
+	}
 }

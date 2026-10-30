@@ -16,8 +16,8 @@ import (
 func completedQuoteAck(t *testing.T, beforeAck func(*Engine, *tools.Task, *pendingResponse)) (*Engine, *tools.Task, *Turn) {
 	t.Helper()
 	e, task, ack := queuedQuoteAck(t, beforeAck)
-	e.player.OnTurnDone(func(id string, ms int64, text string) {
-		e.onTurnDone(id, ms, text)
+	e.player.OnTurnDone(func(r PlaybackReport) {
+		e.onTurnDone(r)
 		e.player.Close()
 	})
 	e.player.Run(&e.gen)
@@ -71,11 +71,11 @@ func TestSoftlyTruncatedAckKeepsDefaultPosthook(t *testing.T) {
 				e.onTruncated(r)
 				e.player.Close()
 			})
-			e.player.OnTurnDone(func(string, int64, string) {
+			e.player.OnTurnDone(func(PlaybackReport) {
 				e.player.Close()
 				t.Error("softly interrupted acknowledgement completed naturally")
 			})
-			e.player.beginSegment(e.player.queue[0])
+			e.player.beginSegment(&e.gen, e.player.queue[0])
 			e.softInterrupt() // no new caller text and no generation bump
 			if readyDuringAck {
 				e.onTaskDone(task)
@@ -116,8 +116,8 @@ func TestQueuedQuoteWaitsForAckNaturalCompletion(t *testing.T) {
 	if e.tools.deliveries[0].origin.ackCompleted {
 		t.Fatal("an unrelated callback certified this task's acknowledgement")
 	}
-	e.player.OnTurnDone(func(id string, ms int64, text string) {
-		e.onTurnDone(id, ms, text)
+	e.player.OnTurnDone(func(r PlaybackReport) {
+		e.onTurnDone(r)
 		e.player.Close()
 	})
 	e.player.Run(&e.gen)

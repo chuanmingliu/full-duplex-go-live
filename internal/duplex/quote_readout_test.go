@@ -90,6 +90,7 @@ func TestDefaultPosthookNeedsAnUninterruptedSameOriginOpener(t *testing.T) {
 
 func TestQuoteWithoutPosthookGetsFirstSegmentUrgency(t *testing.T) {
 	cfg := testConfig()
+	cfg.Duplex.PlaybackPaced = false
 	cfg.Duplex.PhraseCache = false
 	cfg.Duplex.StreamMaxChunkChars = 20
 	tts := &urgencyTTS{inner: mock.NewTTS()}
@@ -118,7 +119,7 @@ func TestQuoteWithoutPosthookGetsFirstSegmentUrgency(t *testing.T) {
 		}
 	}
 	// Every readout segment carries its role independently of the pipe's
-	// later model text. Invoke each queued output observer in isolation.
+	// later model text. Play each queued audio segment in isolation.
 	inReadout := false
 	readoutSegments := 0
 	for _, seg := range e.player.queue {
@@ -128,11 +129,11 @@ func TestQuoteWithoutPosthookGetsFirstSegmentUrgency(t *testing.T) {
 				readoutSegments++
 			}
 		}
-		if seg.Kind != SegAudio || seg.onFirstAudio == nil {
+		if seg.Kind != SegAudio {
 			continue
 		}
 		turn.firstReadoutOut = time.Time{}
-		seg.onFirstAudio()
+		e.player.playAudio(&e.gen, seg)
 		if present := !turn.Timings().FirstReadoutOut.IsZero(); present != inReadout {
 			t.Fatal("queued audio lost its readout role after the pipe advanced")
 		}
@@ -190,11 +191,11 @@ func TestQuoteReadoutPresenceRequiresItsOwnAudioOutput(t *testing.T) {
 					e.player.queue = e.player.queue[1:]
 					switch seg.Kind {
 					case SegBegin:
-						e.player.beginSegment(seg)
+						e.player.beginSegment(&e.gen, seg)
 					case SegAudio:
 						e.player.playAudio(&e.gen, seg)
 					case SegMark:
-						e.player.markSegment(seg)
+						e.player.markSegment(&e.gen, seg)
 					}
 				}
 				if c.allOutput() != turn.Opening || turn.Timings().FirstContentOut.IsZero() || !turn.Timings().FirstReadoutOut.IsZero() {
@@ -204,7 +205,7 @@ func TestQuoteReadoutPresenceRequiresItsOwnAudioOutput(t *testing.T) {
 					e.gen.Bump()
 					e.player.Interrupt()
 				} else {
-					e.player.OnTurnDone(func(string, int64, string) { e.player.Close() })
+					e.player.OnTurnDone(func(PlaybackReport) { e.player.Close() })
 					e.player.Run(&e.gen)
 				}
 				e.emitMetrics(turn, int64(c.audioMS()), cancelled)

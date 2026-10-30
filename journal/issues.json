@@ -1266,15 +1266,29 @@
    "id": "ISS-079",
    "title": "A total-only repeat request received all coverage details",
    "area": "conversation",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-10-30",
    "found_on": "14:14 targeted quotation simulator call and source review",
    "found_call": "out-mvukudco-7zrb",
    "symptom": "The assistant repeated every coverage and then the total after a request to repeat the total without asking for coverage details.",
    "cause": "The response followed the detailed quotation context more broadly than the requested scope.",
-   "fix": "Pending: improve scope adherence for total-only follow-ups while preserving authoritative pricing and requested detailed comparisons.",
-   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call.",
-   "effect": "Still open after runtime 380c1a7; the replay confirms the scope mismatch.",
+   "fix": "Retained authoritative quote context now tells the model to answer total-repeat requests with the requested total and necessary unquoted-coverage caveats, while allowing itemized details and comparisons when requested. Saved business instructions, quote facts and initial custom readout remain unchanged.",
+   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Full candidate CI, deployment and model-behavior replay remain pending.",
+   "effect": "Source guidance is corrected; the latest deployed call still shows the mismatch. A fresh model response is required to verify improvement.",
+   "commits": []
+  },
+  {
+   "id": "ISS-080",
+   "title": "Deferred playback completion could lose metrics or complete a replacement turn",
+   "area": "latency-evidence",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Greeting regression investigation and deterministic playback callback tests",
+   "symptom": "An old playback completion could arrive after the tracker advanced, dropping its metric or assigning audio and natural-completion proof to a newer revision with the same public ID.",
+   "cause": "Player callbacks carried only a public turn ID, and deferred handlers looked up the current tracker instead of retaining the exact audio owner.",
+   "fix": "Carry exact Turn ownership through production segments and both completion reports. Transfer only an inherited opener explicitly; keep stale body/end work invalid. Commit output accounting and audio/content/readout stamps atomically to that owner before emitting audio. Unknown owners never borrow the current turn; backchannels remain excluded.",
+   "verified": "All eight before/after-receipt, natural/truncated, new-turn/revision cases failed on unchanged 380c1a7 before the fix. Focused provenance and existing quote/handoff regressions passed twenty race repetitions; selected integration race tests and all-package compilation passed. Independent review resolved inactive-opener cancellation and output-stamp ordering findings. Full candidate CI and deployment are pending. After applying the reviewed ownership and total-repeat fixes together, the combined focused race suite including the unchanged greeting test passed in 3.025 seconds.",
+   "effect": "Measurement correctness fix only; no claim of lower handset latency.",
    "commits": []
   }
  ]

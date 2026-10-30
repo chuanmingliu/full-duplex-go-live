@@ -14,11 +14,11 @@ func TestOriginCompletionProofRequiresANaturalEnd(t *testing.T) {
 			e, _, task, p := readyQuoteHandoff(t)
 			p.turn.MarkFirstAudioOut()
 			done := func(ms int64) {
-				e.onTurnDone(p.turn.ID, ms, p.turn.Opened)
+				e.onTurnDone(PlaybackReport{owner: p.turn, TurnID: p.turn.ID, Generation: p.turn.Generation, Revision: p.turn.Revision, TotalMS: ms, SpokenText: p.turn.Opened})
 				e.runPosted()
 			}
 			truncate := func() {
-				e.onTruncated(TruncationReport{TurnID: p.turn.ID, PlayedMS: 40, TotalMS: 40, SpokenText: p.turn.Opened})
+				e.onTruncated(TruncationReport{owner: p.turn, Generation: p.turn.Generation, Revision: p.turn.Revision, TurnID: p.turn.ID, PlayedMS: 40, TotalMS: 40, SpokenText: p.turn.Opened})
 				e.runPosted()
 			}
 			switch ending {
@@ -60,22 +60,22 @@ func TestSoftlyTruncatedOriginCannotAuthorizePosthookOmission(t *testing.T) {
 			}
 			pcm := make([]byte, audio.PCM16(e.opts.ClientRate).BytesForMS(40))
 			pcm[0], pcm[1] = 0xff, 0x7f
-			opener := Segment{TurnID: p.turn.ID, Gen: p.turn.Generation, Text: p.turn.Opened, PCM: pcm}
-			e.player.beginSegment(opener)
+			opener := Segment{TurnID: p.turn.ID, owner: p.turn, Gen: p.turn.Generation, Text: p.turn.Opened, PCM: pcm}
+			e.player.beginSegment(&e.gen, opener)
 			e.player.playAudio(&e.gen, opener)
-			e.player.markSegment(opener)
+			e.player.markSegment(&e.gen, opener)
 			pipe := &speechPipe{e: e, turn: p.turn, ctx: context.Background()}
 			for _, text := range []string{"Calling.", "More words."} {
 				if !pipe.speakCached(text, PhraseAudio{PCM: pcm, Rate: e.opts.ClientRate}) {
 					t.Fatal("could not queue caller-turn content")
 				}
 			}
-			e.player.Enqueue(Segment{Kind: SegEnd, TurnID: p.turn.ID, Gen: p.turn.Generation})
+			e.player.Enqueue(Segment{Kind: SegEnd, TurnID: p.turn.ID, owner: p.turn, Gen: p.turn.Generation})
 			e.player.OnTruncate(func(r TruncationReport) {
 				e.onTruncated(r)
 				e.player.Close()
 			})
-			e.player.OnTurnDone(func(string, int64, string) {
+			e.player.OnTurnDone(func(PlaybackReport) {
 				e.player.Close()
 				t.Error("softly interrupted caller turn completed naturally")
 			})

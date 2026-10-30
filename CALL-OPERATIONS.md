@@ -115,6 +115,15 @@ Retros/issues are read from disk on each HTTP request, so shipping those files u
 
 The journal's content panel uses explicit output-presence flags and the same handoff relationship. Its first-audio charts include fillers; first content excludes caller-turn openers but can still be a generic lead-in. Linked result-turn content can also be a cached posthook. Actual deterministic quotation readout has its own player-output stamp (`quote_result`, `readout_expected`, `first_readout_present`, `first_readout_ms`); only that evidence establishes readout latency. Content/both gates check both distributions and reject missing or unverified readout evidence. Results do not become extra caller samples and need no separate minimum of twenty results. Older saved call details can be recomputed from archived logs without rewriting their source archive; old logs without the readout stamp remain unverified. Legacy overview figures may retain the historical grouping until that log is reindexed. None of these server panels certifies the physical phone leg.
 
+Playback completion is attributed to the exact turn and revision that owned
+the audio, including when the tracker has already advanced. Inherited
+openers transfer that ownership explicitly. Output counters and the first
+audio/content/readout stamps commit together immediately before the player
+hands the PCM chunk to its output callback. This is a server output boundary,
+not confirmation of socket delivery or audible handset playback. Corrected
+ownership can expose interrupted-turn records that older builds omitted;
+do not treat a change in that sample population as a latency improvement.
+
 ## Desk integration
 
 `DESK_AS=codex scripts/desk.sh me` safely reads the identity and owner control switches; never use the default `claude` identity. `scripts/phone-brain.sh desk verify` verifies the append-only note chain. `GET /api/calls` on the desk, with the Codex token read from its file internally, lists **simulated** calls paired via `~/golive-sim/data/dials.jsonl`; `GET /api/calls/<run>/report` retrieves their simulator report. Real calls belong in the journal. These APIs do not independently persist call audio.

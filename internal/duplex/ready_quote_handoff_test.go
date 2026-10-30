@@ -34,15 +34,15 @@ func readyQuoteHandoff(t *testing.T) (*Engine, *collector, *tools.Task, *pending
 func queueUnheardQuoteClause(t *testing.T, e *Engine, p *pendingResponse) {
 	t.Helper()
 	pcm := make([]byte, audio.PCM16(e.opts.ClientRate).BytesForMS(40))
-	opener := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, Text: p.turn.Opened, PCM: pcm}
-	e.player.beginSegment(opener)
+	opener := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, owner: p.turn, Text: p.turn.Opened, PCM: pcm}
+	e.player.beginSegment(&e.gen, opener)
 	e.player.playAudio(&e.gen, opener)
-	e.player.markSegment(opener)
+	e.player.markSegment(&e.gen, opener)
 	pipe := &speechPipe{e: e, turn: p.turn, ctx: context.Background()}
 	if !pipe.speakCached("unheard calling clause", PhraseAudio{PCM: pcm, Rate: e.opts.ClientRate}) {
 		t.Fatal("could not queue the calling clause")
 	}
-	e.player.Enqueue(Segment{Kind: SegEnd, Gen: p.turn.Generation, TurnID: p.turn.ID})
+	e.player.Enqueue(Segment{Kind: SegEnd, Gen: p.turn.Generation, TurnID: p.turn.ID, owner: p.turn})
 }
 
 func TestReadyQuoteReplacesUnplayedCallingContent(t *testing.T) {
@@ -64,7 +64,7 @@ func checkReadyQuoteReplacesUnplayedContent(t *testing.T, begun bool) {
 	if begun {
 		begin := e.player.queue[0]
 		e.player.queue = e.player.queue[1:]
-		e.player.beginSegment(begin)
+		e.player.beginSegment(&e.gen, begin)
 	}
 	pipe := e.newSpeechPipe(p.turn, false)
 	t.Cleanup(pipe.Abort)
@@ -72,11 +72,11 @@ func checkReadyQuoteReplacesUnplayedContent(t *testing.T, begun bool) {
 	e.onTaskDone(task)
 	awaitHandoffSignal(t, pipe.done)
 	e.wake() // producer wake precedes the player's clean completion callback
-	if e.player.Enqueue(Segment{Kind: SegAudio, Gen: p.turn.Generation, TurnID: p.turn.ID, content: true, PCM: []byte{1, 2}}) {
+	if e.player.Enqueue(Segment{Kind: SegAudio, Gen: p.turn.Generation, TurnID: p.turn.ID, owner: p.turn, content: true, PCM: []byte{1, 2}}) {
 		t.Fatal("a late producer chunk was accepted after handoff")
 	}
-	e.player.OnTurnDone(func(id string, ms int64, text string) {
-		e.onTurnDone(id, ms, text)
+	e.player.OnTurnDone(func(r PlaybackReport) {
+		e.onTurnDone(r)
 		e.player.Close()
 	})
 	e.player.Run(&e.gen)
@@ -199,36 +199,28 @@ func TestReadyQuoteHandoffKeepsSafetyGuards(t *testing.T) {
 	}
 }
 
-// Stop after the player has reserved its first content output, but before the
-// timestamp callback or emit runs. A timing-only check would race this window.
+// Stop after the player commits its first content output, but before the wire
+// sink runs. Ownership and output stamps must already agree at this boundary.
 func TestReadyQuoteCannotReplaceReservedFirstContent(t *testing.T) {
 	e, c, task, p := readyQuoteHandoff(t)
 	queueUnheardQuoteClause(t, e, p)
 	reserved, release := make(chan struct{}), make(chan struct{})
-	e.player.mu.Lock()
-	for i := range e.player.queue {
-		seg := &e.player.queue[i]
-		if seg.Kind == SegAudio {
-			callback := seg.onFirstAudio
-			seg.onFirstAudio = func() {
-				close(reserved)
-				<-release
-				callback()
-			}
-			break
-		}
+	emit := e.player.emit
+	e.player.emit = func(id string, pcm []byte, at time.Time) {
+		close(reserved)
+		<-release
+		emit(id, pcm, at)
 	}
-	e.player.mu.Unlock()
 	e.continueWith(p)
-	e.player.OnTurnDone(func(id string, ms int64, text string) {
-		e.onTurnDone(id, ms, text)
+	e.player.OnTurnDone(func(r PlaybackReport) {
+		e.onTurnDone(r)
 		e.player.Close()
 	})
 	finished := make(chan struct{})
 	go func() { e.player.Run(&e.gen); close(finished) }()
 	awaitHandoffSignal(t, reserved)
-	if !p.turn.Timings().FirstContentOut.IsZero() {
-		t.Fatal("test missed the pre-callback race window")
+	if p.turn.Timings().FirstContentOut.IsZero() {
+		t.Fatal("committed content has no output stamp")
 	}
 	e.onTaskDone(task)
 	refused := e.player.handoffTurn == ""
@@ -244,7 +236,7 @@ func TestReadyQuotePreservesOpenerStillPlaying(t *testing.T) {
 	e, c, task, p := readyQuoteHandoff(t)
 	e.player.cfg.ChunkMS = 20
 	pcm := make([]byte, audio.PCM16(e.opts.ClientRate).BytesForMS(80))
-	base := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID}
+	base := Segment{Gen: p.turn.Generation, TurnID: p.turn.ID, owner: p.turn}
 	begin, body, mark := base, base, base
 	begin.Kind, begin.Text = SegBegin, "opener"
 	body.Kind, body.PCM = SegAudio, pcm
@@ -267,8 +259,8 @@ func TestReadyQuotePreservesOpenerStillPlaying(t *testing.T) {
 		e.emitAudio(id, data, at)
 	}
 	e.continueWith(p)
-	e.player.OnTurnDone(func(id string, ms int64, text string) {
-		e.onTurnDone(id, ms, text)
+	e.player.OnTurnDone(func(r PlaybackReport) {
+		e.onTurnDone(r)
 		e.player.Close()
 	})
 	finished := make(chan struct{})

@@ -56,33 +56,30 @@ func (e *Engine) ensureUserRecorded(turn *Turn) {
 	e.noteContext()
 }
 
-// recordTurn commits what was actually heard to conversation history. Turns
-// that were cut off contribute only their audible prefix; anything else would
-// have the model reasoning from sentences the user never received.
-func (e *Engine) recordTurn(turnID, spoken string) {
+// recordTurn runs on the engine loop and commits what was actually heard to
+// conversation history. Turns that were cut off contribute only their audible
+// prefix; otherwise the model reasons from sentences the user never received.
+func (e *Engine) recordTurn(turn *Turn, turnID, spoken string) {
 	spoken = strings.TrimSpace(spoken)
-	e.post(func() {
-		if IsBackchannel(turnID) {
-			return // backchannels are not conversation
+	if IsBackchannel(turnID) {
+		return // backchannels are not conversation
+	}
+	if turn != nil && turn.ID == turnID {
+		turn.SetSpoken(spoken)
+		// A guess that was never confirmed was made on a prefix of what
+		// the caller is still saying. The whole of it arrives with the
+		// turn that replaces this one; the prefix is not a message.
+		if turn.Committed() {
+			e.ensureUserRecorded(turn)
 		}
-		turn := e.tracker.Current()
-		if turn != nil && turn.ID == turnID {
-			turn.SetSpoken(spoken)
-			// A guess that was never confirmed was made on a prefix of what
-			// the caller is still saying. The whole of it arrives with the
-			// turn that replaces this one; the prefix is not a message.
-			if turn.Committed() {
-				e.ensureUserRecorded(turn)
-			}
-		}
-		if spoken != "" {
-			e.history = append(e.history, provider.Message{
-				Role:    provider.RoleAssistant,
-				Content: spoken,
-			})
-		}
-		e.trimHistory()
-	})
+	}
+	if spoken != "" {
+		e.history = append(e.history, provider.Message{
+			Role:    provider.RoleAssistant,
+			Content: spoken,
+		})
+	}
+	e.trimHistory()
 }
 
 // trimHistory bounds what is sent to the backend, by turns and by size.

@@ -321,6 +321,23 @@ func (t *Turn) MarkFirstContentOut() { t.stampOnce(&t.firstContentOut) }
 // MarkFirstReadoutOut observes deterministic result audio leaving the player.
 func (t *Turn) MarkFirstReadoutOut() { t.stampOnce(&t.firstReadoutOut) }
 
+// markOutput commits all output milestones together with the player's chunk.
+// A concurrent completion snapshot cannot observe audio without its content role.
+func (t *Turn) markOutput(content, readout bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	if t.firstAudioOut.IsZero() {
+		t.firstAudioOut = now
+	}
+	if content && t.firstContentOut.IsZero() {
+		t.firstContentOut = now
+	}
+	if content && readout && t.firstReadoutOut.IsZero() {
+		t.firstReadoutOut = now
+	}
+}
+
 // MarkCompleted records a non-natural end and reports whether this call was
 // the one that finished it; the player's normal end uses markCompletedNaturally.
 // A turn can be handed to both completion paths —

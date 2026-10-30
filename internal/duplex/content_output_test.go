@@ -44,10 +44,10 @@ func TestContentPresenceRequiresPlayback(t *testing.T) {
 				turn.MarkSpeechEnd(time.Now(), 0, 380)
 				turn.Opened, turn.OpenedMS = "ack", 20
 				pcm := audio.EncodePCM16([]float32{.1, .2, .1, .2})
-				opener := Segment{Gen: turn.Generation, TurnID: turn.ID, Text: turn.Opened, PCM: pcm}
-				e.player.beginSegment(opener)
+				opener := Segment{Gen: turn.Generation, TurnID: turn.ID, owner: turn, Text: turn.Opened, PCM: pcm}
+				e.player.beginSegment(&e.gen, opener)
 				e.player.playAudio(&e.gen, opener)
-				e.player.markSegment(opener)
+				e.player.markSegment(&e.gen, opener)
 				pipe := &speechPipe{e: e, turn: turn, ctx: e.ctx}
 				var ok bool
 				if cached {
@@ -66,8 +66,8 @@ func TestContentPresenceRequiresPlayback(t *testing.T) {
 					e.gen.Bump()
 					e.player.Interrupt()
 				} else {
-					e.player.OnTurnDone(func(string, int64, string) { e.player.Close() })
-					e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID})
+					e.player.OnTurnDone(func(PlaybackReport) { e.player.Close() })
+					e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID, owner: turn})
 					e.player.Run(&e.gen)
 					if !strings.Contains(c.allOutput(), "answer") {
 						t.Fatal("the queued content was not emitted")

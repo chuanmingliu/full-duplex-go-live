@@ -48,8 +48,8 @@ func TestReadyTaskResultKeepsDeliveryGuards(t *testing.T) {
 				e.muted = true
 			case "scripted_ack":
 				p.turn.Scripted = true
-				clause = Segment{TurnID: p.turn.ID, Gen: p.turn.Generation, Text: "Please wait."}
-				e.player.beginSegment(clause)
+				clause = Segment{TurnID: p.turn.ID, owner: p.turn, Gen: p.turn.Generation, Text: "Please wait."}
+				e.player.beginSegment(&e.gen, clause)
 				task.Submitted = time.Now().Add(-2 * time.Second)
 			case "hangup":
 				e.tools.endCall = &endCallRequest{at: time.Now()}
@@ -67,7 +67,7 @@ func TestReadyTaskResultKeepsDeliveryGuards(t *testing.T) {
 			}
 			e.userOpen, e.muted = false, false
 			if guard == "scripted_ack" {
-				e.player.finishTurn(clause)
+				e.player.finishTurn(&e.gen, clause)
 			} else {
 				e.wake()
 			}
@@ -178,8 +178,8 @@ func TestTaskOriginMetadataFollowsTaskLifetime(t *testing.T) {
 
 func TestReadyTaskResultWaitsForTheCallingClause(t *testing.T) {
 	e, c, task, p := newAckHandoffTest(t)
-	clause := Segment{TurnID: p.turn.ID, Gen: p.turn.Generation, Text: "Let me check that."}
-	e.player.beginSegment(clause)
+	clause := Segment{TurnID: p.turn.ID, owner: p.turn, Gen: p.turn.Generation, Text: "Let me check that."}
+	e.player.beginSegment(&e.gen, clause)
 	// Even an overdue result must wait for the clause that called its tool.
 	// Releasing ackPending unconditionally on completion would interrupt it.
 	task.Submitted = time.Now().Add(-2 * time.Second)
@@ -189,7 +189,7 @@ func TestReadyTaskResultWaitsForTheCallingClause(t *testing.T) {
 	if e.tools.delivered != 0 || !e.player.Active() || e.tracker.Current() != p.turn {
 		t.Fatal("the ready result interrupted the calling clause")
 	}
-	e.player.finishTurn(clause)
+	e.player.finishTurn(&e.gen, clause)
 	e.runPosted() // the player's completion callback, with no periodic tick
 	assertTaskDeliveredWithoutAck(t, e, c, task, p)
 }

@@ -35,6 +35,7 @@ const (
 
 // Segment is one item on the speak channel.
 type Segment struct {
+	owner    *Turn
 	Kind     SegKind
 	Gen      uint64
 	TurnID   string
@@ -44,20 +45,25 @@ type Segment struct {
 	// content distinguishes the model/result body from the opener already
 	// spoken at the pause. Only an entirely unplayed body may be handed off.
 	content bool
-	// onFirstAudio observes output, after pacing and cancellation checks.
-	// A queued segment that is discarded never invokes it.
-	onFirstAudio func()
+	// readout captures deterministic-result content before the producer moves
+	// on. Output stamps are committed with the playback owner, not at enqueue.
+	readout bool
 }
 
-// TruncationReport describes how a turn was cut short.
-type TruncationReport struct {
-	TurnID   string
-	PlayedMS int64
-	TotalMS  int64
+// PlaybackReport binds heard output to the exact turn revision that owned it.
+type PlaybackReport struct {
+	owner      *Turn
+	Generation uint64
+	Revision   int
+	TurnID     string
+	PlayedMS   int64
+	TotalMS    int64
 	// SpokenText is the prefix of the turn the user actually heard. This, not
 	// the full generated text, is what belongs in conversation history.
 	SpokenText string
 }
+
+type TruncationReport = PlaybackReport
 
 // PlayerConfig tunes the output channel.
 type PlayerConfig struct {
@@ -88,7 +94,7 @@ type Player struct {
 	emit       func(itemID string, pcm []byte, playAt time.Time)
 	onSpeaking func(bool)
 	onTruncate func(TruncationReport)
-	onTurnDone func(turnID string, totalMS int64, text string)
+	onTurnDone func(PlaybackReport)
 	onSegment  func(turnID, text string, playAt time.Time)
 
 	mu     sync.Mutex
@@ -109,10 +115,15 @@ type Player struct {
 	// it has simply stopped being useful.
 	dropTurn string
 
-	activeTurn  string
-	turnStarted time.Time
-	playhead    time.Time
-	emittedMS   float64
+	activeTurn     string
+	owner          *Turn
+	activeGen      uint64
+	activeRevision int
+	adoptedFrom    *Turn
+	adoptedTo      *Turn
+	turnStarted    time.Time
+	playhead       time.Time
+	emittedMS      float64
 	// drainingTurn is a backchanneled opener's turn whose queue was dropped
 	// and whose last paced audio is still in the air; the floor is free.
 	drainingTurn string
@@ -170,7 +181,7 @@ func (p *Player) OnTruncate(f func(TruncationReport)) { p.onTruncate = f }
 func (p *Player) OnSegment(f func(turnID, text string, playAt time.Time)) { p.onSegment = f }
 
 // OnTurnDone registers a callback for turns that finished uninterrupted.
-func (p *Player) OnTurnDone(f func(turnID string, totalMS int64, text string)) { p.onTurnDone = f }
+func (p *Player) OnTurnDone(f func(PlaybackReport)) { p.onTurnDone = f }
 
 // Run drives the player until Close. It blocks; start it on its own goroutine.
 func (p *Player) Run(gen *Generation) {
@@ -186,6 +197,7 @@ func (p *Player) Run(gen *Generation) {
 			return
 		}
 		seg := p.queue[0]
+		p.queue[0] = Segment{}
 		p.queue = p.queue[1:]
 		p.mu.Unlock()
 
@@ -194,13 +206,13 @@ func (p *Player) Run(gen *Generation) {
 		}
 		switch seg.Kind {
 		case SegBegin:
-			p.beginSegment(seg)
+			p.beginSegment(gen, seg)
 		case SegMark:
-			p.markSegment(seg)
+			p.markSegment(gen, seg)
 		case SegAbandon:
-			p.abandonSegment(seg)
+			p.abandonSegment(gen, seg)
 		case SegEnd:
-			p.finishTurn(seg)
+			p.finishTurn(gen, seg)
 		default:
 			p.playAudio(gen, seg)
 		}
@@ -211,17 +223,18 @@ func (p *Player) Run(gen *Generation) {
 // means its generation is current; a turn under grace is the one exception.
 func (p *Player) allowed(seg Segment, gen *Generation) bool {
 	p.mu.Lock()
-	if (p.dropTurn != "" && p.dropTurn == seg.TurnID) || p.contentSuppressedLocked(seg) {
-		p.mu.Unlock()
+	defer p.mu.Unlock()
+	return p.allowedLocked(seg, gen)
+}
+
+func (p *Player) allowedLocked(seg Segment, gen *Generation) bool {
+	if p.closed || !seg.validOwner() || (p.dropTurn != "" && p.dropTurn == seg.TurnID) || p.contentSuppressedLocked(seg) {
 		return false
 	}
-	p.mu.Unlock()
-	if gen.Valid(seg.Gen) {
+	if p.adoptedOpenerLocked(seg) && gen.Valid(p.adoptedTo.Generation) {
 		return true
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.graceTurn != "" && p.graceTurn == seg.TurnID
+	return gen.Valid(seg.Gen) || (p.graceTurn != "" && p.graceTurn == seg.TurnID && p.matchesSegmentLocked(seg))
 }
 
 // IsBackchannel reports whether a turn ID belongs to an acknowledgement or a
@@ -257,6 +270,7 @@ func (p *Player) PreemptBackchannel() bool {
 			kept = append(kept, seg)
 		}
 	}
+	clear(p.queue[len(kept):])
 	p.queue = kept
 	p.resetTurnLocked()
 	p.setSpeakingLocked(false)
@@ -319,6 +333,7 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 			kept = append(kept, q)
 		}
 	}
+	clear(p.queue[len(kept):])
 	p.queue = kept
 	if p.activeTurn != turnID {
 		return
@@ -375,7 +390,7 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 func (p *Player) Enqueue(seg Segment) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed {
+	if p.closed || !seg.validOwner() {
 		return false
 	}
 	if p.contentSuppressedLocked(seg) {
@@ -391,6 +406,7 @@ func (p *Player) Enqueue(seg Segment) bool {
 				kept = append(kept, q)
 			}
 		}
+		clear(p.queue[len(kept):])
 		p.queue = kept
 		return false
 	}
@@ -421,18 +437,20 @@ func (p *Player) Interrupt() {
 	p.graceTurn = ""
 	turnID := p.activeTurn
 	if turnID == "" {
+		p.resetTurnLocked()
 		p.setSpeakingLocked(false)
 		p.mu.Unlock()
 		return
 	}
 	playedMS := p.heardMSLocked()
 	totalMS := p.emittedMS
+	owner, ownerGen, ownerRevision := p.owner, p.activeGen, p.activeRevision
 	text := p.spokenPrefixLocked(playedMS)
 	p.resetTurnLocked()
 	p.setSpeakingLocked(false)
 	p.mu.Unlock()
 
-	p.reportTruncation(TruncationReport{
+	p.reportTruncation(TruncationReport{owner: owner, Generation: ownerGen, Revision: ownerRevision,
 		TurnID:     turnID,
 		PlayedMS:   int64(playedMS),
 		TotalMS:    int64(totalMS),
@@ -475,6 +493,7 @@ func (p *Player) Close() {
 	p.mu.Lock()
 	p.closed = true
 	p.queue = nil
+	p.resetTurnLocked()
 	p.mu.Unlock()
 	p.cond.Broadcast()
 }
@@ -500,28 +519,33 @@ func (p *Player) PendingMS() int64 {
 	return int64(remaining)
 }
 
-func (p *Player) ensureTurnLocked(turnID string) {
-	if p.activeTurn == turnID {
+func (p *Player) ensureTurnLocked(seg Segment) {
+	if p.adoptedOpenerLocked(seg) && p.activeTurn == "" {
+		// A begin marker may already be dequeued when the revision inherits
+		// its opener. Its first dispatch claims the explicit new owner.
+		p.activeTurn, p.owner = p.adoptedTo.ID, p.adoptedTo
+		p.activeGen, p.activeRevision = p.owner.Generation, p.owner.Revision
+		p.turnStarted = time.Now()
+		p.playhead = p.turnStarted
+	}
+	if p.matchesSegmentLocked(seg) {
 		return
 	}
 	p.resetTurnLocked()
-	// dropTurn is deliberately not cleared here. Turn ids are unique for the
-	// life of a session — item_N and bc_N both come from monotonic counters —
-	// so a stale entry can never match a later turn, and keeping it means a
-	// dropped backchannel stays dropped even if one of its segments is still
-	// making its way through the queue.
-	p.activeTurn = turnID
+	// Keep dropTurn: a late backchannel producer must stay dropped.
+	p.activeTurn, p.owner = seg.TurnID, seg.owner
+	p.activeGen, p.activeRevision = seg.Gen, seg.Revision
 	p.turnStarted = time.Now()
 	p.playhead = p.turnStarted
 }
 
-func (p *Player) beginSegment(seg Segment) {
+func (p *Player) beginSegment(gen *Generation, seg Segment) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.contentSuppressedLocked(seg) {
+	if !p.allowedLocked(seg, gen) {
 		return
 	}
-	p.ensureTurnLocked(seg.TurnID)
+	p.ensureTurnLocked(seg)
 	p.pendingText = seg.Text
 	p.pendingFrom = p.emittedMS
 	p.pendingAnnounced = false
@@ -534,10 +558,10 @@ func (p *Player) beginSegment(seg Segment) {
 // reach the listener's ears in part. A segment that emitted nothing did not, and
 // leaving it pending puts a sentence the caller never heard into conversation
 // history — after which the model answers its own unheard sentence.
-func (p *Player) abandonSegment(seg Segment) {
+func (p *Player) abandonSegment(gen *Generation, seg Segment) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
+	if !p.allowedLocked(seg, gen) || !p.matchesSegmentLocked(seg) {
 		return
 	}
 	p.pendingText = ""
@@ -545,9 +569,9 @@ func (p *Player) abandonSegment(seg Segment) {
 	p.pendingContent = false
 }
 
-func (p *Player) markSegment(seg Segment) {
+func (p *Player) markSegment(gen *Generation, seg Segment) {
 	p.mu.Lock()
-	if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
+	if !p.allowedLocked(seg, gen) || !p.matchesSegmentLocked(seg) {
 		p.mu.Unlock()
 		return
 	}
@@ -561,6 +585,9 @@ func (p *Player) markSegment(seg Segment) {
 	p.pendingText = ""
 	p.pendingFrom = p.emittedMS
 	p.pendingContent = false
+	if !seg.content {
+		p.adoptedFrom, p.adoptedTo = nil, nil
+	}
 
 	if p.graceTurn != seg.TurnID {
 		p.mu.Unlock()
@@ -580,12 +607,13 @@ func (p *Player) markSegment(seg Segment) {
 	p.queue = nil
 	turnID := p.activeTurn
 	totalMS := p.emittedMS
+	owner, ownerGen, ownerRevision := p.owner, p.activeGen, p.activeRevision
 	spoken := p.fullSpokenLocked()
 	p.resetTurnLocked()
 	p.setSpeakingLocked(false)
 	p.mu.Unlock()
 
-	p.reportTruncation(TruncationReport{
+	p.reportTruncation(TruncationReport{owner: owner, Generation: ownerGen, Revision: ownerRevision,
 		TurnID:     turnID,
 		PlayedMS:   int64(totalMS),
 		TotalMS:    int64(totalMS),
@@ -603,11 +631,11 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 	chunkBytes -= chunkBytes % audio.BytesPerSample
 
 	p.mu.Lock()
-	if p.contentSuppressedLocked(seg) {
+	if !p.allowedLocked(seg, gen) {
 		p.mu.Unlock()
 		return
 	}
-	p.ensureTurnLocked(seg.TurnID)
+	p.ensureTurnLocked(seg)
 	p.setSpeakingLocked(true)
 	p.mu.Unlock()
 
@@ -636,12 +664,13 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 		}
 
 		p.mu.Lock()
-		if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
+		if !p.allowedLocked(seg, gen) || !p.matchesSegmentLocked(seg) {
 			// The turn was cut while this chunk waited its turn.
 			p.mu.Unlock()
 			return
 		}
 		playAt := p.playhead
+		owner := p.owner
 		// Reserve the first body output under the same lock that can hand an
 		// unplayed body over to a ready result. Once reserved, it must finish.
 		if seg.content {
@@ -653,26 +682,24 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 				p.onSegment(seg.TurnID, p.pendingText, playAt)
 			}
 		}
-		p.mu.Unlock()
-
-		if off == 0 && seg.onFirstAudio != nil {
-			seg.onFirstAudio()
+		if owner != nil {
+			owner.markOutput(seg.content, seg.readout)
 		}
-		p.emit(seg.TurnID, chunk, playAt)
-
-		p.mu.Lock()
+		// This chunk is committed to output. Account for it before releasing
+		// ownership: the sink may synchronously trigger an interruption.
 		chunkMS := format.DurationMS(chunk)
 		p.emittedMS += chunkMS
 		p.playhead = p.playhead.Add(time.Duration(chunkMS*1000) * time.Microsecond)
 		p.mu.Unlock()
+		p.emit(seg.TurnID, chunk, playAt)
 	}
 }
 
 // finishTurn waits out the tail of a completed turn so the speak channel stays
 // "on" until the listener has actually heard the last chunk, then reports it.
-func (p *Player) finishTurn(seg Segment) {
+func (p *Player) finishTurn(gen *Generation, seg Segment) {
 	p.mu.Lock()
-	if p.activeTurn != seg.TurnID || p.contentSuppressedLocked(seg) {
+	if !p.allowedLocked(seg, gen) || !p.matchesSegmentLocked(seg) {
 		p.mu.Unlock()
 		return
 	}
@@ -686,6 +713,7 @@ func (p *Player) finishTurn(seg Segment) {
 
 	remaining := p.emittedMS - p.heardMSLocked()
 	totalMS := p.emittedMS
+	owner, ownerGen, ownerRevision := p.owner, p.activeGen, p.activeRevision
 	text := p.fullSpokenLocked()
 	p.mu.Unlock()
 
@@ -696,7 +724,7 @@ func (p *Player) finishTurn(seg Segment) {
 	}
 
 	p.mu.Lock()
-	if p.activeTurn != seg.TurnID {
+	if !p.matchesSegmentLocked(seg) {
 		p.mu.Unlock()
 		return
 	}
@@ -705,7 +733,7 @@ func (p *Player) finishTurn(seg Segment) {
 	p.mu.Unlock()
 
 	if graced {
-		p.reportTruncation(TruncationReport{
+		p.reportTruncation(TruncationReport{owner: owner, Generation: ownerGen, Revision: ownerRevision,
 			TurnID:     seg.TurnID,
 			PlayedMS:   int64(totalMS),
 			TotalMS:    int64(totalMS),
@@ -714,7 +742,7 @@ func (p *Player) finishTurn(seg Segment) {
 		return
 	}
 	if p.onTurnDone != nil {
-		p.onTurnDone(seg.TurnID, int64(totalMS), text)
+		p.onTurnDone(PlaybackReport{owner: owner, Generation: ownerGen, Revision: ownerRevision, TurnID: seg.TurnID, TotalMS: int64(totalMS), PlayedMS: int64(totalMS), SpokenText: text})
 	}
 }
 
@@ -786,6 +814,8 @@ func (p *Player) fullSpokenLocked() string {
 
 func (p *Player) resetTurnLocked() {
 	p.activeTurn = ""
+	p.owner, p.adoptedFrom, p.adoptedTo = nil, nil, nil
+	p.activeGen, p.activeRevision = 0, 0
 	p.drainingTurn = ""
 	p.graceTurn = ""
 	p.graceMarks = 0
