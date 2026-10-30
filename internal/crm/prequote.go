@@ -72,6 +72,7 @@ func (p PrequotePolicy) concurrency() int {
 
 // prequoted is one quotation priced ahead (or on demand and kept).
 type prequoted struct {
+	ready   *readyQuote // immutable after done closes
 	key     string
 	started time.Time
 	done    chan struct{}

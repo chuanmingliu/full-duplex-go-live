@@ -137,7 +137,7 @@ func HedgeTTSPool(inner TTS, copies, rpm int, after time.Duration, pool TTSPool,
 		after = 0
 	}
 	h := &hedgedTTS{inner: inner, log: log, after: after, budget: ttsBudgetFor(inner.Name(), rpm)}
-	if p, ok := inner.(Pooled); ok && p.Accounts() > 1 {
+	if p, ok := inner.(Pooled); ok && p.Accounts() > 0 {
 		h.accounts, h.pool = p.Accounts(), pool
 		if h.pool.After < 0 {
 			h.pool.After = 0
@@ -173,18 +173,20 @@ func (h *hedgedTTS) apart(a, b *ttsSlot) bool {
 	return h.accounts > 1 && a != nil && b != nil && accountOf(a) != accountOf(b)
 }
 
-// account is the count of one account's requests over the last minute; nil
-// when there is one account or no limit, and a nil count has room for anything.
+// account is the count of one account's requests over the last minute. A nil
+// count means no known limit; optional background synthesis then declines.
 func (h *hedgedTTS) account(n int) *rpmBudget {
-	if h.accounts < 2 {
+	if h.accounts < 1 {
 		return nil
 	}
 	limit := h.limitOf(n)
 	if limit <= 0 {
 		return nil
 	}
-	return ttsBudgetFor(h.inner.Name()+"#"+strconv.Itoa(n), limit)
+	return ttsBudgetFor(h.accountKey(n), limit)
 }
+
+func accountNumber(n int) string { return strconv.Itoa(n) }
 
 // limitOf is how many requests a minute account n is trusted with; 0 is no
 // limit.
@@ -215,7 +217,13 @@ func (h *hedgedTTS) room(primary, spare *ttsSlot) bool {
 	if h.apart(primary, spare) {
 		return h.account(accountOf(spare)).spend(1, false)
 	}
-	return h.budget.spend(1, false)
+	if !h.budget.spend(1, false) {
+		return false
+	}
+	// Same-account hedge admission retains its existing additions budget, but
+	// background work also needs the account's complete usage count.
+	h.account(accountOf(spare)).spend(1, true)
+	return true
 }
 
 // laterSegmentPatience is how many times longer than an urgent segment a
@@ -316,12 +324,11 @@ func (b *rpmBudget) full() bool {
 func (h *hedgedTTS) Name() string { return h.inner.Name() }
 
 func (h *hedgedTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error) {
-	first, err := h.inner.Open(ctx, opts)
+	first, err := h.openForeground(ctx, opts, -1)
 	if err != nil {
 		return nil, err
 	}
 	s := &hedgedTTSStream{tts: h, ctx: ctx, opts: opts, primary: &ttsSlot{stream: first}}
-	h.made(s.primary)
 	s.openSpare()
 	return s, nil
 }
@@ -366,11 +373,13 @@ func (s *hedgedTTSStream) openSpare() {
 		// asked for again when the next first segment comes due.
 		s.mu.Unlock()
 		return
+	} else {
+		s.tts.account(want).spend(1, true)
 	}
 	s.opening = true
 	s.mu.Unlock()
 	go func() {
-		stream, err := s.tts.inner.Open(octx, s.opts)
+		stream, err := s.tts.openForeground(octx, s.opts, want)
 		s.mu.Lock()
 		s.opening = false
 		if err != nil || s.closed {

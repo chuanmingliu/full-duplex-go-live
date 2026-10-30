@@ -202,6 +202,17 @@
    "undo": "Set standard.prequote.follow_selection_max to0, or restore the exact prior quote-plans version through the guarded configuration rollback. Preserve later owner edits.",
    "needs": "Reduce remaining model/readout synthesis delay, repeat the quotation workload and collect at least twenty qualifying physical handset responses. Recheck total-only answer scope. Any audio prewarming must preserve authoritative result validation, bounded per-call attempts and shared provider admission.",
    "status": "The bounded follow-selection policy remains enabled at 8 in quote-plans v7 on runtime bbdb7a3. Replay out-mvumm8e2-t8in retained 0/1/1 ms pricing tasks and an ahead-of-demand third quote, but readouts were 1016/1231/1061 ms. The strict gate fails because the second readout exceeds target and only five caller samples were collected. Physical handset latency remains unproven. The separate coverage replay out-mvumqi79-ghis passed its twenty-response server p95 gate at 1188 ms (max1238), without exercising quotation tools. Neither replay measures physical handset playback."
+  },
+  {
+   "rank": 20,
+   "title": "Prepare bounded call-private audio for completed authoritative quotations",
+   "gain": "Remove the first readout synthesis wait when an exact validated prefix is already prepared. The preceding replay measured 171–189 ms in this stage; this is an opportunity, not a measured gain.",
+   "basis": "On bbdb7a3, out-mvumm8e2-t8in had 0/1/1 ms pricing tasks but readouts of 1016/1231/1061 ms. The slowest quote spent 171 ms after result delivery before first readout output.",
+   "cost": "The telephony trial permits four unique attempted syntheses per call. First use also opens one strict-account connection; every physical provider operation is accounted. Poll the authenticated completed-quote snapshot every two seconds, at most 300 times.",
+   "guard": "General default zero, validated 0–8. Same-call budget cannot reset across sessions; 1024 retained claims per server lifetime. No new pricing, prompt or VAD change. Exact foreground result text is authoritative; PCM is call-private, complete, bounded and expires with the quote. Optional work shares known finite account admission and yields to foreground; no background hedge/fallback/reconnect.",
+   "undo": "Set duplex.quote_readout_warm_max to0 in the telephony profile and use the guarded restart workflow; preserve other profile fields.",
+   "needs": "Pass full CI and controlled deployment, verify exact profile delta and archives, replay the same quotation scenario, inspect preparation/cache-hit counts and actual readout latency, then obtain physical handset evidence.",
+   "status": "Implemented and independently reviewed with focused race, ownership, admission, source/expiry and no-speech/memory-side-effect tests. Full candidate CI, deployment and measured effect are pending."
   }
  ]
 }

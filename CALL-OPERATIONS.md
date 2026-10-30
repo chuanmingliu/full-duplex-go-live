@@ -180,3 +180,36 @@ configuration version and changed field, then replay the same scenario.
 Check actual readout latency and backend work, not just filler timing. Set
 the field to zero to disable further preparation; already-started pricing
 still drains. A configuration rollback must preserve later owner edits.
+
+
+## Prepared quotation audio trial
+
+The telephony profile opts into `duplex.quote_readout_warm_max: 4`; the general
+configuration default is zero (disabled), and the accepted range is 0–8. This
+prepares the exact first readout segment of already-completed authoritative
+quotations. It does not start more pricing work, change the saved prompt, or
+speak until normal foreground result validation requests the same text.
+
+The worker reads a bounded, authenticated CRM snapshot every two seconds, at
+most 300 times per call. Four unique attempted syntheses, including failed
+provider work, consume the call's budget. Optional work shares the foreground
+account allowance, uses one strict account connection without retries, hedges,
+fallbacks or reconnects, and yields to foreground synthesis. Unknown allowance
+or unsupported providers skip this optimization. A failed active preparation
+retires the worker; normal foreground synthesis remains available.
+
+Prepared audio and its effective voice identity stay in call-owned memory:
+256 KiB per segment and 1 MiB total, never beyond the quotation's validity.
+Only complete error-free PCM can be reused. Call close cancels preparation,
+closes its connection before waiting, and clears audio. Reconnecting the same
+call does not reset the preparation budget. The server retains at most 1024
+call claims until restart; at capacity later calls simply skip this optional
+work. The ordinary phrase cache does not learn authoritative readout segments.
+
+A cache hit follows the same player ownership and output timestamps as normal
+speech. Readout latency still includes the caller's end silence and is stamped
+at actual PCM output. It does not prove carrier or handset playback. Compare
+matched recorded quote replays, report first audio, content and readout
+separately, and require physical handset capture for the end-to-end claim.
+To disable the trial, set `quote_readout_warm_max` to zero and restart through
+the normal guarded deployment procedure.

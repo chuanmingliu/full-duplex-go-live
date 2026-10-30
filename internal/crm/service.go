@@ -218,6 +218,7 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 }
 
 func (s *Service) quote(req QuoteRequest, follow *selectionWarmSeed) (any, error) {
+	readyPricing := s.currentReadyPricing()
 	// The intake: no quotation on a plan with a must field missing.
 	need, skipped, plan, planned := s.intake(req)
 	if need != nil {
@@ -312,6 +313,7 @@ func (s *Service) quote(req QuoteRequest, follow *selectionWarmSeed) (any, error
 	if kept != nil && err == nil {
 		if _, isNeed := q.(*Need); !isNeed && q != nil {
 			kept.quote = q
+			kept.ready = s.completedReadyQuote(req.Call, kept.started, readyPricing, quoteWithSkipped(q, req.Skipped))
 		}
 	}
 	return quoteWithSkipped(q, req.Skipped), err
@@ -1006,6 +1008,7 @@ func (s *Service) Handler() http.Handler {
 		return nil
 	}))
 	mux.HandleFunc("POST /api/quote/prefetch", s.authed(s.handlePrefetch))
+	mux.HandleFunc("GET /api/quote/ready", s.authed(s.handleQuoteReady))
 	mux.HandleFunc("POST /api/render", s.authed(func(w http.ResponseWriter, r *http.Request) error {
 		var req CallRequest
 		if err := readJSON(r, &req); err != nil {

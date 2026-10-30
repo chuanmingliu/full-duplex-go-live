@@ -1272,8 +1272,8 @@
    "found_call": "out-mvukudco-7zrb",
    "symptom": "The assistant repeated every coverage and then the total after a request to repeat the total without asking for coverage details.",
    "cause": "The response followed the detailed quotation context more broadly than the requested scope.",
-   "fix": "Retained authoritative quote context now tells the model to answer total-repeat requests with the requested total and necessary unquoted-coverage caveats, while allowing itemized details and comparisons when requested. Saved business instructions, quote facts and initial custom readout remain unchanged.",
-   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Candidate CI, deployment and model-behavior replay were subsequently completed as recorded below. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: On deployed bbdb7a3, replay out-mvumm8e2-t8in item_10 gave the authoritative total first, then still named all six coverages. It no longer repeated individual premiums. The request did not ask for the coverage list, so the guidance change is only a partial improvement.",
+   "fix": "Retained authoritative quote context now tells the model to answer total-repeat requests with the requested total and necessary unquoted-coverage caveats, while allowing itemized details and comparisons when requested. Saved business instructions, quote facts and initial custom readout remain unchanged. The subsequent candidate explicitly excludes appended coverage names, coverage lists and individual premiums on total-only requests.",
+   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Candidate CI, deployment and model-behavior replay were subsequently completed as recorded below. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: On deployed bbdb7a3, replay out-mvumm8e2-t8in item_10 gave the authoritative total first, then still named all six coverages. It no longer repeated individual premiums. The request did not ask for the coverage list, so the guidance change is only a partial improvement. This stronger wording has not yet been validated in a model replay; the issue remains open.",
    "effect": "Reopened after live simulator verification: answer scope remains too broad despite correct values.",
    "commits": [
     "bbdb7a3"
@@ -1294,6 +1294,21 @@
    "commits": [
     "bbdb7a3"
    ]
+  },
+  {
+   "id": "ISS-081",
+   "title": "Accepted-hangup diagnostic serialized the whole private turn",
+   "area": "logging",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Post-call source and log review",
+   "found_call": "out-mvumm8e2-t8in",
+   "symptom": "The accepted end_call diagnostic stored the full turn object under the turn field rather than a scalar turn ID.",
+   "cause": "The log argument used job.turn after playback ownership moved to exact Turn pointers.",
+   "fix": "Log only job.turn.ID. A regression exercises accepted hangup with private sentinel fields through both text and JSON log handlers.",
+   "verified": "Both handler tests failed before the change and passed afterward. Focused hangup regressions passed with race detection; the combined quote, playback, preparation and hangup regression suite passed in 7.506 seconds. Full candidate CI, deployment and replay are pending.",
+   "effect": "The accepted-hangup diagnostic retains its identifier without serializing the private turn payload.",
+   "commits": []
   }
  ]
 }

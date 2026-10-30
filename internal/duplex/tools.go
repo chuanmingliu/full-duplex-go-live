@@ -431,7 +431,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			// The model has said goodbye and asked to hang up. Resuming it
 			// with the tool's output would only draw a second goodbye, cut
 			// off by the hangup; the conversation is over.
-			e.log.Debug("tools: end_call accepted; not resuming the backend", "turn", job.turn)
+			e.log.Debug("tools: end_call accepted; not resuming the backend", "turn", job.turn.ID)
 			return
 		}
 		e.continueWith(p)

@@ -55,11 +55,12 @@ type Emit func(event any)
 
 // Deps are the collaborators an engine needs.
 type Deps struct {
-	ASR  provider.ASR
-	LLM  provider.LLM
-	TTS  provider.TTS
-	Emit Emit
-	Log  *slog.Logger
+	ASR           provider.ASR
+	LLM           provider.LLM
+	TTS           provider.TTS
+	BackgroundTTS *provider.BackgroundTTSFactory
+	Emit          Emit
+	Log           *slog.Logger
 }
 
 // Options configure one session's engine.
@@ -279,8 +280,9 @@ type Engine struct {
 	tools    *toolState
 	toolExec tools.Executor
 
-	ttsMu     sync.Mutex
-	ttsStream provider.TTSStream
+	ttsMu      sync.Mutex
+	ttsStream  provider.TTSStream
+	quoteAudio *quoteAudioCache
 
 	latencies        []int64
 	contentLatencies []int64
@@ -455,6 +457,7 @@ func (e *Engine) Start(ctx context.Context) {
 	// makes this the cheapest moment in the whole call to pay for handshakes.
 	e.prewarm("session open")
 	e.post(func() { e.warmAtOpening("session open") })
+	e.startQuoteAudio()
 }
 
 // prewarm opens the provider connections a turn is about to need, off the
@@ -509,6 +512,7 @@ func (e *Engine) Close() {
 			e.cancel()
 		}
 		e.player.Close()
+		e.quoteAudio.close()
 		e.wg.Wait()
 		// After wg.Wait: the loop goroutine is the only writer of e.latencies
 		// and of what lineSummary reads, and it has exited, so reading them
@@ -987,11 +991,7 @@ func (p *speechPipe) run() {
 	// moment this pipe is finished, rather than at the next tick.
 	defer p.e.wake()
 	defer close(p.done)
-	seg := segment.New(segment.Config{
-		FirstChunkChars: p.e.opts.Cfg.Duplex.StreamFirstChunkChars,
-		MinChunkChars:   p.e.opts.Cfg.Duplex.StreamMinChunkChars,
-		MaxChunkChars:   p.e.opts.Cfg.Duplex.StreamMaxChunkChars,
-	})
+	seg := segment.New(p.e.segmentConfig())
 
 	// The first segment normally waits for punctuation. On a reply that opens
 	// with a long clause it can wait a surprisingly long time, and every
@@ -1216,6 +1216,9 @@ func (p *speechPipe) confirmed() bool {
 // there once said: everything a pipe of fixed phrases says, and of an ordinary
 // answer the segments short enough to be said again — its opening clauses.
 func (p *speechPipe) remembers(text string) bool {
+	if p.readout {
+		return false // authoritative quote audio stays within this call
+	}
 	if p.cacheable {
 		return true
 	}
@@ -1266,6 +1269,15 @@ func (p *speechPipe) speak(text string) bool {
 	}
 	if p.ctx.Err() != nil || !p.current() {
 		return false
+	}
+
+	if p.readout {
+		if cached, ok := p.e.quoteAudio.get(text); ok {
+			pcm, err := audio.ResamplePCM16(cached.PCM, cached.Rate, p.e.opts.ClientRate)
+			if err == nil && len(pcm) > 0 {
+				return p.playPrepared(text, pcm, true)
+			}
+		}
 	}
 
 	// Words that have been said before, in this voice, do not need saying to
@@ -1537,6 +1549,10 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	if err != nil || len(pcm) == 0 {
 		return true
 	}
+	return p.playPrepared(text, pcm, false)
+}
+
+func (p *speechPipe) playPrepared(text string, pcm []byte, quote bool) bool {
 	leadMS := 0
 	if !p.begun {
 		// The answer's first segment, from the cache: its quiet head is cut
@@ -1565,11 +1581,14 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	p.turn.MarkFirstAudio()
 	p.e.player.Enqueue(body)
 	p.e.player.Enqueue(mark)
-	p.e.log.Debug("speak: segment played from the phrase cache",
-		"turn", p.turn.ID,
-		"text", text,
-		"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)),
-		"lead_ms", leadMS)
+	if quote {
+		p.e.log.Debug("speak: prepared quote segment played", "turn", p.turn.ID,
+			"chars", len([]rune(text)), "audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)), "lead_ms", leadMS)
+	} else {
+		p.e.log.Debug("speak: segment played from the phrase cache",
+			"turn", p.turn.ID, "text", text,
+			"audio_ms", int(audio.PCM16(p.e.opts.ClientRate).DurationMS(pcm)), "lead_ms", leadMS)
+	}
 	return true
 }
 
@@ -1607,12 +1626,7 @@ func (e *Engine) ttsSession() (provider.TTSStream, error) {
 	// file, and a telephony session asking for 8 kHz was being resampled
 	// twice. A provider that cannot is free to return another rate; the
 	// stream reports what it actually produces and speak converts.
-	ttsOpts := provider.TTSOptions{
-		SampleRate: e.ttsRate(),
-		Voice:      e.opts.Voice,
-		Speed:      e.opts.Cfg.Speed,
-		Language:   e.opts.Language,
-	}
+	ttsOpts := e.synthesisOptions()
 	stream, err := e.deps.TTS.Open(e.ctx, ttsOpts)
 	if err != nil && e.ctx.Err() == nil {
 		metrics.Default().Retry("tts")
