@@ -89,5 +89,33 @@ prove the under-1200 ms handset target.
 The deployed journal is configured for 720-hour working retention,
 permanent archive, target 1200 ms, and the existing Talker/playground
 endpoints. Live telephone fillers use the phrase cache; Talker is the
-separate playground service. Deployment and subsequent-call results will
-be added after verification.
+separate playground service. The verified release is recorded below; its
+real-call effect is still pending.
+
+## Verified release
+
+Commit `461b79f` passed quality checks and full normal/race suites in
+GitHub Actions run `40994234452`. The new handoff regressions also passed
+twenty repeated local race runs; all 30 latency and nine simulator-report
+tests, full journal race tests, JavaScript checks and vet passed. The
+additional local full duplex/journal attempt reached the default ten-minute
+Go timeout; CI used the repository twenty-five-minute limit and completed
+both full suites.
+
+Engine, CRM and journal were deployed at 11:06 Asia/Shanghai on
+2026-10-30. All three running executable hashes matched the reviewed
+Linux amd64 build from the clean full commit. Exact arguments/environment,
+recording, 720-hour retention, archive paths, stable-process phrase/scenario
+warming, and existing Desk/simulator identities were preserved.
+
+The live journal and deployed analyzer agree on five first-content
+samples with p95 1082 ms, and one linked result at 3548 ms. The strict
+gate remains failed. The transcript's corrected caller onsets include
+53.591 and 87.993 seconds; its text export also uses the corrected data.
+All five archive files verified, and original audio/session/log hashes
+matched their pre-deployment fingerprints. Talker was reachable as
+`local-talker`; live fillers remain phrase-cache audio.
+
+The new handoff's real-call effect and physical handset target remain
+unverified until another recorded call is reviewed after the owner says
+**done**.
