@@ -6,13 +6,103 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/gorilla/websocket"
 )
+
+var backgroundTestSequence atomic.Uint64
+
+func backgroundTestClient(endpoint string) *TTS {
+	c := testClient(endpoint)
+	// Admission follows the credential across factories and endpoint variants.
+	// Every fixture invocation, including -count repeats, needs its own account.
+	c.APIKey = "background-test-" + strconv.FormatUint(backgroundTestSequence.Add(1), 10)
+	return c
+}
+
+type heldBackgroundClose struct {
+	*TTS
+	closing, release chan struct{}
+}
+
+func (c *heldBackgroundClose) OpenBackground(ctx context.Context, opts provider.TTSOptions, account int) (provider.IdentifiedTTSStream, error) {
+	s, err := c.TTS.OpenBackground(ctx, opts, account)
+	if err != nil {
+		return nil, err
+	}
+	return &heldBackgroundStream{IdentifiedTTSStream: s, closing: c.closing, release: c.release}, nil
+}
+
+type heldBackgroundStream struct {
+	provider.IdentifiedTTSStream
+	closing, release chan struct{}
+}
+
+func (s *heldBackgroundStream) Close() error {
+	close(s.closing)
+	<-s.release
+	return s.IdentifiedTTSStream.Close()
+}
+
+func backgroundFixture(t *testing.T, c provider.TTS) *provider.BackgroundTTSStream {
+	t.Helper()
+	factory, err := provider.BackgroundTTSFor(provider.HedgeTTSPool(c, 2, 100, 0, provider.TTSPool{AccountRPM: 100}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := factory.New(context.Background(), provider.TTSOptions{})
+	t.Cleanup(func() { _ = b.Close() })
+	return b
+}
+
+func TestBackgroundFixturesDoNotShareClosingAccount(t *testing.T) {
+	_, endpoint := newFakeT2A(t, false)
+	first := backgroundTestClient(endpoint)
+	closing, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	b := backgroundFixture(t, &heldBackgroundClose{TTS: first, closing: closing, release: release})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ch, attempted, err := b.TrySynthesize(ctx, "test.")
+	if err != nil || !attempted {
+		t.Fatalf("first fixture: attempted=%t, err=%v", attempted, err)
+	}
+	for chunk := range ch {
+		if chunk.Err != nil {
+			t.Fatal(chunk.Err)
+		}
+	}
+	b.Close()
+	select {
+	case <-closing:
+	case <-ctx.Done():
+		t.Fatal("fixture close did not start")
+	}
+	// Production must keep a real account reserved until its raw Close finishes.
+	// Only two of its 100 budget units have been spent, so this denial is activity.
+	sameAccount := testClient(endpoint)
+	sameAccount.APIKey = first.APIKey
+	if _, attempted, err := backgroundFixture(t, sameAccount).TrySynthesize(ctx, "test."); attempted || !errors.Is(err, provider.ErrBackgroundUnavailable) {
+		t.Fatalf("closing account was reused: attempted=%t, err=%v", attempted, err)
+	}
+	// A separate test invocation must not inherit that real account reservation.
+	next := backgroundFixture(t, backgroundTestClient(endpoint))
+	ch, attempted, err = next.TrySynthesize(ctx, "test.")
+	if err != nil || !attempted {
+		t.Fatalf("independent fixture inherited closing account: attempted=%t, err=%v", attempted, err)
+	}
+	for chunk := range ch {
+		if chunk.Err != nil {
+			t.Fatal(chunk.Err)
+		}
+	}
+}
 
 func TestBackgroundOpenIsStrictAndKeepsRealIdentity(t *testing.T) {
 	f, endpoint := newAccountsT2A(t, "key-b")
@@ -102,7 +192,7 @@ func TestBackgroundCancellationClosesBlockedRead(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := &fakeT2A{beforeContinue: func() { close(entered); <-release }}
 	defer close(release)
-	c := testClient(serveFakeT2A(t, f))
+	c := backgroundTestClient(serveFakeT2A(t, f))
 	c.RPMs = []int{100}
 	h := provider.HedgeTTSPool(c, 2, 100, time.Second, provider.TTSPool{AccountRPM: 100}, nil)
 	factory, err := provider.BackgroundTTSFor(h)
@@ -112,11 +202,18 @@ func TestBackgroundCancellationClosesBlockedRead(t *testing.T) {
 	b := factory.New(context.Background(), provider.TTSOptions{})
 	defer b.Close()
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch, attempted, err := b.TrySynthesize(ctx, "test.")
 	if err != nil || !attempted {
 		t.Fatal(err)
 	}
-	<-entered
+	select {
+	case <-entered:
+	case chunk, ok := <-ch:
+		t.Fatalf("synthesis completed before fixture entry: open=%t, err=%v", ok, chunk.Err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("synthesis did not reach fixture")
+	}
 	cancel()
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
@@ -166,7 +263,7 @@ func TestBackgroundCloseDuringHandshake(t *testing.T) {
 		_, _, _ = c.ReadMessage()
 	}))
 	defer server.Close()
-	c := testClient("ws" + strings.TrimPrefix(server.URL, "http"))
+	c := backgroundTestClient("ws" + strings.TrimPrefix(server.URL, "http"))
 	c.RPMs = []int{100}
 	c.OpenTimeout = 10 * time.Second
 	factory, err := provider.BackgroundTTSFor(provider.HedgeTTSPool(c, 2, 100, 0, provider.TTSPool{}, nil))
@@ -175,21 +272,27 @@ func TestBackgroundCloseDuringHandshake(t *testing.T) {
 	}
 	b := factory.New(context.Background(), provider.TTSOptions{})
 	defer b.Close()
-	done := make(chan error, 1)
+	type openResult struct {
+		attempted bool
+		err       error
+	}
+	done := make(chan openResult, 1)
 	go func() {
 		_, attempted, err := b.TrySynthesize(context.Background(), "test.")
-		if !attempted {
-			done <- errors.New("open attempt not counted")
-			return
-		}
-		done <- err
+		done <- openResult{attempted: attempted, err: err}
 	}()
-	<-accepted
+	select {
+	case <-accepted:
+	case result := <-done:
+		t.Fatalf("open completed before handshake: attempted=%t, err=%v", result.attempted, result.err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("background connection did not reach handshake")
+	}
 	b.Close()
 	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("closed handshake succeeded")
+	case result := <-done:
+		if !result.attempted || result.err == nil {
+			t.Fatalf("closed handshake: attempted=%t, err=%v", result.attempted, result.err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("close did not unblock handshake")
