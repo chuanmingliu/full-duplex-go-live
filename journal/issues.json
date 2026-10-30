@@ -1174,8 +1174,10 @@
    "found": "2026-10-30",
    "found_on": "Review of11:08 real call and focused source/regression analysis",
    "found_call": "out-mvue7jic-wdgq",
-   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Full candidate CI, deployment and a new real-call measurement are pending.",
-   "commits": []
+   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Quality and full normal/race CI passed for1fa2846 in run41010943292. Engine, CRM and journal running executable hashes and exact configuration were verified after deployment at14:06 on2026-10-30. Recording,720-hour retention and stable-process caches were verified; original audio/session/log fingerprints are unchanged. Live journal v3 and CLI agree on four unverified historical readouts. A new real-call performance effect remains unmeasured.",
+   "commits": [
+    "1fa2846"
+   ]
   },
   {
    "id": "ISS-074",
@@ -1189,8 +1191,10 @@
    "found": "2026-10-30",
    "found_on": "Review of11:08 real call and focused source/regression analysis",
    "found_call": "out-mvue7jic-wdgq",
-   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Full candidate CI, deployment and a new real-call measurement are pending.",
-   "commits": []
+   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Quality and full normal/race CI passed for1fa2846 in run41010943292. Engine, CRM and journal running executable hashes and exact configuration were verified after deployment at14:06 on2026-10-30. Recording,720-hour retention and stable-process caches were verified; original audio/session/log fingerprints are unchanged. Live journal v3 and CLI agree on four unverified historical readouts. A new real-call performance effect remains unmeasured.",
+   "commits": [
+    "1fa2846"
+   ]
   },
   {
    "id": "ISS-075",
@@ -1204,8 +1208,10 @@
    "found": "2026-10-30",
    "found_on": "Review of11:08 real call and focused source/regression analysis",
    "found_call": "out-mvue7jic-wdgq",
-   "verified": "Wire and hedge regressions reproduced the canceled ghost request and unnecessary connection replacement before the fix. All provider packages passed with the race detector; focused cancellation and abandoned-task tests passed ten repetitions, including genuine transport errors racing cancellation. Independent review passed. Full candidate CI, deployment and real-call measurement are pending.",
-   "commits": []
+   "verified": "Wire and hedge regressions reproduced the canceled ghost request and unnecessary connection replacement before the fix. All provider packages passed with the race detector; focused cancellation and abandoned-task tests passed ten repetitions, including genuine transport errors racing cancellation. Independent review passed. Quality and full normal/race CI passed for1fa2846 in run41010943292. Engine, CRM and journal running executable hashes and exact configuration were verified after deployment at14:06 on2026-10-30. Recording,720-hour retention and stable-process caches were verified; original audio/session/log fingerprints are unchanged. Live journal v3 and CLI agree on four unverified historical readouts. A new real-call performance effect remains unmeasured.",
+   "commits": [
+    "1fa2846"
+   ]
   }
  ]
 }

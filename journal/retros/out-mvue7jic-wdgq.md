@@ -111,6 +111,28 @@ actionable issue in the output-role handling or provider cancellation.
 verifier, 3 loopback-server and 13 browser-controller/PCM tests. No microphone
 was opened and no physical handset capture has yet been made.
 
-Full candidate CI, guarded box deployment and a new real-call measurement
-are pending. These tests establish implementation behavior, not attainment
-of the physical handset latency goal.
+The tests establish implementation behavior. A new real-call measurement
+is still required to evaluate the effect on handset latency.
+
+## Verified release
+
+Commit `1fa2846` passed quality checks and complete normal/race suites in
+GitHub Actions run `41010943292`. Engine, CRM and journal were deployed
+at 14:06 Asia/Shanghai on 2026-10-30. All three running executable
+hashes matched the clean Linux amd64 build. Exact arguments/environment,
+recording, 720-hour retention, archive paths and stable-process phrase and
+scenario caches were preserved. Existing Desk and simulator identities
+were preserved.
+
+The live journal v3 and deployed CLI agree on the historical call:
+13 caller samples, first-audio p95 643 ms, first-content p95 1215 ms,
+and four linked result-content samples at p95 1139 ms. Actual quotation
+readout remains unverified for all four, as expected for the old runtime.
+All five archive files passed validation and the original audio, session
+and log fingerprints remained unchanged. The retrospective and new
+readout labels are visible in the live journal.
+
+Talker was reachable as `local-talker`; cached fillers are still distinguished from live Talker generation.
+
+The strict gate remains failed. No new physical handset capture has been
+reviewed; deployment success does not establish the latency target.
