@@ -855,27 +855,21 @@ func (e *Engine) maybeDeliver() {
 		e.yieldFloor(false)
 	}
 	_, ver := e.memorySnapshot()
+	opening, readout, posthookSkipped := e.quoteResultPrefix(delivery, ver, busy)
 	var note strings.Builder
 	fmt.Fprintf(&note, "【后台任务结果】%s（%s）已完成", task.ID, task.Tool.Name)
 	if task.Result.Err != nil {
 		fmt.Fprintf(&note, "，但失败了：%s。请告诉用户暂时算不出来，并说明会稍后再试或请人工跟进。", task.Result.Err.Error())
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
-		readOut := false
-		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" && task.Request.MemoryVersion == ver {
-			if tools.ResultIsDefault(task.Result.Output) {
-				opening = "" // the default quotation: ready before the call, no "算好了"
-			}
-			if readout := task.Tool.ReadoutFor(task.Result.Output); readout != "" {
-				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
-				readOut = true
-			} else if opening != "" {
-				fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
-			}
+		if readout != "" {
+			fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
+		} else if opening != "" {
+			fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 		}
 		if task.Request.MemoryVersion != ver {
 			fmt.Fprintf(&note, "\n注意：该结果基于工作记忆 v%d 计算，而当前工作记忆已是 v%d（方案在计算期间有改动）。请先告知结果对应的是之前的方案，并询问是否按最新方案重新计算。", task.Request.MemoryVersion, ver)
-		} else if !readOut {
+		} else if readout == "" {
 			note.WriteString("\n请现在自然地把结果告诉用户，简洁，报总价和关键构成即可。")
 		}
 	}
@@ -886,8 +880,11 @@ func (e *Engine) maybeDeliver() {
 		e.recordSelection(task.Result.Output)
 	}
 	turn := e.tracker.Begin("", false)
+	turn.Opening, turn.Readout = opening, readout
+	turn.QuoteResult = task.Result.Err == nil && tools.ResultStatus(task.Result.Output) == "quote"
 	attrs := []any{"tool", task.Tool.Name, "task", task.ID, "turn", turn.ID,
-		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver}
+		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver,
+		"posthook_skipped", posthookSkipped}
 	if origin := delivery.origin; origin.turnID != "" && !origin.speechEndAt.IsZero() {
 		attrs = append(attrs, "origin_turn", origin.turnID,
 			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())
@@ -897,17 +894,6 @@ func (e *Engine) maybeDeliver() {
 	e.commitTurn(turn)
 	if task.Result.Err == nil && task.Tool.OpeningFor(task.Result.Output) != "" {
 		ts.lastResult, ts.lastResultTurn, ts.lastResultCut, ts.lastResultHeard = task, turn.ID, false, ""
-	}
-	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
-		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" {
-			// The posthook from the cache, then the figures from the template
-			// (synthesized: they change), before the model's first token. The
-			// default quotation gets the figures alone.
-			if tools.ResultIsDefault(task.Result.Output) {
-				opening = ""
-			}
-			turn.Opening = opening + task.Tool.ReadoutFor(task.Result.Output)
-		}
 	}
 	e.beginGeneration(turn, "task_result", false)
 }

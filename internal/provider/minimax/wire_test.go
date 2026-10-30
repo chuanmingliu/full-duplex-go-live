@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -365,6 +366,94 @@ func TestAbandonedChannelDoesNotWedgeTheConnection(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the connection is wedged: a later segment never got to synthesize, " +
 			"which is heard as every answer being cut off after its first sentence")
+	}
+}
+
+func TestCancelledSynthesisWaitingForDrainSendsNoTask(t *testing.T) {
+	active, release := make(chan struct{}), make(chan struct{})
+	var first, released sync.Once
+	unblock := func() { released.Do(func() { close(release) }) }
+	fake := &fakeT2A{beforeContinue: func() {
+		first.Do(func() { close(active); <-release })
+	}}
+	tts := testClient(serveFakeT2A(t, fake))
+	t.Cleanup(unblock)
+	st, err := tts.Open(context.Background(), provider.TTSOptions{SampleRate: 24000, Voice: "v1", Speed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	oldCtx, cancelOld := context.WithCancel(context.Background())
+	defer cancelOld()
+	oldChunks, err := st.Synthesize(oldCtx, "这句话会被打断。")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-active:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first synthesis did not reach the server")
+	}
+	cancelOld()
+
+	// The old task cannot finish draining until the server is released. A
+	// losing hedge can be queued on that lock and cancelled in the meantime.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type result struct {
+		chunks <-chan provider.TTSChunk
+		err    error
+	}
+	started, done := make(chan struct{}), make(chan result, 1)
+	go func() {
+		close(started)
+		chunks, err := st.Synthesize(ctx, "这句话已经不需要了。")
+		done <- result{chunks, err}
+	}()
+	<-started
+	cancel()
+	unblock()
+	for range oldChunks {
+	}
+	select {
+	case got := <-done:
+		if got.chunks != nil {
+			for range got.chunks {
+			}
+		}
+		if !errors.Is(got.err, context.Canceled) {
+			t.Errorf("queued synthesis error = %v, want context.Canceled", got.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled synthesis did not return after the drain")
+	}
+
+	chunks, err := st.Synthesize(context.Background(), "这是下一句。")
+	if err != nil {
+		t.Fatalf("synthesize after cancellation: %v", err)
+	}
+	bytes := 0
+	for chunk := range chunks {
+		if chunk.Err != nil {
+			t.Fatalf("synthesis after cancellation: %v", chunk.Err)
+		}
+		bytes += len(chunk.PCM)
+	}
+	if want := 2 * 24000 * 20 / 1000; bytes != want {
+		t.Errorf("next synthesis audio = %d bytes, want %d", bytes, want)
+	}
+	starts, continues := 0, 0
+	for _, event := range fake.events() {
+		switch event {
+		case "task_start":
+			starts++
+		case "task_continue":
+			continues++
+		}
+	}
+	if starts != 1 || continues != 2 {
+		t.Errorf("got %d starts and %d syntheses, want one reused connection and only two live requests: %v", starts, continues, fake.events())
 	}
 }
 

@@ -5,6 +5,7 @@
     if (!e) return h('p', { class: 'standing-note' }, 'Answer-content timing is unavailable for this saved call.');
     var d = e.first_content;
     var result = e.tool_result;
+    var quote = e.quote_readout;
     function ms(value) { return value == null ? 'unavailable' : value.toLocaleString() + ' ms'; }
     var incomplete = e.missing || e.unverified || e.duplicates;
     return h('div', { class: 'def' },
@@ -13,19 +14,32 @@
       h('p', { class: 'num' }, 'p50 ' + ms(d.p50_ms) + ' · p95 ' + ms(d.p95_ms) + ' · worst ' + ms(d.max_ms)),
       h('p', { class: 'standing-note' }, d.n + ' observed responses; ' + d.at_or_above_target + ' at or above ' + target.toLocaleString() + ' ms. ' +
         e.tool_results_joined + ' missing first-content timings filled from linked results.'),
-      h('p', { class: 'standing-note' }, 'Excludes opening fillers, but may include an explanatory lead-in. For a quotation request, use the linked tool-result timing below. ' +
+      h('p', { class: 'standing-note' }, 'Excludes opening fillers, but may include an explanatory lead-in. For a quotation request, use the quotation-readout timing below. ' +
         (incomplete ? e.missing + ' responses missing timing; ' + e.unverified + ' unverified records or links; ' + e.duplicates + ' duplicate records. This sample cannot pass the latency gate. ' : '') +
         (d.n < 20 ? 'Fewer than 20 responses: insufficient samples for the strict gate. ' : '') +
         'These measurements stop at server output; handset latency remains unmeasured.'),
-      h('h3', null, 'Caller’s last sound → linked tool result'),
+      h('h3', null, 'Caller’s last sound → linked result first content'),
       result && result.n ? h('div', null,
         h('p', { class: 'num' }, 'p50 ' + ms(result.p50_ms) + ' · p95 ' + ms(result.p95_ms) + ' · worst ' + ms(result.max_ms)),
         h('p', { class: 'standing-note' }, result.n + ' observed results; ' + result.at_or_above_target + ' at or above ' + target.toLocaleString() + ' ms. ' +
-          'Measured separately from an earlier explanatory sentence; these are not extra caller turns. Content gates also check this result p95.'),
+          'This may be a cached lead-in before quoted figures. These are not extra caller turns.'),
         (e.tool_result_rows || []).map(function (row) {
           return h('p', { class: 'standing-note' }, row.origin_turn + ' → ' + row.result_turn + ': ' +
             ms(row.total_ms) + ' = pause ' + ms(row.end_silence_ms) + ' + result start ' + ms(row.origin_to_result_start_ms) +
             ' + result content ' + ms(row.child_first_content_ms) + (row.interrupted ? ' (interrupted after content began)' : ''));
-        })) : h('p', { class: 'standing-note' }, 'No verified linked tool-result timing in this call.'));
+        })) : h('p', { class: 'standing-note' }, 'No verified linked result-content timing in this call.'),
+      h('h3', null, 'Caller’s last sound → quotation readout'),
+      !quote ? h('p', { class: 'standing-note' }, 'This saved evidence does not identify quotation readout. It cannot establish the quoted-figure latency target.') : null,
+      quote && quote.n ? h('p', { class: 'num' }, 'p50 ' + ms(quote.p50_ms) + ' · p95 ' + ms(quote.p95_ms) + ' · worst ' + ms(quote.max_ms)) :
+        h('p', { class: 'standing-note' }, 'No verified quotation-readout timing in this call.'),
+      h('p', { class: 'standing-note' }, (quote ? quote.n : 0) + ' observed readouts; ' +
+        (e.quote_readouts_missing || 0) + ' not output; ' + (e.quote_readouts_unverified || 0) + ' unverified. ' +
+        'Measured when the deterministic quotation audio starts leaving the server, not when synthesis is ready. ' +
+        'Content gates also check this p95 and reject missing or unverified readouts.'),
+      (e.quote_readout_rows || []).map(function (row) {
+        return h('p', { class: 'standing-note' }, row.origin_turn + ' → ' + row.result_turn + ': ' +
+          (row.status === 'observed' ? ms(row.total_ms) + ' = pause ' + ms(row.end_silence_ms) +
+            ' + result start ' + ms(row.origin_to_result_start_ms) + ' + readout output ' + ms(row.child_first_readout_ms) : row.status));
+      }));
   };
 }());

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -485,12 +486,14 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 
 	primary.busy.Store(true)
 	slots := [2]*ttsSlot{primary, spare}
+	var contexts [2]context.Context
 	var cancels [2]context.CancelFunc
 	var started [2]chan ttsStarted
 	// ask puts the segment to one connection. After the first call it is only
 	// ever called from the goroutine below.
 	ask := func(n int) {
 		cctx, cancel := context.WithCancel(ctx)
+		contexts[n] = cctx
 		cancels[n] = cancel
 		res := make(chan ttsStarted, 1)
 		started[n] = res
@@ -518,6 +521,13 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 		var broken [2]bool
 		out2 := [2]bool{false, !both}
 		var lastErr error
+		// A queued synthesis can return its cancellation before sending any
+		// request. That leaves the connection healthy. An unrelated transport
+		// error still breaks it, even if cancellation happened at the same time.
+		connectionFailed := func(n int, err error) bool {
+			ctxErr := contexts[n].Err()
+			return err != nil && (ctxErr == nil || !errors.Is(err, ctxErr))
+		}
 
 		var patience <-chan time.Time
 		if wait > 0 {
@@ -565,7 +575,7 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 			go func() {
 				if wait != nil {
 					st := <-wait
-					ch, bad = st.ch, bad || st.err != nil
+					ch, bad = st.ch, bad || connectionFailed(n, st.err)
 				}
 				if ch != nil {
 					drainTTS(ch)
@@ -593,18 +603,24 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 			case st := <-waiting[0]:
 				waiting[0] = nil
 				if st.err != nil {
-					lastErr, broken[0] = st.err, true
-					s.refused(slots[0], apart)
+					lastErr, broken[0] = st.err, connectionFailed(0, st.err)
+					if broken[0] {
+						s.refused(slots[0], apart)
+					}
 					leave(0)
-					second("the first connection failed", true)
+					if broken[0] {
+						second("the first connection failed", true)
+					}
 				} else {
 					audio[0] = st.ch
 				}
 			case st := <-waiting[1]:
 				waiting[1] = nil
 				if st.err != nil {
-					lastErr, broken[1] = st.err, true
-					s.refused(slots[1], apart)
+					lastErr, broken[1] = st.err, connectionFailed(1, st.err)
+					if broken[1] {
+						s.refused(slots[1], apart)
+					}
 					leave(1)
 				} else {
 					audio[1] = st.ch
@@ -614,11 +630,13 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 					winner, first = 0, c
 				} else {
 					if c.Err != nil {
-						lastErr, broken[0] = c.Err, true
-						s.refused(slots[0], apart)
+						lastErr, broken[0] = c.Err, connectionFailed(0, c.Err)
+						if broken[0] {
+							s.refused(slots[0], apart)
+						}
 					}
 					leave(0)
-					if c.Err != nil {
+					if broken[0] {
 						second("the first connection failed", true)
 					}
 				}
@@ -627,8 +645,10 @@ func (s *hedgedTTSStream) Synthesize(ctx context.Context, text string) (<-chan T
 					winner, first = 1, c
 				} else {
 					if c.Err != nil {
-						lastErr, broken[1] = c.Err, true
-						s.refused(slots[1], apart)
+						lastErr, broken[1] = c.Err, connectionFailed(1, c.Err)
+						if broken[1] {
+							s.refused(slots[1], apart)
+						}
 					}
 					leave(1)
 				}

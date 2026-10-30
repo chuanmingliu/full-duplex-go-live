@@ -18,6 +18,11 @@ The journal normally binds the LAN address, e.g. `http://192.168.71.9:8790`, **n
 
 ## After a call: prove text and both audio channels exist in the permanent archive
 
+For actual handset latency, also follow [HANDSET-LATENCY.md](HANDSET-LATENCY.md)
+before dialing. Its separate local acoustic recording captures the caller
+and the phone speaker on one sample clock; the box archive alone cannot
+prove physical handset playout.
+
 For the owner's real-call workflow, `call` places a real call and `call sim`
 uses the simulator. After a real call, wait for the owner's **done** message
 before beginning the deep review, fixes, GitHub push and box deployment.
@@ -108,7 +113,7 @@ Retros/issues are read from disk on each HTTP request, so shipping those files u
 
 `scripts/sim-retro.py`/`sim-brain.sh retro` use the shared latency analyzer, preserving zero-ms cached openers and showing first content separately with nearest-rank p95. Use the selected call's complete session log with `scripts/call-latency.sh ... --gate --target-ms 1200 --metric both --min-turns 20`, separately labelled from receiver/handset latency. Do not filter out tool-delivery lines: their `origin_turn`, result `turn`, task ID and monotonic `origin_to_result_start_ms` allow a quotation result to be joined to the original caller. The caller's pause is added once; a cached result's zero-ms content is not a zero-ms caller response. Missing/ambiguous links remain failures, and historical wall-clock reconstructions are diagnostic estimates only.
 
-The journal's content panel uses explicit output-presence flags and the same handoff relationship. Its first-audio charts include fillers; first content excludes them but can still be a generic lead-in. Linked tool-result latency is measured separately even when the original turn already has content. Content/both gates also check this result p95; tool results do not become extra caller samples and need no separate minimum of twenty results. Older saved call details can be recomputed from archived logs without rewriting their source archive. Legacy overview figures may retain the historical grouping until that log is reindexed. Neither panel certifies the physical phone leg.
+The journal's content panel uses explicit output-presence flags and the same handoff relationship. Its first-audio charts include fillers; first content excludes caller-turn openers but can still be a generic lead-in. Linked result-turn content can also be a cached posthook. Actual deterministic quotation readout has its own player-output stamp (`quote_result`, `readout_expected`, `first_readout_present`, `first_readout_ms`); only that evidence establishes readout latency. Content/both gates check both distributions and reject missing or unverified readout evidence. Results do not become extra caller samples and need no separate minimum of twenty results. Older saved call details can be recomputed from archived logs without rewriting their source archive; old logs without the readout stamp remain unverified. Legacy overview figures may retain the historical grouping until that log is reindexed. None of these server panels certifies the physical phone leg.
 
 ## Desk integration
 

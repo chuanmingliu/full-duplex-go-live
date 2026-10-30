@@ -1117,7 +1117,7 @@
    "symptom": "The quote was ready 120 ms before the generic calling clause started, but waited about2432ms for that clause to finish. Caller-to-result content was3548ms.",
    "cause": "Calling-clause protection also covered a body that had never committed audio to output.",
    "fix": "For a successful deterministic quotation with unchanged caller, memory and floor, suppress only an entirely unplayed body after its opener has emitted audio. Preserve opener completion, actual spoken history and origin metrics; any reserved body audio retains protection.",
-   "effect": "Regression coverage verifies safe pre-content handoff. A new real call is required to measure the production effect.",
+   "effect": "Three real handoffs replaced unplayed calling bodies and retained clean opener-only origin metrics. Ready results followed natural opener completion after29/13/0ms; a fourth needed no suppression and was delivered immediately. Cached result posthooks still delay quoted figures; tracked separately.",
    "status": "fixed",
    "found": "2026-10-30",
    "found_on": "09:55 real call and regression analysis",
@@ -1125,7 +1125,8 @@
    "verified": "Regression tests pass, including twenty repeated race runs of the guarded handoff and full journal race tests. Quality and full normal/race CI passed for461b79f in run40994234452. Engine, CRM and journal executable hashes and preserved configuration were verified after deployment at11:06 on2026-10-30. Recording,720-hour retention and stable-process cache warming passed; original audio/session/log hashes are unchanged. Live journal and CLI agree on first-content1082ms and linked-result3548ms for the reviewed call.",
    "commits": [
     "461b79f"
-   ]
+   ],
+   "verified_call": "out-mvue7jic-wdgq"
   },
   {
    "id": "ISS-071",
@@ -1134,7 +1135,7 @@
    "symptom": "The first-content report showed1082ms worst while the linked quotation result took3548ms.",
    "cause": "The analyzer joined results only when the original turn lacked content; a generic preamble satisfied the original metric.",
    "fix": "Keep first-content semantics and separately measure every verified unique linked result. Show the result distribution and rows in the journal, CLI and simulator retro; content/both gates also check result p95 without adding caller samples.",
-   "effect": "Reanalysis of out-mvubln6w-5uhe reports first-content1082ms and tool-result3548ms separately; the gate fails.",
+   "effect": "Separate linked-result reporting exposed origin wait, but in the next call three result turns began with a1264ms cached posthook. That first content is not quotation-readout evidence; explicit readout timing is tracked in ISS-073.",
    "status": "fixed",
    "found": "2026-10-30",
    "found_on": "09:55 real call and regression analysis",
@@ -1151,7 +1152,7 @@
    "symptom": "Two transcript onsets implied6–10second response waits unsupported by the per-turn metrics and audio windows.",
    "cause": "An empty recognition left openedAt available to a later utterance. Cached-opener queue logs were not separately anchored using confirmed output metrics.",
    "fix": "Replace the onset on each detector opening. Derive confirmed opener playback from its readiness timestamp and explicit timing offsets; unconfirmed queue events remain queue evidence.",
-   "effect": "Timestamp regressions cover empty recognition, delayed output, pre-close readiness and missing/unplayed opener evidence. Archive source data is preserved.",
+   "effect": "Deployed corrected transcript export and cached-opener anchoring. Current call retained all13 caller origins and four clean quotation links; no recurrence of the stale empty-recognition onset defect was established.",
    "status": "fixed",
    "found": "2026-10-30",
    "found_on": "09:55 real call and regression analysis",
@@ -1160,6 +1161,51 @@
    "commits": [
     "461b79f"
    ]
+  },
+  {
+   "id": "ISS-073",
+   "title": "Cached result posthooks were counted as quotation readout",
+   "area": "telemetry",
+   "symptom": "Three linked result rows reported923/1079/881ms to content, but that content was the1264ms cached readiness phrase before the figures.",
+   "cause": "Posthook and deterministic readout shared the normal speech-pipe content marker.",
+   "fix": "Tag fixed readout segments separately and stamp their actual player output. Report quotation readout separately; reject missing/legacy readout evidence in content/both gates. Preserve first-content meanings and caller counts.",
+   "effect": "Historical current-call reanalysis reports zero strictly verified readouts and four unverified ones; no synthesis-ready or wall-clock substitute is used.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Review of11:08 real call and focused source/regression analysis",
+   "found_call": "out-mvue7jic-wdgq",
+   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Full candidate CI, deployment and a new real-call measurement are pending.",
+   "commits": []
+  },
+  {
+   "id": "ISS-074",
+   "title": "A second readiness phrase delayed the quoted figures after the caller already heard an opener",
+   "area": "tools",
+   "symptom": "The standard result posthook added1264ms before three nondefault quotation readouts and made those numeric segments nonurgent to TTS.",
+   "cause": "Delivery added the fixed readiness posthook even after the same completed caller turn had emitted its opener.",
+   "fix": "Omit only the built-in default posthook after a verified matching completed caller opener, unchanged memory and free floor. Preserve custom posthooks, templates, prices and all other delivery paths. Numeric readout then uses the existing urgent first-segment TTS path.",
+   "effect": "Expected to remove the redundant phrase and allow the existing ready-spare race. New real-call effect remains unmeasured.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Review of11:08 real call and focused source/regression analysis",
+   "found_call": "out-mvue7jic-wdgq",
+   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Full candidate CI, deployment and a new real-call measurement are pending.",
+   "commits": []
+  },
+  {
+   "id": "ISS-075",
+   "title": "A synthesis request canceled while waiting for the stream could still be sent",
+   "area": "tts",
+   "symptom": "A canceled waiting request could acquire the stream after an abandoned task drained and still send task_continue, creating additional unwanted synthesis and drain work.",
+   "cause": "MiniMax Synthesize checked stream state after acquiring busy but did not recheck its request context before sending.",
+   "fix": "Recheck cancellation after acquiring the provider lock and preserve the existing drain barrier. Treat expected request cancellation separately from a broken pooled connection.",
+   "effect": "Canceled queued requests no longer send task_continue in regression tests, and expected cancellation preserves healthy pooled connections. Existing abandoned-task drain barriers remain intact. Call logs show drain waits but cannot attribute every wait to this path; a new real-call effect is unmeasured.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Review of11:08 real call and focused source/regression analysis",
+   "found_call": "out-mvue7jic-wdgq",
+   "verified": "Wire and hedge regressions reproduced the canceled ghost request and unnecessary connection replacement before the fix. All provider packages passed with the race detector; focused cancellation and abandoned-task tests passed ten repetitions, including genuine transport errors racing cancellation. Independent review passed. Full candidate CI, deployment and real-call measurement are pending.",
+   "commits": []
   }
  ]
 }

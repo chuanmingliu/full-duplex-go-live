@@ -50,6 +50,33 @@ def parse(line):
     return row if row.get("msg") in (MESSAGE, TOOL_DELIVERY) else None
 
 
+def quote_readout(child, link, result, counts):
+    """Require a deterministic quote segment's actual output timestamp."""
+    quoted = boolean(child, "quote_result")
+    expected = boolean(child, "readout_expected")
+    present = boolean(child, "first_readout_present")
+    if quoted is False and expected is not True and present is not True:
+        return None
+    if quoted is None and link.get("tool") != "quote_total" and expected is not True and present is not True:
+        return None
+    row = {key: result[key] for key in ("session", "task", "origin_turn", "result_turn",
+                                        "end_silence_ms", "origin_to_result_start_ms")}
+    row.update(status="unverified", child_first_readout_ms=None, total_ms=None)
+    if quoted is not True or expected is not True or present is None:
+        counts["quote_readouts_unverified"] += 1
+    elif present is False:
+        row["status"] = "missing"
+        counts["quote_readouts_missing"] += 1
+    else:
+        readout = integer(child, "first_readout_ms")
+        if readout is None or readout < result["child_first_content_ms"]:
+            counts["quote_readouts_unverified"] += 1
+        else:
+            row.update(status="observed", child_first_readout_ms=readout,
+                       total_ms=result["end_silence_ms"] + result["origin_to_result_start_ms"] + readout)
+    return row
+
+
 def join_tool_results(records, links, counts):
     """Fill missing caller content only with an explicit monotonic handoff.
 
@@ -59,6 +86,7 @@ def join_tool_results(records, links, counts):
     """
     by_turn, by_task, by_origin, by_result = {}, Counter(), Counter(), Counter()
     results = []
+    readouts = []
     for row in records:
         key = (str(row.get("session", "")), str(row.get("turn", "")))
         by_turn.setdefault(key, []).append(row)
@@ -117,9 +145,9 @@ def join_tool_results(records, links, counts):
                 offset + child_content < origin_audio):
             invalid()
             continue
-        # Measure the authoritative result even if a spoken preamble already
-        # satisfied first-content timing. It is not another caller sample.
-        results.append(dict(session=record_identifier(session, "sess_"),
+        # This is the result turn's first content, which may be a posthook.
+        # Actual quote readout requires separate output provenance below.
+        result = dict(session=record_identifier(session, "sess_"),
                             task=record_identifier(task, r"(?:task_|t)"),
                             origin_turn=record_identifier(link["origin_turn"], r"(?:item_|turn_)"),
                             result_turn=record_identifier(link["turn"], r"(?:item_|turn_)"),
@@ -127,7 +155,11 @@ def join_tool_results(records, links, counts):
                             origin_to_result_start_ms=offset,
                             child_first_content_ms=child_content,
                             total_ms=pause + offset + child_content,
-                            interrupted=boolean(child, "truncated")))
+                            interrupted=boolean(child, "truncated"))
+        results.append(result)
+        readout = quote_readout(child, link, result, counts)
+        if readout is not None:
+            readouts.append(readout)
         # A caller that already received content needs no replacement timestamp.
         if original_content is True:
             continue
@@ -135,7 +167,11 @@ def join_tool_results(records, links, counts):
         origin["first_content_present"] = True
         origin["_tool_result_interrupted"] = boolean(child, "truncated")
         counts["tool_results_joined"] += 1
-    return results
+    for child in records:
+        key = (str(child.get("session", "")), str(child.get("turn", "")))
+        if boolean(child, "quote_result") is True and by_result[key] == 0:
+            counts["quote_readouts_unverified"] += 1
+    return results, readouts
 
 
 def distribution(values, target):
@@ -152,7 +188,8 @@ def analyse(lines, pause, target):
     counts = Counter({key: 0 for key in (
         "records", "answered", "non_speech", "cancelled", "interrupted_answers",
         "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause",
-        "tool_result_links", "tool_results_joined", "invalid_tool_links")})
+        "tool_result_links", "tool_results_joined", "invalid_tool_links",
+        "quote_readouts_missing", "quote_readouts_unverified")})
     seen, rows, audio, content, reply = set(), [], [], [], []
     records, links = [], []
     for line in lines:
@@ -166,7 +203,7 @@ def analyse(lines, pause, target):
         if row is None:
             continue
         (records if row["msg"] == MESSAGE else links).append(row)
-    tool_results = join_tool_results(records, links, counts)
+    tool_results, quote_readouts = join_tool_results(records, links, counts)
     for row in records:
         counts["records"] += 1
         identity = (str(row.get("session", "")), str(row.get("turn", "")))
@@ -251,8 +288,11 @@ def analyse(lines, pause, target):
                 first_audio=distribution(audio, target), first_content=distribution(content, target),
                 reply=distribution(reply, target),
                 tool_result=distribution([r["total_ms"] for r in tool_results], target),
-                tool_result_scope="last_sound_to_linked_result_content_at_golive_output",
-                tool_result_rows=tool_results), rows
+                tool_result_scope="last_sound_to_linked_result_first_content_may_include_posthook",
+                tool_result_rows=tool_results,
+                quote_readout=distribution([r["total_ms"] for r in quote_readouts if r["status"] == "observed"], target),
+                quote_readout_scope="last_sound_to_deterministic_quote_readout_output",
+                quote_readout_rows=quote_readouts), rows
 
 
 def gate_reasons(report, minimum, metric):
@@ -273,9 +313,13 @@ def gate_reasons(report, minimum, metric):
     # preamble cannot hide their slow result; no result calls means no extra
     # requirement. The existing minimum still applies to caller responses.
     if metric in ("content", "both"):
-        stats = report["tool_result"]
-        if stats["p95_ms"] is not None and stats["p95_ms"] >= report["target_ms"]:
-            reasons.append(f"tool_result: p95 {stats['p95_ms']} ms is not below {report['target_ms']} ms")
+        for key in ("quote_readouts_missing", "quote_readouts_unverified"):
+            if counts[key]:
+                reasons.append(f"{counts[key]} {key} record(s)")
+        for name in ("tool_result", "quote_readout"):
+            stats = report[name]
+            if stats["p95_ms"] is not None and stats["p95_ms"] >= report["target_ms"]:
+                reasons.append(f"{name}: p95 {stats['p95_ms']} ms is not below {report['target_ms']} ms")
     return reasons
 
 
@@ -304,21 +348,25 @@ def print_report(report, rows, gated):
           ", ".join(f"{key}={value}" for key, value in report["counts"].items() if key != "answered"))
     for name, label in (("first_audio", "last sound → first audio"),
                         ("first_content", "last sound → first content"),
-                        ("tool_result", "last sound → linked tool result content"),
+                        ("tool_result", "last sound → linked result first content (may be a posthook)"),
+                        ("quote_readout", "last sound → quotation readout output"),
                         ("reply", "turn judged over → first audio")):
         stats = report[name]
         print(f"{label}: p50 {format_number(stats['p50_ms'])}  p90 {format_number(stats['p90_ms'])}"
               f"  p95 {format_number(stats['p95_ms'])}  max {format_number(stats['max_ms'])} ms;"
               f" n={stats['n']}, {stats['at_or_above_target']} at or above {report['target_ms']} ms")
     print("Scope: audio leaving golive; the PBX, carrier and handset leg is not measured.")
-    print("First content excludes opening fillers but can be an explanatory lead-in. "
-          "For a quotation request, linked tool-result timing measures the result.")
+    print("First content and linked result content can be explanatory lead-ins. "
+          "Quotation readout requires the deterministic readout's actual output timestamp.")
     if report["tool_result_rows"]:
         print("Linked tool results (separate from first content; included in content/both gates):")
         for i, result in enumerate(report["tool_result_rows"], 1):
             print(f"  result {i}: pause {result['end_silence_ms']} + origin-to-result "
                   f"{result['origin_to_result_start_ms']} + result content {result['child_first_content_ms']}"
                   f" = {result['total_ms']} ms")
+    for i, result in enumerate(report["quote_readout_rows"], 1):
+        print(f"  quotation {i}: {result['status']}; "
+              f"last sound → readout {format_number(result['total_ms'])} ms")
     if report["counts"]["tool_results_joined"]:
         print("Tool-result content is joined to the original caller using explicit monotonic offsets; "
               "the caller's pause is added once and result turns are not extra caller samples.")
@@ -343,7 +391,7 @@ def main():
     parser.add_argument("--target-ms", type=positive, default=1200)
     parser.add_argument("--min-turns", type=positive, default=20)
     parser.add_argument("--metric", choices=("first-audio", "content", "both"), default="first-audio",
-                        help="content and both also gate the p95 of verified linked tool results")
+                        help="content and both also require verified quotation readouts and gate linked result/readout p95")
     parser.add_argument("--json", action="store_true", help="output timings and record identifiers without transcripts")
     args = parser.parse_args()
     try:

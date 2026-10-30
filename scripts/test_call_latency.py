@@ -39,6 +39,13 @@ def tool_pair(**child_changes):
     return origin, child
 
 
+def quote_pair(**child_changes):
+    flags = dict(quote_result=True, readout_expected=True,
+                 first_readout_present=True, first_readout_ms=0)
+    flags.update(child_changes)
+    return tool_pair(**flags)
+
+
 class CallLatencyTests(unittest.TestCase):
     def run_report(self, rows, *flags, text=False):
         with tempfile.TemporaryDirectory() as directory:
@@ -352,6 +359,88 @@ class CallLatencyTests(unittest.TestCase):
         _, report = self.run_report([origin, link, child])
         self.assertEqual(report["tool_result"]["n"], 1)
         self.assertNotIn("private", json.dumps(report))
+
+    def test_quote_readout_does_not_use_fast_cached_posthook(self):
+        origin, child = quote_pair(first_content_ms=1, first_readout_ms=1265)
+        code, report = self.run_report([origin, delivery(tool="quote_total", origin_to_result_start_ms=542), child],
+                                       "--gate", "--metric", "both", "--min-turns", "1")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["first_content"]["p95_ms"], 923)
+        self.assertEqual(report["tool_result"]["p95_ms"], 923)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 2187)
+        self.assertEqual(report["counts"]["answered"], 1)
+        self.assertEqual(report["counts"]["non_speech"], 1)
+        self.assertEqual(report["quote_readout_rows"][0]["child_first_readout_ms"], 1265)
+        self.assertEqual(report["gate"]["reasons"], ["quote_readout: p95 2187 ms is not below 1200 ms"])
+
+    def test_quote_zero_readout_is_real_only_with_actual_output_presence(self):
+        origin, child = quote_pair(truncated=True)
+        rows = [origin, delivery(tool="quote_total"), child]
+        code, report = self.run_report(rows, "--gate", "--metric", "both", "--min-turns", "1")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 780)
+        self.assertEqual(report["quote_readout_rows"][0]["child_first_readout_ms"], 0)
+        child["first_readout_present"] = False
+        code, report = self.run_report(rows, "--gate", "--metric", "both", "--min-turns", "1")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["quote_readout"]["n"], 0)
+        self.assertIsNone(report["quote_readout_rows"][0]["total_ms"])
+        self.assertEqual(report["counts"]["quote_readouts_missing"], 1)
+        self.assertEqual(report["counts"]["answered"], 1)
+
+    def test_legacy_quote_cannot_infer_readout_from_first_content(self):
+        origin, child = tool_pair(first_audio_out_ms=218, first_content_ms=218)
+        code, report = self.run_report([origin, delivery(tool="quote_total", origin_to_result_start_ms=541), child],
+                                       "--gate", "--metric", "both", "--min-turns", "1")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["first_content"]["p95_ms"], 1139)
+        self.assertEqual(report["quote_readout"]["n"], 0)
+        self.assertEqual(report["counts"]["quote_readouts_unverified"], 1)
+        self.assertEqual(report["quote_readout_rows"][0]["status"], "unverified")
+
+    def test_quote_provenance_and_readout_stamp_must_be_consistent(self):
+        cases = [dict(readout_expected=False), dict(readout_expected=None),
+                 dict(quote_result=False), dict(first_readout_present=None),
+                 dict(first_readout_ms=-1), dict(first_readout_ms=True),
+                 dict(first_readout_ms="bad"), dict(first_readout_ms=1.5),
+                 dict(first_content_ms=10, first_readout_ms=9)]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                origin, child = quote_pair(**changes)
+                code, report = self.run_report([origin, delivery(tool="quote_total"), child],
+                                               "--gate", "--metric", "content", "--min-turns", "1")
+                self.assertEqual(code, 1)
+                self.assertEqual(report["quote_readout"]["n"], 0)
+                self.assertEqual(report["counts"]["quote_readouts_unverified"], 1)
+
+    def test_modern_nonquote_outcome_has_no_quoted_figures_to_measure(self):
+        origin, child = tool_pair(quote_result=False, readout_expected=False, first_readout_present=False)
+        code, report = self.run_report([origin, delivery(tool="quote_total"), child],
+                                       "--gate", "--metric", "content", "--min-turns", "1")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["quote_readout_rows"], [])
+
+    def test_quote_readout_requires_unique_link_even_with_output_stamp(self):
+        origin, child = quote_pair()
+        for links in ([], [delivery(tool="quote_total")] * 2):
+            code, report = self.run_report([origin, *links, child],
+                                           "--gate", "--metric", "content", "--min-turns", "1")
+            self.assertEqual(code, 1)
+            self.assertEqual(report["quote_readout"]["n"], 0)
+        _, report = self.run_report([turn(1), child], "--gate", "--metric", "content", "--min-turns", "1")
+        self.assertEqual(report["counts"]["quote_readouts_unverified"], 1)
+
+    def test_quote_readout_is_scoped_to_session(self):
+        origin, child = quote_pair(first_readout_present=False)
+        other_origin, other_child = quote_pair(first_readout_ms=100)
+        other_origin.update(session="sess_other", end_silence_ms=280)
+        other_child["session"] = "sess_other"
+        _, report = self.run_report([origin, child, delivery(tool="quote_total"), other_origin, other_child,
+                                    delivery(session="sess_other", tool="quote_total", origin_to_result_start_ms=300)])
+        self.assertEqual(report["quote_readout"]["n"], 1)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 680)
+        self.assertEqual(report["counts"]["quote_readouts_missing"], 1)
+        self.assertEqual(report["first_content"]["n"], 2)
 
     def test_offset_must_be_explicit_nonnegative_integer(self):
         for value in (-1, True, 1.5, "invalid", None):

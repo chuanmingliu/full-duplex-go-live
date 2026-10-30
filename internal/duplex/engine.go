@@ -893,12 +893,13 @@ type speechPipe struct {
 	turn        *Turn
 	// begun is set once the pipe has asked for its first synthesis. That one
 	// is the one a caller waits on in silence; see provider.WithUrgent.
-	begun  bool
-	in     chan string
-	done   chan struct{}
-	ctx    context.Context
-	cancel context.CancelFunc
-	once   sync.Once
+	begun   bool
+	in      chan speechInput
+	readout bool
+	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
+	once    sync.Once
 	// soft asks the pipe to stop after the sentence it is currently
 	// synthesizing, rather than abandoning it mid-word.
 	soft atomic.Bool
@@ -915,7 +916,7 @@ func (e *Engine) newSpeechPipe(turn *Turn, cacheable bool) *speechPipe {
 	p := &speechPipe{
 		e:         e,
 		turn:      turn,
-		in:        make(chan string, 64),
+		in:        make(chan speechInput, 64),
 		done:      make(chan struct{}),
 		ctx:       ctx,
 		cancel:    cancel,
@@ -930,8 +931,12 @@ func (e *Engine) newSpeechPipe(turn *Turn, cacheable bool) *speechPipe {
 // it, and it gives up the moment the pipe has stopped consuming — otherwise a
 // backend still streaming tokens into an abandoned turn would block forever.
 func (p *speechPipe) Push(text string) {
+	p.push(speechInput{text: text})
+}
+
+func (p *speechPipe) push(input speechInput) {
 	select {
-	case p.in <- text:
+	case p.in <- input:
 	case <-p.done:
 	case <-p.ctx.Done():
 	}
@@ -1107,14 +1112,39 @@ consume:
 			if !said && !spoke && !restartFirst() {
 				return
 			}
-		case text, ok := <-p.in:
+		case input, ok := <-p.in:
 			if !ok {
 				break consume
+			}
+			if input.fixed {
+				// Fixed prefixes have complete text already. Flush at their
+				// boundaries so a readiness posthook cannot stamp the figures.
+				firstDeadline, boundaryGrace = nil, nil
+				if rest := seg.Pending(); rest != "" {
+					if ok, _ := say(seg.FlushFirst()); !ok {
+						return
+					}
+				}
+				p.readout = input.readout
+				ready := seg.Push(input.text)
+				if rest := seg.FlushFirst(); rest != "" {
+					ready = append(ready, rest)
+				}
+				for _, text := range ready {
+					if ok, _ := say(text); !ok {
+						return
+					}
+					if p.soft.Load() {
+						break consume
+					}
+				}
+				p.readout = false
+				continue
 			}
 			if firstDeadline == nil && !spoke && deadline > 0 {
 				firstDeadline = time.After(deadline)
 			}
-			ready := seg.Push(text)
+			ready := seg.Push(input.text)
 			for i, r := range ready {
 				firstDeadline = nil
 				boundaryGrace = nil
@@ -1389,7 +1419,7 @@ func (p *speechPipe) speak(text string) bool {
 			TurnID:       p.turn.ID,
 			Revision:     p.turn.Revision,
 			PCM:          pcm,
-			onFirstAudio: p.turn.MarkFirstContentOut,
+			onFirstAudio: p.outputObserver(),
 		})
 	}
 
@@ -1414,7 +1444,7 @@ func (p *speechPipe) speak(text string) bool {
 			TurnID:       p.turn.ID,
 			Revision:     p.turn.Revision,
 			PCM:          held,
-			onFirstAudio: p.turn.MarkFirstContentOut,
+			onFirstAudio: p.outputObserver(),
 		})
 		held = nil
 	}
@@ -1522,7 +1552,7 @@ func (p *speechPipe) speakCached(text string, cached PhraseAudio) bool {
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, text
 	body.Kind, body.PCM = SegAudio, pcm
-	body.onFirstAudio = p.turn.MarkFirstContentOut
+	body.onFirstAudio = p.outputObserver()
 	mark.Kind, mark.Text = SegMark, text
 	p.turn.MarkFirstContent()
 	p.e.player.Enqueue(begin)
@@ -2227,6 +2257,10 @@ func (e *Engine) emitMetrics(turn *Turn, totalMS int64, truncated bool) {
 		"opened", turn.Opened != "",
 		"first_audio_out_ms", ev.FirstAudioOutMS,
 		"first_content_ms", contentMS,
+		"quote_result", turn.QuoteResult,
+		"readout_expected", turn.Readout != "",
+		"first_readout_present", !tm.FirstReadoutOut.IsZero(),
+		"first_readout_ms", ms(tm.FirstReadoutOut),
 		"opener_ms", turn.OpenedMS,
 		"end_silence_ms", ev.EndSilenceMS,
 		"asr_final_ms", ev.ASRFinalMS,

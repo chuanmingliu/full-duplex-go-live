@@ -50,11 +50,15 @@ const DefaultCompareTemplate = `现在这个方案一共{{ total | round | int }
 // QuoteSpeechName is the config's name on the lead service.
 const QuoteSpeechName = "quote-speech"
 
+// DefaultQuotePosthook only announces that a result is ready. A caller who
+// just heard an opener can receive the result directly without this preamble.
+const DefaultQuotePosthook = "保费给您计算好了，"
+
 // DefaultQuoteSpeech is the seed: the owner's two lines of 10-23 and a
 // plain reading of the lines and the total.
 const DefaultQuoteSpeech = `{
   "prehook": "这会儿正在给您计算保费，请您稍等。",
-  "posthook": "保费给您计算好了，",
+  "posthook": "` + DefaultQuotePosthook + `",
   "posthook_status": "quote",
   "template": "{% for l in lines %}{{ l.coverage }}{% if l.choice %}{{ l.choice }}{% endif %}{{ l.premium | round | int }}元{% if not loop.last %}，{% endif %}{% endfor %}，合计{{ total | round | int }}元。{% if skipped %}{{ skipped | join('、') }}暂时算不了。{% endif %}"
 }`

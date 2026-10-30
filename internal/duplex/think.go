@@ -437,9 +437,14 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	if turn.Opening != "" {
 		// A result's fixed opening goes out before the model's first token,
 		// from the phrase cache: the caller hears "保费给您计算好了，" at once.
-		pipe.Push(turn.Opening)
+		pipe.PushFixed(turn.Opening, false)
 		full.WriteString(turn.Opening)
 		turn.AppendResponse(turn.Opening)
+	}
+	if turn.Readout != "" {
+		pipe.PushFixed(turn.Readout, true)
+		full.WriteString(turn.Readout)
+		turn.AppendResponse(turn.Readout)
 	}
 	var calls []provider.ToolCall
 	var usage provider.TokenUsage

@@ -147,6 +147,24 @@ class SimRetroTests(unittest.TestCase):
         self.assertIn("answered 1; non-speech 1", out)
         self.assertIn("explanatory lead-in", out)
 
+    def test_quotation_readout_is_separate_from_cached_posthook(self):
+        rows = [turn(1, first_content_present=False, first_content_ms=0),
+                dict(time="2026-10-29T21:00:01+08:00", session=SID,
+                     msg="tools: delivering a task's result", task="task_1", tool="quote_total",
+                     origin_turn="item_1", turn="item_2", origin_to_result_start_ms=542),
+                turn(2, response_to_speech=False, opened=False, opener_ms=0,
+                     end_silence_ms=0, first_content_ms=1, quote_result=True,
+                     readout_expected=True, first_readout_present=True, first_readout_ms=1265)]
+        out = self.retro(rows)
+        self.assertIn("first content p50 **923**", out)
+        self.assertIn("Quotation readouts: **1** observed", out)
+        self.assertIn("readout output p50 **2187**", out)
+        self.assertIn("answered 1; non-speech 1", out)
+        del rows[-1]["first_readout_present"]
+        out = self.retro(rows)
+        self.assertIn("Quotation readouts: **0** observed", out)
+        self.assertIn("Missing 0; unverified 1", out)
+
     def test_receiver_gaps_require_valid_numeric_application_boundary_evidence(self):
         def gap(value, **changes):
             row = dict(valid=True, evidence="application_audio_boundary", value_ms=value)

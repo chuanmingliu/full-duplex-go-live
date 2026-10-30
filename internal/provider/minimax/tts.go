@@ -516,6 +516,12 @@ func (s *stream) Synthesize(ctx context.Context, text string) (<-chan provider.T
 		s.busy.Unlock()
 		return nil, fmt.Errorf("minimax tts: stream is closed")
 	}
+	// A previous segment may have held busy while draining after a barge-in.
+	// A queued hedge that lost during that wait must not start another task.
+	if err := ctx.Err(); err != nil {
+		s.busy.Unlock()
+		return nil, err
+	}
 	if s.needsReconnect() {
 		s.dropConn()
 		if err := s.connect(ctx); err != nil {

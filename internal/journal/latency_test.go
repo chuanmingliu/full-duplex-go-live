@@ -227,6 +227,99 @@ func TestLatencySlowToolResultRemainsVisibleAfterFastDirectContent(t *testing.T)
 	}
 }
 
+func latencyQuotePair() (Line, Line) {
+	o, c := latencyToolPair()
+	c.kv["quote_result"], c.kv["readout_expected"], c.kv["first_readout_present"], c.kv["first_readout_ms"] = "true", "true", "true", "0"
+	return o, c
+}
+
+func TestLatencyQuotationReadoutRequiresOutputNotCachedPosthook(t *testing.T) {
+	o, c := latencyQuotePair()
+	c.kv["first_content_ms"], c.kv["first_readout_ms"] = "1", "1265"
+	e := latencyCall(t, o, latencyDelivery(map[string]string{"tool": "quote_total", "origin_to_result_start_ms": "542"}), c).Latency
+	if e.FirstContent.N != 1 || *e.FirstContent.P95 != 923 || *e.ToolResult.P95 != 923 || e.Joined != 1 {
+		t.Fatalf("ordinary content changed: %+v", e)
+	}
+	if e.QuoteReadout.N != 1 || *e.QuoteReadout.P95 != 2187 || e.QuoteReadout.Over != 1 || len(e.QuoteRows) != 1 || *e.QuoteRows[0].ChildReadoutMS != 1265 {
+		t.Fatalf("posthook hid quotation readout: %+v", e)
+	}
+}
+
+func TestLatencyQuotationReadoutZeroPresenceAndMissingStayDistinct(t *testing.T) {
+	o, c := latencyQuotePair()
+	c.kv["truncated"] = "true"
+	link := latencyDelivery(map[string]string{"tool": "quote_total"})
+	e := latencyCall(t, o, link, c).Latency
+	if e.QuoteReadout.N != 1 || *e.QuoteReadout.P95 != 830 || *e.QuoteRows[0].ChildReadoutMS != 0 {
+		t.Fatalf("played zero excluded: %+v", e)
+	}
+	raw, _ := json.Marshal(e.QuoteRows[0])
+	if !strings.Contains(string(raw), `"child_first_readout_ms":0`) {
+		t.Fatal("played zero omitted")
+	}
+	c.kv["first_readout_present"] = "false"
+	e = latencyCall(t, o, link, c).Latency
+	if e.QuoteReadout.N != 0 || e.QuoteMissing != 1 || e.FirstContent.N != 1 || e.QuoteRows[0].TotalMS != nil {
+		t.Fatalf("unplayed readout became evidence: %+v", e)
+	}
+	raw, _ = json.Marshal(e.QuoteRows[0])
+	if !strings.Contains(string(raw), `"total_ms":null`) {
+		t.Fatal("missing readout became zero")
+	}
+}
+
+func TestLatencyQuotationReadoutProvenanceIsFailClosed(t *testing.T) {
+	for name, changes := range map[string]map[string]string{
+		"legacy":                   {"quote_result": "", "readout_expected": "", "first_readout_present": ""},
+		"no deterministic readout": {"readout_expected": "false"},
+		"conflicting quote":        {"quote_result": "false"},
+		"absent presence":          {"first_readout_present": ""},
+		"malformed stamp":          {"first_readout_ms": "bad"},
+		"before content":           {"first_content_ms": "1", "first_readout_ms": "0"},
+		"negative stamp":           {"first_readout_ms": "-1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			o, c := latencyQuotePair()
+			for k, v := range changes {
+				c.kv[k] = v
+			}
+			e := latencyCall(t, o, latencyDelivery(map[string]string{"tool": "quote_total"}), c).Latency
+			if e.QuoteReadout.N != 0 || e.QuoteUnknown != 1 || e.FirstContent.N != 1 {
+				t.Fatalf("unverified readout counted: %+v", e)
+			}
+		})
+	}
+	o, c := latencyQuotePair()
+	c.kv["quote_result"], c.kv["readout_expected"], c.kv["first_readout_present"] = "false", "false", "false"
+	e := latencyCall(t, o, latencyDelivery(map[string]string{"tool": "quote_total"}), c).Latency
+	if len(e.QuoteRows) != 0 || e.QuoteUnknown != 0 || e.QuoteMissing != 0 {
+		t.Fatalf("nonquote outcome treated as quote: %+v", e)
+	}
+}
+
+func TestLatencyQuotationOutputStillRequiresUniqueOriginLink(t *testing.T) {
+	o, c := latencyQuotePair()
+	link := latencyDelivery(map[string]string{"tool": "quote_total"})
+	for _, lines := range [][]Line{{o, c}, {o, link, link, c}, {o, link, c, c}} {
+		e := latencyCall(t, lines...).Latency
+		if e.QuoteReadout.N != 0 || e.QuoteUnknown+e.Unverified == 0 {
+			t.Fatalf("missing or ambiguous origin counted: %+v", e)
+		}
+	}
+}
+
+func TestLatencyQuotationReadoutDoesNotBorrowAnotherSessionsOutput(t *testing.T) {
+	o, c := latencyQuotePair()
+	c.kv["first_readout_present"] = "false"
+	otherO, otherC := latencyQuotePair()
+	otherO.kv["session"], otherC.kv["session"] = "other", "other"
+	otherLink := latencyDelivery(map[string]string{"session": "other", "tool": "quote_total"})
+	e := latencyCall(t, otherO, otherLink, otherC, o, latencyDelivery(map[string]string{"tool": "quote_total"}), c).Latency
+	if e.QuoteReadout.N != 0 || e.QuoteMissing != 1 || len(e.QuoteRows) != 1 {
+		t.Fatalf("borrowed another session's readout: %+v", e)
+	}
+}
+
 func latencyLog(lines []Line) string {
 	var b strings.Builder
 	for _, l := range lines {
@@ -249,7 +342,7 @@ func TestLatencyArchiveBackfillPreservesSourcesAndKeepsSessionsSeparate(t *testi
 	o, c := latencyToolPair()
 	otherO, otherC, otherLink := latencyToolPairForSession("other")
 	log := latencyLog([]Line{latencyStart("other", "other-call"), otherO, otherLink, otherC,
-		latencyStart("sess_latency", "call-latency"), o, latencyDelivery(nil), c})
+		latencyStart("sess_latency", "call-latency"), o, latencyDelivery(map[string]string{"tool": "quote_total"}), c})
 	path := filepath.Join(dir, "source.log")
 	if err := os.WriteFile(path, []byte(log), 0o600); err != nil {
 		t.Fatal(err)
@@ -270,9 +363,9 @@ func TestLatencyArchiveBackfillPreservesSourcesAndKeepsSessionsSeparate(t *testi
 	if old.Latency != nil || old.Summary.Turns != 99 {
 		t.Fatal("backfill mutated the in-memory source")
 	}
-	old.Latency = &LatencyEvidence{Version: 1, FirstContent: latencyDistribution([]int{1})}
+	old.Latency = &LatencyEvidence{Version: 2, FirstContent: latencyDistribution([]int{1}), QuoteReadout: latencyDistribution([]int{1})}
 	upgraded := s.withLatencyEvidence(old)
-	if upgraded.Latency.Version != 2 || upgraded.Latency.ToolResult.N != 1 || *upgraded.Latency.ToolResult.P95 != 830 || old.Latency.Version != 1 {
+	if upgraded.Latency.Version != 3 || upgraded.Latency.ToolResult.N != 1 || *upgraded.Latency.ToolResult.P95 != 830 || old.Latency.Version != 2 || upgraded.Latency.QuoteReadout.N != 0 || upgraded.Latency.QuoteUnknown != 1 {
 		t.Fatalf("old evidence not upgraded independently: %+v", upgraded.Latency)
 	}
 	old.Latency = nil

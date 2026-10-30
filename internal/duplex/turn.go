@@ -95,6 +95,10 @@ type Turn struct {
 	// model's first token (a result's opening).
 	Scripted bool
 	Opening  string
+	// Readout is a deterministic tool-result prefix, separate from its
+	// optional posthook so only the figures establish readout output.
+	Readout     string
+	QuoteResult bool
 	// Opened is the opener the engine said for this turn at the pause, before
 	// the model's first clause; the pipe says it once. OpenedMS is its audio.
 	Opened   string
@@ -125,6 +129,7 @@ type Turn struct {
 	firstAudioOut   time.Time
 	firstContent    time.Time
 	firstContentOut time.Time
+	firstReadoutOut time.Time
 	completedAt     time.Time
 }
 
@@ -145,6 +150,7 @@ type Timings struct {
 	// FirstContentOut is when answer audio first left the player. Being
 	// ready in its queue does not establish that the answer was emitted.
 	FirstContentOut time.Time
+	FirstReadoutOut time.Time
 	CompletedAt     time.Time
 }
 
@@ -164,6 +170,7 @@ func (t *Turn) Timings() Timings {
 		FirstAudioOut:   t.firstAudioOut,
 		FirstContent:    t.firstContent,
 		FirstContentOut: t.firstContentOut,
+		FirstReadoutOut: t.firstReadoutOut,
 		CompletedAt:     t.completedAt,
 	}
 }
@@ -303,6 +310,9 @@ func (t *Turn) MarkFirstContent() { t.stampOnce(&t.firstContent) }
 
 // MarkFirstContentOut records the answer's first audio at the output boundary.
 func (t *Turn) MarkFirstContentOut() { t.stampOnce(&t.firstContentOut) }
+
+// MarkFirstReadoutOut observes deterministic result audio leaving the player.
+func (t *Turn) MarkFirstReadoutOut() { t.stampOnce(&t.firstReadoutOut) }
 
 // MarkCompleted records when the turn finished, and reports whether this call
 // was the one that finished it. A turn can be handed to both completion paths —
