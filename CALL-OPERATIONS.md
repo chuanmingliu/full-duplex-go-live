@@ -90,7 +90,9 @@ PY
 scripts/phone-brain.sh archive verify
 ```
 
-The channel check proves non-silent signal, not intelligibility or acoustic end-to-end latency. The permanent WAV is caller on the left and assistant on the right. The raw working store is `~/golive-calls/<session>/{input.pcm,output.pcm,session.json}`. `session.json.history` is the model's retained history and may be trimmed; the full journal transcript is `call.json.transcript` plus `transcript.txt`.
+The channel check proves non-silent signal, not intelligibility or acoustic end-to-end latency. The permanent WAV is caller on the left and assistant on the right. The raw working store is `~/golive-calls/<session>/{input.pcm,output.pcm,session.json}`. `session.json.history` is the model's retained history and may be trimmed; the journal transcript is `call.json.transcript` plus `transcript.txt`.
+
+New calls log a versioned private assistant transcript at the Player first-output boundary. The journal uses this stream for ordinary speech, prepared quotations, openers and fillers, with sequence deduplication and the existing truncation records. Queued speech that never starts output is excluded. This boundary does not prove handset audibility. Older calls use the legacy reconstruction; the c582781 quotation replay lacks its prepared prefixes in those old logs (ISS-082), so installing the new parser cannot reconstruct them.
 
 `archive verify` verifies every **listed** file against the manifest; by itself it can pass an archive containing only text. The explicit five-file/audio/transcript checks above establish selected-call completeness. `archive status` is only an aggregate inventory. `archive mirror DEST` copies to an already established backup destination without deletion; do not invent a destination. Audio, session record and raw log are written once; parsed text is refreshed when the journal's reading changes. All are on one local disk unless mirrored.
 
@@ -213,3 +215,21 @@ matched recorded quote replays, report first audio, content and readout
 separately, and require physical handset capture for the end-to-end claim.
 To disable the trial, set `quote_readout_warm_max` to zero and restart through
 the normal guarded deployment procedure.
+
+## Model stream phase diagnostics
+
+At debug level, `llm: stream phases` records one metadata-only summary per
+physical model request. Its opaque `request_id` also appears on `llm: stream
+open`; lane/key ordinals and timestamps help correlate copies, but are not an
+exact engine-turn link. Timings are milliseconds from request start; `-1` means
+unobserved. They describe when the adapter observes headers, data, content,
+tool fragments, syntactically complete arguments, finish, DONE and EOF. Local
+processing or consumer backpressure can affect those observations, so do not
+label the gaps as pure provider queueing or model compute.
+
+Argument inspection is bounded and never changes the arguments, tool-call
+finalization or hedge winner. A syntactically complete JSON object is not a
+validated tool request or permission to execute it. The summaries contain no
+prompt, response text, arguments, function names or credentials. Use these
+phases to locate a delay before changing behavior; they do not measure spoken
+amounts, carrier transit or physical handset playout.

@@ -399,11 +399,15 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	started := time.Now()
+	timing := newStreamTiming(ctx, started, ln)
 	resp, err := ln.client.Do(httpReq)
 	if err != nil {
+		timing.report(ctx, "request_error")
 		return nil, fmt.Errorf("llm: request failed: %w", err)
 	}
+	timing.response(resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
+		defer timing.report(ctx, "http_error")
 		defer resp.Body.Close()
 		// Read a bounded snippet: the body may be an HTML error page, and the
 		// message is surfaced to operators, so it must never carry the request
@@ -427,6 +431,7 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	// prompt behind it grew by an order of magnitude. Logging the size next to
 	// the latency it buys makes the trade visible on every turn.
 	slog.Debug("llm: stream open",
+		"request_id", timing.requestID(),
 		"base_url", l.BaseURL,
 		"lane", ln.n,
 		"key", ln.keyN+1,
@@ -439,12 +444,13 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 	go func() {
 		defer close(out)
 		defer resp.Body.Close()
-		l.consume(ctx, resp.Body, req.DisableThinking, out)
+		outcome := l.consume(ctx, resp.Body, req.DisableThinking, out, timing)
+		timing.report(ctx, outcome)
 	}()
 	return out, nil
 }
 
-func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, out chan<- provider.LLMDelta) {
+func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, out chan<- provider.LLMDelta, timing *streamTiming) string {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64<<10), 4<<20)
 
@@ -511,6 +517,7 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 		return true
 	}
 
+	outcome := "eof"
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -518,11 +525,15 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
+			timing.doneFrame()
+			outcome = "done"
 			break
 		}
+		timing.data()
 
 		var chunk chatChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			timing.malformedFrame()
 			// One malformed frame should not kill a turn mid-sentence.
 			continue
 		}
@@ -544,7 +555,7 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 				OutputTokens:      chunk.Usage.CompletionTokens,
 				CachedInputTokens: cached,
 			}}) {
-				return
+				return "canceled"
 			}
 		}
 		for _, choice := range chunk.Choices {
@@ -552,10 +563,11 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 				// Reasoning is never spoken; it is surfaced as text only when
 				// the caller has explicitly left thinking enabled.
 				if !send(provider.LLMDelta{Text: ""}) {
-					return
+					return "canceled"
 				}
 			}
 			for _, tc := range choice.Delta.ToolCalls {
+				timing.toolFragment(len(tc.Function.Arguments))
 				pc := calls[tc.Index]
 				if pc == nil {
 					pc = &partialCall{}
@@ -568,15 +580,18 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 					pc.name = tc.Function.Name
 				}
 				pc.args.WriteString(tc.Function.Arguments)
+				timing.arguments(pc.name, pc.args.String())
 			}
 			if choice.Delta.Content != "" {
+				timing.content()
 				if !send(provider.LLMDelta{Text: choice.Delta.Content}) {
-					return
+					return "canceled"
 				}
 			}
 			if choice.FinishReason != "" {
+				timing.finished(choice.FinishReason)
 				if !flushCalls(true) {
-					return
+					return "canceled"
 				}
 			}
 		}
@@ -585,12 +600,16 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 		if ctx.Err() == nil {
 			send(provider.LLMDelta{Err: fmt.Errorf("llm: stream read: %w", err)})
 		}
-		return
+		return "read_error"
+	}
+	if outcome == "eof" {
+		timing.endOfFile()
 	}
 	// A stream that ended without a finish_reason still made its calls.
 	if !flushCalls(false) {
-		return
+		return "canceled"
 	}
+	return outcome
 }
 
 // summarizeError pulls the provider's error message out of a JSON body,

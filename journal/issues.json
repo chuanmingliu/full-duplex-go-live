@@ -1307,7 +1307,7 @@
    "symptom": "The accepted end_call diagnostic stored the full turn object under the turn field rather than a scalar turn ID.",
    "cause": "The log argument used job.turn after playback ownership moved to exact Turn pointers.",
    "fix": "Log only job.turn.ID. A regression exercises accepted hangup with private sentinel fields through both text and JSON log handlers.",
-   "verified": "Both handler tests failed before the change and passed afterward. Focused hangup regressions passed with race detection; the combined quote, playback, preparation and hangup regression suite passed in 7.506 seconds. Full candidate CI, deployment and replay are pending. Follow-up on runtime c582781, simulator out-mvuoo3dk-dzip, CI run 41022216798: The matched c582781 call did not invoke end_call and produced zero accepted-hangup diagnostic events. Receiver termination was customer_hangup; the final generated response had begun but lacked a completion/latency record at disconnect. This call does not provide live validation of the scalar-turn logging fix.",
+   "verified": "Both handler tests failed before the change and passed afterward. Focused hangup regressions passed with race detection; the combined quote, playback, preparation and hangup regression suite passed in 7.506 seconds. Full candidate CI, deployment and replay are pending. Follow-up on runtime c582781, simulator out-mvuoo3dk-dzip, CI run 41022216798: The matched c582781 call did not invoke end_call and produced zero accepted-hangup diagnostic events. Receiver termination was customer_hangup; the final generated response had begun but lacked a completion/latency record at disconnect. This call does not provide live validation of the scalar-turn logging fix. Coverage replay out-mvup3e10-odkv on the same c582781 runtime also produced no accepted-hangup event. Its final coverage answer completed before the receiver ended locally for inactivity; this remains an unexercised live path, not additional scalar-turn logging validation.",
    "effect": "The implementation remains covered by its prior regression tests; accepted-hangup logging still needs a live exercised case. Zero diagnostic events are not verification.",
    "commits": [
     "c582781"
@@ -1317,15 +1317,15 @@
    "id": "ISS-082",
    "title": "Journal quotation transcript omits the prepared first segment",
    "area": "journal",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-10-30",
    "found_on": "Post-call canonical-history and journal comparison on c582781",
    "found_call": "out-mvuoo3dk-dzip",
    "symptom": "Each of the three completed quotation journal rows omits a 13-character prepared prefix. The retained final canonical response includes the first priced-coverage segment that is absent from its journal row.",
-   "cause": "Prepared first-segment text is missing from the reconstructed journal transcript despite being retained in canonical response history. The source repair is under review.",
-   "fix": "Pending source fix, deployment and replay verification. Preserve the prepared segment when reconstructing the complete quotation transcript.",
-   "verified": "Observed on out-mvuoo3dk-dzip: generated quotation character counts were 80, 77 and 80; journal rows contained 67, 64 and 67 characters. The retained final journal row exactly equals the canonical history suffix after its first 13 characters. All six authoritative final line premiums are present in canonical history under the configured rounding rule.",
-   "effect": "Journal-only semantic review understates quotation content. This transcript defect alone does not prove missing audible output; the issue remains open until the deployed correction is verified.",
+   "cause": "The journal reconstructed assistant text from synthesis and old phrase-cache diagnostics, but the prepared-quote diagnostic intentionally contained no text.",
+   "fix": "Emit a versioned private assistant transcript from the existing Player first-output callback. The journal uses that stream once per sequence across ordinary, prepared, cached, opener and filler speech, preserving truncation and legacy-log fallback.",
+   "verified": "Observed on out-mvuoo3dk-dzip: generated quotation character counts were 80, 77 and 80; journal rows contained 67, 64 and 67 characters. The retained final journal row exactly equals the canonical history suffix after its first 13 characters. All six authoritative final line premiums are present in canonical history under the configured rounding rule. A regression reproduced the missing prefix before the source repair. Full journal race tests and focused duplex output/prepared/opener/backchannel race tests passed, and independent review found no blocker. The source correction is not yet deployed or verified on a new call.",
+   "effect": "New canonical events preserve the spoken segment prefix and its output timestamp without counting queued-but-unheard text. Older archives lacking the event cannot recover missing text from this change alone.",
    "commits": []
   }
  ]

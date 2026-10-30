@@ -301,11 +301,12 @@ type Engine struct {
 	pausesInside   []int
 	silentBeforeMS float64
 
-	inputMS   atomic.Int64
-	outputMS  atomic.Int64
-	inTok     atomic.Int64
-	outTok    atomic.Int64
-	cachedTok atomic.Int64
+	inputMS       atomic.Int64
+	outputMS      atomic.Int64
+	transcriptSeq atomic.Uint64
+	inTok         atomic.Int64
+	outTok        atomic.Int64
+	cachedTok     atomic.Int64
 	// ctxRatio is math.Float64bits of how full the conversational context is.
 	ctxRatio atomic.Uint64
 	startAt  time.Time
@@ -446,6 +447,7 @@ func New(opts Options, deps Deps) *Engine {
 
 // Start launches the engine goroutines.
 func (e *Engine) Start(ctx context.Context) {
+	e.startOutputTranscript()
 	e.ctx, e.cancel = context.WithCancel(ctx)
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
@@ -2120,6 +2122,7 @@ func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
 // onSegmentHeard reports a sentence on the assistant's transcript as its audio
 // begins. See Player.OnSegment for why then and not when it was written.
 func (e *Engine) onSegmentHeard(turnID, text string, playAt time.Time) {
+	e.logOutputTranscript(turnID, text, playAt)
 	at := playAt.Sub(e.startAt).Milliseconds()
 	if at < 0 {
 		at = 0

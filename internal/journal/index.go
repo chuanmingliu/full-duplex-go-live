@@ -284,6 +284,8 @@ type turnBuild struct {
 	id           string
 	callerText   string
 	said         []string
+	outputText   []string
+	outputAt     time.Time
 	heardText    string
 	heardMS      int
 	interrupted  bool
@@ -374,6 +376,8 @@ type callBuild struct {
 	copyWins        map[int]int
 	openerScenarios map[string]string
 	deliveries      []Line
+	transcriptLog   bool
+	transcriptSeq   int
 
 	// logFrom and logTo are where this call's lines begin and end in the log,
 	// in bytes: what the archive copies as the call's own slice of it.
@@ -563,6 +567,8 @@ func (ix *Indexer) Feed(l Line) {
 	ev := &cb.call.Events
 	cb.readFiller(l)
 	switch l.Msg {
+	case "transcript: assistant output enabled", "transcript: assistant segment started":
+		cb.readOutputTranscript(l)
 	case "realtime: session.update":
 		cb.call.PromptChars = l.N("instructions_chars")
 		cb.call.PromptSHA = l.Get("instructions_sha")
@@ -906,14 +912,11 @@ func (cb *callBuild) transcript(turns []Turn) []Said {
 	var out []Said
 	for _, id := range cb.order {
 		t := cb.turns[id]
-		text := strings.Join(t.said, "")
-		if t.confirmedOpener() {
-			text = t.openerText + text
-		}
-		if t.interrupted && t.heardText != "" {
-			text = t.heardText
-		}
+		text := cb.assistantText(t)
 		at := cb.at(t.firstAudioAt)
+		if cb.transcriptLog {
+			at = cb.at(t.outputAt)
+		}
 		if turn := byID[id]; turn != nil && turn.AudioOutS >= 0 {
 			at = turn.AudioOutS
 		}
@@ -1014,10 +1017,7 @@ func (cb *callBuild) turnOf(t *turnBuild, n int) Turn {
 	llm, seg := l.N("llm_first_token_ms"), l.N("first_segment_ms")
 	tts, out := l.N("tts_first_audio_ms"), l.N("first_audio_out_ms")
 	spec := l.Get("speculative") == "true"
-	assistantText := strings.Join(t.said, "")
-	if t.confirmedOpener() {
-		assistantText = t.openerText + assistantText
-	}
+	assistantText := cb.assistantText(t)
 
 	turn := Turn{
 		ID: t.id, N: n, PauseMS: pause,
@@ -1097,7 +1097,12 @@ func (cb *callBuild) turnOf(t *turnBuild, n int) Turn {
 	if t.confirmedOpener() {
 		firstAudioAt = t.openerAt
 	}
-	if !firstAudioAt.IsZero() {
+	if cb.transcriptLog {
+		if !t.outputAt.IsZero() {
+			turn.AudioOutS = cb.at(t.outputAt)
+			turn.LastSoundS = cb.at(t.outputAt.Add(-time.Duration(turn.TotalMS) * time.Millisecond))
+		}
+	} else if !firstAudioAt.IsZero() {
 		rel := tts
 		if t.firstIsCache && !t.confirmedOpener() {
 			rel = out
