@@ -191,6 +191,17 @@
    "cost": "Real-provider test usage and a brief idle-service restart for validated releases.",
    "guard": "Use the existing runner and prompt; distinguish real and simulated calls; preserve recordings privately; publish only technical findings. Report first audio and content separately and do not claim handset E2E from server or simulator timings. Keep the recognizer-owned turn-ending direction; no VAD-threshold tuning in this change.",
    "status": "Active for this work. The current task target is p95 <1200 ms; older 1000 ms experiments remain historical evidence."
+  },
+  {
+   "rank": 19,
+   "title": "Bounded follow-up quotation preparation around the newly selected plan",
+   "gain": "Prepare likely next changes while the current quote is being spoken, instead of paying another seconds-long pricing request after each selection change.",
+   "basis": "On out-mvukudco-7zrb, two prepared quote tasks took 0 ms, while a two-change selection took 3040 ms and readout began 4848 ms after caller speech. All eight startup prequotes were used; active poll interval 500 ms.",
+   "cost": "A separate opt-in follow_selection_max cap is planned at 8 additional new background computations per call; the existing initial maximum remains unchanged. One in-flight authoritative computation may still delay a foreground miss. The local quotesvc pricing workload is preserved.",
+   "guard": "Disabled by default. Reuse cache/in-flight keys without spending new budget; no recursive or comparison seeding; preserve pricing versions and caller variables; foreground work has priority at the next serialized API slot. Discard unstarted obsolete generations. Bound tracked calls to 512 per CRM process and skip only extra warming at capacity.",
+   "undo": "Set standard.prequote.follow_selection_max to0, or restore the exact prior quote-plans version through the guarded configuration rollback. Preserve later owner edits.",
+   "needs": "Complete regression and race tests, full CI, verified deployment, explicit bounded box configuration, then repeat the same quotation scenario and a physical handset recording.",
+   "status": "Implemented with failing-before regressions, passing full CRM race tests and independent review. Full CI, deployment and measured replay remain pending; box policy is unchanged."
   }
  ]
 }

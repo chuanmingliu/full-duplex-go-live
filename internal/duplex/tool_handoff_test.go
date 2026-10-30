@@ -148,10 +148,15 @@ func TestTaskOriginMetadataFollowsTaskLifetime(t *testing.T) {
 	}
 	first := submit(p.turn, `{"n":1}`)
 	old := ts.tasks[first]
+	origin := ts.origins[first]
+	origin.ackTurnID = "old_ack"
+	origin.ackCompleted = true
+	ts.origins[first] = origin
 	ts.ackPending[first] = true
 	ts.ackGraceStarted = map[string]bool{first: true}
 	second := submit(p.turn, `{"n":2}`)
 	if !old.Cancelled() || len(ts.origins) != 1 || ts.origins[second].turnID != p.turn.ID ||
+		ts.origins[second].ackTurnID != "" || ts.origins[second].ackCompleted ||
 		ts.ackPending[first] || ts.ackGraceStarted[first] {
 		t.Fatal("supersession retained the old task's origin or acknowledgement")
 	}

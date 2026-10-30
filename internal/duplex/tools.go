@@ -106,6 +106,12 @@ type toolState struct {
 type taskOrigin struct {
 	turnID      string
 	speechEndAt time.Time
+	// ackTurnID is set only when this task's ack directly follows the
+	// originating caller's completed, emitted opener.
+	ackTurnID string
+	// ackCompleted requires the natural playback completion callback;
+	// a soft interruption also sets the turn's generic CompletedAt.
+	ackCompleted bool
 }
 
 type taskDelivery struct {
@@ -885,6 +891,9 @@ func (e *Engine) maybeDeliver() {
 	attrs := []any{"tool", task.Tool.Name, "task", task.ID, "turn", turn.ID,
 		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver,
 		"posthook_skipped", posthookSkipped}
+	if turn.QuoteResult {
+		attrs = append(attrs, "quote_result_default", tools.ResultIsDefault(task.Result.Output))
+	}
 	if origin := delivery.origin; origin.turnID != "" && !origin.speechEndAt.IsZero() {
 		attrs = append(attrs, "origin_turn", origin.turnID,
 			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())

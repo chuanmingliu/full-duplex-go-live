@@ -824,9 +824,15 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		e.log.Info("tools: the task finished while its ack waited for the floor; not saying it", "task", p.scriptedTask)
 		return
 	}
+	origin := ts.origins[p.scriptedTask]
+	followsOrigin := p.turn == e.tracker.Current() && e.completedOriginOpener(origin)
 	turn := e.tracker.Begin("", false)
 	turn.DelegationID = p.delegationID
 	turn.Scripted = true
+	if followsOrigin {
+		origin.ackTurnID = turn.ID
+		ts.origins[p.scriptedTask] = origin
+	}
 	e.specTurn = nil
 	e.commitTurn(turn)
 	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(p.scripted)))

@@ -2142,6 +2142,7 @@ func (e *Engine) onTruncated(r TruncationReport) {
 	})
 	e.recordTurn(r.TurnID, r.SpokenText)
 	e.post(func() {
+		e.noteAckPlayback(r.TurnID, false)
 		e.noteReadoutCut(r.TurnID, r.SpokenText)
 		turn := e.tracker.Current()
 		if turn == nil || turn.ID != r.TurnID {
@@ -2174,9 +2175,10 @@ func (e *Engine) onTurnDone(turnID string, totalMS int64, text string) {
 		if totalMS == 0 {
 			return
 		}
-		if !turn.MarkCompleted() {
+		if !turn.markCompletedNaturally() {
 			return
 		}
+		e.noteAckPlayback(turnID, true)
 		e.emitMetrics(turn, totalMS, false)
 		e.noteAssistantQuiet()
 		e.checkAssistantHangupRules(text)

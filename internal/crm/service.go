@@ -77,8 +77,13 @@ type Service struct {
 	// apiGate admits one inquiry to the business service at a time;
 	// apiDemand counts callers' asks waiting for it, which go ahead of the
 	// quotations priced ahead (prequote.go).
-	apiGate   chan struct{}
-	apiDemand atomic.Int32
+	apiGate                 chan struct{}
+	apiDemand               atomic.Int32
+	followDemand            atomic.Int32
+	selectionWarms          map[string]*selectionWarmState
+	selectionWarmWG         sync.WaitGroup
+	selectionWarmClosed     bool
+	selectionWarmFullLogged bool
 }
 
 const tokenFile = "api.token"
@@ -209,6 +214,10 @@ func Open(cfg Config) (*Service, error) {
 // it stands in for a real rating service's time, so that the assistant's
 // handling of a slow answer can be exercised.
 func (s *Service) Quote(req QuoteRequest) (any, error) {
+	return s.quote(req, nil)
+}
+
+func (s *Service) quote(req QuoteRequest, follow *selectionWarmSeed) (any, error) {
 	// The intake: no quotation on a plan with a must field missing.
 	need, skipped, plan, planned := s.intake(req)
 	if need != nil {
@@ -221,13 +230,53 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 		}
 		req.Skipped = append(req.Skipped, skipped...)
 	}
+	var heldAPI *QuoteAPI
+	var heldVersion *ConfigVersion
+	if follow != nil {
+		if !s.selectionWarmCurrent(follow) {
+			return nil, nil
+		}
+		key := selectionKey(req.Call, follow.pricing, plan, req.Config, req.Vars)
+		if p, _ := s.prequoteFor(key, false); p != nil && usablePrequote(p) {
+			return nil, nil
+		}
+		if api, version := s.quoteAPI(); api != nil {
+			if fmt.Sprintf("api:%d", version.Version) != follow.pricing {
+				return nil, nil
+			}
+			s.followDemand.Add(1)
+			defer s.followDemand.Add(-1)
+			if !s.takeSelectionAPITurn(follow) {
+				return nil, nil
+			}
+			defer s.releaseAPITurn()
+			heldAPI, heldVersion = api, version
+		} else if follow.pricing != fmt.Sprintf("rules:%d", req.RulesVersion) {
+			// An API seed cannot become a rules computation when its API
+			// is disabled between the current-version check and this read.
+			return nil, nil
+		}
+	}
 	// The same selection on the same variables, priced already — ahead of
 	// the ask, or for an earlier ask — is answered from the cache.
 	var kept *prequoted
 	if planned && req.Call != "" {
-		key := selectionKey(req.Call, s.pricingVersion(req), plan, req.Config, req.Vars)
-		p, claimed := s.prequoteFor(key, true)
-		if !claimed {
+		pricing := s.pricingVersion(req)
+		if follow != nil {
+			pricing = follow.pricing
+		}
+		key := selectionKey(req.Call, pricing, plan, req.Config, req.Vars)
+		var p *prequoted
+		var claimed bool
+		if follow == nil {
+			p, claimed = s.prequoteFor(key, true)
+		} else {
+			p, claimed = s.claimSelectionPrequote(key, follow)
+			if !claimed {
+				return nil, nil
+			}
+		}
+		for !claimed {
 			select {
 			case <-p.done:
 			case <-time.After(60 * time.Second):
@@ -238,20 +287,20 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 				return markPrequoted(quoteWithSkipped(p.quote, req.Skipped), p, req.MemoryVersion), nil
 			}
 			// It failed for whoever asked first, or has expired; price it afresh.
-			s.forgetPrequote(key)
-			p, _ = s.prequoteFor(key, true)
+			s.forgetPrequote(key, p)
+			p, claimed = s.prequoteFor(key, true)
 		}
 		p.ahead = req.prequote
 		kept = p
 		defer func() {
 			if kept.quote == nil {
-				s.forgetPrequote(key)
+				s.forgetPrequote(key, kept)
 			}
 			kept.took = time.Since(kept.started)
 			close(kept.done)
 		}()
 	}
-	q, err := s.quoteNow(req)
+	q, err := s.priceClaimedQuote(req, follow, heldAPI, heldVersion)
 	if err == nil {
 		switch x := q.(type) {
 		case *Quote:
@@ -266,6 +315,24 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 		}
 	}
 	return quoteWithSkipped(q, req.Skipped), err
+}
+
+// priceClaimedQuote dispatches after a cache claim. A follow-up keeps the
+// pricing source named by its claim even if configuration changes meanwhile.
+func (s *Service) priceClaimedQuote(req QuoteRequest, follow *selectionWarmSeed, heldAPI *QuoteAPI, heldVersion *ConfigVersion) (any, error) {
+	if heldAPI != nil {
+		if follow != nil && (heldVersion == nil || follow.pricing != fmt.Sprintf("api:%d", heldVersion.Version)) {
+			return nil, nil
+		}
+		return s.quoteViaAPINow(heldAPI, heldVersion, req)
+	}
+	if follow != nil {
+		if follow.pricing != fmt.Sprintf("rules:%d", req.RulesVersion) {
+			return nil, nil
+		}
+		return s.quoteViaRules(req)
+	}
+	return s.quoteNow(req)
 }
 
 // selectedConfig is the selection with the declined coverages left out.
@@ -359,6 +426,10 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 	// identical pairs). A caller's own ask goes next; the neighbours wait.
 	s.takeAPITurn(req.prequote)
 	defer s.releaseAPITurn()
+	return s.quoteViaAPINow(api, v, req)
+}
+
+func (s *Service) quoteViaAPINow(api *QuoteAPI, v *ConfigVersion, req QuoteRequest) (any, error) {
 	began := time.Now()
 	rec := &QuoteRecord{At: began, Call: req.Call, MemoryVersion: req.MemoryVersion, Source: "quote-api", APIVersion: v.Version, Prequote: req.prequote}
 	for name, choice := range req.Config {
@@ -402,12 +473,12 @@ func (s *Service) takeAPITurn(ahead bool) {
 		return
 	}
 	for {
-		for s.apiDemand.Load() > 0 {
+		for s.apiDemand.Load() > 0 || s.followDemand.Load() > 0 {
 			time.Sleep(50 * time.Millisecond)
 		}
 		select {
 		case gate <- struct{}{}:
-			if s.apiDemand.Load() == 0 {
+			if s.apiDemand.Load() == 0 && s.followDemand.Load() == 0 {
 				return
 			}
 			<-gate // a caller arrived meanwhile; let them through first
@@ -465,7 +536,10 @@ func (s *Service) quoteViaRules(req QuoteRequest) (*Quote, error) {
 func (s *Service) Configs() *Configs { return s.configs }
 
 // Close finishes with the log.
-func (s *Service) Close() error { return s.events.Close() }
+func (s *Service) Close() error {
+	s.stopSelectionWarming()
+	return s.events.Close()
+}
 
 // Prompts is the service's templates.
 func (s *Service) Prompts() *Prompts { return s.prompts }
@@ -884,6 +958,7 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
+		selectionTicket := s.beginSelectionQuote(req)
 		if len(req.Variants) > 0 {
 			// Several options at once: each priced over the plan, answered
 			// as one comparison (compare.go).
@@ -926,6 +1001,7 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusUnprocessableEntity, "%v", err)
 		}
+		s.scheduleSelectionWarming(req, q, selectionTicket)
 		writeJSON(w, http.StatusOK, q)
 		return nil
 	}))

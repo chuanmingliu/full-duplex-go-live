@@ -38,6 +38,9 @@ type PrequotePolicy struct {
 	// Max is how many single changes to price per call; 0 is none. A plan
 	// that says nothing gets DefaultPrequoteMax.
 	Max *int `json:"max,omitempty"`
+	// FollowSelectionMax bounds additional new background prices per call
+	// after a caller selects a nondefault plan. Zero keeps this disabled.
+	FollowSelectionMax int `json:"follow_selection_max,omitempty"`
 	// Keep names coverages never dropped in a variant (交强险 is compulsory).
 	Keep []string `json:"keep,omitempty"`
 	// Concurrency is how many are started at once; 1 unless said. Through
@@ -177,9 +180,13 @@ func (s *Service) prequoteFor(key string, claim bool) (p *prequoted, claimed boo
 
 // forget drops a claimed key whose pricing did not produce a quote worth
 // keeping (a need, an error): the next ask prices it again.
-func (s *Service) forgetPrequote(key string) {
+func (s *Service) forgetPrequote(key string, expected *prequoted) {
 	s.mu.Lock()
-	delete(s.prequotes, key)
+	// A completed, expired entry may already have been replaced by a new
+	// background claim. Only its owner may remove the current entry.
+	if s.prequotes[key] == expected {
+		delete(s.prequotes, key)
+	}
 	s.mu.Unlock()
 }
 

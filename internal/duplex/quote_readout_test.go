@@ -25,7 +25,7 @@ func TestReadyQuoteSkipsOnlyRedundantDefaultPosthook(t *testing.T) {
 	task.Result.Output = []byte(`{"status":"quote","total":100,"lines":[]}`)
 	// The same caller's opener really completed before this result arrived.
 	p.turn.MarkFirstAudioOut()
-	p.turn.MarkCompleted()
+	p.turn.markCompletedNaturally()
 	e.tools.deliveries = []taskDelivery{{task: task, origin: e.tools.origins[task.ID]}}
 	delete(e.tools.ackPending, task.ID)
 	e.maybeDeliver()
@@ -49,7 +49,7 @@ func TestDefaultPosthookNeedsAnUninterruptedSameOriginOpener(t *testing.T) {
 			task.Tool = task.Tool.WithSpeech(qs)
 			task.Result.Output = []byte(`{"status":"quote","total":100,"lines":[]}`)
 			p.turn.MarkFirstAudioOut()
-			p.turn.MarkCompleted()
+			p.turn.markCompletedNaturally()
 			delivery := taskDelivery{task: task, origin: e.tools.origins[task.ID]}
 			busy := false
 			switch guard {

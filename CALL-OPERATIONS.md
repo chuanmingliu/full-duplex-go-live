@@ -146,3 +146,28 @@ Startup banner verification must use the first space-delimited field of the
 bundle's VERSION file, exactly as phone-brain.sh does. New bundles may put a
 full commit there while /healthz uses the short build version; verify both
 against their intended identifiers rather than assuming they are identical.
+
+## Bounded follow-up quotation preparation
+
+`quote-plans.plans.<plan>.prequote.follow_selection_max` optionally prepares
+nearby selections after a successful, explicit single-selection quote. It
+defaults to zero (disabled) and accepts 0–32. The value caps additional new
+background cache claims cumulatively per call; it does not replace or reset
+the existing initial `prequote.max`. Cache hits and existing in-flight claims
+do not spend this budget, but a failed calculation or expired-entry refresh
+does. Default quotes and comparisons do not seed follow-up preparation.
+
+At the next serialized pricing slot, foreground requests take priority over
+follow-up preparation, which takes priority over unstarted initial
+preparation. An already-running calculation cannot be preempted and may
+still delay a foreground miss. Preserve the upstream pricing workload when
+measuring this tradeoff. Stale queued selections and configuration versions
+are discarded. CRM retains at most 512 call counters until restart; after
+capacity is reached, new calls skip only the extra preparation and a warning
+is logged. Restarting also resets these in-memory budgets and caches.
+
+Enable the policy separately from the binary release, record the exact
+configuration version and changed field, then replay the same scenario.
+Check actual readout latency and backend work, not just filler timing. Set
+the field to zero to disable further preparation; already-started pricing
+still drains. A configuration rollback must preserve later owner edits.

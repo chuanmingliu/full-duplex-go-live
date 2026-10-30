@@ -131,6 +131,8 @@ type Turn struct {
 	firstContentOut time.Time
 	firstReadoutOut time.Time
 	completedAt     time.Time
+
+	completedNaturally bool
 }
 
 // Timings is a consistent snapshot of a turn's milestones.
@@ -152,6 +154,9 @@ type Timings struct {
 	FirstContentOut time.Time
 	FirstReadoutOut time.Time
 	CompletedAt     time.Time
+	// CompletedNaturally distinguishes a full playback end from a soft
+	// interruption, which can finish without invalidating the generation.
+	CompletedNaturally bool
 }
 
 // Timings returns the turn's milestones.
@@ -172,6 +177,8 @@ func (t *Turn) Timings() Timings {
 		FirstContentOut: t.firstContentOut,
 		FirstReadoutOut: t.firstReadoutOut,
 		CompletedAt:     t.completedAt,
+
+		CompletedNaturally: t.completedNaturally,
 	}
 }
 
@@ -314,18 +321,33 @@ func (t *Turn) MarkFirstContentOut() { t.stampOnce(&t.firstContentOut) }
 // MarkFirstReadoutOut observes deterministic result audio leaving the player.
 func (t *Turn) MarkFirstReadoutOut() { t.stampOnce(&t.firstReadoutOut) }
 
-// MarkCompleted records when the turn finished, and reports whether this call
-// was the one that finished it. A turn can be handed to both completion paths —
+// MarkCompleted records a non-natural end and reports whether this call was
+// the one that finished it; the player's normal end uses markCompletedNaturally.
+// A turn can be handed to both completion paths —
 // a truncation report and a natural end arriving for the same playback turn —
 // and the false return is what keeps the second one from emitting a duplicate
 // set of metrics.
 func (t *Turn) MarkCompleted() bool {
+	return t.markCompletion(false)
+}
+
+func (t *Turn) markCompletedNaturally() bool {
+	return t.markCompletion(true)
+}
+
+func (t *Turn) markCompletion(natural bool) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if !natural {
+		// A late truncation still invalidates playback-completion proof;
+		// the timestamp keeps its existing first-completion semantics.
+		t.completedNaturally = false
+	}
 	if !t.completedAt.IsZero() {
 		return false
 	}
 	t.completedAt = time.Now()
+	t.completedNaturally = natural
 	return true
 }
 

@@ -90,6 +90,9 @@ func checkReadyQuoteReplacesUnplayedContent(t *testing.T, begun bool) {
 	if !p.turn.Timings().FirstContentOut.IsZero() || p.turn.Timings().FirstAudioOut.IsZero() {
 		t.Fatal("handoff fabricated content or lost the opener's output")
 	}
+	if !p.turn.Timings().CompletedNaturally {
+		t.Fatal("opener-only handoff lost its natural completion proof")
+	}
 	if c.count(live.ExtAudioTruncated) != 0 {
 		t.Fatal("a ready quote handoff was reported as caller interruption")
 	}

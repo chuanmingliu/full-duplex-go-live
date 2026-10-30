@@ -45,13 +45,53 @@ func (e *Engine) quoteResultPrefix(delivery taskDelivery, version int, busy bool
 		return
 	}
 	origin := delivery.origin
+	if e.completedOriginOpener(origin) {
+		return "", readout, true
+	}
+	ack := e.tracker.Current()
+	if origin.ackCompleted && ack != nil && ack.Scripted && ack.ID == origin.ackTurnID && e.tracker.IsCurrent(ack) {
+		timing := ack.Timings()
+		if !timing.FirstAudioOut.IsZero() && !timing.CompletedAt.IsZero() {
+			return "", readout, true
+		}
+	}
+	return
+}
+
+// noteAckPlayback records only natural completion as permission to omit the
+// posthook. The task may have finished while its ack still held the floor, so
+// update both running origins and the immutable-origin copies queued to speak.
+// Called on the engine loop, before a completion can release result delivery.
+func (e *Engine) noteAckPlayback(turnID string, natural bool) {
+	if e.tools == nil {
+		return
+	}
+	update := func(origin *taskOrigin) {
+		if origin.ackTurnID != turnID {
+			return
+		}
+		origin.ackCompleted = natural
+		if !natural {
+			origin.ackTurnID = "" // a later stale completion cannot restore proof
+		}
+	}
+	for id, origin := range e.tools.origins {
+		update(&origin)
+		e.tools.origins[id] = origin
+	}
+	for i := range e.tools.deliveries {
+		update(&e.tools.deliveries[i].origin)
+	}
+}
+
+// completedOriginOpener must run before an ack replaces the caller's turn:
+// Begin invalidates its generation, so later delivery needs the explicit link.
+func (e *Engine) completedOriginOpener(origin taskOrigin) bool {
 	caller := e.tracker.Current()
 	if caller == nil || !e.tracker.IsCurrent(caller) || caller.ID != origin.turnID || caller.Opened == "" || caller.Scripted {
-		return
+		return false
 	}
 	timing := caller.Timings()
-	if origin.speechEndAt.IsZero() || !timing.SpeechEndAt.Equal(origin.speechEndAt) || timing.FirstAudioOut.IsZero() || timing.CompletedAt.IsZero() {
-		return
-	}
-	return "", readout, true
+	return !origin.speechEndAt.IsZero() && timing.SpeechEndAt.Equal(origin.speechEndAt) &&
+		!timing.FirstAudioOut.IsZero() && !timing.CompletedAt.IsZero() && timing.CompletedNaturally
 }
