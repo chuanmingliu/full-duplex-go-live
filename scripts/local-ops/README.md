@@ -2,6 +2,11 @@
 
 These are the shell operations used for the `codex/telephony-latency` work, together with the small Python helpers that submit them. The Mac queue transports jobs; the job body executes on the Linux box. Running these scripts is separate from committing or pushing them.
 
+Chat commands select a backend explicitly: **`call`** uses the original GoLive
+configuration, **`call sim`** runs the simulator, and **`call gpt-live-1`** uses
+Speko. Follow the [mode routing rules](../../CALL-OPERATIONS.md#chat-command-modes);
+the last call's backend does not change the next plain `call`.
+
 ## Reusable local tools
 
 | File | Runs on | Purpose |

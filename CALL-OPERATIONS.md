@@ -7,6 +7,48 @@ checked enqueue/staging helpers and exact historical Codex call, collection,
 simulation, deployment and verification bodies. Historical jobs retain their
 original state guards and are not ready-made jobs for the current runtime.
 
+## Chat command modes
+
+The owner defined these chat commands on 2026-10-31. Select the mode afresh for
+each invocation; the most recently used backend never becomes the default.
+
+| Chat command | Destination and configuration | Launch workflow |
+| --- | --- | --- |
+| `call` | Configured real number; original GoLive ASR/LLM/TTS configuration, saved prompt, greeting and voice | Existing `~/golive-telephony/scripts/phone-brain.sh call` workflow on the box, through the Mac runner |
+| `call sim` | Simulated customer; original GoLive simulation configuration | Prepare/select a simulator run, then `scripts/phone-brain.sh call sim RUN_ID`; never substitute the real number |
+| `call gpt-live-1` | Configured real number; Speko `gpt-live-1` voice configuration | Dedicated SIP stack with `compose.json` **and** `compose.speko.json`, selecting `/private/adapter-speko.json` |
+
+These are chat-routing rules, not new subcommands of `phone-brain.sh`.
+In particular, do **not** pass `gpt-live-1` as an argument to the legacy
+`phone-brain.sh call`: that script does not dispatch the Speko mode.
+
+For `call`, retain the original configured native engine, originator and Journal
+(the established production Journal is on port 8790). The isolated native SIP
+test stack is an explicitly selected experiment, not an implicit replacement
+for the original call workflow. Re-check live identity and configuration before
+launching; historical scripts contain stale build guards.
+
+For `call gpt-live-1`, the currently prepared stack is
+`/home/chuanming/golive-sip-ab/32bc369`, with Journal on port 9886. Its Speko
+profile reaches the Mac bridge through the loopback reverse tunnel on port
+8095. Use the matching local bearer token privately, the configured recipient,
+and a fresh call ID and exclusive receipt. The bridge uses
+`SPEKO_DELEGATION_MODE=client` with the Speko backend; omit the native TTS voice
+override so the provider's voice is used. Release the opening only after SIP
+answer; do not run the native engine's pre-dial greeting warmup against Speko.
+See [Speko SIP setup](docs/services/speko-sip.md) and
+[the installed link](docs/telephony/2026-10-31-speko-link.md).
+
+Both real modes record chat and both audio directions for their corresponding
+Call Journal. Speko recordings also preserve available carrier ringback. After
+`done`, finalize completed Speko captures with
+`scripts/local-ops/import-adapter-call.py`, verify the Journal archive, and keep
+transcript fragments distinguished from finalized utterances. Simulator evidence
+and server recordings do not establish physical handset latency.
+
+Changing these mappings does not launch, restart, or interrupt a call. A `done`
+message selects analysis of the retained real-call ID, not another dial.
+
 ## Before a call
 
 ```bash
@@ -28,8 +70,9 @@ before dialing. Its separate local acoustic recording captures the caller
 and the phone speaker on one sample clock; the box archive alone cannot
 prove physical handset playout.
 
-For the owner's real-call workflow, `call` places a real call and `call sim`
-uses the simulator. After a real call, wait for the owner's **done** message
+For the owner's workflow, `call` uses the original real-call configuration,
+`call sim` uses the simulator, and `call gpt-live-1` selects the Speko real-call
+configuration. After either real mode, wait for the owner's **done** message
 before beginning the deep review, fixes, GitHub push and box deployment.
 An ended-call status alone does not replace that signal. Keep the selected
 call ID throughout the review so a newer call cannot silently replace it.
