@@ -66,3 +66,22 @@ References: [Speko voice protocol](https://docs.speko.ai/relay/s2s),
 [model catalog](https://docs.speko.ai/relay/models),
 [Speko text requests](https://docs.speko.ai/relay/llm/responses), and
 [GPT-Live client delegation](https://developers.openai.com/api/docs/guides/live-delegation).
+
+## Retry exposed a startup audio backlog
+
+`out-speko-20261031-02` answered and ended after 2.70 seconds with no
+assistant audio. A no-phone probe sending G.711 every 20 ms reproduced
+`invalid or excessive caller audio`. Packets buffered during upstream setup
+were being paced a second time at 20 ms, overflowing the two-second queue.
+The earlier no-phone greeting probe did not send microphone frames.
+
+Caller RTP is already paced. The bridge now forwards received caller chunks
+immediately and only inserts clocked silence when input is absent. Assistant
+playback remains paced and bounded. The startup backlog regression fails on
+the old queue and passes on the fix; a live probe with continuous microphone
+frames and the configured prompt produced non-silent assistant audio.
+
+Completed external-engine calls can be imported without inventing native-engine
+logs using `scripts/local-ops/import-adapter-call.py` on the ThinkPad. It keeps
+raw adapter files, records transcript fragments as fragments, and generates
+no latency claims. Restarting only the Journal reloads the imported call.

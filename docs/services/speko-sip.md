@@ -149,7 +149,9 @@ paraphrased. Opening HTTP success acknowledges release, not audible delivery.
 See the [GPT-Live delegation and greeting contract](https://developers.openai.com/api/docs/guides/live-delegation).
 
 Caller audio maps to `session.input_audio.append`; model audio maps to Realtime
-audio deltas. Input gaps are filled with codec silence on a 20 ms clock. Output
+audio deltas. Caller chunks are forwarded immediately because RTP already paces input;
+input gaps are filled with codec silence on a 20 ms clock. This drains packets
+that accumulated during the upstream handshake without adding a permanent delay. Output
 is paced at 20 ms, with a two-second bounded queue and final partial-frame
 padding. The adapter retains its own RTP pacing and smaller queue limit.
 

@@ -14,15 +14,16 @@ import (
 const bridgeQueueBytes = 16000 // Two seconds of G.711; never an unbounded backlog.
 const audioIdle = 200 * time.Millisecond
 
-// bridgeAudio clocks both directions at 8 kHz in 20 ms frames. Silence fills
-// input gaps. Output is paced here so a provider batch cannot flood the SIP
+// bridgeAudio preserves the RTP input clock, fills input gaps, and paces
+// output at 8 kHz in 20 ms frames so a provider batch cannot flood the SIP
 // adapter's much smaller playout queue. Only the final partial frame is padded.
 func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.Conn, input, output <-chan socketEvent, silence []byte, transport *pcmTransport, instructions string) error {
 	backend := newClientBackend(instructions)
 	defer backend.close()
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
-	var microphone, speaker []byte
+	var speaker []byte
+	nextInput := time.Now().Add(20 * time.Millisecond)
 	var responseID, transcript string
 	var lastAudio time.Time
 	suppressed := false
@@ -71,10 +72,19 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 			switch got.event.Type {
 			case "input_audio_buffer.append":
 				b, err := base64.StdEncoding.DecodeString(got.event.Audio)
-				if err != nil || len(microphone)+len(b) > bridgeQueueBytes {
+				if err != nil || len(b) > bridgeQueueBytes {
 					return errors.New("invalid or excessive caller audio")
 				}
-				microphone = append(microphone, b...)
+				// RTP already clocks caller audio. Forward it immediately, including
+				// the bounded socket backlog received during upstream setup.
+				// Re-pacing that backlog creates permanent input delay and
+				// can overflow before the first model response.
+				if len(b) > 0 {
+					if err := s.send(upstream, map[string]string{"type": "session.input_audio.append", "audio": base64.StdEncoding.EncodeToString(transport.encode(b))}); err != nil {
+						return err
+					}
+					nextInput = time.Now().Add(time.Duration(len(b)) * time.Second / 8000)
+				}
 			case "response.cancel":
 				speaker = nil
 				suppressed = true
@@ -89,7 +99,6 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					return err
 				}
 			case "input_audio_buffer.clear":
-				microphone = nil
 				if err := s.send(client, map[string]string{"type": "input_audio_buffer.cleared"}); err != nil {
 					return err
 				}
@@ -175,11 +184,14 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 			}
 		case now := <-tick.C:
 			frame := append([]byte(nil), silence...)
-			n := min(len(microphone), len(frame))
-			copy(frame, microphone[:n])
-			microphone = microphone[n:]
-			if err := s.send(upstream, map[string]string{"type": "session.input_audio.append", "audio": base64.StdEncoding.EncodeToString(transport.encode(frame))}); err != nil {
-				return err
+			if !now.Before(nextInput) {
+				if err := s.send(upstream, map[string]string{"type": "session.input_audio.append", "audio": base64.StdEncoding.EncodeToString(transport.encode(frame))}); err != nil {
+					return err
+				}
+				nextInput = nextInput.Add(20 * time.Millisecond)
+				if nextInput.Before(now) {
+					nextInput = now.Add(20 * time.Millisecond)
+				}
 			}
 			if suppressed && now.Sub(lastAudio) >= audioIdle {
 				suppressed = false
@@ -189,7 +201,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					return err
 				}
 				frame = append(frame[:0], silence...)
-				n = min(len(speaker), len(frame))
+				n := min(len(speaker), len(frame))
 				copy(frame, speaker[:n])
 				speaker = speaker[n:]
 				if err := s.send(client, map[string]string{"type": "response.audio.delta", "response_id": responseID, "delta": base64.StdEncoding.EncodeToString(frame)}); err != nil {
