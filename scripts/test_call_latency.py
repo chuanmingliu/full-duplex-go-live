@@ -46,6 +46,11 @@ def quote_pair(**child_changes):
     return tool_pair(**flags)
 
 
+def coalesced(origin=3, **changes):
+    return delivery(origin=origin, msg="tools: delivering a coalesced task result",
+                    primary_origin_turn="item_1", tool="quote_total", **changes)
+
+
 def output(index, seq=1, **changes):
     row = dict(msg="transcript: assistant segment started", version=1,
                session="sess_test", turn=f"item_{index}", seq=seq,
@@ -68,6 +73,140 @@ class CallLatencyTests(unittest.TestCase):
                                     text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 2, result.stderr)
         return result.returncode, json.loads(result.stdout)
+
+    def test_coalesced_result_preserves_both_caller_intervals_and_primary_row(self):
+        primary, child = quote_pair(first_content_ms=100, first_readout_ms=1036)
+        extra = turn(3, first_content_present=False, first_content_ms=0)
+        link = delivery(tool="quote_total", origin_to_result_start_ms=1465)
+        extra_link = coalesced(origin_to_result_start_ms=20)
+        baseline = self.run_report([primary, child, link])[1]
+        for rows in ([primary, extra, child, link, extra_link],
+                     [extra_link, link, child, extra, primary]):
+            with self.subTest(order=rows[0]["msg"]):
+                code, report = self.run_report(rows, "--gate", "--metric", "both")
+                self.assertEqual(code, 1)  # the original request still took 2881 ms
+                self.assertEqual(report["counts"]["tool_results_joined"], 2)
+                self.assertEqual(report["counts"]["invalid_tool_links"], 0)
+                self.assertEqual(report["counts"]["missing"], 0)
+                self.assertEqual(report["first_content"]["n"], 2)
+                self.assertEqual(report["first_content"]["p95_ms"], 1945)
+                self.assertEqual(report["tool_result_rows"][0], baseline["tool_result_rows"][0])
+                self.assertEqual(report["quote_readout_rows"][0], baseline["quote_readout_rows"][0])
+                self.assertEqual(report["quote_readout"]["p95_ms"], 2881)
+                for key, total in (("tool_result_rows", 500), ("quote_readout_rows", 1436)):
+                    self.assertEqual(len(report[key]), 2)
+                    self.assertEqual(report[key][1]["total_ms"], total)
+                    self.assertTrue(report[key][1]["coalesced"])
+                    self.assertEqual(report[key][1]["primary_origin_turn"], "item_1")
+                    self.assertEqual(report[key][1]["origin_turn"], "item_3")
+                self.assertEqual(self.run_report(rows, "--gate", "--metric", "both", text=True),
+                                 (code, report))
+
+    def test_coalesced_bad_metadata_fails_strict_without_poisoning_primary(self):
+        invalid = ({"primary_origin_turn": "item_9"}, {"primary_origin_turn": ""},
+                   {"tool": "other"}, {"tool": ""}, {"task": "task_9"},
+                   {"turn": "item_9"}, {"origin_turn": "item_1"},
+                   {"origin_turn": "item_2"}, {"origin_turn": "item_9"},
+                   {"session": "sess_other"}, {"origin_to_result_start_ms": -1},
+                   {"origin_to_result_start_ms": str(2**63)},
+                   {"origin_to_result_start_ms": 2**63 - 1},
+                   {"origin_to_result_start_ms": True},
+                   {"origin_to_result_start_ms": "\u0661"},
+                   {"origin_to_result_start_ms": "1.0"},
+                   {"origin_to_result_start_ms": "9" * 5000})
+        for changes in invalid:
+            with self.subTest(fields=list(changes), value=str(next(iter(changes.values())))[:40]):
+                primary, child = quote_pair(first_content_ms=100, first_readout_ms=200)
+                extra = turn(3, first_content_present=False, first_content_ms=0)
+                bad = coalesced()
+                bad.update(changes)
+                rows = [primary, extra, child, delivery(tool="quote_total"), bad]
+                code, report = self.run_report(rows, "--gate", "--metric", "both")
+                self.assertEqual(code, 1)
+                self.assertEqual(report["counts"]["invalid_tool_links"], 1)
+                self.assertEqual(report["counts"]["tool_results_joined"], 1)
+                self.assertEqual(len(report["tool_result_rows"]), 1)
+                self.assertEqual(len(report["quote_readout_rows"]), 1)
+                self.assertNotIn("coalesced", report["tool_result_rows"][0])
+
+    def test_coalesced_requires_unique_primary_and_unique_additional_origin(self):
+        for case in ("missing primary", "duplicate primary", "duplicate extra", "conflicting extra",
+                     "cancelled extra", "missing extra presence", "duplicate extra metric", "cancelled primary"):
+            with self.subTest(case=case):
+                primary, child = quote_pair()
+                extra = turn(3, first_content_present=False, first_content_ms=0)
+                links = [delivery(tool="quote_total"), coalesced()]
+                rows = [primary, extra, child]
+                expected_primary = case not in ("missing primary", "duplicate primary", "cancelled primary")
+                if case == "missing primary":
+                    links.pop(0)
+                elif case == "duplicate primary":
+                    links.append(delivery(tool="quote_total"))
+                elif case in ("duplicate extra", "conflicting extra"):
+                    links.append(coalesced(task="task_9") if case == "conflicting extra" else coalesced())
+                elif case == "cancelled extra":
+                    extra["truncated"] = True
+                elif case == "missing extra presence":
+                    extra.pop("first_content_present")
+                elif case == "duplicate extra metric":
+                    rows.append(extra.copy())
+                elif case == "cancelled primary":
+                    primary["truncated"] = True
+                code, report = self.run_report(rows + links, "--gate", "--metric", "both")
+                self.assertEqual(code, 1)
+                self.assertGreater(report["counts"]["invalid_tool_links"], 0)
+                self.assertEqual(len(report["tool_result_rows"]), int(expected_primary))
+
+    def test_coalesced_signed_offset_and_direct_content(self):
+        primary, child = quote_pair(first_readout_ms=100)
+        extra = turn(3, first_content_ms=10)
+        report = self.run_report([primary, extra, child, delivery(tool="quote_total"),
+                                  coalesced(origin_to_result_start_ms="+20")])[1]
+        self.assertEqual(report["counts"]["invalid_tool_links"], 0)
+        self.assertEqual(report["counts"]["tool_results_joined"], 1)
+        self.assertEqual(report["first_content"]["p50_ms"], 585)
+        self.assertEqual(report["tool_result_rows"][1]["total_ms"], 400)
+
+    def test_coalesced_readout_overflow_is_unknown(self):
+        primary, child = quote_pair(first_readout_ms=2**63 - 1)
+        report = self.run_report([primary, turn(3, first_content_present=False), child,
+                                  delivery(tool="quote_total"), coalesced()])[1]
+        self.assertEqual(report["quote_readout"]["n"], 0)
+        self.assertEqual(report["counts"]["quote_readouts_unverified"], 2)
+
+    def test_coalesced_ambiguity_fails_gate_even_when_all_direct_answers_are_fast(self):
+        _, child = quote_pair()
+        rows = [turn(1, first_content_ms=100), turn(3, first_content_ms=100), child,
+                delivery(tool="quote_total", origin_to_result_start_ms=20), coalesced(), coalesced()]
+        code, report = self.run_report(rows, "--gate", "--metric", "both")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["missing"], 0)
+        self.assertEqual(report["counts"]["unverified"], 2)
+        self.assertEqual(report["counts"]["invalid_tool_links"], 2)
+        self.assertEqual(len(report["tool_result_rows"]), 1)
+        self.assertEqual(report["first_content"]["p95_ms"], 480)
+
+    def test_coalesced_matches_existing_result_and_does_not_claim_another_primary_origin(self):
+        primary, child = quote_pair()
+        extra = turn(3, first_content_present=False)
+        other_child = dict(child, turn="item_4", quote_result=False,
+                           readout_expected=False, first_readout_present=False)
+        base = [primary, extra, child, other_child, delivery(tool="quote_total")]
+        for links in ([coalesced(turn="item_4")],
+                      [coalesced(), delivery(origin=3, child=4, task="task_2", tool="other")]):
+            with self.subTest(ordinary=len(links)):
+                report = self.run_report(base + links)[1]
+                self.assertEqual(report["counts"]["invalid_tool_links"], 1)
+                self.assertEqual(len(report["tool_result_rows"]), len(links))
+                self.assertTrue(all("coalesced" not in row for row in report["tool_result_rows"]))
+
+    def test_coalesced_interrupted_child_keeps_observed_content(self):
+        primary, child = quote_pair(truncated=True)
+        report = self.run_report([primary, turn(3, first_content_present=False), child,
+                                  delivery(tool="quote_total"), coalesced()])[1]
+        self.assertEqual(report["counts"]["tool_results_joined"], 2)
+        self.assertTrue(all(row["interrupted"] for row in report["tool_result_rows"]))
+        self.assertEqual(report["quote_readout"]["n"], 2)
 
     def test_cached_audio_does_not_hide_slow_content(self):
         rows = [turn(i, first_content_ms=500 if i < 23 else 1020) for i in range(25)]

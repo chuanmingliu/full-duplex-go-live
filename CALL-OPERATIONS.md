@@ -124,6 +124,15 @@ Retros/issues are read from disk on each HTTP request, so shipping those files u
 
 The journal's content panel uses explicit output-presence flags and the same handoff relationship. Its first-audio charts include fillers; first content excludes caller-turn openers but can still be a generic lead-in. Linked result-turn content can also be a cached posthook. Actual deterministic quotation readout has its own player-output stamp (`quote_result`, `readout_expected`, `first_readout_present`, `first_readout_ms`); only that evidence establishes readout latency. Content/both gates check both distributions and reject missing or unverified readout evidence. Results do not become extra caller samples and need no separate minimum of twenty results. Older saved call details can be recomputed from archived logs without rewriting their source archive; old logs without the readout stamp remain unverified. Legacy overview figures may retain the historical grouping until that log is reindexed. None of these server panels certifies the physical phone leg.
 
+An identical request can join a task that is still running or waiting to speak.
+The original caller-to-result interval remains intact. An explicit
+`tools: delivering a coalesced task result` event links each additional caller
+to that same result using its own monotonic offset and the original caller ID.
+The analyzers label these relationships `coalesced`; they do not count them as
+extra physical deliveries or replace a slow original interval. Ambiguous,
+cancelled or missing relationships still fail validation. An older log without
+these events cannot acquire the missing relationships through reindexing.
+
 Playback completion is attributed to the exact turn and revision that owned
 the audio, including when the tracker has already advanced. Inherited
 openers transfer that ownership explicitly. Output counters and the first

@@ -379,11 +379,12 @@ type callBuild struct {
 		asked, refused bool
 		winner         int
 	}
-	copyWins        map[int]int
-	openerScenarios map[string]string
-	deliveries      []Line
-	transcriptLog   bool
-	transcriptSeq   int
+	copyWins            map[int]int
+	openerScenarios     map[string]string
+	deliveries          []Line
+	coalescedDeliveries []Line
+	transcriptLog       bool
+	transcriptSeq       int
 
 	// logFrom and logTo are where this call's lines begin and end in the log,
 	// in bytes: what the archive copies as the call's own slice of it.
@@ -839,6 +840,8 @@ func (ix *Indexer) Feed(l Line) {
 			cb.turn(id).taskResult = true
 		}
 		cb.call.Quotation = append(cb.call.Quotation, QuoteStep{TS: cb.at(l.Time), Kind: "delivered", Task: l.Get("task"), Tool: l.Get("tool"), WaitedMS: l.N("waited_for_gap_ms"), Interrupting: l.Get("interrupting") == "true"})
+	case "tools: delivering a coalesced task result":
+		cb.coalescedDeliveries = append(cb.coalescedDeliveries, l)
 	}
 }
 

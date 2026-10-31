@@ -33,7 +33,7 @@ func (e *Engine) quoteResultPrefix(delivery taskDelivery, version int, busy bool
 		return
 	}
 	origin := delivery.origin
-	if e.completedOriginOpener(origin) {
+	if e.completedOriginOpener(origin) || e.completedCoalescedOpener(delivery.coalesced) {
 		return "", readout, true
 	}
 	ack := e.tracker.Current()

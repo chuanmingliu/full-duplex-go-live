@@ -53,6 +53,9 @@ type pendingResponse struct {
 	// scriptedTask is the task the ack is for: finished already when the
 	// ack is due, it is not said.
 	scriptedTask string
+	// Only exact folds into a still-owned task qualify. They need function
+	// history, but the task result itself answers the follow-up.
+	coalescedCalls map[string]*coalescedTask
 }
 
 func (p *pendingResponse) complete() bool {
@@ -781,6 +784,10 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		ts.ackGraceStarted[p.scriptedTask] = true
 		grace := ackGrace
 		time.AfterFunc(grace, func() { e.post(func() { e.sayAck(p) }) })
+		return
+	}
+	if task := e.coveringCoalescedTask(p); task != nil {
+		e.log.Info("tools: a coalesced follow-up is answered by its task result", "turn", p.turn.ID, "task", task.ID, "calls", len(p.calls))
 		return
 	}
 	turn := e.tracker.Begin("", false)

@@ -143,7 +143,7 @@ func TestTaskOriginMetadataFollowsTaskLifetime(t *testing.T) {
 	p.turn.MarkSpeechEnd(time.Now().Add(-time.Second), 0, 380)
 	tool := tools.Tool{Name: "lookup", Ack: "Please wait."}
 	submit := func(turn *Turn, args string) string {
-		_, id := e.submitTask(backendJob{turn: turn}, provider.ToolCall{ID: args, Name: tool.Name, Arguments: args}, tool)
+		_, id, _ := e.submitTask(backendJob{turn: turn}, provider.ToolCall{ID: args, Name: tool.Name, Arguments: args}, tool)
 		return id
 	}
 	first := submit(p.turn, `{"n":1}`)

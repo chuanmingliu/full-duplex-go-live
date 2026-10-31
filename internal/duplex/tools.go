@@ -49,6 +49,9 @@ type toolState struct {
 	// origins only holds running tasks. Completion moves the immutable
 	// caller origin into the queued delivery; supersession discards it.
 	origins map[string]taskOrigin
+	// Coalesced callers follow the same running-to-delivery lifetime without
+	// replacing the request's original latency origin.
+	coalesced map[string]*coalescedTask
 	// recent is the last submission per tool: the same call again within
 	// a few seconds on the same memory is folded into it, not resubmitted
 	// (the model asked quote_total twice in half a second on 10-21 and the
@@ -115,8 +118,9 @@ type taskOrigin struct {
 }
 
 type taskDelivery struct {
-	task   *tools.Task
-	origin taskOrigin
+	task      *tools.Task
+	origin    taskOrigin
+	coalesced *coalescedTask
 }
 
 // setupTools reads the profile.
@@ -398,8 +402,9 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			out, taskID := e.submitTask(job, c, t)
+			out, taskID, coalesced := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
+			p.noteCoalescedCall(c.ID, coalesced)
 			if taskID != "" && t.Ack != "" && p.scripted == "" {
 				p.scriptedTask = taskID
 				// The owner's words for the wait, not the model's: said from
@@ -732,7 +737,7 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 }
 
 // submitTask starts an async tool and answers the model at once.
-func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string) {
+func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string, *coalescedTask) {
 	ts := e.tools
 	// A `config` in the call is not folded into the plan here: the lead
 	// service lays it over the plan itself, and the plan in memory follows
@@ -742,8 +747,9 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	// chosen (the 10:19, 10:26 and 10:33 simulated calls of 10-28).
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
+		coalesced := e.noteCoalescedTask(r.id, job.turn)
 		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), ""
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), "", coalesced
 	}
 	// A newer request for the same tool supersedes the older: its result
 	// would be read out to a caller who has moved on.
@@ -752,6 +758,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 			old.Cancel()
 			delete(ts.tasks, oldID)
 			delete(ts.origins, oldID)
+			e.discardCoalescedTask(oldID)
 			delete(ts.ackPending, oldID)
 			delete(ts.ackGraceStarted, oldID)
 			ts.superseded++
@@ -782,9 +789,9 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	e.log.Info("tools: task submitted", "tool", c.Name, "task", task.ID, "memory_version", ver, "turn", job.turn.ID)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
 	if t.Ack != "" {
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID, nil
 	}
-	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID
+	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID, nil
 }
 
 type recentCall struct {
@@ -807,6 +814,8 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 	delete(ts.tasks, task.ID)
 	origin := ts.origins[task.ID]
 	delete(ts.origins, task.ID)
+	coalesced := ts.coalesced[task.ID]
+	delete(ts.coalesced, task.ID)
 	if ts.ackGraceStarted[task.ID] {
 		delete(ts.ackPending, task.ID)
 		delete(ts.ackGraceStarted, task.ID)
@@ -820,7 +829,7 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 	// show a quotation's steps: a need (which fields), a quote (total,
 	// lines, skipped) or an error. Never the person's answers.
 	e.log.Info("tools: task result", append([]any{"tool", task.Tool.Name, "task", task.ID}, resultShape(task.Result)...)...)
-	ts.deliveries = append(ts.deliveries, taskDelivery{task: task, origin: origin})
+	ts.deliveries = append(ts.deliveries, taskDelivery{task: task, origin: origin, coalesced: coalesced})
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "done",
 		MemoryVersion: task.Request.MemoryVersion, TookMS: task.Result.Took.Milliseconds(), Error: errString(task.Result.Err)})
 	e.maybeDeliver()
@@ -899,6 +908,7 @@ func (e *Engine) maybeDeliver() {
 			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())
 	}
 	e.log.Info("tools: delivering a task's result", attrs...)
+	e.deliverCoalescedTask(delivery, turn)
 	e.specTurn = nil
 	e.commitTurn(turn)
 	if task.Result.Err == nil && task.Tool.OpeningFor(task.Result.Output) != "" {
@@ -933,6 +943,7 @@ func (e *Engine) closeTools() {
 	clear(ts.tasks)
 	clear(ts.latest)
 	clear(ts.origins)
+	e.clearCoalescedTasks()
 	clear(ts.ackPending)
 	clear(ts.ackGraceStarted)
 	ts.handoff = nil
@@ -1033,8 +1044,9 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			out, taskID := e.submitTask(job, c, t)
+			out, taskID, coalesced := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
+			p.noteCoalescedCall(c.ID, coalesced)
 			if taskID != "" && t.Ack != "" && p.scripted == "" {
 				p.scriptedTask = taskID
 				p.scripted = t.Ack

@@ -14,10 +14,11 @@ import sys
 
 MESSAGE = "turn: response latency"
 TOOL_DELIVERY = "tools: delivering a task's result"
+COALESCED_DELIVERY = "tools: delivering a coalesced task result"
 OUTPUT_STARTED = "transcript: assistant segment started"
 NONANSWER_MESSAGES = ("speak: the opener became a backchannel; the caller went on",
                       "speak: opening line", "speak: greeting")
-EVIDENCE_MESSAGES = (MESSAGE, TOOL_DELIVERY, OUTPUT_STARTED, *NONANSWER_MESSAGES)
+EVIDENCE_MESSAGES = (MESSAGE, TOOL_DELIVERY, COALESCED_DELIVERY, OUTPUT_STARTED, *NONANSWER_MESSAGES)
 
 
 def integer(row, key):
@@ -58,6 +59,12 @@ def boolean(row, key):
     if value is False or value == "false":
         return False
     return None
+
+
+def latency_sum(*values):
+    """Keep monotonic durations inside the journal's signed integer domain."""
+    total = sum(values)
+    return total if -(1 << 63) <= total < (1 << 63) else None
 
 
 def record_identifier(value, prefix):
@@ -109,6 +116,8 @@ def quote_readout(child, link, result, counts):
         return None
     row = {key: result[key] for key in ("session", "task", "origin_turn", "result_turn",
                                         "end_silence_ms", "origin_to_result_start_ms")}
+    if result.get("coalesced"):
+        row.update(coalesced=True, primary_origin_turn=result["primary_origin_turn"])
     row.update(status="unverified", child_first_readout_ms=None, total_ms=None)
     if quoted is not True or expected is not True or present is None:
         counts["quote_readouts_unverified"] += 1
@@ -116,12 +125,14 @@ def quote_readout(child, link, result, counts):
         row["status"] = "missing"
         counts["quote_readouts_missing"] += 1
     else:
-        readout = integer(child, "first_readout_ms")
-        if readout is None or readout < result["child_first_content_ms"]:
+        readout = canonical_integer(child, "first_readout_ms")
+        total = None if readout is None else latency_sum(
+            result["end_silence_ms"], result["origin_to_result_start_ms"], readout)
+        if readout is None or readout < result["child_first_content_ms"] or total is None:
             counts["quote_readouts_unverified"] += 1
         else:
             row.update(status="observed", child_first_readout_ms=readout,
-                       total_ms=result["end_silence_ms"] + result["origin_to_result_start_ms"] + readout)
+                       total_ms=total)
     return row
 
 
@@ -133,12 +144,16 @@ def join_tool_results(records, links, counts):
     Wall-clock timestamps and adjacency are deliberately never consulted.
     """
     by_turn, by_task, by_origin, by_result = {}, Counter(), Counter(), Counter()
+    primary_links = [link for link in links if link["msg"] == TOOL_DELIVERY]
+    coalesced_links = [link for link in links if link["msg"] == COALESCED_DELIVERY]
+    extra_origins = Counter((str(link.get("session", "")), str(link.get("origin_turn", "")))
+                            for link in coalesced_links)
     results = []
     readouts = []
     for row in records:
         key = (str(row.get("session", "")), str(row.get("turn", "")))
         by_turn.setdefault(key, []).append(row)
-    for link in links:
+    for link in primary_links:
         session = str(link.get("session", ""))
         by_task[(session, str(link.get("task", "")))] += 1
         by_origin[(session, str(link.get("origin_turn", "")))] += 1
@@ -148,30 +163,24 @@ def join_tool_results(records, links, counts):
         counts["invalid_tool_links"] += 1
         counts["unverified"] += 1
 
-    for link in links:
-        counts["tool_result_links"] += 1
+    def validate(link):
         if any(not isinstance(link.get(key), str) or not link[key]
                for key in ("session", "task", "turn", "origin_turn")):
-            invalid()
-            continue
+            return None
         session, task = link["session"], link["task"]
         origin_key, result_key = (session, link["origin_turn"]), (session, link["turn"])
         origins, children = by_turn.get(origin_key, []), by_turn.get(result_key, [])
         if len(origins) != 1 or origin_key == result_key:
-            invalid()
-            continue
+            return None
         origin = origins[0]
-        offset = integer(link, "origin_to_result_start_ms")
-        if (offset is None or offset < 0 or len(children) != 1 or
-                by_task[(session, task)] != 1 or by_origin[origin_key] != 1 or
-                by_result[result_key] != 1):
-            invalid()
-            continue
+        offset = canonical_integer(link, "origin_to_result_start_ms")
+        if offset is None or offset < 0 or len(children) != 1:
+            return None
         child = children[0]
-        origin_audio = integer(origin, "first_audio_out_ms")
-        pause = integer(origin, "end_silence_ms")
-        child_audio = integer(child, "first_audio_out_ms")
-        child_content = integer(child, "first_content_ms")
+        origin_audio = canonical_integer(origin, "first_audio_out_ms")
+        pause = canonical_integer(origin, "end_silence_ms")
+        child_audio = canonical_integer(child, "first_audio_out_ms")
+        child_content = canonical_integer(child, "first_content_ms")
         original_content = boolean(origin, "first_content_present")
         # An opener canceled before content remains a backchannel. A later
         # result must not silently turn it back into an answered caller turn.
@@ -182,17 +191,17 @@ def join_tool_results(records, links, counts):
                 boolean(origin, "opened") is None or
                 boolean(origin, "truncated") is None or
                 origin_audio is None or pause is None or pause < 0 or
-                origin_audio + pause < 0 or
+                latency_sum(origin_audio, pause) is None or origin_audio + pause < 0 or
                 boolean(child, "response_to_speech") is not False or
                 boolean(child, "first_audio_present") is not True or
                 boolean(child, "first_content_present") is not True or
                 boolean(child, "opened") is None or boolean(child, "truncated") is None or
-                integer(child, "end_silence_ms") != 0 or
+                canonical_integer(child, "end_silence_ms") != 0 or
                 child_audio is None or child_content is None or
                 child_audio < 0 or child_content < child_audio or
+                latency_sum(pause, offset, child_content) is None or
                 offset + child_content < origin_audio):
-            invalid()
-            continue
+            return None
         # This is the result turn's first content, which may be a posthook.
         # Actual quote readout requires separate output provenance below.
         result = dict(session=record_identifier(session, "sess_"),
@@ -204,17 +213,53 @@ def join_tool_results(records, links, counts):
                             child_first_content_ms=child_content,
                             total_ms=pause + offset + child_content,
                             interrupted=boolean(child, "truncated"))
+        return origin, child, result
+
+    def add(link, validated):
+        origin, child, result = validated
         results.append(result)
         readout = quote_readout(child, link, result, counts)
         if readout is not None:
             readouts.append(readout)
         # A caller that already received content needs no replacement timestamp.
-        if original_content is True:
-            continue
-        origin["first_content_ms"] = offset + child_content
+        if boolean(origin, "first_content_present") is True:
+            return
+        origin["first_content_ms"] = result["origin_to_result_start_ms"] + result["child_first_content_ms"]
         origin["first_content_present"] = True
         origin["_tool_result_interrupted"] = boolean(child, "truncated")
         counts["tool_results_joined"] += 1
+
+    valid_primaries = {}
+    for link in primary_links:
+        counts["tool_result_links"] += 1
+        session, task = str(link.get("session", "")), str(link.get("task", ""))
+        origin_key, result_key = (session, str(link.get("origin_turn", ""))), (session, str(link.get("turn", "")))
+        validated = validate(link)
+        if (validated is None or by_task[(session, task)] != 1 or
+                by_origin[origin_key] != 1 or by_result[result_key] != 1):
+            invalid()
+            continue
+        valid_primaries[(session, task)] = link
+        add(link, validated)
+
+    # These are extra caller relationships, not additional physical deliveries.
+    # Resolve only against a fully verified primary, independent of log ordering.
+    for link in coalesced_links:
+        counts["tool_result_links"] += 1
+        session, task = str(link.get("session", "")), str(link.get("task", ""))
+        origin_key = (session, str(link.get("origin_turn", "")))
+        primary = valid_primaries.get((session, task))
+        validated = validate(link)
+        if (validated is None or primary is None or extra_origins[origin_key] != 1 or
+                by_origin[origin_key] != 0 or not isinstance(link.get("tool"), str) or not link["tool"] or
+                link["tool"] != primary.get("tool") or link["turn"] != primary["turn"] or
+                link.get("primary_origin_turn") != primary["origin_turn"] or
+                link["origin_turn"] == primary["origin_turn"]):
+            invalid()
+            continue
+        validated[2].update(coalesced=True, primary_origin_turn=record_identifier(
+            primary["origin_turn"], r"(?:item_|turn_)"))
+        add(link, validated)
     for child in records:
         key = (str(child.get("session", "")), str(child.get("turn", "")))
         if boolean(child, "quote_result") is True and by_result[key] == 0:

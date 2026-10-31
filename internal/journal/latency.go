@@ -2,6 +2,7 @@ package journal
 
 import (
 	"io"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -32,25 +33,29 @@ type LatencyEvidence struct {
 // ToolResultLatency measures a linked result turn's first content. That can
 // still be a posthook; QuoteReadoutLatency requires actual readout output.
 type ToolResultLatency struct {
-	Task           string `json:"task"`
-	OriginTurn     string `json:"origin_turn"`
-	ResultTurn     string `json:"result_turn"`
-	PauseMS        int    `json:"end_silence_ms"`
-	OffsetMS       int    `json:"origin_to_result_start_ms"`
-	ChildContentMS int    `json:"child_first_content_ms"`
-	TotalMS        int    `json:"total_ms"`
-	Interrupted    bool   `json:"interrupted"`
+	Task              string `json:"task"`
+	OriginTurn        string `json:"origin_turn"`
+	ResultTurn        string `json:"result_turn"`
+	PauseMS           int    `json:"end_silence_ms"`
+	OffsetMS          int    `json:"origin_to_result_start_ms"`
+	ChildContentMS    int    `json:"child_first_content_ms"`
+	TotalMS           int    `json:"total_ms"`
+	Interrupted       bool   `json:"interrupted"`
+	Coalesced         bool   `json:"coalesced,omitempty"`
+	PrimaryOriginTurn string `json:"primary_origin_turn,omitempty"`
 }
 
 type QuoteReadoutLatency struct {
-	Task           string `json:"task"`
-	OriginTurn     string `json:"origin_turn"`
-	ResultTurn     string `json:"result_turn"`
-	PauseMS        int    `json:"end_silence_ms"`
-	OffsetMS       int    `json:"origin_to_result_start_ms"`
-	ChildReadoutMS *int   `json:"child_first_readout_ms"`
-	TotalMS        *int   `json:"total_ms"`
-	Status         string `json:"status"`
+	Task              string `json:"task"`
+	OriginTurn        string `json:"origin_turn"`
+	ResultTurn        string `json:"result_turn"`
+	PauseMS           int    `json:"end_silence_ms"`
+	OffsetMS          int    `json:"origin_to_result_start_ms"`
+	ChildReadoutMS    *int   `json:"child_first_readout_ms"`
+	TotalMS           *int   `json:"total_ms"`
+	Status            string `json:"status"`
+	Coalesced         bool   `json:"coalesced,omitempty"`
+	PrimaryOriginTurn string `json:"primary_origin_turn,omitempty"`
 }
 
 func (e *LatencyEvidence) quoteReadout(child, link Line, result ToolResultLatency) {
@@ -62,7 +67,8 @@ func (e *LatencyEvidence) quoteReadout(child, link Line, result ToolResultLatenc
 		return
 	}
 	r := QuoteReadoutLatency{Task: result.Task, OriginTurn: result.OriginTurn, ResultTurn: result.ResultTurn,
-		PauseMS: result.PauseMS, OffsetMS: result.OffsetMS, Status: "unverified"}
+		PauseMS: result.PauseMS, OffsetMS: result.OffsetMS, Status: "unverified",
+		Coalesced: result.Coalesced, PrimaryOriginTurn: result.PrimaryOriginTurn}
 	switch {
 	case quoted != "true" || expected != "true" || !boolKnown(child, "first_readout_present"):
 		e.QuoteUnknown++
@@ -71,10 +77,10 @@ func (e *LatencyEvidence) quoteReadout(child, link Line, result ToolResultLatenc
 		e.QuoteMissing++
 	default:
 		readout, known := child.Int("first_readout_ms")
-		if !known || readout < result.ChildContentMS {
+		total, fits := latencySum(result.PauseMS, result.OffsetMS, readout)
+		if !known || !fits || readout < result.ChildContentMS {
 			e.QuoteUnknown++
 		} else {
-			total := result.PauseMS + result.OffsetMS + readout
 			r.Status, r.ChildReadoutMS, r.TotalMS = "observed", &readout, &total
 		}
 	}
@@ -110,6 +116,17 @@ func latencyDistribution(values []int) LatencyDistribution {
 }
 
 func boolKnown(l Line, key string) bool { return l.Get(key) == "true" || l.Get(key) == "false" }
+
+func latencySum(values ...int) (int, bool) {
+	total := 0
+	for _, value := range values {
+		if value > 0 && total > math.MaxInt-value || value < 0 && total < math.MinInt-value {
+			return 0, false
+		}
+		total += value
+	}
+	return total, true
+}
 
 // answeredSpeech keeps modern zero-ms caller responses and excludes result
 // turns. The old ASR/LLM heuristic is retained only for older log formats.
@@ -221,47 +238,42 @@ func (cb *callBuild) joinedContent(e *LatencyEvidence) map[string]int {
 		origins[l.Get("origin_turn")]++
 		children[l.Get("turn")]++
 	}
+	invalid := func() { e.InvalidLinks++; e.Unverified++ }
+	add := func(l Line, result ToolResultLatency) {
+		e.ResultRows = append(e.ResultRows, result)
+		e.quoteReadout(*cb.turns[result.ResultTurn].latency, l, result)
+		if cb.turns[result.OriginTurn].latency.Get("first_content_present") != "true" {
+			out[result.OriginTurn] = result.OffsetMS + result.ChildContentMS
+			e.Joined++
+		}
+	}
+	primaries := map[string]Line{}
 	for _, l := range cb.deliveries {
-		origin, child := cb.turns[l.Get("origin_turn")], cb.turns[l.Get("turn")]
-		offset, known := l.Int("origin_to_result_start_ms")
-		valid := l.Get("task") != "" && l.Get("origin_turn") != "" && l.Get("turn") != "" &&
-			l.Get("origin_turn") != l.Get("turn") && tasks[l.Get("task")] == 1 &&
-			origins[l.Get("origin_turn")] == 1 && children[l.Get("turn")] == 1 &&
-			known && offset >= 0 && origin != nil && child != nil &&
-			origin.latency != nil && child.latency != nil && origin.latencyCount == 1 && child.latencyCount == 1
-		if valid {
-			o, c := *origin.latency, *child.latency
-			oa, hasOA := o.Int("first_audio_out_ms")
-			pause, hasPause := o.Int("end_silence_ms")
-			ca, hasCA := c.Int("first_audio_out_ms")
-			cc, hasCC := c.Int("first_content_ms")
-			cp, hasCP := c.Int("end_silence_ms")
-			cancelledOrigin := o.Get("first_content_present") == "false" && o.Get("truncated") == "true"
-			valid = o.Get("response_to_speech") == "true" && o.Get("first_audio_present") == "true" &&
-				boolKnown(o, "first_content_present") && !cancelledOrigin && boolKnown(o, "truncated") && boolKnown(o, "opened") &&
-				hasOA && hasPause && pause >= 0 && oa+pause >= 0 &&
-				c.Get("response_to_speech") == "false" && c.Get("first_audio_present") == "true" &&
-				c.Get("first_content_present") == "true" && boolKnown(c, "opened") && boolKnown(c, "truncated") &&
-				hasCP && cp == 0 && hasCA && hasCC && ca >= 0 && cc >= ca && offset+cc >= oa
-			if valid {
-				result := ToolResultLatency{
-					Task: l.Get("task"), OriginTurn: l.Get("origin_turn"), ResultTurn: l.Get("turn"),
-					PauseMS: pause, OffsetMS: offset, ChildContentMS: cc,
-					TotalMS: pause + offset + cc, Interrupted: c.Get("truncated") == "true",
-				}
-				e.ResultRows = append(e.ResultRows, result)
-				e.quoteReadout(c, l, result)
-				if o.Get("first_content_present") == "true" {
-					continue // direct content already observed; never replace it
-				}
-				out[l.Get("origin_turn")] = offset + cc
-				e.Joined++
-			}
+		result, valid := cb.linkedContent(l)
+		if !valid || tasks[l.Get("task")] != 1 || origins[l.Get("origin_turn")] != 1 || children[l.Get("turn")] != 1 {
+			invalid()
+			continue
 		}
-		if !valid {
-			e.InvalidLinks++
-			e.Unverified++
+		primaries[l.Get("task")] = l
+		add(l, result)
+	}
+	// Coalesced events add caller relationships, never physical deliveries.
+	// Their ambiguity must not erase a separately verified primary interval.
+	extraOrigins := map[string]int{}
+	for _, l := range cb.coalescedDeliveries {
+		extraOrigins[l.Get("origin_turn")]++
+	}
+	for _, l := range cb.coalescedDeliveries {
+		primary, known := primaries[l.Get("task")]
+		result, valid := cb.linkedContent(l)
+		if !valid || !known || extraOrigins[l.Get("origin_turn")] != 1 || origins[l.Get("origin_turn")] != 0 ||
+			l.Get("tool") == "" || l.Get("tool") != primary.Get("tool") || l.Get("turn") != primary.Get("turn") ||
+			l.Get("primary_origin_turn") != primary.Get("origin_turn") || l.Get("origin_turn") == primary.Get("origin_turn") {
+			invalid()
+			continue
 		}
+		result.Coalesced, result.PrimaryOriginTurn = true, primary.Get("origin_turn")
+		add(l, result)
 	}
 	for id, child := range cb.turns {
 		if child.latency != nil && child.latency.Get("quote_result") == "true" && children[id] == 0 {
@@ -269,6 +281,42 @@ func (cb *callBuild) joinedContent(e *LatencyEvidence) map[string]int {
 		}
 	}
 	return out
+}
+
+// linkedContent validates one origin/result interval without changing either
+// turn. Both ordinary and coalesced relationships require the same evidence.
+func (cb *callBuild) linkedContent(l Line) (ToolResultLatency, bool) {
+	result := ToolResultLatency{}
+	origin, child := cb.turns[l.Get("origin_turn")], cb.turns[l.Get("turn")]
+	offset, known := l.Int("origin_to_result_start_ms")
+	if l.Get("task") == "" || l.Get("origin_turn") == "" || l.Get("turn") == "" ||
+		l.Get("origin_turn") == l.Get("turn") || !known || offset < 0 || origin == nil || child == nil ||
+		origin.latency == nil || child.latency == nil || origin.latencyCount != 1 || child.latencyCount != 1 {
+		return result, false
+	}
+	o, c := *origin.latency, *child.latency
+	oa, hasOA := o.Int("first_audio_out_ms")
+	pause, hasPause := o.Int("end_silence_ms")
+	ca, hasCA := c.Int("first_audio_out_ms")
+	cc, hasCC := c.Int("first_content_ms")
+	cp, hasCP := c.Int("end_silence_ms")
+	audio, audioFits := latencySum(oa, pause)
+	total, totalFits := latencySum(pause, offset, cc)
+	cancelledOrigin := o.Get("first_content_present") == "false" && o.Get("truncated") == "true"
+	valid := o.Get("response_to_speech") == "true" && o.Get("first_audio_present") == "true" &&
+		boolKnown(o, "first_content_present") && !cancelledOrigin && boolKnown(o, "truncated") && boolKnown(o, "opened") &&
+		hasOA && hasPause && pause >= 0 && audioFits && audio >= 0 &&
+		c.Get("response_to_speech") == "false" && c.Get("first_audio_present") == "true" &&
+		c.Get("first_content_present") == "true" && boolKnown(c, "opened") && boolKnown(c, "truncated") &&
+		hasCP && cp == 0 && hasCA && hasCC && ca >= 0 && cc >= ca && totalFits && offset+cc >= oa
+	if !valid {
+		return result, false
+	}
+	return ToolResultLatency{
+		Task: l.Get("task"), OriginTurn: l.Get("origin_turn"), ResultTurn: l.Get("turn"),
+		PauseMS: pause, OffsetMS: offset, ChildContentMS: cc,
+		TotalMS: total, Interrupted: c.Get("truncated") == "true",
+	}, true
 }
 
 // Enrich an older saved call from its immutable archive. Re-indexing is
