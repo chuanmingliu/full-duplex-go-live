@@ -113,6 +113,11 @@ func (e *sipEndpoint) invite(ctx context.Context, c Config, id string, port int,
 	go func() {
 		result <- d.WaitAnswer(answerCtx, sipgo.AnswerOptions{Username: c.SIPUsername, Password: c.SIPPassword, OnResponse: func(res *sip.Response) error {
 			r.event("sip_response", map[string]any{"status": res.StatusCode})
+			// Do not start a new authenticated INVITE after cancellation. Final
+			// success still goes through ACK/BYE even if the caller has stopped.
+			if ctx.Err() != nil && !res.IsSuccess() && !res.IsProvisional() {
+				return ctx.Err()
+			}
 			if res.IsProvisional() {
 				provisionals <- d.InviteRequest.Clone()
 			}
@@ -128,12 +133,16 @@ func (e *sipEndpoint) invite(ctx context.Context, c Config, id string, port int,
 			timer.Stop()
 		}
 	}()
-	sent := false
+	sent := make(map[string]bool)
 	sendCancel := func() {
-		if latest == nil || sent {
+		if latest == nil {
 			return
 		}
-		sent = true
+		key := latest.Via().Value() + latest.CSeq().Value()
+		if sent[key] {
+			return
+		}
+		sent[key] = true
 		cancelReq := latest.Clone()
 		cancelReq.Method = sip.CANCEL
 		cancelReq.CSeq().MethodName = sip.CANCEL
@@ -163,24 +172,31 @@ func (e *sipEndpoint) invite(ctx context.Context, c Config, id string, port int,
 			sendCancel()
 		case <-deadline:
 			force(sipgo.WaitAnswerForceCancelErr)
-			<-result
-			d.Close()
-			return nil, errors.New("SIP cancellation timed out")
+			if err := <-result; err != nil {
+				d.Close()
+				return nil, errors.New("SIP cancellation timed out")
+			}
+			// A 200 may win the race with the hard deadline. Never discard it.
+			return confirmDialog(d, r)
 		case err := <-result:
 			if err != nil {
 				d.Close()
 				return nil, errors.New("SIP call was not answered")
 			}
-			ackCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
-			err = d.Ack(ackCtx)
-			stop()
-			if err != nil {
-				endDialog(d, r)
-				return nil, errors.New("SIP ACK failed")
-			}
-			return d, nil
+			return confirmDialog(d, r)
 		}
 	}
+}
+
+func confirmDialog(d *sipgo.DialogClientSession, r *recorder) (*sipgo.DialogClientSession, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	err := d.Ack(ctx)
+	cancel()
+	if err != nil {
+		endDialog(d, r)
+		return nil, errors.New("SIP ACK failed")
+	}
+	return d, nil
 }
 
 func endDialog(d *sipgo.DialogClientSession, r *recorder) error {

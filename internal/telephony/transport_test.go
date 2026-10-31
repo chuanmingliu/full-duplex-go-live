@@ -363,3 +363,37 @@ func TestRejectAndDigest(t *testing.T) {
 		t.Fatal("rejection stuck")
 	}
 }
+
+func TestCancellationDoesNotRetryDigest(t *testing.T) {
+	c := testConfig(t)
+	pbx := udpSocket(t)
+	c.PBX = pbx.LocalAddr().String()
+	c.SIPUsername = "test"
+	c.SIPPassword = "fixture-secret"
+	e, err := newSIPEndpoint(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := e.invite(ctx, c, "no-auth-redial", c.RTPMin, nil); done <- err }()
+	req, peer := expectMethod(t, pbx, "INVITE")
+	cancel()
+	sipReply(t, pbx, peer, req, 401, "", "WWW-Authenticate: Digest realm=\"test\", nonce=\"nonce\", algorithm=MD5\r\n")
+	expectMethod(t, pbx, "ACK")
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("cancelled authentication succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled auth did not terminate")
+	}
+	_ = pbx.SetReadDeadline(time.Now().Add(40 * time.Millisecond))
+	buf := make([]byte, 2048)
+	if _, _, err := pbx.ReadFromUDP(buf); err == nil {
+		t.Fatal("authenticated redial after cancellation")
+	}
+}
