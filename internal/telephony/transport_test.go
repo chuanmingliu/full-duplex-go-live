@@ -306,7 +306,7 @@ func TestCancelLateAnswer(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				d, e := endpoint.invite(ctx, c, "cancel", c.RTPMin, nil)
+				d, e := endpoint.invite(ctx, c, "cancel", c.RTPMin, nil, nil)
 				if d != nil {
 					endDialog(d, nil)
 				}
@@ -352,7 +352,7 @@ func TestRejectAndDigest(t *testing.T) {
 	}
 	defer endpoint.close()
 	done := make(chan error, 1)
-	go func() { _, e := endpoint.invite(context.Background(), c, "digest", c.RTPMin, nil); done <- e }()
+	go func() { _, e := endpoint.invite(context.Background(), c, "digest", c.RTPMin, nil, nil); done <- e }()
 	req, peer := expectMethod(t, pbx, "INVITE")
 	sipReply(t, pbx, peer, req, 401, "", "WWW-Authenticate: Digest realm=\"test\", nonce=\"nonce\", algorithm=MD5\r\n")
 	expectMethod(t, pbx, "ACK")
@@ -386,7 +386,7 @@ func TestCancellationDoesNotRetryDigest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, err := e.invite(ctx, c, "no-auth-redial", c.RTPMin, nil); done <- err }()
+	go func() { _, err := e.invite(ctx, c, "no-auth-redial", c.RTPMin, nil, nil); done <- err }()
 	req, peer := expectMethod(t, pbx, "INVITE")
 	cancel()
 	sipReply(t, pbx, peer, req, 401, "", "WWW-Authenticate: Digest realm=\"test\", nonce=\"nonce\", algorithm=MD5\r\n")

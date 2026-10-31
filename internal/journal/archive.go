@@ -214,7 +214,8 @@ func (a *Archive) Call(id string) (*Call, error) {
 // Any of it may be missing; what is there is taken.
 type Sources struct {
 	// StoreDir is golive's store, holding the recording while it lasts.
-	StoreDir string
+	StoreDir         string
+	AdapterRecordDir string
 	// LogPath and the byte range LogFrom–LogTo are the call's lines in
 	// golive's log.
 	LogPath        string
@@ -317,6 +318,29 @@ func (a *Archive) Put(c *Call, src Sources) (changed bool, err error) {
 					e.Files[archSession] = file
 					changed = true
 				}
+			}
+		}
+	}
+
+	// Carrier audio stays separate from the original engine recording. The
+	// adapter writes its summary only after closing all recording files.
+	if src.AdapterRecordDir != "" {
+		rdir := filepath.Join(src.AdapterRecordDir, c.ID)
+		if fileExists(filepath.Join(rdir, "summary.json")) && fileExists(filepath.Join(rdir, "ringback.json")) {
+			for _, name := range []string{"ringback.wav", "ringback.json"} {
+				if _, have := e.Files[name]; have {
+					continue
+				}
+				f, err := os.Open(filepath.Join(rdir, name))
+				if err != nil {
+					return changed, err
+				}
+				info, err := copyAtomic(filepath.Join(dir, name), f)
+				f.Close()
+				if err != nil {
+					return changed, err
+				}
+				e.Files[name], changed = info, true
 			}
 		}
 	}

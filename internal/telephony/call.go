@@ -112,7 +112,7 @@ func Run(parent context.Context, c Config, call Call) (stats MediaStats, err err
 		return stats, err
 	}
 	ringCtx, stopRing := context.WithTimeout(ctx, c.RingTimeout)
-	d, err = endpoint.invite(ringCtx, c, call.ID, m.conn.LocalAddr().(*net.UDPAddr).Port, r)
+	d, err = endpoint.invite(ringCtx, c, call.ID, m.conn.LocalAddr().(*net.UDPAddr).Port, r, m.setEarlyRemote)
 	ringErr := ringCtx.Err()
 	stopRing()
 	if err != nil {
@@ -131,6 +131,7 @@ func Run(parent context.Context, c Config, call Call) (stats MediaStats, err err
 	if err != nil {
 		return stats, err
 	}
+	r.markAnswered(time.Now())
 	m.mu.Lock()
 	m.remote = remote
 	m.mu.Unlock()

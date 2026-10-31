@@ -85,7 +85,7 @@ func (e *sipEndpoint) close() { e.conn.Close(); e.ua.Close(); <-e.done }
 
 // Keep receiving the INVITE transaction after cancellation: a racing 200 must
 // still be ACKed and BYEd. sipgo's default cancellation path discards that case.
-func (e *sipEndpoint) invite(ctx context.Context, c Config, id string, port int, r *recorder) (*sipgo.DialogClientSession, error) {
+func (e *sipEndpoint) invite(ctx context.Context, c Config, id string, port int, r *recorder, early func(*net.UDPAddr)) (*sipgo.DialogClientSession, error) {
 	var uri sip.Uri
 	_ = sip.ParseUri(c.AllowedURI, &uri)
 	req := sip.NewRequest(sip.INVITE, uri)
@@ -119,6 +119,14 @@ func (e *sipEndpoint) invite(ctx context.Context, c Config, id string, port int,
 				return ctx.Err()
 			}
 			if res.IsProvisional() {
+				if early != nil && (res.StatusCode == 180 || res.StatusCode == 183) && len(res.Body()) > 0 && ctx.Err() == nil {
+					if peer, err := parseMediaAnswer(res.Body(), c.payloadType(), c.MediaNetworks, true); err == nil {
+						early(peer)
+						r.event("early_media", map[string]any{"status": res.StatusCode})
+					} else {
+						r.event("early_media_rejected", map[string]any{"status": res.StatusCode})
+					}
+				}
 				provisionals <- d.InviteRequest.Clone()
 			}
 			return nil

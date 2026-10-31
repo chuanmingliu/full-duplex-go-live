@@ -173,3 +173,6 @@ the complete mock speech pipeline, repeated race tests and parser fuzzing.
 The [2026-10-31 hangup investigation](2026-10-31-sip-hangup.md) documents the
 sustained-playback pacing defect found in the first isolated handset test,
 its fix, and the longer playback regressions added afterward.
+
+The [ringback recording guide](ringback-recording.md) describes preserving
+carrier ringing in Call Journal without feeding early media into ASR.

@@ -21,6 +21,7 @@ type MediaStats struct {
 	Cleared    uint64 `json:"cleared_frames"`
 	Stale      uint64 `json:"stale_audio_events"`
 	MaxQueueMS int    `json:"max_queue_ms"`
+	Early      uint64 `json:"early_media_packets"`
 }
 
 type frame struct {
@@ -39,6 +40,7 @@ type media struct {
 	limit       int
 	mu          sync.Mutex
 	remote      *net.UDPAddr
+	earlyRemote *net.UDPAddr
 	queue       []frame
 	partial     map[string]partial
 	cancelled   map[string]bool
@@ -68,6 +70,12 @@ func (m *media) notify() {
 	}
 }
 func (m *media) startResponse(id string) { m.mu.Lock(); m.current = id; m.mu.Unlock() }
+
+func (m *media) setEarlyRemote(peer *net.UDPAddr) {
+	m.mu.Lock()
+	m.earlyRemote = peer
+	m.mu.Unlock()
+}
 
 func (m *media) enqueue(id string, data []byte, done bool) error {
 	m.mu.Lock()
@@ -310,6 +318,9 @@ func (m *media) receive(ctx context.Context, input func([]byte) error) {
 	var have bool
 	var lastSeq uint16
 	var nextStamp, source uint32
+	var earlyPeer string
+	var earlySeq uint16
+	var earlySSRC uint32
 	for {
 		n, addr, err := m.conn.ReadFromUDP(buf)
 		if err != nil {
@@ -321,6 +332,22 @@ func (m *media) receive(ctx context.Context, input func([]byte) error) {
 		seq, stamp, ssrc, data, ok := parseRTP(buf[:n], m.pt)
 		m.mu.Lock()
 		peer := m.remote
+		// Keep negotiated carrier ringback in a separate recording track. It
+		// must never reach ASR, open the greeting, or seed the answered stream's
+		// sequence/SSRC state (the final SDP may select a different source).
+		if peer == nil && m.earlyRemote != nil && ok && m.earlyRemote.IP.Equal(addr.IP) && m.earlyRemote.Port == addr.Port {
+			key := addr.String()
+			if earlyPeer == key && (ssrc != earlySSRC || int16(seq-earlySeq) <= 0) {
+				m.stats.Rejected++
+				m.mu.Unlock()
+				continue
+			}
+			earlyPeer, earlySeq, earlySSRC = key, seq, ssrc
+			m.stats.Early++
+			m.mu.Unlock()
+			m.record.ringback(data, time.Now())
+			continue
+		}
 		if !ok || peer == nil || !peer.IP.Equal(addr.IP) || peer.Port != addr.Port || (have && ssrc != source) {
 			m.stats.Rejected++
 			m.mu.Unlock()

@@ -30,6 +30,8 @@ type Config struct {
 	// (store_dir); empty when calls are not recorded.
 	LogPath  string
 	StoreDir string
+	// AdapterRecordDir contains per-call carrier ringback WAVs and timestamps.
+	AdapterRecordDir string
 	// DataDir is the journal's own: each call as last read (so a call outlives
 	// the log it was read from) and the owner's notes.
 	DataDir string
@@ -229,10 +231,10 @@ func (s *Server) archivePass() (waiting bool) {
 			}
 			continue
 		}
-		if sig, ok := s.settled[c.ID]; ok && sig == sigOf(c) {
+		if sig, ok := s.settled[c.ID]; ok && sig == sigOf(c) && !s.ringbackPending(c) {
 			continue
 		}
-		src := Sources{StoreDir: s.cfg.StoreDir, Prompt: prompt, PromptSHA: promptSHA}
+		src := Sources{StoreDir: s.cfg.StoreDir, AdapterRecordDir: s.cfg.AdapterRecordDir, Prompt: prompt, PromptSHA: promptSHA}
 		if r, ok := s.ranges[c.ID]; ok {
 			src.LogPath, src.LogFrom, src.LogTo = s.cfg.LogPath, r[0], r[1]
 		}
@@ -252,6 +254,10 @@ func (s *Server) archivePass() (waiting bool) {
 				waiting = true
 				continue
 			}
+		}
+		if s.ringbackPending(c) {
+			waiting = true
+			continue
 		}
 		s.settled[c.ID] = sigOf(c)
 	}
@@ -434,7 +440,7 @@ func (s *Server) audioOf(c *Call) map[string]any {
 	return map[string]any{"available": rec.Frames > 0, "duration_s": rec.DurationS(), "rate": rec.Rate,
 		// How much of the caller's side is left out when it is played, to keep
 		// it on the call's clock; zero for a recording that was made on it.
-		"caller_trimmed_s": math.Round(rec.DroppedS()*10) / 10}
+		"caller_trimmed_s": math.Round(rec.DroppedS()*10) / 10, "ringback": rec.ringback != nil}
 }
 
 // recording opens a call's audio as it should be heard: the archive's copy,
@@ -446,6 +452,7 @@ func (s *Server) recording(c *Call) (*Recording, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() { s.attachRingback(c, rec) }()
 	if len(c.AudioIn) < 3 || onClock(record) {
 		return rec, nil
 	}

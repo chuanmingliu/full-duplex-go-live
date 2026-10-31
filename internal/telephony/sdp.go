@@ -20,6 +20,10 @@ func offerSDP(ip string, port int, pt byte) []byte {
 // parseAnswer accepts only the offered static G.711 codec on unicast IPv4.
 // Reject unsupported SDP rather than silently decoding the wrong wire format.
 func parseAnswer(body []byte, pt byte, allowed []netip.Prefix) (*net.UDPAddr, error) {
+	return parseMediaAnswer(body, pt, allowed, false)
+}
+
+func parseMediaAnswer(body []byte, pt byte, allowed []netip.Prefix, early bool) (*net.UDPAddr, error) {
 	if len(body) > 16<<10 {
 		return nil, errors.New("SDP too large")
 	}
@@ -61,7 +65,7 @@ func parseAnswer(body []byte, pt byte, allowed []netip.Prefix) (*net.UDPAddr, er
 				mediaIP = f[2]
 			}
 		}
-		if (!inMedia || inAudio) && (line == "a=inactive" || line == "a=recvonly" || line == "a=sendonly") {
+		if (!inMedia || inAudio) && (line == "a=inactive" || line == "a=recvonly" || (line == "a=sendonly" && !early)) {
 			return nil, errors.New("bidirectional audio required")
 		}
 		if inAudio && strings.HasPrefix(line, fmt.Sprintf("a=rtpmap:%d ", pt)) {

@@ -30,7 +30,8 @@ type Recording struct {
 	Frames int64
 	// caller, when set, is where each stretch of the caller's side belongs on
 	// the call's clock: see Realign.
-	caller *Alignment
+	caller   *Alignment
+	ringback *ringbackAudio
 }
 
 // Alignment puts the caller's side of a recording back on the call's clock.
@@ -202,6 +203,9 @@ func (r *Recording) readRaw(assistant bool, buf []byte, first int64) {
 // the assistant's as recorded, the caller's through the alignment when there
 // is one.
 func (r *Recording) readSide(assistant bool, buf []byte, first int64) {
+	if !assistant && r.ringback != nil {
+		defer r.ringback.overlay(buf, first)
+	}
 	if assistant || r.caller == nil {
 		r.readRaw(assistant, buf, first)
 		return
@@ -294,7 +298,7 @@ const wavHeaderBytes = 44
 // that can be read from any offset, which is what lets a browser seek in it
 // without the file ever being written out a second time.
 func (r *Recording) WAV() io.ReadSeeker {
-	if r.wav != nil && r.caller == nil {
+	if r.wav != nil && r.caller == nil && r.ringback == nil {
 		return io.NewSectionReader(r.wav, 0, wavHeaderBytes+r.Frames*4)
 	}
 	return &stereoReader{rec: r, header: wavHeader(r.Rate, 2, r.Frames), size: wavHeaderBytes + r.Frames*4}

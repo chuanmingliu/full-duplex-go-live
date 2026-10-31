@@ -18,8 +18,9 @@ type recorder struct {
 	mu         sync.Mutex
 	start      time.Time
 	events     *os.File
-	wav        [2]*os.File
-	samples    [2]int64
+	wav        [3]*os.File
+	samples    [3]int64
+	answered   time.Time
 	codec      audio.Codec
 	maxSamples int64
 	err        error
@@ -35,7 +36,7 @@ func newRecorder(dir, codec string, limit time.Duration) (*recorder, error) {
 	if err != nil {
 		return nil, err
 	}
-	for i, name := range []string{"outbound.wav", "inbound.wav"} {
+	for i, name := range []string{"outbound.wav", "inbound.wav", "ringback.wav"} {
 		r.wav[i], err = os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 		if err == nil {
 			err = audio.WriteWAVTo(r.wav[i], nil, 8000, 1)
@@ -61,6 +62,24 @@ func (r *recorder) event(kind string, fields map[string]any) {
 }
 
 func (r *recorder) audio(inbound bool, wire []byte, at time.Time) {
+	i := 0
+	if inbound {
+		i = 1
+	}
+	r.writeAudio(i, wire, at)
+}
+
+func (r *recorder) ringback(wire []byte, at time.Time) { r.writeAudio(2, wire, at) }
+
+func (r *recorder) markAnswered(at time.Time) {
+	if r != nil {
+		r.mu.Lock()
+		r.answered = at
+		r.mu.Unlock()
+	}
+}
+
+func (r *recorder) writeAudio(i int, wire []byte, at time.Time) {
 	if r == nil {
 		return
 	}
@@ -68,10 +87,6 @@ func (r *recorder) audio(inbound bool, wire []byte, at time.Time) {
 	defer r.mu.Unlock()
 	if r.err != nil {
 		return
-	}
-	i := 0
-	if inbound {
-		i = 1
 	}
 	pos := at.Sub(r.start).Microseconds() * 8 / 1000
 	if pos < r.samples[i] {
@@ -110,6 +125,14 @@ func (r *recorder) close() error {
 		binary.LittleEndian.PutUint32(b[:], uint32(r.samples[i]*2))
 		_, e = f.WriteAt(b[:], 40)
 		err = errors.Join(err, e, f.Close())
+	}
+	if r.samples[2] > 0 {
+		until := r.start.Add(time.Duration(r.samples[2]) * time.Second / 8000)
+		if !r.answered.IsZero() && r.answered.Before(until) {
+			until = r.answered
+		}
+		meta, _ := json.Marshal(map[string]any{"started_at": r.start, "ended_at": until})
+		err = errors.Join(err, os.WriteFile(filepath.Join(filepath.Dir(r.wav[2].Name()), "ringback.json"), meta, 0600))
 	}
 	if r.events != nil {
 		err = errors.Join(err, r.events.Close())

@@ -825,7 +825,7 @@
       h('summary', { class: 'btn', title: 'Download this call’s audio as it was recorded' }, icon('dl', 'Download'), h('span', null, 'Download audio'), h('i', { class: 'dl-caret', 'aria-hidden': 'true' })),
       h('div', { class: 'dl-menu', role: 'menu' },
         dlItem('', 'Both sides', 'stereo: caller left, assistant right', frames * 4),
-        dlItem('caller', 'Caller only', 'mono, as golive received it', frames * 2),
+        dlItem('caller', 'Caller only', audioInfo.ringback ? 'mono, including carrier ringback' : 'mono, as golive received it', frames * 2),
         dlItem('assistant', 'Assistant only', 'mono, as golive sent it', frames * 2)));
     dl.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('.dl-item')) dl.open = false; });
     dl.addEventListener('keydown', function (e) { if (e.key === 'Escape' && dl.open) { dl.open = false; dl.querySelector('summary').focus(); e.stopPropagation(); } });
@@ -835,6 +835,7 @@
     this.el = h('div', { class: 'player' },
       h('div', { class: 'pbar' }, playBtn, timeEl, dl,
         h('span', { class: 'pbar-r' }, h('span', { class: 'pbar-l' }, 'Speed'), rateSeg, h('span', { class: 'pbar-l' }, 'Show'), zoomSeg)),
+      audioInfo.ringback ? h('div', { class: 'muted' }, 'Includes recorded carrier ringback before answer.') : null,
       mini, stage, msg,
       h('div', { class: 'legend plegend' },
         h('span', { class: 'lg-item' }, h('i', { class: 'gapkey' }), 'last sound → first audio (the wait)'),
