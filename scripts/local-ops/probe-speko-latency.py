@@ -52,6 +52,7 @@ def main():
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--env', type=Path, default=Path.home() / '.config/golive/speko.env')
     parser.add_argument('--port', type=int, default=8095)
+    parser.add_argument('--vad-silence-ms', type=int, default=300, help='Router server VAD silence threshold, 100-1000 ms')
     parser.add_argument('--listen-first', action='store_true', help='Router only: omit the greeting request and wait for caller audio')
     parser.add_argument('--router-model', help='Use the Speko Router Realtime endpoint directly, without SIP or the local bridge')
     parser.add_argument('--input-offset', type=float, default=0)
@@ -61,6 +62,10 @@ def main():
     args = parser.parse_args()
     if not (0 < args.seconds <= 600 and 0 <= args.ring_seconds <= 30 and args.input_offset >= 0):
         parser.error('invalid replay duration, ringing duration, or audio offset')
+    if not 100 <= args.vad_silence_ms <= 1000:
+        parser.error('VAD silence must be 100-1000 ms')
+    if args.vad_silence_ms != 300 and not args.router_model:
+        parser.error('--vad-silence-ms requires --router-model')
     if args.listen_first and not args.router_model:
         parser.error('--listen-first requires --router-model')
     template = json.loads(args.call_template.read_text())
@@ -111,6 +116,7 @@ def main():
                    model=args.router_model or 'gpt-live-1', listen_first=args.listen_first,
                    encoding='pcm_s16le' if args.router_model else 'g711_alaw',
                    sample_rate=24000 if args.router_model else 8000,
+                   vad_silence_ms=args.vad_silence_ms if args.router_model else None,
                    instructions_sha256=hashlib.sha256(instructions.encode()).hexdigest(),
                    input_sha256=hashlib.sha256(pcm).hexdigest(), seconds=args.seconds,
                    input_offset=args.input_offset, ring_seconds=args.ring_seconds,
@@ -134,7 +140,7 @@ def main():
                        'audio': {'input': {'format': {'type': 'audio/pcm', 'rate': 24000},
                                            'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'zh'},
                                            'turn_detection': {'type': 'server_vad', 'threshold': 0.5,
-                                                              'prefix_padding_ms': 300, 'silence_duration_ms': 300,
+                                                              'prefix_padding_ms': 300, 'silence_duration_ms': args.vad_silence_ms,
                                                               'create_response': True, 'interrupt_response': True}},
                                  'output': {'format': {'type': 'audio/pcm', 'rate': 24000}, 'voice': 'marin'}}}
         else:
@@ -151,6 +157,15 @@ def main():
                     break
         else:
             raise RuntimeError('session update was not acknowledged')
+        if args.router_model:
+            accepted = updated['session']['audio']
+            configured = accepted['input']['turn_detection']['silence_duration_ms']
+            if configured != args.vad_silence_ms:
+                raise RuntimeError('provider did not accept requested VAD silence')
+            for direction in ('input', 'output'):
+                if accepted[direction]['format'] != {'type': 'audio/pcm', 'rate': 24000}:
+                    raise RuntimeError('provider did not accept PCM24')
+            summary['accepted_vad_silence_ms'] = configured
         time.sleep(args.ring_seconds)
         released = time.monotonic()
         if args.router_model and not args.listen_first:

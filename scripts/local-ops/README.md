@@ -114,6 +114,8 @@ The Router Realtime route uses 24 kHz PCM. The harness interpolates the same
 An unsolicited initial `session.updated` is ignored until the supplied
 instructions are acknowledged. `--listen-first` omits the opening request
 for a separate caller-first scenario; it is only valid in Router mode.
+`--vad-silence-ms` selects a 100–1000 ms end-of-speech pause for Router tests
+(default 300). The harness verifies the accepted PCM format and VAD setting.
 
 After the replay finishes, derive diagnostic caller-to-reply gaps with:
 

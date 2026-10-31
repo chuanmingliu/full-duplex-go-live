@@ -83,6 +83,23 @@ The variation between runs is substantial. Neither run had a reply gap below
 observations of eight recorded utterances, not sixteen independent handset
 turns. No interruption-to-silence or automatic-hangup result is claimed.
 
+## Shorter end-of-speech pause trial
+
+`replay-7434b7c4ee4d4b52` requested 100 ms server-VAD silence with the same
+recording, instructions and other settings. It detected eight speech ends,
+the same count as the 300 ms runs. Its eight reply gaps were 2053, 1719, 1747,
+1492, 1560, 1448, 1550, and 1604 ms: median **1582 ms**, range **1448–2053 ms**.
+Opening signal arrived in 1347 ms. The final response again extended beyond
+the capture cutoff. A separate 12-second protocol check
+(`replay-333e1e231bae4487`) verified the provider acknowledged PCM24 and the
+100 ms VAD setting; it completed with output audio.
+
+This small comparison does not establish a significant improvement over the
+better 300 ms run (1629 ms median), and no reply met 1200 ms. Eight detected
+ends do not prove that arbitrary future sentences would avoid premature
+endpointing. The harness exposes `--vad-silence-ms` for explicit experiments;
+its default remains 300 ms and the deployed GPT-Live configuration is unaffected.
+
 ## Interpretation and phone integration boundary
 
 This demonstrates a working mini audio session, not a sub-1200 ms phone path.
