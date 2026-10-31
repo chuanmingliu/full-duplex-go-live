@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay private caller audio through the local Speko bridge; never dial SIP.
+"""Replay private caller audio through the local Speko bridge or Router; never dial SIP.
 
 Requires websocket-client. The output directory contains private audio and
 transcripts. Timings are client observations, not acoustic handset latency.
@@ -52,6 +52,8 @@ def main():
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--env', type=Path, default=Path.home() / '.config/golive/speko.env')
     parser.add_argument('--port', type=int, default=8095)
+    parser.add_argument('--listen-first', action='store_true', help='Router only: omit the greeting request and wait for caller audio')
+    parser.add_argument('--router-model', help='Use the Speko Router Realtime endpoint directly, without SIP or the local bridge')
     parser.add_argument('--input-offset', type=float, default=0)
     parser.add_argument('--seconds', type=float, default=90)
     parser.add_argument('--ring-seconds', type=float, default=8)
@@ -59,6 +61,8 @@ def main():
     args = parser.parse_args()
     if not (0 < args.seconds <= 600 and 0 <= args.ring_seconds <= 30 and args.input_offset >= 0):
         parser.error('invalid replay duration, ringing duration, or audio offset')
+    if args.listen_first and not args.router_model:
+        parser.error('--listen-first requires --router-model')
     template = json.loads(args.call_template.read_text())
     instructions = template['instructions']
     if args.instructions_suffix:
@@ -68,20 +72,45 @@ def main():
         match = re.fullmatch(r'\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*?)\s*', line)
         if match:
             values[match[1]] = match[2].strip('\"\'')
-    headers = {'Authorization': 'Bearer ' + values['GOLIVE_AUTH_TOKEN']}
+    headers = {'Authorization': 'Bearer ' + values['SPEKO_API_KEY' if args.router_model else 'GOLIVE_AUTH_TOKEN']}
+    if args.router_model:
+        if not re.fullmatch(r'[a-zA-Z0-9._-]{1,100}', args.router_model):
+            parser.error('invalid model name')
+        headers['Idempotency-Key'] = uuid.uuid4().hex
     base = f'http://127.0.0.1:{args.port}'
-    with urllib.request.urlopen(urllib.request.Request(base + '/v1/pool', headers=headers), timeout=5) as response:
-        if json.load(response)['in_use'] != 0:
-            raise RuntimeError('bridge is busy')
+    if not args.router_model:
+        with urllib.request.urlopen(urllib.request.Request(base + '/v1/pool', headers=headers), timeout=5) as response:
+            if json.load(response)['in_use'] != 0:
+                raise RuntimeError('bridge is busy')
     with wave.open(str(args.input_wav), 'rb') as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 2, 8000):
             raise ValueError('input must be mono 8 kHz PCM16 WAV')
         source.setpos(round(args.input_offset * 8000))
         pcm = source.readframes(round(args.seconds * 8000))
     caller = bytes(alaw(value[0]) for value in struct.iter_unpack('<h', pcm))
+    frame_bytes, quiet = 160, b'\xd5'
+    if args.router_model:
+        # Router's Realtime route advertises 24 kHz PCM, not G.711.
+        samples = [v[0] for v in struct.iter_unpack('<h', pcm)]
+        expanded = []
+        for index, value in enumerate(samples):
+            following = samples[min(index + 1, len(samples) - 1)]
+            expanded.extend((value, round((2 * value + following) / 3), round((value + 2 * following) / 3)))
+        caller = struct.pack('<' + 'h' * len(expanded), *expanded)
+        frame_bytes, quiet = 960, b'\x00'
+
+    def level(data):
+        if not args.router_model:
+            return rms_alaw(data)
+        samples = [v[0] for v in struct.iter_unpack('<h', data)]
+        return math.sqrt(sum(v * v for v in samples) / len(samples)) if samples else 0
+
     args.output_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
     call_id = 'replay-' + uuid.uuid4().hex[:16]
-    summary = dict(call_id=call_id, boundary='local bridge client; not handset',
+    summary = dict(call_id=call_id, boundary=('Router WebSocket arrival; not playout or handset' if args.router_model else 'local bridge client; not handset'),
+                   model=args.router_model or 'gpt-live-1', listen_first=args.listen_first,
+                   encoding='pcm_s16le' if args.router_model else 'g711_alaw',
+                   sample_rate=24000 if args.router_model else 8000,
                    instructions_sha256=hashlib.sha256(instructions.encode()).hexdigest(),
                    input_sha256=hashlib.sha256(pcm).hexdigest(), seconds=args.seconds,
                    input_offset=args.input_offset, ring_seconds=args.ring_seconds,
@@ -91,21 +120,47 @@ def main():
     writer = None
     conn = None
     try:
-        conn = websocket.create_connection(base.replace('http:', 'ws:') + '/v1/realtime?call=' + call_id,
-                                           header=headers, suppress_origin=True, timeout=15)
-        if json.loads(conn.recv())['type'] != 'session.created':
+        endpoint = (f'wss://router.speko.dev/v1/realtime?model={args.router_model}' if args.router_model else
+                    base.replace('http:', 'ws:') + '/v1/realtime?call=' + call_id)
+        conn = websocket.create_connection(endpoint, header=headers, suppress_origin=True, timeout=15)
+        created = json.loads(conn.recv())
+        if created['type'] != 'session.created':
             raise RuntimeError('session creation failed')
-        conn.send(json.dumps({'type': 'session.update', 'session': {
-            'instructions': instructions, 'voice': 'marin',
-            'input_audio_format': 'g711_alaw', 'output_audio_format': 'g711_alaw'}}))
-        if json.loads(conn.recv())['type'] != 'session.updated':
-            raise RuntimeError('session update failed')
+        if args.router_model:
+            summary['actual_model'] = created.get('session', {}).get('model')
+            if summary['actual_model'] != args.router_model:
+                raise RuntimeError('provider returned a different model')
+            session = {'type': 'realtime', 'instructions': instructions, 'output_modalities': ['audio'],
+                       'audio': {'input': {'format': {'type': 'audio/pcm', 'rate': 24000},
+                                           'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'zh'},
+                                           'turn_detection': {'type': 'server_vad', 'threshold': 0.5,
+                                                              'prefix_padding_ms': 300, 'silence_duration_ms': 300,
+                                                              'create_response': True, 'interrupt_response': True}},
+                                 'output': {'format': {'type': 'audio/pcm', 'rate': 24000}, 'voice': 'marin'}}}
+        else:
+            session = {'instructions': instructions, 'voice': 'marin',
+                       'input_audio_format': 'g711_alaw', 'output_audio_format': 'g711_alaw'}
+        conn.send(json.dumps({'type': 'session.update', 'session': session}))
+        for _ in range(8):
+            updated = json.loads(conn.recv())
+            if updated['type'] == 'error':
+                raise RuntimeError('session update failed')
+            if updated['type'] == 'session.updated':
+                # Router emits an unsolicited initial update; it is not our ack.
+                if not args.router_model or updated.get('session', {}).get('instructions') == instructions:
+                    break
+        else:
+            raise RuntimeError('session update was not acknowledged')
         time.sleep(args.ring_seconds)
         released = time.monotonic()
-        request = urllib.request.Request(base + '/v1/opening', headers={**headers, 'Content-Type': 'application/json'},
-                                         data=json.dumps({'callId': call_id, 'greeting': template['greeting']}).encode())
-        with urllib.request.urlopen(request, timeout=10):
-            pass
+        if args.router_model and not args.listen_first:
+            conn.send(json.dumps({'type': 'response.create', 'response': {
+                'instructions': 'Say the following greeting to begin the call: ' + template['greeting']}}))
+        elif not args.router_model:
+            request = urllib.request.Request(base + '/v1/opening', headers={**headers, 'Content-Type': 'application/json'},
+                                             data=json.dumps({'callId': call_id, 'greeting': template['greeting']}).encode())
+            with urllib.request.urlopen(request, timeout=10):
+                pass
         summary['feed_started_ms'] = round((time.monotonic() - released) * 1000, 3)
 
         def feed():
@@ -114,7 +169,7 @@ def main():
                 for index in range(math.ceil(args.seconds * 50)):
                     if stop.wait(max(0, started + (index + 1) * .02 - time.monotonic())):
                         return
-                    chunk = caller[index * 160:(index + 1) * 160].ljust(160, b'\xd5')
+                    chunk = caller[index * frame_bytes:(index + 1) * frame_bytes].ljust(frame_bytes, quiet)
                     encoded = base64.b64encode(chunk).decode()
                     try:
                         conn.send(json.dumps({'type': 'input_audio_buffer.append', 'audio': encoded}))
@@ -122,7 +177,7 @@ def main():
                         send_failed.set()
                         return
                     record.write(json.dumps({'t_ms': (time.monotonic() - released) * 1000,
-                                             'rms': rms_alaw(chunk), 'audio': encoded}) + '\n')
+                                             'rms': level(chunk), 'audio': encoded}) + '\n')
 
         writer = threading.Thread(target=feed, daemon=True)
         writer.start()
@@ -141,8 +196,8 @@ def main():
                     raise RuntimeError('bridge returned an error; inspect private capture')
                 if event['type'] == 'output_audio_buffer.cleared':
                     summary['clears_ms'].append(round(elapsed, 3))
-                if event['type'] == 'response.audio.delta' and summary['first_signal_ms'] is None:
-                    if rms_alaw(base64.b64decode(event['delta'])) >= 300:
+                if event['type'] in ('response.audio.delta', 'response.output_audio.delta') and summary['first_signal_ms'] is None:
+                    if level(base64.b64decode(event['delta'])) >= 300:
                         summary['first_signal_ms'] = round(elapsed, 3)
         summary['completed'] = summary['first_signal_ms'] is not None and not send_failed.is_set()
         if not summary['completed']:

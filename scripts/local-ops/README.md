@@ -14,7 +14,7 @@ the last call's backend does not change the next plain `call`.
 | [runner.sh](runner.sh) | Mac | Processes `.runner/in/*.job`, transfers declared files, runs the shell body over SSH, and saves output/completed jobs |
 | [enqueue.py](enqueue.py) | Mac | Checks a reviewed job hash, recent runner heartbeat, empty queue and unused job name before publishing the job atomically |
 | [stage-job.py](stage-job.py) | Mac | Converts a large shell operation into a short runner wrapper and a separately transferred, hash-checked body |
-| [probe-speko-latency.py](probe-speko-latency.py) | Mac | Replays private 8 kHz caller audio through an idle local Speko bridge without dialing; records timed audio/transcript events |
+| [probe-speko-latency.py](probe-speko-latency.py) | Mac | Replays private 8 kHz caller audio through an idle local Speko bridge or the Router Realtime endpoint without dialing; records timed audio/transcript events |
 
 ### Speko replay without dialing
 
@@ -99,6 +99,40 @@ python3 scripts/local-ops/stage-job.py /tmp/reviewed-deploy.sh /tmp/new-deploy.j
 Preparation creates `.body.sh`, `.job` and `.review.json` siblings. It does **not** copy or enqueue anything. Inspect the body, wrapper and review record. Copy the body and any payloads to the indicated `local_runner_body` / `local_runner_source` paths under `~/golive`, confirm their hashes, then use `enqueue.py` with the wrapper's reviewed hash. The remote staging directory must already exist. Payload jobs must verify payload hashes themselves before installation.
 
 The inherited runner logs transfer failures but still attempts the body. Check push/pull receipts, process results and expected artifacts, not just the final exit line. A timeout stops the local SSH process and does not prove that a remote operation or phone call stopped. Never automatically repeat a dial or deployment after an uncertain result.
+
+## Direct Realtime model comparison
+
+Use `--router-model gpt-realtime-2.1-mini` with the replay command above to
+connect to `wss://router.speko.dev/v1/realtime` using the private Speko key.
+Check the authenticated Router catalog before choosing a model. The harness
+requires the returned session model to match; it does not silently fall back.
+This mode does not use, restart, or reconfigure the local bridge or SIP adapter.
+
+The Router Realtime route uses 24 kHz PCM. The harness interpolates the same
+8 kHz recording to that rate; its JSONL audio is then PCM16, **not G.711**.
+`summary.json` identifies encoding, rate, model, and measurement boundary.
+An unsolicited initial `session.updated` is ignored until the supplied
+instructions are acknowledged. `--listen-first` omits the opening request
+for a separate caller-first scenario; it is only valid in Router mode.
+
+After the replay finishes, derive diagnostic caller-to-reply gaps with:
+
+```bash
+python3 scripts/local-ops/analyze-realtime-replay.py /private/tmp/speko-replay-unique
+```
+
+The analyzer requires the completed 24 kHz PCM capture. It joins each VAD-stop
+notification to the next response created before another VAD-stop, finds the
+last voiced input frame in that interval, and detects a packet with output
+signal. Unmatched observations remain invalid. This is a diagnostic heuristic,
+not the handset gate or a semantic-turn scorer.
+
+Router measurements are packet arrival observations without paced speaker
+playout. The first signal may belong to a greeting or acknowledgment. They
+cannot establish handset delay, interruption-to-silence, or a matched latency
+improvement over an already paced bridge. Integration with the SIP path still
+requires PCM/G.711 conversion, paced output, cancellation/truncation of unheard
+audio, answer-gated opening, and call termination.
 
 ## Exact operation snapshots
 
