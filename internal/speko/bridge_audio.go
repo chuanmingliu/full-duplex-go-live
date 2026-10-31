@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,16 +18,26 @@ const audioIdle = 200 * time.Millisecond
 // bridgeAudio preserves the RTP input clock, fills input gaps, and paces
 // output at 8 kHz in 20 ms frames so a provider batch cannot flood the SIP
 // adapter's much smaller playout queue. Only the final partial frame is padded.
-func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.Conn, input, output <-chan socketEvent, silence []byte, transport *pcmTransport, instructions string) error {
+func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.Conn, input, output <-chan socketEvent, silence []byte, transport *pcmTransport, instructions, callID string) (result error) {
 	backend := newClientBackend(instructions)
 	defer backend.close()
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
 	var speaker []byte
+	started := time.Now()
+	var received, played, maxQueue, delegations, trimmed int
+	defer func() {
+		reason := "closed"
+		if result != nil {
+			reason = result.Error()
+		}
+		slog.Info("speko: bridge summary", "call_id", callID, "elapsed_ms", time.Since(started).Milliseconds(), "received_audio_ms", received/8, "played_audio_ms", played/8, "max_queue_ms", maxQueue/8, "delegations", delegations, "trimmed_silence_ms", trimmed/8, "reason", reason)
+	}()
+	nextMetrics := started.Add(5 * time.Second)
 	nextInput := time.Now().Add(60 * time.Millisecond)
 	inputRateWarned := false
 	var responseID, transcript string
-	var lastAudio time.Time
+	var lastAudio, lastVoicedPlayback time.Time
 	suppressed := false
 	finish := func(status, reason string) error {
 		if responseID == "" {
@@ -122,6 +133,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					return errors.New("invalid Speko audio")
 				}
 				b = transport.decode(b)
+				received += len(b)
 				if len(b) == 0 {
 					continue
 				}
@@ -134,11 +146,18 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					continue
 				}
 				lastAudio = time.Now()
-				if len(speaker)+len(b) > bridgeQueueBytes {
+				speaker = append(speaker, b...)
+				if lastVoicedPlayback.IsZero() || time.Since(lastVoicedPlayback) >= audioIdle {
+					var removed int
+					speaker, removed = trimIdleSilence(speaker, silence[0])
+					trimmed += removed
+				}
+				if len(speaker) > bridgeQueueBytes {
 					return errors.New("Speko audio exceeded the bounded playout queue")
 				}
-				speaker = append(speaker, b...)
+				maxQueue = max(maxQueue, len(speaker))
 			case "session.delegation.created":
+				delegations++
 				if s.cfg.DelegationMode == "client" && got.event.Delegation.Target == "client" {
 					if err := backend.start(ctx, s, got.event.Delegation.ID); err != nil {
 						return err
@@ -197,6 +216,10 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				return errors.New("Speko session ended")
 			}
 		case now := <-tick.C:
+			if !now.Before(nextMetrics) {
+				slog.Info("speko: audio clock", "call_id", callID, "elapsed_ms", now.Sub(started).Milliseconds(), "queue_ms", len(speaker)/8, "received_audio_ms", received/8, "played_audio_ms", played/8)
+				nextMetrics = now.Add(5 * time.Second)
+			}
 			frame := append([]byte(nil), silence...)
 			if !now.Before(nextInput) {
 				if err := s.send(upstream, map[string]string{"type": "session.input_audio.append", "audio": base64.StdEncoding.EncodeToString(transport.encode(frame))}); err != nil {
@@ -218,6 +241,10 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				n := min(len(speaker), len(frame))
 				copy(frame, speaker[:n])
 				speaker = speaker[n:]
+				played += n
+				if !codecSilence(frame, silence[0]) {
+					lastVoicedPlayback = now
+				}
 				if err := s.send(client, map[string]string{"type": "response.audio.delta", "response_id": responseID, "delta": base64.StdEncoding.EncodeToString(frame)}); err != nil {
 					return err
 				}

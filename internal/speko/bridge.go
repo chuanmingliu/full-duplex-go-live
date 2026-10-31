@@ -188,7 +188,7 @@ waiting:
 			return err
 		}
 	}
-	return s.bridgeAudio(ctx, client, upstream, input, output, silence, newPCMTransport(settings.format), settings.instructions)
+	return s.bridgeAudio(ctx, client, upstream, input, output, silence, newPCMTransport(settings.format), settings.instructions, callID)
 }
 
 // The adapter's Realtime subset deliberately excludes tools, format changes,
