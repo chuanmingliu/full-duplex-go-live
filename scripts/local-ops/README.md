@@ -14,6 +14,34 @@ the last call's backend does not change the next plain `call`.
 | [runner.sh](runner.sh) | Mac | Processes `.runner/in/*.job`, transfers declared files, runs the shell body over SSH, and saves output/completed jobs |
 | [enqueue.py](enqueue.py) | Mac | Checks a reviewed job hash, recent runner heartbeat, empty queue and unused job name before publishing the job atomically |
 | [stage-job.py](stage-job.py) | Mac | Converts a large shell operation into a short runner wrapper and a separately transferred, hash-checked body |
+| [probe-speko-latency.py](probe-speko-latency.py) | Mac | Replays private 8 kHz caller audio through an idle local Speko bridge without dialing; records timed audio/transcript events |
+
+### Speko replay without dialing
+
+This diagnostic requires Python and `websocket-client`, a running local bridge,
+its private bearer-token environment file, and a private call template containing
+`instructions` and `greeting`. It always uses `marin`. It never contacts the SIP
+adapter or changes the saved call template. An occupied bridge rejects the probe.
+
+```bash
+python3 scripts/local-ops/probe-speko-latency.py \
+  --call-template /private/tmp/speko-call-template.json \
+  --input-wav /private/tmp/caller.wav \
+  --input-offset 6.186362 --seconds 90 --ring-seconds 8 \
+  --output-dir /private/tmp/speko-replay-unique
+```
+
+Choose the offset from that recording's SIP answer; the value above is only an
+example. The output directory must not already exist. It contains **private**
+input/output JSONL events with base64 G.711 audio and transcript fragments, plus
+a metadata summary. Keep it outside Git. The first-signal measurement uses RMS
+300 and a monotonic clock from opening release. It is not a content, SIP, or
+handset latency measurement. Recorded caller audio does not adapt to new replies,
+so this is a fixed replay, not a conversational quality evaluation.
+
+Use `--instructions-suffix /private/tmp/policy.txt` for an isolated prompt
+experiment. Compare the same input and retain both instruction hashes. The
+suffix is applied to the probe only, never to the saved prompt or running service.
 
 `runner.sh` comes from the local `~/golive/runner.sh`. The repository copy requires an explicit `BOX` and defaults its data directory to `~/golive`, even when launched from this checkout. The existing installed runner was not overwritten or restarted. [provenance.json](provenance.json) records the source and small portability changes.
 
