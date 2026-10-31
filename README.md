@@ -61,6 +61,10 @@ generation or a beat of delay, never a wrong answer.
 
 ## Architecture
 
+Explore the [interactive system map and component guides](docs/architecture/README.md),
+including a [detailed ASR → LLM → TTS walkthrough](docs/architecture/07-streaming-coordination.md)
+covering speculative preparation, turn commitment, streamed playback and interruptions.
+
 ```
                         ┌──────────── session (WebSocket) ────────────┐
    browser / SIP ──────▶│  session.start, session.input_audio.append  │
