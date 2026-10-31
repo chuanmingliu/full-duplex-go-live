@@ -1062,7 +1062,7 @@ func (e *Engine) abandonSpeculation(reason string) {
 	e.forgetDelegation(delegationIDOf(spec))
 	e.cancelBackend()
 	if e.tracker.IsCurrent(spec) {
-		if spec.Opened != "" {
+		if spec.Opened != "" && e.player.FinishOpenerAsBackchannel(spec.ID, spec.Generation) {
 			// The opener was said at the base pause and the caller went on:
 			// it finishes as an 嗯 of listening (one word), the rest of the
 			// guess is dropped without a sound, and the fragment that follows
@@ -1070,7 +1070,6 @@ func (e *Engine) abandonSpeculation(reason string) {
 			if pipe := e.speech.Load(); pipe != nil {
 				pipe.Abort()
 			}
-			e.player.FinishOpenerAsBackchannel(spec.ID)
 			e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 			e.log.Info("speak: the opener became a backchannel; the caller went on", "turn", spec.ID, "opener_ms", spec.OpenedMS, "reason", reason)
 		} else {

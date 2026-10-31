@@ -2028,7 +2028,7 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 		return
 	}
 	if t := e.tracker.Current(); t != nil && t.Opened != "" && !t.OpenedAt.IsZero() &&
-		e.resumedWithinOpener(t) {
+		e.resumedWithinOpener(t) && e.player.FinishOpenerAsBackchannel(t.ID, t.Generation) {
 		// The caller went on within a breath of the opener: the pause was a
 		// pause inside their sentence, and the opener was, in effect, an 嗯
 		// of listening. It finishes (it is one word), the answer prepared
@@ -2043,7 +2043,6 @@ func (e *Engine) yieldFloor(bargeIn bool) {
 			pipe.Abort()
 		}
 		e.gen.Bump()
-		e.player.FinishOpenerAsBackchannel(t.ID)
 		e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 		return
 	}

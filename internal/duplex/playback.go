@@ -132,12 +132,14 @@ type Player struct {
 	pendingFrom  float64
 	// pendingAnnounced records that the segment in pendingText has been
 	// reported through onSegment, which happens on its first audio.
-	pendingAnnounced bool
-	speaking         bool
-	pendingContent   bool
-	contentStarted   bool
-	handoffTurn      string
-	handoffGen       uint64
+	pendingAnnounced  bool
+	speaking          bool
+	pendingContent    bool
+	contentStarted    bool
+	handoffTurn       string
+	handoffGen        uint64
+	retiredOpenerTurn string
+	retiredOpenerGen  uint64
 }
 
 type spokenSpan struct {
@@ -228,7 +230,7 @@ func (p *Player) allowed(seg Segment, gen *Generation) bool {
 }
 
 func (p *Player) allowedLocked(seg Segment, gen *Generation) bool {
-	if p.closed || !seg.validOwner() || (p.dropTurn != "" && p.dropTurn == seg.TurnID) || p.contentSuppressedLocked(seg) {
+	if p.closed || !seg.validOwner() || (p.dropTurn != "" && p.dropTurn == seg.TurnID) || p.contentSuppressedLocked(seg) || p.retiredOpenerLocked(seg) {
 		return false
 	}
 	if p.adoptedOpenerLocked(seg) && gen.Valid(p.adoptedTo.Generation) {
@@ -324,20 +326,26 @@ func (p *Player) GraceFinishSegment(turnID string) {
 // continuation the caller finished — opened with nothing (the 10:07
 // simulated call of 10-26: eleven such turns). No truncation is reported:
 // the whole of what was said was heard.
-func (p *Player) FinishOpenerAsBackchannel(turnID string) {
+// False means the exact opener no longer owns playback or body output has
+// already committed. The caller must then use normal interruption handling.
+func (p *Player) FinishOpenerAsBackchannel(turnID string, generation uint64) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.activeTurn != turnID || p.activeGen != generation || p.contentStarted {
+		return false
+	}
+	// Reserve retirement under the same lock as first body output. Neither
+	// a dequeued segment nor a late producer may restart this generation
+	// between returning here and the caller cancelling its backend work.
+	p.retiredOpenerTurn, p.retiredOpenerGen = turnID, generation
 	kept := p.queue[:0]
 	for _, q := range p.queue {
-		if q.TurnID != turnID {
+		if q.TurnID != turnID || q.Gen != generation {
 			kept = append(kept, q)
 		}
 	}
 	clear(p.queue[len(kept):])
 	p.queue = kept
-	if p.activeTurn != turnID {
-		return
-	}
 	// The opener's mark has usually passed by now (it is one word, and the
 	// caller went on after it), so a grace on the next mark would never
 	// resolve; what may remain is paced audio still in the air. Let that
@@ -346,7 +354,7 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 	if remaining <= 0 {
 		p.resetTurnLocked()
 		p.setSpeakingLocked(false)
-		return
+		return true
 	}
 	// Until then the turn is draining, not speaking: the floor is free for
 	// the next turn's opener (FreeForOpener). The 22:05 simulated call of
@@ -358,11 +366,16 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 		time.Sleep(time.Duration(remaining) * time.Millisecond)
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if p.activeTurn == turnID && len(p.queue) == 0 {
+		if p.activeTurn == turnID && p.activeGen == generation && len(p.queue) == 0 {
 			p.resetTurnLocked()
 			p.setSpeakingLocked(false)
 		}
 	}()
+	return true
+}
+
+func (p *Player) retiredOpenerLocked(seg Segment) bool {
+	return p.retiredOpenerTurn != "" && seg.TurnID == p.retiredOpenerTurn && seg.Gen == p.retiredOpenerGen
 }
 
 // Enqueue adds an item to the speak channel, and reports whether it was
@@ -390,7 +403,7 @@ func (p *Player) FinishOpenerAsBackchannel(turnID string) {
 func (p *Player) Enqueue(seg Segment) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed || !seg.validOwner() {
+	if p.closed || !seg.validOwner() || p.retiredOpenerLocked(seg) {
 		return false
 	}
 	if p.contentSuppressedLocked(seg) {

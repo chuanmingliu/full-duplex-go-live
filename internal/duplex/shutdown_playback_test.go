@@ -163,9 +163,12 @@ func TestEngineCloseDoesNotInventUnheardOrBackchannelMetrics(t *testing.T) {
 				enqueueShutdownReply(e, turn, 40, false)
 				waitShutdownOutput(t, output)
 			case "opener became backchannel":
-				enqueueShutdownReply(e, turn, 40, false)
+				seg := Segment{owner: turn, TurnID: turn.ID, Gen: turn.Generation, Revision: turn.Revision, Kind: SegBegin, Text: "Yes,"}
+				e.player.Enqueue(seg)
+				seg.Kind, seg.PCM = SegAudio, make([]byte, audio.PCM16(e.opts.ClientRate).BytesForMS(40))
+				e.player.Enqueue(seg)
 				waitShutdownOutput(t, output)
-				e.player.FinishOpenerAsBackchannel(turn.ID)
+				e.player.FinishOpenerAsBackchannel(turn.ID, turn.Generation)
 			case "abandoned guess":
 				enqueueShutdownReply(e, turn, 40, false)
 				waitShutdownOutput(t, output)

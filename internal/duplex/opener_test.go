@@ -160,7 +160,7 @@ func TestAnOpenerBecomesABackchannelWhenTheCallerGoesOn(t *testing.T) {
 	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
-		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+		Deps{ASR: asr, LLM: &blockedFirstOpenerLLM{LLM: llm}, TTS: tts, Emit: c.emit, Log: logger})
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Log(logs.String())
@@ -520,7 +520,7 @@ func TestAFragmentAfterABackchannelOpensWithAPhraseOfAnotherKind(t *testing.T) {
 	var logs openerLogBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := startEngine(t, Options{Cfg: cfg.opts.Cfg, Delegation: cfg.opts.Delegation, Speculative: true, Language: cfg.opts.Cfg.Language, Voice: ResolveVoice(cfg.opts.Cfg, "")},
-		Deps{ASR: asr, LLM: llm, TTS: tts, Emit: c.emit, Log: logger})
+		Deps{ASR: asr, LLM: &blockedFirstOpenerLLM{LLM: llm}, TTS: tts, Emit: c.emit, Log: logger})
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Log(logs.String())
@@ -752,7 +752,7 @@ func TestTheFloorIsFreeForTheNextOpenerWhileABackchannelDrains(t *testing.T) {
 	waitFor(t, "the opener to be heard", 2*time.Second, func() bool { return bytesFor("item_1") > 24000/2 })
 
 	// The caller went on: the opener stands, the rest is dropped.
-	p.FinishOpenerAsBackchannel("item_1")
+	p.FinishOpenerAsBackchannel("item_1", gen.Current())
 	if p.PendingMS() <= 0 {
 		t.Fatal("nothing in the air after the backchannel; the drain is not exercised")
 	}

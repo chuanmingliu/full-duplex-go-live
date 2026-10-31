@@ -157,6 +157,12 @@ The journal applies this check in its version-4 response view; archived
 source files remain unchanged. No missing latency is inferred from transcript
 timestamps.
 
+An opener may become a backchannel only while its exact playback generation
+has emitted no answer body. Once body output starts, normal interruption
+handling must preserve its heard prefix and latency record. Earlier logs can
+contain a false backchannel classification after body output (ISS-087); the
+old analyzer's missing=0 is not sufficient to certify those affected calls.
+
 ## Desk integration
 
 `DESK_AS=codex scripts/desk.sh me` safely reads the identity and owner control switches; never use the default `claude` identity. `scripts/phone-brain.sh desk verify` verifies the append-only note chain. `GET /api/calls` on the desk, with the Codex token read from its file internally, lists **simulated** calls paired via `~/golive-sim/data/dials.jsonl`; `GET /api/calls/<run>/report` retrieves their simulator report. Real calls belong in the journal. These APIs do not independently persist call audio.

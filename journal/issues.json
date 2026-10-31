@@ -1377,23 +1377,42 @@
    "symptom": "An identical follow-up reused a queued quotation but received only an opener in its own latency record. The result remained linked solely to the original request, and a redundant generic readiness phrase delayed price output by 1036 ms. A stale continuation then asks a second fit question without a new caller request.",
    "cause": "The repeat-task path returns the existing task ID without recording the additional caller origin. Result latency and completed-opener qualification retain only the first origin. The reused call also remains an ordinary deferred continuation, so it can resume after the authoritative result has already answered it.",
    "fix": "Retain bounded distinct coalesced origins for pending tasks, emit explicit monotonic result links for every retained request, and permit the existing generic-posthook omission only for an exact current coalesced origin with proven natural opener completion. Preserve the original request and its slower latency. Preserve its assistant/tool history while suppressing only a deferred response wholly covered by the coalesced task; mixed or unrelated work keeps its existing path.",
-   "verified": "The unchanged simulator trace contains original item_5, coalesced item_6 and result item_7 for task t2. Pricing took 2 ms; result delivery waited 1073 ms across caller activity and acknowledgment. The generic readiness phrase adds 1036 ms before quote output, for a 2881 ms original-request readout. The trace has one missing content record. Source cause is confirmed. Red-before regressions now pass for distinct running/queued origins, original interval preservation, one physical result, natural current-opener qualification, cancellation/drop/supersession, the 32-origin bound and lifecycle cleanup. Fully covered continuations retain assistant/tool history without another backend turn; mixed and unrelated work remain eligible. Focused engine race tests, the journal race suite, 52 Python analyzer tests and all-package compilation pass. Both parsers reject ambiguous, cancelled and overflowing links while preserving valid primary evidence. Complete reports for the retained d852 quotation and both 7ee calls match the previous implementation. Full candidate CI, deployment and a fresh behavioral replay remain pending.",
+   "verified": "The unchanged simulator trace contains original item_5, coalesced item_6 and result item_7 for task t2. Pricing took 2 ms; result delivery waited 1073 ms across caller activity and acknowledgment. The generic readiness phrase adds 1036 ms before quote output, for a 2881 ms original-request readout. The trace has one missing content record. Source cause is confirmed. Red-before regressions now pass for distinct running/queued origins, original interval preservation, one physical result, natural current-opener qualification, cancellation/drop/supersession, the 32-origin bound and lifecycle cleanup. Fully covered continuations retain assistant/tool history without another backend turn; mixed and unrelated work remain eligible. Focused engine race tests, the journal race suite, 52 Python analyzer tests and all-package compilation pass. Both parsers reject ambiguous, cancelled and overflowing links while preserving valid primary evidence. Complete reports for the retained d852 quotation and both 7ee calls match the previous implementation. Full CI for 964409b and f842928 passed, and the combined release was deployed on 2026-10-31. The next quotation replay and real call did not exercise coalesced origins; matched behavioural verification remains pending.",
    "effect": "Missing content must not be discarded or repaired with wall-clock inference. All request intervals remain part of the evidence, and removing the posthook alone does not prove the original request meets 1200 ms.",
-   "commits": []
+   "commits": [
+    "964409b"
+   ]
   },
   {
    "id": "ISS-086",
    "title": "Playback clock stays in the past after synthesis gaps",
    "area": "audio",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-10-31",
    "found_on": "d85232a real call",
    "found_call": "out-mvvvt9l4-cauj",
    "symptom": "Nine canonical segments have playback timestamps 149–499 ms before their emission. The same stale clock permits catch-up bursts and treats synthesis silence as already-heard audio.",
    "cause": "Paced playback advances its playhead only by PCM duration. When new synthesis arrives after the buffered audio drains, neither the playhead nor the elapsed-audio origin excludes the gap.",
    "fix": "Before committing a paced chunk whose playhead is in the past, move the playhead to now and shift the elapsed-audio origin by the same gap. Preserve buffered future timestamps, unpaced behavior, emitted duration and exact playback ownership.",
-   "verified": "The real archive has 55 contiguous canonical segments; nine are backdated by more than 5 ms. A regression reproducing a one-second synthesis gap failed before the fix. The corrected test checks current audio/transcript timestamps, unchanged emitted duration and exclusion of the gap from the elapsed-audio clock. Buffered and unpaced controls retain their original clocks. Focused playback, shutdown and coalescence race checks pass; full candidate CI and a new live replay remain pending.",
+   "verified": "The real archive has 55 contiguous canonical segments; nine are backdated by more than 5 ms. A regression reproducing a one-second synthesis gap failed before the fix. The corrected test checks current audio/transcript timestamps, unchanged emitted duration and exclusion of the gap from the elapsed-audio clock. Buffered and unpaced controls retain their original clocks. Focused playback, shutdown and coalescence race checks pass; full CI run 41170355117 passed and f842928 was deployed. Replay out-mvvxxkse-wiqh (20 canonical segments) and real call out-mvw03ge0-j0y3 (29 segments) have no timestamps backdated beyond 5 ms. The real call has nine measured replies; physical handset latency remains unverified.",
    "effect": "Accurate pacing and interruption accounting require excluding silence from played PCM. This is not a measurement of the handset or proof of a latency improvement.",
+   "commits": [
+    "f842928"
+   ]
+  },
+  {
+   "id": "ISS-087",
+   "title": "Started answer content can be erased as an opener backchannel",
+   "area": "metrics",
+   "status": "open",
+   "found": "2026-10-31",
+   "found_on": "f842928 quotation replay output audit",
+   "found_call": "out-mvvxxkse-wiqh",
+   "symptom": "Item_9 starts both an opener and answer body, then is labelled a backchannel and loses its latency row. The existing explicit-backchannel parser exemption reports missing=0 despite the missing started answer.",
+   "cause": "The continuation decision uses the caller resume time relative to the opener but does not check whether body output committed while recognition was pending. FinishOpenerAsBackchannel resets the playback owner without ordinary truncation reporting.",
+   "fix": "Atomically require the exact playback generation and no committed answer content before converting an opener. Retire that generation against late/dequeued segments. On refusal, retain the normal barge-in or speculative-abandonment interruption path and its exact-owner evidence.",
+   "verified": "Barge-in and speculative-abandonment regressions failed before the change and pass afterward. Generation mismatch, late producer/dequeued output and later-revision controls pass. Earlier opener-only tests were corrected to block the first backend response rather than accidentally permitting body output. Focused race checks pass; full CI and deployment remain pending. Real call out-mvw03ge0-j0y3 has no such conversion and does not exercise this defect.",
+   "effect": "Interrupted answer content must remain in the measured population. Correcting lost rows is accounting fidelity, not proof of a latency gain or the handset target.",
    "commits": []
   }
  ]
