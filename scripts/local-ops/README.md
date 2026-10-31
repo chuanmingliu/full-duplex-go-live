@@ -150,6 +150,7 @@ audio, answer-gated opening, and call termination.
 | [deploy-9547d22.sh](recorded/2026-10-31/deploy-9547d22.sh) | Verified full CI and release payload; preserved runtime settings/archives; installed and warmed the release with rollback handling |
 | [verify-9547d22.sh](recorded/2026-10-31/verify-9547d22.sh) | Checked actual executables, Journal/UI evidence, saved configuration, Talker availability and 80 archived files after release |
 | [publish-notes-36e638e.sh](recorded/2026-10-31/publish-notes-36e638e.sh) | Published the three reviewed note files with rollback on mismatch and appended a checked deployment summary to Desk |
+| [deploy-speko-62d3c37.py](recorded/2026-10-31/deploy-speko-62d3c37.py) | Verified CI and idle state, retained the Mac bridge binary for rollback, and deployed the backend/overflow fixes with automatic goodbye disabled |
 
 These are **historical snapshots, not generic current commands**. They deliberately retain the reviewed LAN addresses, box paths, build IDs, receipt paths and archive fingerprints. They depend on private runtime files, prior receipts, simulator state and release bundles that are not committed. Several now refuse execution because those attempts completed or the running state changed. The post-release note update also means the earlier release payload's note hashes no longer describe the current notes.
 

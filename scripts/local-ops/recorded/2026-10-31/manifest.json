@@ -49,6 +49,12 @@
       "original_name": "codex-publish-notes-36e638e.job",
       "bytes": 5375,
       "sha256": "bb40a3f8c9bd79445c96df5825eef02afd2f835b9d90e267f76896b9e33ca134"
+    },
+    {
+      "file": "deploy-speko-62d3c37.py",
+      "original_name": "deploy-speko-62d3c37.py",
+      "bytes": 3821,
+      "sha256": "1652d30e6c271bf0a9ff6fb8767b39ffe55915e8a5892be0af693e4d395873ab"
     }
   ]
 }
