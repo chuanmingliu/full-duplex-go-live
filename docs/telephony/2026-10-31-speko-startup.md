@@ -85,3 +85,18 @@ Completed external-engine calls can be imported without inventing native-engine
 logs using `scripts/local-ops/import-adapter-call.py` on the ThinkPad. It keeps
 raw adapter files, records transcript fragments as fragments, and generates
 no latency claims. Restarting only the Journal reloads the imported call.
+
+## Remaining intermittent disconnect
+
+`out-speko-20261031-03` delivered 4.48 seconds of assistant RTP audio and
+captured both caller and assistant transcript fragments, then ended with an
+upstream session error after about 9.30 seconds connected. No RTP loss or
+outgoing queue overflow occurred (maximum queue 20 ms). Its complete audio,
+ringback, and available transcript are archived in Call Journal.
+
+The upstream error body was discarded by that build. Sustained silence and
+recorded-caller replays could succeed, so the remaining disconnect is not
+claimed fixed. Structured server diagnostics now retain the upstream code
+and a bounded message with the configured credentials redacted. The client
+receives only the stage and error code. No raw provider message is exposed
+in the client error.

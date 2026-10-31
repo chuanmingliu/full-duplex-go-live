@@ -150,7 +150,13 @@ waiting:
 	}
 	_ = upstream.SetReadDeadline(time.Now().Add(s.cfg.SetupTimeout))
 	var started wireEvent
-	if upstream.ReadJSON(&started) != nil || started.Type != "session.started" {
+	if upstream.ReadJSON(&started) != nil {
+		return errors.New("Speko session setup connection failed")
+	}
+	if started.Type == "error" {
+		return s.upstreamFailure("setup", started.Error)
+	}
+	if started.Type != "session.started" {
 		return errors.New("Speko did not accept the GPT-Live session")
 	}
 	// Refuse a negotiated codec different from the SIP media's codec.

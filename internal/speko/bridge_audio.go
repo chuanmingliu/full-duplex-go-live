@@ -176,7 +176,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					return errors.New("Speko delegated response failed")
 				}
 			case "error":
-				return errors.New("Speko reported a session error")
+				return s.upstreamFailure("session", got.event.Error)
 			case "session.closed":
 				// Socket closure makes the adapter tear down SIP; discard unplayed
 				// audio rather than delivering it after the upstream session ended.
