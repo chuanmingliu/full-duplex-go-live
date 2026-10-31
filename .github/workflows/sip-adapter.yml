@@ -1,0 +1,37 @@
+name: sip-adapter
+on:
+  push:
+    branches: [codex/sip-rtp-adapter]
+  pull_request:
+    paths:
+      - 'internal/telephony/**'
+      - 'cmd/golive-telephony/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/sip-adapter.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Format and vet
+        run: |
+          test -z "$(gofmt -l internal/telephony cmd/golive-telephony)"
+          go vet ./...
+      - name: Regression and local simulated calls
+        run: go test -race -timeout 25m ./...
+      - name: Build Linux adapter
+        run: CGO_ENABLED=0 go build -trimpath -o /tmp/golive-telephony ./cmd/golive-telephony
+      - name: Upload adapter
+        uses: actions/upload-artifact@v4
+        with:
+          name: golive-telephony-linux-amd64
+          path: /tmp/golive-telephony

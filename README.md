@@ -1,60 +1,40 @@
-# GoLive service operations
+# GoLive SIP/RTP adapter
 
-`codex/service-operations` maintains the deployment layout and service ownership map for the
-Mac and ThinkPad box. It is the integration point for Compose definitions,
-host inventories, migration procedures and service maintenance branches.
+`codex/sip-rtp-adapter` implements an experimental outbound phone transport:
 
-## Branch scope
+**GoLive Realtime ↔ Go SIP/RTP adapter ↔ RustPBX ↔ GSM gateway ↔ handset**
 
-| Owned files | Responsibility |
+It replaces Active Call for explicitly requested test calls. GoLive still owns
+streaming ASR, LLM, TTS, turn-taking and business tools. The production Active
+Call path stays available for comparison.
+
+## This branch owns
+
+| Part | Responsibility |
 | --- | --- |
-| [deploy/services/](deploy/services/README.md) | Container build definition, separate Compose projects, example configuration and migration procedures |
-| [docs/services/](docs/services/README.md) | Host inventories, codebase descriptions and service-to-branch registry |
-| [.cursor/agents/golive-service-maintainer.md](.cursor/agents/golive-service-maintainer.md) | Reusable inventory and service-maintenance agent |
-| [scripts/check_service_catalog.py](scripts/check_service_catalog.py) | Ownership, branch coverage and documentation-link validation |
-| [.github/workflows/services.yml](.github/workflows/services.yml) | CI for service definitions and documentation |
+| [cmd/golive-telephony](cmd/golive-telephony/main.go) | One-call command; readiness check by default, explicit `-dial` for a real call |
+| [internal/telephony](internal/telephony) | SIP dialog, direct G.711 audio, 20 ms RTP pacing, cancellation and recording |
+| [Example configuration](configs/sip-adapter.example.json) | Fixed destination, media allowlist, independent ports and call limits |
+| [Profile preparation](scripts/prepare_sip_adapter.py) | Create a separate agent profile without changing running services |
+| [Adapter guide](docs/telephony/sip-adapter.md) | Architecture, operation, limitations and A/B procedure |
+| [Latency report](docs/telephony/sip-adapter-latency.md) | Synthetic pacing results and expected handset benefit |
+| [CI](.github/workflows/sip-adapter.yml) | Regression tests and Linux binary; no automatic deployment or dialing |
 
-Keep changes on this branch focused on deployment and cross-service integration.
-Service implementation changes belong on their [respective maintenance
-branches](docs/services/branches.json). Shared application source remains in the
-repository so builds and integration checks have their dependencies.
+Shared engine source remains here to build and test the transport. Changes on
+this branch should stay focused on the adapter and its integration contract.
 
-## Deployment groups
-
-| Group | Contents |
-| --- | --- |
-| ThinkPad core | Phone engine, CRM, Call Journal and Desk; optional browser demo, quotation service and edge gateway |
-| ThinkPad telephony | Patched Active Call; a separately staged RustPBX migration |
-| User simulator | Existing independent simulator project, private overlays and named volumes |
-| Mac | Native Aria, Metal Talker and SSH runner; optional containerized mock development service |
-
-The Compose definitions are **staged, not a completed live migration**. All owned
-Compose services require explicit profiles. The [deployment runbook](deploy/services/README.md)
-covers image builds, private configuration, state preservation, cutover and rollback.
-RustPBX's database and recordings must be recovered from its current container
-before recreation. Mac Metal inference retains native supervision.
-
-## Validate
-
-From the repository root, with Python 3 and the Docker Compose CLI installed:
+## Build and validate
 
 ```sh
-python3 scripts/check_service_catalog.py
-python3 deploy/services/validate.py
+go build -o /tmp/golive-telephony ./cmd/golive-telephony
+go test -race ./internal/telephony
 ```
 
-These checks use fixture configuration and do not start containers or call a
-phone. They validate the catalog, local documentation links, Compose profiles,
-mount contracts and isolation from inherited shell settings. They do not prove
-provider readiness or live audio behavior.
+Read the [setup guide](docs/telephony/sip-adapter.md) before connecting a PBX.
+Tests use local simulated SIP peers and the actual GoLive Realtime server with
+mock speech providers. **Live RustPBX/GSM interoperability and handset latency
+are not yet measured.**
 
-## Maintenance workflow
-
-1. Identify the service and source branch in the [branch registry](docs/services/branches.json).
-2. Update its host inventory, dependencies, configuration and state contract when they change.
-3. Validate deployment definitions and preserve the existing runtime before a cutover.
-4. Record the actual deployed artifact and health result separately from branch HEAD.
-
-Start with the [Mac runbook](docs/services/mac.md), [ThinkPad runbook](docs/services/box.md)
-or [codebase guide](docs/services/codebases.md). Private environment files,
-recordings, prompts, tokens and model weights stay outside Git.
+The expected first-packet scheduling saving is roughly **0–20 ms**, about
+**10 ms on average** for uniform arrival phases. It is one transport improvement
+toward the **<1200 ms handset response target**, not proof of reaching that target.

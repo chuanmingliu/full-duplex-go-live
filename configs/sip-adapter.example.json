@@ -1,0 +1,17 @@
+{
+  "sip_listen": "127.0.0.1:15060",
+  "advertise_ip": "127.0.0.1",
+  "pbx": "127.0.0.1:5060",
+  "allowed_uri": "sip:CONFIGURED_NUMBER@127.0.0.1",
+  "from_user": "golive",
+  "sip_username": "",
+  "golive_url": "http://127.0.0.1:9875",
+  "record_dir": "/var/lib/golive-sip-ab/adapter",
+  "codec": "pcma",
+  "rtp_min": 31000,
+  "rtp_max": 31031,
+  "media_networks": ["127.0.0.1/32"],
+  "queue_ms": 500,
+  "ring_timeout_seconds": 30,
+  "max_duration_seconds": 600
+}

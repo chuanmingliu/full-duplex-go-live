@@ -1,0 +1,6 @@
+{
+  "call_id": "sip-ab-001",
+  "instructions": "Answer in brief conversational sentences.",
+  "greeting": "Hello. This is the voice latency test.",
+  "voice": ""
+}
