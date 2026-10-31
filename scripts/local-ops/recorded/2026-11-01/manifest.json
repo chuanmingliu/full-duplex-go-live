@@ -1,0 +1,114 @@
+{
+  "recorded_on": "2026-11-01",
+  "purpose": "Historical simulator-only operations; fixed paths and completed-attempt guards; not current jobs",
+  "files": [
+    {
+      "file": "native-ab-g711.py",
+      "original_name": "run-native-ab.py",
+      "bytes": 5576,
+      "sha256": "d37f24e3ed9ab24bbd3db101705a97d892bf3acd4d29f9e263306a9ddd103e11"
+    },
+    {
+      "file": "native-ab-pcm16.py",
+      "original_name": "run-native-ab-v3.py",
+      "bytes": 6409,
+      "sha256": "73fb2e997b96f727e8b597f5139471546eae0e2f1a7e144f310fb50aa720e3e0"
+    },
+    {
+      "file": "native-ab-pcmu.py",
+      "original_name": "run-native-ab-v4.py",
+      "bytes": 6439,
+      "sha256": "a7da241c96ab05e2c8dc05b4223047897d1427c635f86123f575528cdb55a302"
+    },
+    {
+      "file": "native-ab-g711.sh",
+      "original_name": "native-ab-20261031-v2.job",
+      "bytes": 318,
+      "sha256": "f5698c60268551e6af08e7416c614c0a49b70e3ab13249fdc78529de338edfd2"
+    },
+    {
+      "file": "native-ab-pcm16.sh",
+      "original_name": "native-ab-pcm16-20261101.job",
+      "bytes": 318,
+      "sha256": "97b46e16454324c1fe21017c869aad3db7ba419220970c48167b5037c3f0d173"
+    },
+    {
+      "file": "native-ab-pcmu.sh",
+      "original_name": "native-ab-pcmu-20261101.job",
+      "bytes": 318,
+      "sha256": "51d313bfcc592672afc2e573841de2019951754bffecf471a8201fc4076e6737"
+    },
+    {
+      "file": "native-ab-final-control.py",
+      "original_name": "run-native-ab-v5.py",
+      "bytes": 6546,
+      "sha256": "5655c21c47b08fe5e61db599cf0ab95da894eeb26620fbd0589c76b4ea8c1501"
+    },
+    {
+      "file": "native-ab-final-control.sh",
+      "original_name": "native-ab-final-control-20261101.job",
+      "bytes": 318,
+      "sha256": "b66b98a44aa704016675a9007e44885f0739defce8fb581a8df3f894b8dd4c0c"
+    },
+    {
+      "file": "native-ab-contact.py",
+      "original_name": "run-native-ab-v6.py",
+      "bytes": 6616,
+      "sha256": "2540292456a57ce2333b4693b8080a0595675d80315161361b73a094faecd951"
+    },
+    {
+      "file": "native-ab-contact.sh",
+      "original_name": "native-ab-contact-20261101.job",
+      "bytes": 318,
+      "sha256": "f26a5034252c83db9015487f44289812bc5328ea37d7e283506f395c26f9a7b0"
+    },
+    {
+      "file": "native-ab-qualification.py",
+      "original_name": "run-native-ab-v7.py",
+      "bytes": 6622,
+      "sha256": "6aa99d9d6e89f19b28dd02c2868fb0fcbddb6979f3d3e8a12e1c81f67dfbd515"
+    },
+    {
+      "file": "native-ab-qualification.sh",
+      "original_name": "native-ab-qualification-20261101.job",
+      "bytes": 318,
+      "sha256": "78f507cc05a4ac909f92f988d9bd26c4ee5cda374964267c82eeb44d075754fe"
+    },
+    {
+      "file": "archive-native-ab.py",
+      "original_name": "archive-native-ab.py",
+      "bytes": 2414,
+      "sha256": "70ab8073ca87e1a1709249bdbbfb7857a87bd7ec443192ee22e75ec14f7e44ec"
+    },
+    {
+      "file": "finalize-native-ab.py",
+      "original_name": "finalize-native-ab.py",
+      "bytes": 2989,
+      "sha256": "fcaed7c70bec64a630606857fc9f87ab9c55f4dbca0e6e720cd2f30335419be9"
+    },
+    {
+      "file": "finalize-native-ab.sh",
+      "original_name": "native-ab-finalize-20261101.job",
+      "bytes": 330,
+      "sha256": "d21f8ffa049462d041e19447ef3f31704b62a9e69a55e14222b5b2f8f097e409"
+    },
+    {
+      "file": "publish-native-ab-notes.py",
+      "original_name": "publish-native-ab-notes.py",
+      "bytes": 1422,
+      "sha256": "215c6a1633938f7213869c448b0b1ab9bb4af113538654d2bcf2c6889a079b49"
+    },
+    {
+      "file": "import-native-ab-journal.py",
+      "original_name": "import-native-ab-journal.py",
+      "bytes": 3860,
+      "sha256": "143d1ef8a123c00281fe1e694826422961f47ceed7fd69906f638ee978625deb"
+    },
+    {
+      "file": "publish-native-ab-journal.sh",
+      "original_name": "native-ab-journal-20261101.job",
+      "bytes": 530,
+      "sha256": "1dd1b017522f8ce6e85c5b1227a06f6d864fe5948e91d94bbc5efd49e9d41082"
+    }
+  ]
+}

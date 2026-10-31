@@ -1416,6 +1416,42 @@
    "commits": [
     "9547d22"
    ]
+  },
+  {
+   "id": "ISS-088",
+   "title": "Native SIP simulator stalls on the PCMA-to-PCMU route",
+   "area": "telephony",
+   "status": "open",
+   "found": "2026-11-01",
+   "found_on": "Native transport A/B simulator comparison",
+   "found_call": "ab-sim-0af3d93d865cbcfda83d6a9a",
+   "symptom": "Four PCMA adapter trials stopped on GoLive silence after about 37 seconds. RTP arrived but no sustained conversation occurred.",
+   "cause": "The simulator accepts only PCMU. The failing calls used the deployed RustPBX PCMA-to-PCMU transcoding path. Exact transcoder defect is not established.",
+   "fix": "Use a separate PCMU simulator profile, matching the original Active Call route. Use optional PCM16 mode for original 16 kHz GoLive interface parity. Preserve handset codec settings.",
+   "commits": [
+    "f758708"
+   ],
+   "verified": "Two PCM16/PCMU trials sustained 16 and 18 remote turns. Receiver TTS warnings and remote-BYE routing failures remain separate qualification failures.",
+   "verified_call": "ab-sim-869f87606ad0f66cb0bc4f38",
+   "effect": "PCMU is a tested simulator workaround, not a general PCMA fix or a demonstrated handset latency improvement."
+  },
+  {
+   "id": "ISS-089",
+   "title": "PBX sends adapter remote BYE to the Active Call registration",
+   "area": "telephony",
+   "status": "fixed",
+   "found": "2026-11-01",
+   "found_on": "Native PCMU simulator packet capture",
+   "found_call": "ab-sim-869f87606ad0f66cb0bc4f38",
+   "symptom": "After receiver hangup, adapter remains active until explicit test cleanup.",
+   "cause": "Captured BYE has adapter Contact URI on port 15064 but UDP destination is Active Call port 13050. Active Call returns 481. Both share contact user 1001.",
+   "fix": "Optional contact_user separates the adapter dialog address from From and Digest authentication without changing the existing registration.",
+   "commits": [
+    "fb11e2c"
+   ],
+   "verified": "Local race regressions pass. On the box, the independent Contact routed BYE to adapter port 15064 and received 200. One 60-second probe and two full-length simulator calls exited 0 without stale cleanup; all three reported no receiver failures. Existing handset/Speko profiles were not changed.",
+   "effect": "Fix verified for the isolated native simulator profile. Call-control correctness is separate from latency; handset and other profiles require their own qualification.",
+   "verified_call": "ab-sim-0cb916cd1580aa3f47dc3397"
   }
  ]
 }

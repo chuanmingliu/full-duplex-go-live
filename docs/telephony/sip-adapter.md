@@ -182,7 +182,9 @@ carrier ringing in Call Journal without feeding early media into ASR.
 
 The original Active Call connection negotiates 16 kHz PCM. Direct G.711 instead
 runs the GoLive session at 8 kHz, even when the base profile says 16 kHz. A
-transport comparison must account for this change in provider/VAD input.
+transport comparison must account for this change in session output rate and
+conversion paths. Native GoLive still resamples incoming audio to its ASR/VAD
+pipeline rate.
 
 For native-engine parity, set `"golive_audio_format": "pcm16"` in a separate
 adapter configuration. The adapter requires explicit confirmation of 16 kHz
@@ -195,3 +197,39 @@ as well as latency. SIP/RTP and saved adapter WAVs remain 8 kHz.
 
 The default G.711 mode remains available. The PCM mode is for the original
 native GoLive stack; it does not change the preserved Speko experiment.
+
+
+## Simulator codec parity
+
+The current simulated customer's Active Call gateway advertises only PCMU.
+For comparisons against the original Active Call route, use a **separate**
+simulator adapter profile with `"codec": "pcmu"` and
+`"golive_audio_format": "pcm16"`. Keep the saved prompt and original native
+GoLive provider/endpointing settings. Verify the PBX log reports PCMU relay;
+a PCMA-to-PCMU transcoding path changes the experiment.
+
+The November 1 trials with PCMA negotiated successfully but repeatedly ended
+on silence, including after enabling PCM16 and warming the greeting. Do not
+interpret their isolated short receiver gaps as successful low latency. This
+is evidence of failure on that deployed transcoding route, not proof that all
+PCMA calls or all PBX transcoding implementations fail. Keep the existing
+handset codec configuration until it has its own measured test.
+
+See the [native transport comparison](2026-11-01-native-sip-comparison.md)
+for run identities, exclusions, and qualification status.
+
+
+## A distinct SIP dialog contact
+
+`contact_user` optionally sets the user portion of the adapter's SIP Contact
+URI. It defaults to `from_user`; it does not change From, Digest credentials,
+the allowed destination, or the advertised IP/port.
+
+When running alongside an Active Call registration, choose an unused contact
+such as `"contact_user": "golive-sip-adapter"`. In the November 1 box capture,
+RustPBX addressed a BYE to the adapter's correct Contact URI/port but delivered
+it to Active Call's registered socket because both used contact user `1001`.
+Active Call returned 481, leaving the adapter session open. A dedicated dialog
+contact avoids sharing that routing identity without replacing the existing
+registration. Verify the actual packet destination and successful remote
+hangup on the deployed PBX; a local unit test alone cannot qualify this path.
