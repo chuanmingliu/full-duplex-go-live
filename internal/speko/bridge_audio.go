@@ -25,13 +25,13 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 	defer tick.Stop()
 	var speaker []byte
 	started := time.Now()
-	var received, played, maxQueue, delegations, trimmed int
+	var received, played, maxQueue, delegations, trimmed, interruptions int
 	defer func() {
 		reason := "closed"
 		if result != nil {
 			reason = result.Error()
 		}
-		slog.Info("speko: bridge summary", "call_id", callID, "elapsed_ms", time.Since(started).Milliseconds(), "received_audio_ms", received/8, "played_audio_ms", played/8, "max_queue_ms", maxQueue/8, "delegations", delegations, "trimmed_silence_ms", trimmed/8, "reason", reason)
+		slog.Info("speko: bridge summary", "call_id", callID, "elapsed_ms", time.Since(started).Milliseconds(), "received_audio_ms", received/8, "played_audio_ms", played/8, "max_queue_ms", maxQueue/8, "delegations", delegations, "trimmed_silence_ms", trimmed/8, "interruptions", interruptions, "reason", reason)
 	}()
 	nextMetrics := started.Add(5 * time.Second)
 	nextInput := time.Now().Add(60 * time.Millisecond)
@@ -39,6 +39,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 	var responseID, transcript string
 	var lastAudio, lastVoicedPlayback time.Time
 	suppressed := false
+	var detector bargeDetector
 	finish := func(status, reason string) error {
 		if responseID == "" {
 			return nil
@@ -61,6 +62,20 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 		}
 		responseID = "resp_" + rand.Text()
 		return s.send(client, map[string]any{"type": "response.created", "response": map[string]string{"id": responseID, "status": "in_progress"}})
+	}
+	interrupt := func(reason string) error {
+		speaker = nil
+		suppressed = true
+		lastAudio = time.Now()
+		interruptions++
+		if err := finish("cancelled", reason); err != nil {
+			return err
+		}
+		if err := s.send(client, map[string]string{"type": "output_audio_buffer.cleared"}); err != nil {
+			return err
+		}
+		slog.Info("speko: playback interrupted", "call_id", callID, "reason", reason)
+		return s.send(upstream, map[string]any{"type": "session.instructions.append", "event_id": "interrupt_" + rand.Text(), "delegation_id": nil, "content": "Stop speaking immediately. The caller has the floor. Listen until they finish, then answer their latest request briefly. Do not resume the interrupted explanation."})
 	}
 	for {
 		select {
@@ -92,6 +107,13 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				// Re-pacing that backlog creates permanent input delay and
 				// can overflow before the first model response.
 				if len(b) > 0 {
+					if s.cfg.LocalBargeIn && detector.observe(b, transport.codec, time.Now()) && !suppressed &&
+						(time.Since(lastVoicedPlayback) < 300*time.Millisecond || !codecSilence(speaker, silence[0])) {
+						if err := interrupt("caller_speech"); err != nil {
+							return err
+						}
+					}
+
 					if err := s.send(upstream, map[string]string{"type": "session.input_audio.append", "audio": base64.StdEncoding.EncodeToString(transport.encode(b))}); err != nil {
 						return err
 					}
@@ -100,16 +122,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					nextInput = time.Now().Add(time.Duration(len(b))*time.Second/8000 + 40*time.Millisecond)
 				}
 			case "response.cancel":
-				speaker = nil
-				suppressed = true
-				lastAudio = time.Now()
-				if err := finish("cancelled", "client_cancel"); err != nil {
-					return err
-				}
-				if err := s.send(client, map[string]string{"type": "output_audio_buffer.cleared"}); err != nil {
-					return err
-				}
-				if err := s.send(upstream, map[string]any{"type": "session.instructions.append", "delegation_id": nil, "content": "Stop the current spoken response and listen for the caller's next request."}); err != nil {
+				if err := interrupt("client_cancel"); err != nil {
 					return err
 				}
 			case "input_audio_buffer.clear":
@@ -136,6 +149,11 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				received += len(b)
 				if len(b) == 0 {
 					continue
+				}
+				if s.cfg.LocalBargeIn && !suppressed && detector.talking(time.Now()) && !codecSilence(b, silence[0]) {
+					if err := interrupt("caller_speech"); err != nil {
+						return err
+					}
 				}
 				if suppressed {
 					// Some Live streams send digital silence continuously. Silence
@@ -230,7 +248,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					nextInput = now.Add(20 * time.Millisecond)
 				}
 			}
-			if suppressed && now.Sub(lastAudio) >= audioIdle {
+			if suppressed && now.Sub(lastAudio) >= audioIdle && !detector.talking(now) {
 				suppressed = false
 			}
 			if len(speaker) >= 160 || (len(speaker) > 0 && now.Sub(lastAudio) >= audioIdle) {

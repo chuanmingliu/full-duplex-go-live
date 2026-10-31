@@ -28,6 +28,8 @@ type Config struct {
 	DelegationMode  string
 	ResponsesModel  string
 	HoldTimeout     time.Duration
+	Preconnect      bool
+	LocalBargeIn    bool
 }
 
 // FromEnv deliberately permits absent keys: health works while readiness and
@@ -35,6 +37,8 @@ type Config struct {
 func FromEnv() Config {
 	return Config{
 		URL:            os.Getenv("SPEKO_LIVE_URL"),
+		Preconnect:     os.Getenv("SPEKO_PRECONNECT") == "1",
+		LocalBargeIn:   os.Getenv("SPEKO_LOCAL_BARGE_IN") == "1",
 		APIKey:         os.Getenv("SPEKO_API_KEY"),
 		AuthToken:      os.Getenv("GOLIVE_AUTH_TOKEN"),
 		ResponsesModel: os.Getenv("SPEKO_RESPONSES_MODEL"),

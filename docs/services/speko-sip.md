@@ -183,3 +183,21 @@ SIP/RTP peers: PCMA through the standalone service, PCMU through embedded
 GoLive, answer-gated setup, caller audio, an 800 ms output burst, remote BYE and
 upstream cleanup. Additional tests cover duplicate releases, hold timeout,
 credential-safe errors, cancellation and shutdown during a stalled upgrade.
+
+## Prepared connection and local interruption control
+
+For the isolated Mac SIP bridge, `SPEKO_PRECONNECT=1` prepares the provider
+session during ringing without sending caller audio or a greeting. The named
+opening release still gates both on SIP answer. Provider session billing may
+start during ringing. An unanswered/cancelled call closes the prepared socket.
+
+`SPEKO_LOCAL_BARGE_IN=1` enables a 120 ms receive-leg energy gate. It clears both
+bridge and adapter playback, steers GPT-Live to listen, and keeps caller audio
+flowing. Playback resumes after caller quiet (240 ms) and provider output quiet
+(200 ms). This is not echo cancellation and can react to sustained noise or
+acknowledgments. Both flags default off and do not modify native GoLive calls.
+
+The isolated runtime enables both flags following the
+[call 05 investigation](../telephony/2026-10-31-speko-responsiveness.md).
+They address setup waiting and local playback control; they do not establish
+sub-1200 ms handset latency or fix the separate PBX hangup propagation issue.
