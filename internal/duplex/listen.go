@@ -1062,7 +1062,7 @@ func (e *Engine) abandonSpeculation(reason string) {
 	e.forgetDelegation(delegationIDOf(spec))
 	e.cancelBackend()
 	if e.tracker.IsCurrent(spec) {
-		if spec.Opened != "" {
+		if spec.Opened != "" && e.player.FinishOpenerAsBackchannel(spec.ID, spec.Generation) {
 			// The opener was said at the base pause and the caller went on:
 			// it finishes as an 嗯 of listening (one word), the rest of the
 			// guess is dropped without a sound, and the fragment that follows
@@ -1070,7 +1070,6 @@ func (e *Engine) abandonSpeculation(reason string) {
 			if pipe := e.speech.Load(); pipe != nil {
 				pipe.Abort()
 			}
-			e.player.FinishOpenerAsBackchannel(spec.ID)
 			e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 			e.log.Info("speak: the opener became a backchannel; the caller went on", "turn", spec.ID, "opener_ms", spec.OpenedMS, "reason", reason)
 		} else {
@@ -1144,6 +1143,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		} else {
 			e.abortSpeech()
 		}
+		e.player.mu.Lock()
 		revised := e.tracker.Revise(spec.ID, text, true)
 		e.specTurn = nil
 		e.specAbandoned++
@@ -1153,12 +1153,15 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 				// Said already, at the pause; the revised answer follows it,
 				// and the opener's audio stamps come with it.
 				revised.InheritOpener(spec)
+				e.player.adoptOpenerLocked(spec, revised)
 			}
+			e.player.mu.Unlock()
 			e.sayOpener(revised)
 			e.commitTurn(revised)
 			e.beginGeneration(revised, "revision", true)
 			return
 		}
+		e.player.mu.Unlock()
 	}
 
 	e.specTurn = nil
@@ -1324,7 +1327,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
 	e.lastSaidOpener = phrase
 	turn.MarkFirstSegment()
-	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
+	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, owner: turn, Revision: turn.Revision}
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, phrase
 	body.Kind, body.PCM = SegAudio, pcm

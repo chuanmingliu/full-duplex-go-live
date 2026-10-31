@@ -143,6 +143,32 @@ func startQuoteEngine(t *testing.T, opts Options, deps Deps, exec tools.Executor
 	return e
 }
 
+// Engine tool state belongs to its loop. Query it there instead of racing
+// requestEndCall or the silence rule from the test goroutine.
+func testHangingUp(t *testing.T, e *Engine) bool {
+	t.Helper()
+	result := make(chan bool, 1)
+	e.post(func() { result <- e.hangingUp() })
+	select {
+	case hangingUp := <-result:
+		return hangingUp
+	case <-e.loopDone:
+		t.Fatal("engine closed before the hangup state was read")
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine did not answer the hangup state query")
+	}
+	return false
+}
+
+func allowImmediateModelHangup(t *testing.T) {
+	t.Helper()
+	oldMin := minCallForEndCall
+	minCallForEndCall = 0
+	// Register before startQuoteEngine: its cleanup closes the loop first.
+	// Leave hangupGrace unchanged; its background waiter is not joined by Close.
+	t.Cleanup(func() { minCallForEndCall = oldMin })
+}
+
 // The point of it: the price is asked for, the tool runs in the background,
 // the assistant says so and answers another question meanwhile, and the
 // result is read out when it comes.
@@ -337,9 +363,7 @@ func (l *farewellLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-ch
 // the farewell it said in the same breath has played, and not before, and
 // not in the first seconds of a call.
 func TestTheAssistantHangsUpAfterItsFarewellHasPlayed(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 
 	opts := quoteConfig()
 	opts.Cfg.Tools = nil
@@ -397,7 +421,7 @@ func TestEndCallIsRefusedInTheFirstSecondsOfACall(t *testing.T) {
 	if c.find(func(ev any) bool { _, ok := ev.(live.HangupEvent); return ok }) != nil {
 		t.Fatal("the call was ended in its first seconds")
 	}
-	if e.tools.endCall != nil {
+	if testHangingUp(t, e) {
 		t.Fatal("an early end_call was accepted")
 	}
 }
@@ -442,9 +466,7 @@ func hungUpWith(c *collector) (live.HangupEvent, bool) {
 // A caller who has gone quiet is not kept on the line for ever: the silence
 // rule from the owner's panel says the farewell and hangs up.
 func TestTheSilenceRuleSaysItsFarewellAndHangsUp(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 	svc := rulesService(t, `{"rules":[{"id":"quiet","kind":"silence","seconds":2,"farewell":"听不到您，再见。"}]}`)
 
 	opts := quoteConfig()
@@ -486,9 +508,7 @@ func TestTheSilenceRuleSaysItsFarewellAndHangsUp(t *testing.T) {
 // The caller's own words can end the call: a keyword rule (a complaint, a
 // "stop calling") says the farewell instead of an answer, and hangs up.
 func TestTheKeywordRuleEndsTheCallOnTheCallersWords(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 	svc := rulesService(t, `{"rules":[{"id":"complaint","kind":"keyword","pattern":"投诉|别再打","farewell":"好的，不再打扰，再见。"}]}`)
 
 	opts := quoteConfig()
@@ -533,9 +553,7 @@ func TestTheKeywordRuleEndsTheCallOnTheCallersWords(t *testing.T) {
 // announcement — does not cut it, and nothing said after the goodbye is
 // answered: the line drops after the whole farewell and not before.
 func TestTheFarewellIsNotCutByASoundOverIt(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 
 	opts := quoteConfig()
 	opts.Cfg.Tools = nil
@@ -587,9 +605,7 @@ func (goodbyeLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan p
 // A goodbye the model says without the tool still ends the call: the
 // assistant rule in the default set matches the reply once it has played.
 func TestAGoodbyeSaidWithoutTheToolStillEndsTheCall(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 
 	opts := quoteConfig()
 	opts.Cfg.Tools = nil
@@ -663,9 +679,7 @@ func TestARepeatedToolCallIsFoldedIntoThePreviousOne(t *testing.T) {
 // the caller's silence: with a 2 s rule and a 4 s answer, the hangup must
 // not come as the answer ends.
 func TestTheSilenceRuleDoesNotCountTheAssistantsOwnAnswer(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 	svc := rulesService(t, `{"rules":[{"id":"quiet","kind":"silence","seconds":2,"farewell":"听不到您，再见。"}]}`)
 
 	opts := quoteConfig()
@@ -691,7 +705,7 @@ func TestTheSilenceRuleDoesNotCountTheAssistantsOwnAnswer(t *testing.T) {
 	}
 	ended := time.Now()
 	pause(e, rate, 800)
-	if e.hangingUp() {
+	if testHangingUp(t, e) {
 		t.Fatalf("hanging up %v after the answer ended: the answer was counted as the caller's silence", time.Since(ended))
 	}
 	// Two seconds of real silence after it: now it fires.
@@ -710,9 +724,7 @@ func TestTheSilenceRuleDoesNotCountTheAssistantsOwnAnswer(t *testing.T) {
 // The caller answering the silence farewell ("喂？我在") must not cut it:
 // no turn begins after the farewell, so nothing aborts its speech.
 func TestTheCallerSpeakingOverTheSilenceFarewellDoesNotCutIt(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 	svc := rulesService(t, `{"rules":[{"id":"quiet","kind":"silence","seconds":2,"farewell":"听不到您的声音，我稍后再联系您，再见。"}]}`)
 
 	opts := quoteConfig()
@@ -729,7 +741,7 @@ func TestTheCallerSpeakingOverTheSilenceFarewellDoesNotCutIt(t *testing.T) {
 	speak(e, rate, 600)
 	pause(e, rate, 700)
 	waitFor(t, "the answer", 5*time.Second, func() bool { return c.audioMS() > 100 })
-	waitFor(t, "the silence farewell to begin", 8*time.Second, func() bool { return e.hangingUp() })
+	waitFor(t, "the silence farewell to begin", 8*time.Second, func() bool { return testHangingUp(t, e) })
 	heard := c.audioMS()
 	// The caller speaks over the farewell.
 	speak(e, rate, 900)
@@ -775,9 +787,7 @@ func (l *refusingLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-ch
 // many turns: "refused twice" on the caller's first (garbled) line, 17 s into
 // the 09:43 call of 10-23 (ISS-054). The model is told why and carries on.
 func TestAModelHangupRuleWaitsForItsMinimumTurns(t *testing.T) {
-	oldMin, oldGrace := minCallForEndCall, hangupGrace
-	minCallForEndCall, hangupGrace = 0, 50*time.Millisecond
-	defer func() { minCallForEndCall, hangupGrace = oldMin, oldGrace }()
+	allowImmediateModelHangup(t)
 	// With the goodbye net on too: the refused farewell must not end the
 	// call by the back door.
 	svc := rulesService(t, `{"rules":[{"id":"refused_twice","kind":"model","when":"客户明确拒绝且已挽留过一次","min_turns":2,"farewell":"好的，再见。"},
@@ -802,7 +812,7 @@ func TestAModelHangupRuleWaitsForItsMinimumTurns(t *testing.T) {
 	pause(e, rate, 700)
 	waitFor(t, "the first answer", 5*time.Second, func() bool { return c.audioMS() > 100 })
 	time.Sleep(1500 * time.Millisecond)
-	if e.tools.endCall != nil {
+	if testHangingUp(t, e) {
 		t.Fatal("end_call was accepted on the caller's first turn")
 	}
 	if _, ok := hungUpWith(c); ok {
@@ -812,7 +822,7 @@ func TestAModelHangupRuleWaitsForItsMinimumTurns(t *testing.T) {
 	pause(e, rate, 1500)
 	speak(e, rate, 600)
 	pause(e, rate, 700)
-	waitFor(t, "the second end_call", 6*time.Second, func() bool { return e.tools.endCall != nil })
+	waitFor(t, "the second end_call", 6*time.Second, func() bool { return testHangingUp(t, e) })
 }
 
 // The owner's words for the wait and for the result (10-23): when an async
@@ -1076,11 +1086,15 @@ func TestTheModelsWordsInTheCallingTurnEndAtTheClauseInFlight(t *testing.T) {
 		pause(e, rate, 100)
 	}
 	said := c.saidAll()
-	if !strings.Contains(said, "请您稍等") || !strings.Contains(said, "保费给您计算好了") {
-		t.Fatalf("the script was not said: %q", said)
+	// If the result is ready by the time the clause releases the floor, its
+	// opening replaces the now-obsolete ack. Either path must deliver the
+	// result, without letting the model's remaining clauses delay it.
+	opening, result := strings.Index(said, "保费给您计算好了"), strings.Index(said, "三千二百")
+	if opening < 0 || result < opening {
+		t.Fatalf("the result opening and result were not said in order: %q", said)
 	}
-	if strings.Contains(said, "您稍微等一下就好") {
-		t.Fatalf("the model's sentence was said to its end before the script: %q", said)
+	if strings.Contains(said, "这个方案是按您的车辆信息来算的") || strings.Contains(said, "您稍微等一下就好") {
+		t.Fatalf("the model's later clauses were said before the script: %q", said)
 	}
 }
 

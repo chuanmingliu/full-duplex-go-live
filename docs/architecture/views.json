@@ -1,0 +1,779 @@
+[
+  {
+    "id": "overview",
+    "title": "Whole system",
+    "focus": "golive",
+    "caption": "The phone path, cloud intelligence and supporting services",
+    "nodes": [
+      "handset",
+      "carrier",
+      "gsm",
+      "golive",
+      "active",
+      "pbx",
+      "asr",
+      "think",
+      "tts",
+      "crm",
+      "quotesvc",
+      "focus",
+      "journal",
+      "desk",
+      "talker"
+    ],
+    "edges": [
+      [
+        "handset",
+        "carrier",
+        "Phone audio",
+        "both"
+      ],
+      [
+        "carrier",
+        "gsm",
+        "Carrier leg",
+        "both"
+      ],
+      [
+        "gsm",
+        "pbx",
+        "SIP / media",
+        "both"
+      ],
+      [
+        "pbx",
+        "active",
+        "Routed call",
+        "both"
+      ],
+      [
+        "active",
+        "golive",
+        "Realtime WebSocket",
+        "both"
+      ],
+      [
+        "golive",
+        "think",
+        "Context → streamed answer",
+        "both"
+      ],
+      [
+        "golive",
+        "tts",
+        "Text → speech audio",
+        "both"
+      ],
+      [
+        "golive",
+        "crm",
+        "Business tool requests/results",
+        "both"
+      ],
+      [
+        "crm",
+        "quotesvc",
+        "Inquiry + polling",
+        "both"
+      ],
+      [
+        "golive",
+        "journal",
+        "Logs + recorded sessions",
+        "data"
+      ],
+      [
+        "desk",
+        "journal",
+        "Read call evidence",
+        "control"
+      ],
+      [
+        "golive",
+        "asr",
+        "Audio → recognized text",
+        "both"
+      ],
+      [
+        "golive",
+        "focus",
+        "Caller verification",
+        "both"
+      ],
+      [
+        "desk",
+        "talker",
+        "Separate first-clause experiment",
+        "both"
+      ],
+      [
+        "journal",
+        "talker",
+        "Reachability probe only",
+        "control"
+      ]
+    ]
+  },
+  {
+    "id": "call",
+    "title": "1 · Phone call",
+    "focus": "active",
+    "caption": "Dial signalling and bidirectional media are separate",
+    "nodes": [
+      "runner",
+      "aria",
+      "golive",
+      "handset",
+      "carrier",
+      "gsm",
+      "simulator",
+      "pbx",
+      "active"
+    ],
+    "edges": [
+      [
+        "runner",
+        "aria",
+        "phone-brain.sh call",
+        "control"
+      ],
+      [
+        "aria",
+        "active",
+        "Originate / control call",
+        "control"
+      ],
+      [
+        "aria",
+        "golive",
+        "Opening coordination",
+        "control"
+      ],
+      [
+        "handset",
+        "carrier",
+        "Voice call",
+        "both"
+      ],
+      [
+        "carrier",
+        "gsm",
+        "Carrier leg",
+        "both"
+      ],
+      [
+        "gsm",
+        "pbx",
+        "SIP / media",
+        "both"
+      ],
+      [
+        "pbx",
+        "active",
+        "Route media",
+        "both"
+      ],
+      [
+        "active",
+        "golive",
+        "/v1/realtime audio/events",
+        "both"
+      ],
+      [
+        "active",
+        "simulator",
+        "Alternate test destination via isolated gateway",
+        "both"
+      ],
+      [
+        "golive",
+        "active",
+        "End-call command",
+        "control"
+      ]
+    ]
+  },
+  {
+    "id": "streaming",
+    "title": "ASR → LLM → TTS in detail",
+    "focus": "floor",
+    "caption": "Prepare concurrently; commit before body playback",
+    "nodes": [
+      "listen",
+      "asr",
+      "floor",
+      "think",
+      "segment",
+      "tts",
+      "phrases",
+      "player",
+      "tools"
+    ],
+    "edges": [
+      [
+        "listen",
+        "asr",
+        "Audio frames keep flowing during playback",
+        "data"
+      ],
+      [
+        "asr",
+        "floor",
+        "Partial revisions / early final / final text",
+        "data"
+      ],
+      [
+        "floor",
+        "think",
+        "Provisional start, confirm or cancel",
+        "control"
+      ],
+      [
+        "think",
+        "segment",
+        "Winning text deltas; bounded buffer",
+        "data"
+      ],
+      [
+        "segment",
+        "tts",
+        "Sequential speakable text segments",
+        "data"
+      ],
+      [
+        "tts",
+        "player",
+        "Streaming PCM after commit guard",
+        "data"
+      ],
+      [
+        "floor",
+        "player",
+        "Exact turn ownership / interruption",
+        "control"
+      ],
+      [
+        "floor",
+        "phrases",
+        "Eligible cached opener at pause",
+        "control"
+      ],
+      [
+        "phrases",
+        "player",
+        "Cached PCM; not answer-body proof",
+        "data"
+      ],
+      [
+        "think",
+        "tools",
+        "Committed tool calls / deferred result",
+        "both"
+      ],
+      [
+        "tools",
+        "segment",
+        "Fixed result readout + model continuation",
+        "data"
+      ]
+    ]
+  },
+  {
+    "id": "engine",
+    "title": "2 · Conversation engine",
+    "focus": "floor",
+    "caption": "Recognition, reasoning and playback overlap; listening remains active",
+    "nodes": [
+      "golive",
+      "listen",
+      "asr",
+      "focus",
+      "floor",
+      "think",
+      "phrases",
+      "player",
+      "segment",
+      "store",
+      "tts",
+      "fish",
+      "memory",
+      "tools"
+    ],
+    "edges": [
+      [
+        "golive",
+        "listen",
+        "Continuous input audio",
+        "data"
+      ],
+      [
+        "listen",
+        "asr",
+        "Streaming recognition",
+        "both"
+      ],
+      [
+        "listen",
+        "focus",
+        "Speaker verification",
+        "both"
+      ],
+      [
+        "listen",
+        "floor",
+        "VAD boundaries",
+        "data"
+      ],
+      [
+        "asr",
+        "floor",
+        "Partial / final text",
+        "data"
+      ],
+      [
+        "focus",
+        "floor",
+        "Caller / other-voice evidence",
+        "data"
+      ],
+      [
+        "floor",
+        "think",
+        "Turn + context / cancel stale work",
+        "control"
+      ],
+      [
+        "memory",
+        "think",
+        "Current facts and selections",
+        "data"
+      ],
+      [
+        "think",
+        "segment",
+        "Streaming response text",
+        "data"
+      ],
+      [
+        "think",
+        "tools",
+        "Function calls / results",
+        "both"
+      ],
+      [
+        "segment",
+        "tts",
+        "Speakable text",
+        "data"
+      ],
+      [
+        "tts",
+        "fish",
+        "Configured fallback policy",
+        "control"
+      ],
+      [
+        "tts",
+        "player",
+        "PCM chunks",
+        "data"
+      ],
+      [
+        "fish",
+        "player",
+        "Fallback audio if selected",
+        "data"
+      ],
+      [
+        "floor",
+        "player",
+        "Ownership / interruption",
+        "control"
+      ],
+      [
+        "floor",
+        "phrases",
+        "Opener choice",
+        "control"
+      ],
+      [
+        "phrases",
+        "player",
+        "Cached acknowledgement audio",
+        "data"
+      ],
+      [
+        "player",
+        "golive",
+        "Output audio + transcript events",
+        "data"
+      ],
+      [
+        "golive",
+        "store",
+        "Session/audio recording",
+        "data"
+      ],
+      [
+        "tools",
+        "memory",
+        "Versioned updates",
+        "data"
+      ]
+    ]
+  },
+  {
+    "id": "business",
+    "title": "3 · Business + quotations",
+    "focus": "crm",
+    "caption": "Business truth, asynchronous work and fast readout",
+    "nodes": [
+      "prompts",
+      "crm",
+      "aria",
+      "memory",
+      "tools",
+      "prequote",
+      "businessapi",
+      "quotesvc",
+      "quoteaudio",
+      "think",
+      "player"
+    ],
+    "edges": [
+      [
+        "prompts",
+        "crm",
+        "Templates / plans / API config",
+        "data"
+      ],
+      [
+        "crm",
+        "aria",
+        "Render then dial",
+        "control"
+      ],
+      [
+        "think",
+        "tools",
+        "quote_total / update_memory",
+        "control"
+      ],
+      [
+        "tools",
+        "memory",
+        "Read and update call facts",
+        "both"
+      ],
+      [
+        "tools",
+        "crm",
+        "POST /api/tools/quote",
+        "both"
+      ],
+      [
+        "crm",
+        "quotesvc",
+        "Current local API implementation",
+        "both"
+      ],
+      [
+        "crm",
+        "businessapi",
+        "Configurable intranet integration",
+        "both"
+      ],
+      [
+        "crm",
+        "prequote",
+        "Default + bounded nearby plans",
+        "both"
+      ],
+      [
+        "prequote",
+        "quoteaudio",
+        "Authenticated ready snapshots",
+        "data"
+      ],
+      [
+        "quoteaudio",
+        "player",
+        "Prepared first segment",
+        "data"
+      ],
+      [
+        "tools",
+        "player",
+        "Ready-result handoff / readout",
+        "control"
+      ],
+      [
+        "tools",
+        "think",
+        "Result + spoken-prefix context",
+        "data"
+      ]
+    ]
+  },
+  {
+    "id": "evidence",
+    "title": "4 · Recording + evidence",
+    "focus": "journal",
+    "caption": "Trace a call from output to archive, then distinguish the measurement boundary",
+    "nodes": [
+      "player",
+      "metrics",
+      "capture",
+      "store",
+      "journal",
+      "desk",
+      "archive",
+      "handset",
+      "simulator"
+    ],
+    "edges": [
+      [
+        "player",
+        "metrics",
+        "Actual output timing",
+        "data"
+      ],
+      [
+        "player",
+        "store",
+        "Assistant audio",
+        "data"
+      ],
+      [
+        "store",
+        "journal",
+        "Closed session + audio",
+        "data"
+      ],
+      [
+        "metrics",
+        "journal",
+        "Stage and latency records",
+        "data"
+      ],
+      [
+        "journal",
+        "archive",
+        "Verified ended-call evidence",
+        "data"
+      ],
+      [
+        "archive",
+        "journal",
+        "Replay / reindex historical evidence",
+        "data"
+      ],
+      [
+        "desk",
+        "journal",
+        "Read-through call views",
+        "control"
+      ],
+      [
+        "handset",
+        "capture",
+        "Physical speaker + caller microphone",
+        "data"
+      ],
+      [
+        "capture",
+        "metrics",
+        "Separate acoustic analysis",
+        "data"
+      ],
+      [
+        "simulator",
+        "desk",
+        "Run reports / receiver timing",
+        "data"
+      ]
+    ]
+  },
+  {
+    "id": "delivery",
+    "title": "5 · Develop + deploy",
+    "focus": "release",
+    "caption": "GitHub checks the commit; the Mac runner carries the release to the box",
+    "nodes": [
+      "dev",
+      "github",
+      "ci",
+      "runner",
+      "release",
+      "golive",
+      "prompts",
+      "demo",
+      "tunnel",
+      "crm",
+      "journal",
+      "desk"
+    ],
+    "edges": [
+      [
+        "dev",
+        "github",
+        "Commit / push / PR",
+        "control"
+      ],
+      [
+        "github",
+        "ci",
+        "Workflow event",
+        "control"
+      ],
+      [
+        "ci",
+        "dev",
+        "Test status for exact commit",
+        "data"
+      ],
+      [
+        "dev",
+        "runner",
+        "Explicit queued release job",
+        "control"
+      ],
+      [
+        "runner",
+        "release",
+        "SSH / SCP + receipts",
+        "control"
+      ],
+      [
+        "release",
+        "golive",
+        "Idle restart + verify binary",
+        "control"
+      ],
+      [
+        "release",
+        "crm",
+        "Explicit CRM replacement",
+        "control"
+      ],
+      [
+        "release",
+        "journal",
+        "Binary / sanitized notes",
+        "control"
+      ],
+      [
+        "release",
+        "demo",
+        "Separate service checked idle",
+        "control"
+      ],
+      [
+        "prompts",
+        "crm",
+        "Retained versioned business state",
+        "data"
+      ],
+      [
+        "tunnel",
+        "demo",
+        "Documented public route",
+        "control"
+      ],
+      [
+        "tunnel",
+        "journal",
+        "Documented public route",
+        "control"
+      ],
+      [
+        "dev",
+        "desk",
+        "Sanitized progress / results",
+        "data"
+      ]
+    ]
+  },
+  {
+    "id": "lab",
+    "title": "6 · Test + model lab",
+    "focus": "talker",
+    "caption": "Alternatives and experiments beside the configured phone pipeline",
+    "nodes": [
+      "desk",
+      "talker",
+      "dev",
+      "simulator",
+      "active",
+      "golive",
+      "probes",
+      "edge",
+      "focus",
+      "journal",
+      "capture",
+      "handset"
+    ],
+    "edges": [
+      [
+        "desk",
+        "talker",
+        "Prompt → streamed clause / timings",
+        "both"
+      ],
+      [
+        "dev",
+        "talker",
+        "Local training / serving workflow",
+        "control"
+      ],
+      [
+        "journal",
+        "talker",
+        "/v1/models health probe only",
+        "control"
+      ],
+      [
+        "desk",
+        "simulator",
+        "Scenario reservation / report",
+        "both"
+      ],
+      [
+        "simulator",
+        "active",
+        "Synthetic customer media via test gateway",
+        "both"
+      ],
+      [
+        "active",
+        "golive",
+        "Same assistant-side voice engine",
+        "both"
+      ],
+      [
+        "probes",
+        "golive",
+        "Bench / protocol exercises",
+        "both"
+      ],
+      [
+        "probes",
+        "edge",
+        "Optional local model evaluation",
+        "both"
+      ],
+      [
+        "golive",
+        "focus",
+        "Configured caller verification",
+        "both"
+      ],
+      [
+        "handset",
+        "capture",
+        "Acoustic evidence on one clock",
+        "data"
+      ]
+    ]
+  }
+]

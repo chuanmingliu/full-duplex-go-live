@@ -96,11 +96,12 @@ type Session struct {
 	// the server has somewhere to send them.
 	tel *telSession
 
-	newEngine   EngineFactory
-	closeMsg    atomic.Pointer[string]
-	audioEvents atomic.Int64
-	audioOut    atomic.Int64
-	lastActive  atomic.Int64
+	newEngine       EngineFactory
+	quoteAudioClaim func(string) bool
+	closeMsg        atomic.Pointer[string]
+	audioEvents     atomic.Int64
+	audioOut        atomic.Int64
+	lastActive      atomic.Int64
 	// The line filler (vad.line_fill_ms): when the last client frame came
 	// in, and how much silence has been put on the line in its place.
 	lastAudio atomic.Int64
@@ -137,6 +138,8 @@ type SessionOptions struct {
 	Log     *slog.Logger
 	ID      string
 	Factory EngineFactory
+	// QuoteAudioClaim grants at most one bounded preparation budget per call.
+	QuoteAudioClaim func(string) bool
 	// Store is where a session that asks for store:true is kept. Nil means
 	// nowhere, and the request is ignored.
 	Store *store.Store
@@ -160,18 +163,19 @@ func NewSession(opts SessionOptions) *Session {
 		factory = duplex.New
 	}
 	s := &Session{
-		cfg:       opts.Cfg,
-		log:       log.With("session", opts.ID),
-		baseLog:   log,
-		id:        opts.ID,
-		primary:   newPeer(opts.Conn, false),
-		sides:     map[*peer]struct{}{},
-		stopRead:  make(chan struct{}),
-		stopWrite: make(chan struct{}),
-		newEngine: factory,
-		store:     opts.Store,
-		seed:      opts.Seed,
-		createdAt: time.Now(),
+		cfg:             opts.Cfg,
+		log:             log.With("session", opts.ID),
+		baseLog:         log,
+		id:              opts.ID,
+		primary:         newPeer(opts.Conn, false),
+		sides:           map[*peer]struct{}{},
+		stopRead:        make(chan struct{}),
+		stopWrite:       make(chan struct{}),
+		newEngine:       factory,
+		quoteAudioClaim: opts.QuoteAudioClaim,
+		store:           opts.Store,
+		seed:            opts.Seed,
+		createdAt:       time.Now(),
 	}
 	s.lastActive.Store(time.Now().UnixNano())
 	if opts.Realtime != nil {
@@ -225,7 +229,6 @@ func (s *Session) Serve(ctx context.Context) {
 	record := resolved
 	if engine != nil {
 		if rec != nil {
-			history = engine.History()
 			// As they stand now, with whatever session.instructions.append
 			// added: a fork continues this conversation, under these rules.
 			record.Instructions = engine.Instructions()
@@ -238,6 +241,9 @@ func (s *Session) Serve(ctx context.Context) {
 		}
 		engine.Close()
 		if rec != nil {
+			// Close accounts for the final partial reply and pending playback
+			// completions before the stored conversation is snapshotted.
+			history = engine.History()
 			gate = engine.GateTrace()
 		}
 	}
@@ -903,6 +909,10 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		time.Duration(s.cfg.TTSHedgeAfterMS)*time.Millisecond,
 		provider.TTSPool{AccountRPM: s.cfg.TTSAccountRPM, After: time.Duration(s.cfg.TTSPoolAfterMS) * time.Millisecond},
 		s.log)
+	var backgroundTTS *provider.BackgroundTTSFactory
+	if s.cfg.Duplex.QuoteReadoutWarmMax > 0 {
+		backgroundTTS, _ = provider.BackgroundTTSFor(tts)
+	}
 	if s.cfg.TTSFallback != "" && s.cfg.TTSFallback != ttsName {
 		if second, err := provider.OpenTTS(s.cfg.TTSFallback); err != nil {
 			s.log.Warn("tts fallback: not available; this session has none", "provider", s.cfg.TTSFallback, "err", err)
@@ -1008,6 +1018,9 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		}
 	}
 
+	if backgroundTTS != nil && (s.quoteAudioClaim == nil || !s.quoteAudioClaim(s.CallID())) {
+		backgroundTTS = nil
+	}
 	engine := s.newEngine(duplex.Options{
 		Cfg:              cfg,
 		SessionID:        s.id,
@@ -1025,11 +1038,12 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		History:          history,
 		Backend:          backend,
 	}, duplex.Deps{
-		ASR:  asr,
-		LLM:  llm,
-		TTS:  tts,
-		Emit: s.Emit,
-		Log:  s.baseLog,
+		ASR:           asr,
+		LLM:           llm,
+		TTS:           tts,
+		BackgroundTTS: backgroundTTS,
+		Emit:          s.Emit,
+		Log:           s.baseLog,
 	})
 
 	s.mu.Lock()

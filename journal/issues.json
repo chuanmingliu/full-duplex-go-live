@@ -951,6 +951,471 @@
    "symptom": "Five of 21 answered turns had no opener and their first audio was 742–1131 ms from the last sound (p95 1063 over all turns). Each closed 170–200 ms after the previous opener became a backchannel; sayOpener returned before any of its logging.",
    "cause": "FinishOpenerAsBackchannel drops the turn's queue but keeps the turn active while the paced audio already in the air (up to playback_lead_ms, 300) drains; sayOpener refused on Player.Active().",
    "fix": "Player.FreeForOpener ignores a draining backchanneled turn; the skip logs 'speak: no opener; the floor is busy'. Verified on out-mvqsfqv2-ugvf (22:34, 27946cc): 20 of 21 turns opened at the pause, first audio p95 381; the one miss logged the busy floor (a different case, first token 565). Test TestTheFloorIsFreeForTheNextOpenerWhileABackchannelDrains."
+  },
+  {
+   "id": "ISS-061",
+   "title": "A primary synthesizer blocked during startup delayed the fallback deadline",
+   "area": "tts",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "code-path investigation and deterministic startup-stall regression",
+   "found_call": "",
+   "symptom": "The second vendor could not respond at its configured deadline while the primary Synthesize call waited for a busy connection or reconnect.",
+   "cause": "The primary was started synchronously before the fallback timer existed.",
+   "fix": "Start the primary asynchronously and start the deadline when synthesis is requested; cancel and drain late primary results, preserving the existing fallback delay and voices.",
+   "verified": "Startup-stall regression fails before the fix and passes afterward; provider tests and the full normal/race CI suites pass on deployed runtime d784730. Same-scenario simulated PBX call archived and verified.",
+   "verified_call": "out-mvtlnvdn-8wp8",
+   "commits": [
+    "cbc7eb2"
+   ],
+   "effect": "Receiver first-audio p95 635 ms over 25 valid observations, versus baseline 640 ms. No deliberate live startup stall; no measured tail-latency improvement attributed to this fix."
+  },
+  {
+   "id": "ISS-062",
+   "title": "First-audio-only reports and ambiguous zero timestamps could mask slow or absent content",
+   "area": "telemetry",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "latency report review against recorded calls and synthetic regression fixtures",
+   "found_call": "",
+   "symptom": "The reporting script omitted content latency and always returned success; absent timestamps could look like instant audio. Synthesized content queued behind an opener could count as delivered even when interrupted before output.",
+   "cause": "No explicit output-presence flags or acceptance exit status; synthesis readiness was used as evidence of content output, and aggregation methods selected different turns.",
+   "fix": "Stamp content when the player emits answer audio, retaining the separate synthesis-ready timestamp. Emit explicit speech-origin and audio/content presence flags; report first audio and content with the turn pause; add nearest-rank p95 gates that reject incomplete/ambiguous data.",
+   "verified": "23 Python reporting cases, metrics-presence cases, and synthesized/cached interrupted-content regressions pass. Call out-mvtlnvdn-8wp8 has 26 verified answers, no incomplete records, and passes strict first-audio/content p95 <1200 ms.",
+   "verified_call": "out-mvtlnvdn-8wp8",
+   "commits": [
+    "cbc7eb2",
+    "d784730"
+   ],
+   "effect": "First-audio output p95 381 ms; actual content-output p95 1026 ms. Legacy readiness/opener-duration content estimates are not directly comparable; receiver first audio and handset latency remain separate."
+  },
+  {
+   "id": "ISS-063",
+   "title": "Application tool-call registration raced a reassigned backend slice",
+   "area": "tools",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "GitHub Actions race run 40878080613 and a deterministic application-call regression",
+   "found_call": "",
+   "symptom": "The engine loop read the application-call batch concurrently with the backend reassigning the captured slice variable.",
+   "cause": "A posted callback captured the mutable calls variable instead of the settled application-call batch.",
+   "fix": "Capture theirs directly when registering application calls. Synchronize independent test log/scorer helpers and query hangup state on the engine loop so the race suite can validate runtime behavior.",
+   "verified": "New registration regression reproduced the race before the fix and passed ten race runs afterward. Speculative/server wire cases and full normal/race CI run40883399469 pass; runtime d784730 deployed.",
+   "verified_call": "",
+   "commits": [
+    "2f5db50"
+   ],
+   "effect": "The callback no longer races reassignment of its application-call batch. Simulated PBX smoke call passed; this particular callback path is established by targeted tests, not claimed from the scenario."
+  },
+  {
+   "id": "ISS-064",
+   "title": "Ready tool results waited for the acknowledgement grace timer",
+   "area": "tools",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "22:03 real call and deterministic handoff regressions",
+   "found_call": "out-mvtm6iu4-47uf",
+   "symptom": "Two cached quotation tasks completed in 0–2 ms but waited roughly 400 ms for the acknowledgement to be skipped before result delivery.",
+   "cause": "ackPending was released only when the grace timer fired, even after the calling clause had yielded and the result was ready.",
+   "fix": "Release the acknowledgement wait as soon as a ready result can follow the original calling clause. Keep that clause protected, make stale callbacks no-ops, and log the result turn ID beside the task ID.",
+   "verified": "Three regressions reproduced the delay before the fix and pass afterward. Full normal/race suites and quality checks passed on1869e54 in CI run40894903434; engine, CRM and journal deployed and verified at23:08 on2026-10-29. New-call effect remains unmeasured.",
+   "verified_call": "out-mvu9y04d-elap",
+   "commits": [
+    "6307ad6"
+   ],
+   "effect": "The next real call delivered two ready results 14/47 ms after completion. A third retained an additional scheduler-tick delay after the calling clause ended; tracked separately as ISS-066. No physical handset improvement established."
+  },
+  {
+   "id": "ISS-065",
+   "title": "Cached quotation responses lost or reused request-specific exclusions",
+   "area": "quotation",
+   "status": "fixed",
+   "found": "2026-10-29",
+   "found_on": "review after the 22:03 call and cache-order regressions",
+   "found_call": "out-mvtm6iu4-47uf",
+   "symptom": "A later request adding an excluded coverage could receive the cached price without its exclusion warning; the reverse order could leak a stale exclusion into a base-only request.",
+   "cause": "The effective-selection cache mixed request-specific intake exclusions with pricing results and did not add the current request's exclusions on a cache hit.",
+   "fix": "Cache the pricing result and append each request's intake exclusions to a copied response and slice.",
+   "verified": "Both cache orders failed before the fix. Rules/API paths and slice-isolation tests pass. Full normal/race suites and quality checks passed on1869e54 in CI run40894903434; the CRM running executable and version were verified after deployment.",
+   "verified_call": "",
+   "commits": [
+    "6307ad6"
+   ],
+   "effect": "Exclusion reporting is correct in regressions. The next real call requested no excluded coverage, so it did not exercise this fix. Trimmed historical tool arguments prevent attributing the earlier promised-rider discrepancy to this exact defect."
+  },
+  {
+   "id": "ISS-066",
+   "title": "A ready quotation waited another scheduler tick after its acknowledgement was released",
+   "area": "tools",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:09 real call and event-order regressions",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "A cached task completed immediately but was delivered about295ms later; its calling clause ended before acknowledgement release, then another120ms tick elapsed.",
+   "cause": "The periodic loop checked result delivery before draining the acknowledgement; player completion did not promptly recheck both.",
+   "fix": "Recheck delivery on task completion, skipped acknowledgement and player-floor release while retaining calling-clause, scripted-ack, caller-busy and shutdown guards.",
+   "verified": "Three event-order regressions failed on1869e54 and pass with the fix; targeted repeated race tests and broader tool/ack regressions pass. Quality and full normal/race CI passed for runtime914fa0e in run40986488788. Engine, CRM and journal binary/configuration checks passed after deployment at09:52 on2026-10-30, with recording enabled and both audio caches warm.",
+   "effect": "On the next real call the ready result was delivered about 1 ms after the calling clause finished; no extra scheduler tick remained. The clause itself still blocked an already-ready result, now tracked as ISS-070. Physical handset playout remains unmeasured.",
+   "commits": [
+    "06c9f50"
+   ],
+   "verified_call": "out-mvubln6w-5uhe"
+  },
+  {
+   "id": "ISS-067",
+   "title": "Comparison memory lost individual coverage prices and repeated totals for single-coverage questions",
+   "area": "quotation",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:09 real call and rules/API/retained-memory regressions",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "The assistant gave an individual premium inconsistent with a later authoritative quote and repeatedly answered single-coverage questions with plan totals.",
+   "cause": "Comparison variants dropped line items; retained memory reduced results to their configured spoken readout. Interrupted-readout guidance explicitly requested repetition of totals.",
+   "fix": "Preserve authoritative lines for comparison variants and compact price facts beside retained memory. Match the current question scope, retain unknown/error/exclusion states and leave the configured readout unchanged.",
+   "verified": "Rules/API and custom-readout regressions fail before the fix and pass afterward; CRM race suite and focused duplex race tests pass. Extra retained facts are capped4096characters, with whole-option omission warnings. Quality and full normal/race CI passed for runtime914fa0e in run40986488788. Engine, CRM and journal binary/configuration checks passed after deployment at09:52 on2026-10-30, with recording enabled and both audio caches warm.",
+   "effect": "Authoritative individual prices survive history trimming in regressions. The next real call read the default quote accurately but did not exercise comparison memory or individual-price follow-ups.",
+   "commits": [
+    "06c9f50"
+   ]
+  },
+  {
+   "id": "ISS-068",
+   "title": "Tool-result latency lacked a measured relationship to the original caller turn",
+   "area": "telemetry",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:09 call lifecycle compared with metric-only reports and journal grouping",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "Three quotation-origin rows lacked content while separate result rows had no speech origin. The journal excluded zero-ASR/LLM caller rows and counted their result rows with an invented pause.",
+   "cause": "Delivery logs identified task/result but not a monotonic offset from the originating caller turn. The journal relied on legacy stage-value heuristics.",
+   "fix": "Emit bounded task-origin metadata and monotonic origin-to-result-start timing. Strict reporting joins only unique verified links, counts the caller once and adds its pause once. Journal charts use explicit speech flags and expose a separate content-evidence panel.",
+   "verified": "Synthetic zero-ms cached-result, missing/duplicate/conflicting linkage, interrupted-result and session-isolation regressions pass. The current historical call remains incomplete; no timestamp is inferred from wall-clock adjacency. Quality and full normal/race CI passed for runtime914fa0e in run40986488788. Engine, CRM and journal binary/configuration checks passed after deployment at09:52 on2026-10-30, with recording enabled and both audio caches warm. Live journal and deployed report agree on the historical call:19audio/16content samples,3missing and3unverified handoffs; the gate remains failed.",
+   "effect": "The next real call carried one valid monotonic task-origin-result link, measuring 3548 ms to its result. Separate reporting is needed when an earlier generic sentence already satisfies first content; tracked as ISS-071. Handset playout remains unmeasured.",
+   "commits": [
+    "06c9f50",
+    "914fa0e"
+   ]
+  },
+  {
+   "id": "ISS-069",
+   "title": "The assistant continued purchase guidance after the caller asked to end the conversation",
+   "area": "conversation",
+   "status": "open",
+   "found": "2026-10-30",
+   "found_on": "09:09 real call, closing exchange",
+   "found_call": "out-mvu9y04d-elap",
+   "symptom": "Two closing requests were followed by more purchase guidance; an explicit final farewell eventually triggered the assistant-goodbye fallback.",
+   "cause": "Active hangup-rules v3 already covers goodbye and completed business. No end_call invocation was logged; this is model adherence rather than a missing configured rule.",
+   "fix": "Pending: reproduce against the existing business prompt and evaluate closing-intent behavior without prematurely ending unfinished questions.",
+   "verified": "Read the deployed v3 rule conditions and the selected call lifecycle. No hangup configuration changed. On out-mvubln6w-5uhe the first recognized closing request ended with a farewell and assistant-goodbye fallback. The earlier failing phrases were not repeated, so the issue remains open.",
+   "effect": "Unresolved conversational behavior, independent of the measured scheduler defect."
+  },
+  {
+   "id": "ISS-070",
+   "title": "An already-ready quotation waited for a still-unheard explanatory clause",
+   "area": "tools",
+   "symptom": "The quote was ready 120 ms before the generic calling clause started, but waited about2432ms for that clause to finish. Caller-to-result content was3548ms.",
+   "cause": "Calling-clause protection also covered a body that had never committed audio to output.",
+   "fix": "For a successful deterministic quotation with unchanged caller, memory and floor, suppress only an entirely unplayed body after its opener has emitted audio. Preserve opener completion, actual spoken history and origin metrics; any reserved body audio retains protection.",
+   "effect": "Three real handoffs replaced unplayed calling bodies and retained clean opener-only origin metrics. Ready results followed natural opener completion after29/13/0ms; a fourth needed no suppression and was delivered immediately. Cached result posthooks still delay quoted figures; tracked separately.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:55 real call and regression analysis",
+   "found_call": "out-mvubln6w-5uhe",
+   "verified": "Regression tests pass, including twenty repeated race runs of the guarded handoff and full journal race tests. Quality and full normal/race CI passed for461b79f in run40994234452. Engine, CRM and journal executable hashes and preserved configuration were verified after deployment at11:06 on2026-10-30. Recording,720-hour retention and stable-process cache warming passed; original audio/session/log hashes are unchanged. Live journal and CLI agree on first-content1082ms and linked-result3548ms for the reviewed call.",
+   "commits": [
+    "461b79f"
+   ],
+   "verified_call": "out-mvue7jic-wdgq"
+  },
+  {
+   "id": "ISS-071",
+   "title": "A quick generic lead-in masked slow quotation-result latency",
+   "area": "telemetry",
+   "symptom": "The first-content report showed1082ms worst while the linked quotation result took3548ms.",
+   "cause": "The analyzer joined results only when the original turn lacked content; a generic preamble satisfied the original metric.",
+   "fix": "Keep first-content semantics and separately measure every verified unique linked result. Show the result distribution and rows in the journal, CLI and simulator retro; content/both gates also check result p95 without adding caller samples.",
+   "effect": "Separate linked-result reporting exposed origin wait, but in the next call three result turns began with a1264ms cached posthook. That first content is not quotation-readout evidence; explicit readout timing is tracked in ISS-073.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:55 real call and regression analysis",
+   "found_call": "out-mvubln6w-5uhe",
+   "verified": "Regression tests pass, including twenty repeated race runs of the guarded handoff and full journal race tests. Quality and full normal/race CI passed for461b79f in run40994234452. Engine, CRM and journal executable hashes and preserved configuration were verified after deployment at11:06 on2026-10-30. Recording,720-hour retention and stable-process cache warming passed; original audio/session/log hashes are unchanged. Live journal and CLI agree on first-content1082ms and linked-result3548ms for the reviewed call.",
+   "commits": [
+    "461b79f"
+   ]
+  },
+  {
+   "id": "ISS-072",
+   "title": "Empty recognition and cached-opener anchoring distorted transcript times",
+   "area": "journal",
+   "symptom": "Two transcript onsets implied6–10second response waits unsupported by the per-turn metrics and audio windows.",
+   "cause": "An empty recognition left openedAt available to a later utterance. Cached-opener queue logs were not separately anchored using confirmed output metrics.",
+   "fix": "Replace the onset on each detector opening. Derive confirmed opener playback from its readiness timestamp and explicit timing offsets; unconfirmed queue events remain queue evidence.",
+   "effect": "Deployed corrected transcript export and cached-opener anchoring. Current call retained all13 caller origins and four clean quotation links; no recurrence of the stale empty-recognition onset defect was established.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "09:55 real call and regression analysis",
+   "found_call": "out-mvubln6w-5uhe",
+   "verified": "Regression tests pass, including twenty repeated race runs of the guarded handoff and full journal race tests. Quality and full normal/race CI passed for461b79f in run40994234452. Engine, CRM and journal executable hashes and preserved configuration were verified after deployment at11:06 on2026-10-30. Recording,720-hour retention and stable-process cache warming passed; original audio/session/log hashes are unchanged. Live journal and CLI agree on first-content1082ms and linked-result3548ms for the reviewed call.",
+   "commits": [
+    "461b79f"
+   ]
+  },
+  {
+   "id": "ISS-073",
+   "title": "Cached result posthooks were counted as quotation readout",
+   "area": "telemetry",
+   "symptom": "Three linked result rows reported923/1079/881ms to content, but that content was the1264ms cached readiness phrase before the figures.",
+   "cause": "Posthook and deterministic readout shared the normal speech-pipe content marker.",
+   "fix": "Tag fixed readout segments separately and stamp their actual player output. Report quotation readout separately; reject missing/legacy readout evidence in content/both gates. Preserve first-content meanings and caller counts.",
+   "effect": "Historical current-call reanalysis reports zero strictly verified readouts and four unverified ones; no synthesis-ready or wall-clock substitute is used.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Review of11:08 real call and focused source/regression analysis",
+   "found_call": "out-mvue7jic-wdgq",
+   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Quality and full normal/race CI passed for1fa2846 in run41010943292. Engine, CRM and journal running executable hashes and exact configuration were verified after deployment at14:06 on2026-10-30. Recording,720-hour retention and stable-process caches were verified; original audio/session/log fingerprints are unchanged. Live journal v3 and CLI agree on four unverified historical readouts. A new real-call performance effect remains unmeasured.",
+   "commits": [
+    "1fa2846"
+   ]
+  },
+  {
+   "id": "ISS-074",
+   "title": "A second readiness phrase delayed the quoted figures after the caller already heard an opener",
+   "area": "tools",
+   "symptom": "The standard result posthook added1264ms before three nondefault quotation readouts and made those numeric segments nonurgent to TTS.",
+   "cause": "Delivery added the fixed readiness posthook even after the same completed caller turn had emitted its opener.",
+   "fix": "Omit only the built-in default posthook after a verified matching completed caller opener, unchanged memory and free floor. Preserve custom posthooks, templates, prices and all other delivery paths. Numeric readout then uses the existing urgent first-segment TTS path.",
+   "effect": "Expected to remove the redundant phrase and allow the existing ready-spare race. New real-call effect remains unmeasured.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Review of11:08 real call and focused source/regression analysis",
+   "found_call": "out-mvue7jic-wdgq",
+   "verified": "Focused readout, guarded posthook, task-origin, delivery and output-timing regressions passed, including twenty repeated race runs. CLI37 and simulator10 report tests and the journal race suite passed. Independent source review found no actionable issue. Quality and full normal/race CI passed for1fa2846 in run41010943292. Engine, CRM and journal running executable hashes and exact configuration were verified after deployment at14:06 on2026-10-30. Recording,720-hour retention and stable-process caches were verified; original audio/session/log fingerprints are unchanged. Live journal v3 and CLI agree on four unverified historical readouts. A new real-call performance effect remains unmeasured.",
+   "commits": [
+    "1fa2846"
+   ]
+  },
+  {
+   "id": "ISS-075",
+   "title": "A synthesis request canceled while waiting for the stream could still be sent",
+   "area": "tts",
+   "symptom": "A canceled waiting request could acquire the stream after an abandoned task drained and still send task_continue, creating additional unwanted synthesis and drain work.",
+   "cause": "MiniMax Synthesize checked stream state after acquiring busy but did not recheck its request context before sending.",
+   "fix": "Recheck cancellation after acquiring the provider lock and preserve the existing drain barrier. Treat expected request cancellation separately from a broken pooled connection.",
+   "effect": "Canceled queued requests no longer send task_continue in regression tests, and expected cancellation preserves healthy pooled connections. Existing abandoned-task drain barriers remain intact. Call logs show drain waits but cannot attribute every wait to this path; a new real-call effect is unmeasured.",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Review of11:08 real call and focused source/regression analysis",
+   "found_call": "out-mvue7jic-wdgq",
+   "verified": "Wire and hedge regressions reproduced the canceled ghost request and unnecessary connection replacement before the fix. All provider packages passed with the race detector; focused cancellation and abandoned-task tests passed ten repetitions, including genuine transport errors racing cancellation. Independent review passed. Quality and full normal/race CI passed for1fa2846 in run41010943292. Engine, CRM and journal running executable hashes and exact configuration were verified after deployment at14:06 on2026-10-30. Recording,720-hour retention and stable-process caches were verified; original audio/session/log fingerprints are unchanged. Live journal v3 and CLI agree on four unverified historical readouts. A new real-call performance effect remains unmeasured.",
+   "commits": [
+    "1fa2846"
+   ]
+  },
+  {
+   "id": "ISS-076",
+   "title": "Saved business prompt gives conflicting regional claims-provider guidance",
+   "area": "prompt",
+   "status": "open",
+   "found": "2026-10-30",
+   "found_on": "Review of the 14:07 simulated coverage conversation and retained prompt",
+   "found_call": "out-mvuklw72-yaxy",
+   "symptom": "A regional claims-provider answer agrees with one saved instruction but conflicts with other passages in the same prompt.",
+   "cause": "The deployed business instructions contain inconsistent guidance; the authoritative business rule has not been established.",
+   "fix": "Pending authoritative business clarification before editing the saved prompt. No runtime rule or provider claim is inferred from the contradiction.",
+   "verified": "Source review confirmed conflicting passages and the corresponding item_29 answer. The existing prompt was preserved. This is not a confirmed new model invention or deployment regression.",
+   "effect": "Ambiguous guidance remains possible independently of latency. No pricing error was established in this simulation.",
+   "commits": []
+  },
+  {
+   "id": "ISS-077",
+   "title": "A completed waiting acknowledgement prevented redundant quotation-posthook omission",
+   "area": "tools",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "14:14 targeted quotation simulator call and source review",
+   "found_call": "out-mvukudco-7zrb",
+   "symptom": "The third quotation started readout896ms after result delivery because a standard readiness posthook was added after the waiting acknowledgement.",
+   "cause": "The omission guard required the original caller to be current; the same task's scripted acknowledgement had replaced it.",
+   "fix": "Track the same task's acknowledgement provenance and permit omission only after that exact acknowledgement emitted audio and naturally completed. The original caller opener also requires natural completion; soft truncation invalidates proof even when the generic completion timestamp is set. Preserve caller/memory/floor and custom-wording guards.",
+   "verified": "Failing-before regressions reproduced missing acknowledgement omission and unsafe direct/ack linking after soft truncation. Expanded tests passed twenty repeated race runs; the broader focused race suite passed in 19.219 seconds. Independent review and full quality/normal/race CI passed (run 41014100115). Runtime 380c1a7 was deployed and verified. In simulator out-mvuluygh-p1vy, all three tasks finished within acknowledgement grace, so no waiting acknowledgement was emitted and the new same-task path was not exercised. Ordinary posthook omission was observed on all three deliveries, including two explicitly classified nondefault quotes. Physical handset latency remains unmeasured.",
+   "effect": "The ordinary posthook omission worked for all three quotation deliveries; the new completed-acknowledgement path has regression-test evidence but no execution evidence from this replay.",
+   "commits": [
+    "380c1a7"
+   ]
+  },
+  {
+   "id": "ISS-078",
+   "title": "Follow-up quote combinations are not prepared around the newly selected plan",
+   "area": "quotation",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "14:14 targeted quotation simulator call and source review",
+   "found_call": "out-mvukudco-7zrb",
+   "symptom": "The first two quote tasks completed at0ms, but a further selection change took3040ms in backend calculation.",
+   "cause": "Only startup default neighbors are prepared; all eight initial requests were used. The configured quote API polls every500ms and fronts the local quotesvc with an intentional seconds-long pricing workload. A requested two-change combination was not prepared.",
+   "fix": "Add default-disabled follow_selection_max (0–32), a cumulative extra cache-claim budget per call around explicit quoted selections. Foreground work has next-slot priority; unchanged cache/in-flight matches spend no budget. Preserve the original initial limit and pricing workload, invalidate stale queued generations and bound tracked calls to 512. Pin pricing source/version through computation and preserve replacement cache ownership when an expired reader retries.",
+   "verified": "Failing-before tests reproduced missing neighbor preparation and an API result entering a rules cache claim during configuration change. Full CRM race tests passed in 8.016 seconds; vet, independent review and full quality/normal/race CI passed (run 41014100115). Runtime 380c1a7 and quote-plans v7 were verified with follow_selection_max=8; all other configuration snapshots were unchanged. CRM records for out-mvuluygh-p1vy show one foreground/default, eight initial and eight follow-selection computations with zero errors. Quote 401 was prepared by follow-selection memory 1: its 4509 ms computation finished 8.98 seconds before demand. Task durations were 0/1/1 ms versus 0/0/3040 ms previously. Readouts were 1103/1192/972 ms versus 1094/1135/4848 ms. The third readout improved by 3876 ms: 3160 ms less origin-side waiting and 716 ms less child readout time; it is not all attributable to preparation. The diagnostic passed; the strict gate failed only because five caller samples are fewer than twenty. Physical handset latency remains unmeasured.",
+   "effect": "The requested follow-up combination was prepared before demand, preserving the authoritative pricing workload. All three quotation readouts were below 1200 ms in this short simulator run; the strict n20 gate and physical handset target remain unproven.",
+   "commits": [
+    "380c1a7"
+   ]
+  },
+  {
+   "id": "ISS-079",
+   "title": "A total-only repeat request received all coverage details",
+   "area": "conversation",
+   "status": "watching",
+   "found": "2026-10-30",
+   "found_on": "14:14 targeted quotation simulator call and source review",
+   "found_call": "out-mvukudco-7zrb",
+   "symptom": "The assistant repeated every coverage and then the total after a request to repeat the total without asking for coverage details.",
+   "cause": "The response followed the detailed quotation context more broadly than the requested scope.",
+   "fix": "Retained authoritative quote context now tells the model to answer total-repeat requests with the requested total and necessary unquoted-coverage caveats, while allowing itemized details and comparisons when requested. Saved business instructions, quote facts and initial custom readout remain unchanged. The subsequent candidate explicitly excludes appended coverage names, coverage lists and individual premiums on total-only requests. The next candidate additionally excludes unsolicited insured limits and plan-configuration confirmations. This remains model guidance, not deterministic response enforcement; emitted-answer validation remains required.",
+   "verified": "Confirmed on out-mvukudco-7zrb and again on simulator out-mvuluygh-p1vy at item_12: a total-repeat request received all six coverage details. Spoken values were correct. The separately prepared guidance fix was not deployed for either call. A six-case synthetic backend-request regression (completed/interrupted result context with total, item and comparison questions) failed before the guidance change and passed after. Relevant race tests and independent review passed. Candidate CI, deployment and model-behavior replay were subsequently completed as recorded below. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: On deployed bbdb7a3, replay out-mvumm8e2-t8in item_10 gave the authoritative total first, then still named all six coverages. It no longer repeated individual premiums. The request did not ask for the coverage list, so the guidance change is only a partial improvement. This stronger wording has not yet been validated in a model replay; the issue remains open. Follow-up on runtime c582781, simulator out-mvuoo3dk-dzip, CI run 41022216798: Matched replay out-mvuoo3dk-dzip item_9 completed at 16:02:32.607 after the split repeat request. The 12-character response contained exactly one monetary amount equal to the latest authoritative total under the configured rounding rule, with no coverage names or itemized list. This verifies the desired scope in this case; alternate repeat wording and detailed-comparison requests were not exercised. Follow-up on deployed d479ab9, simulator out-mvupyy53-pvt3, CI run 41025553778: the split total-repeat request completed as item_12 with a 30-character answer. It gave the correct latest authoritative total first, then added a driver/passenger coverage-limit qualifier that was not requested. The additional number is an insured limit, not a second premium. This is narrower than the earlier full-list repetition but still fails strict total-only scope; the issue is reopened. Additional guidance regression covers whole and split follow-ups, explicit coverage-limit/configuration requests, itemized/comparison controls and partial-quote warnings. It failed before the wording change and passes afterward. These tests verify preserved model request context, not emitted-answer compliance. Follow-up on deployed 7ee447c after successful full CI 41028577982 and verified deployment: matched simulator out-mvuqswhl-2dw7 completed item_9 with a 16-character total-repeat reply including its opener. Its single currency amount in Chinese numerals matches the latest authoritative rounded total, with no coverage names, insured limits or configuration qualifier. The earlier 14-character fragment also gives the correct total without details before the caller continues. This observed wording passes, but the earlier c582 single-case pass regressed in d479. Alternate repeat forms and explicit detail/comparison requests remain untested live; keep the issue watching rather than claim general model compliance.",
+   "effect": "The latest matched repeat request stays within total-only scope and preserves the authoritative amount. The guidance remains probabilistic, so retain regression controls and monitor later real and simulated calls.",
+   "commits": [
+    "bbdb7a3",
+    "c582781",
+    "7ee447c"
+   ]
+  },
+  {
+   "id": "ISS-080",
+   "title": "Deferred playback completion could lose metrics or complete a replacement turn",
+   "area": "latency-evidence",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Greeting regression investigation and deterministic playback callback tests",
+   "symptom": "An old playback completion could arrive after the tracker advanced, dropping its metric or assigning audio and natural-completion proof to a newer revision with the same public ID.",
+   "cause": "Player callbacks carried only a public turn ID, and deferred handlers looked up the current tracker instead of retaining the exact audio owner.",
+   "fix": "Carry exact Turn ownership through production segments and both completion reports. Transfer only an inherited opener explicitly; keep stale body/end work invalid. Commit output accounting and audio/content/readout stamps atomically to that owner before emitting audio. Unknown owners never borrow the current turn; backchannels remain excluded.",
+   "verified": "All eight before/after-receipt, natural/truncated, new-turn/revision cases failed on unchanged 380c1a7 before the fix. Focused provenance and existing quote/handoff regressions passed twenty race repetitions; selected integration race tests and all-package compilation passed. Independent review resolved inactive-opener cancellation and output-stamp ordering findings. Candidate CI and deployment were subsequently completed as recorded below. After applying the reviewed ownership and total-repeat fixes together, the combined focused race suite including the unchanged greeting test passed in 3.025 seconds. Follow-up on runtime bbdb7a3, simulator out-mvumm8e2-t8in, CI run 41016283585: Full quality/normal/race CI passed for bbdb7a3 in run 41016283585. Exact engine/CRM/journal binaries, unchanged v7 policy and all historical archives were verified after deployment. Replay out-mvumm8e2-t8in had nine correctly accounted rows: five caller responses, three result deliveries and one greeting, with no missing, duplicate, interrupted or unverified output rows. Two split questions became backchannels plus joined responses; abandoned closing speculation added no metric. This replay does not exhaustively test every callback-race interleaving. Coverage replay out-mvumqi79-ghis added twenty complete response samples and one greeting with no orphan or duplicate metric row. Eight converted prefixes, four with short spoken fragments, and three abandoned speculations were accounted for separately; the duration-limit cutoff was not a completed response.",
+   "effect": "Exact ownership is deployed with regression and limited live accounting evidence. This corrects attribution; it does not by itself reduce or prove handset latency.",
+   "commits": [
+    "bbdb7a3"
+   ]
+  },
+  {
+   "id": "ISS-081",
+   "title": "Accepted-hangup diagnostic serialized the whole private turn",
+   "area": "logging",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Post-call source and log review",
+   "found_call": "out-mvumm8e2-t8in",
+   "symptom": "The accepted end_call diagnostic stored the full turn object under the turn field rather than a scalar turn ID.",
+   "cause": "The log argument used job.turn after playback ownership moved to exact Turn pointers.",
+   "fix": "Log only job.turn.ID. A regression exercises accepted hangup with private sentinel fields through both text and JSON log handlers.",
+   "verified": "Both handler tests failed before the change and passed afterward. Focused hangup regressions passed with race detection; the combined quote, playback, preparation and hangup regression suite passed in 7.506 seconds. The source change later shipped in the verified c582781 release; the initial live replays did not exercise accepted hangup. Follow-up on runtime c582781, simulator out-mvuoo3dk-dzip, CI run 41022216798: The matched c582781 call did not invoke end_call and produced zero accepted-hangup diagnostic events. Receiver termination was customer_hangup; the final generated response had begun but lacked a completion/latency record at disconnect. This call does not provide live validation of the scalar-turn logging fix. Coverage replay out-mvup3e10-odkv on the same c582781 runtime also produced no accepted-hangup event. Its final coverage answer completed before the receiver ended locally for inactivity; this remains an unexercised live path, not additional scalar-turn logging validation. Follow-up on deployed 7ee447c, full CI 41028577982, coverage simulator out-mvuqxt3d-i7nq: accepted end_call executes at 17:09:51.663. Private log line 2337 has turn=item_36 as a scalar string, with only level, msg, session, time and turn fields, rather than a serialized Turn object. The final six-character farewell completes at 17:09:51.968 and the server hangs up at 17:09:52.965. This is one exercised live text-log case; JSON-handler coverage remains the earlier automated regression.",
+   "effect": "The scalar-turn logging fix is covered by both handler regressions and now verified on one accepted live end_call path. Zero-event earlier replays remain unexercised cases rather than evidence of failure.",
+   "commits": [
+    "c582781",
+    "7ee447c"
+   ]
+  },
+  {
+   "id": "ISS-082",
+   "title": "Journal quotation transcript omits the prepared first segment",
+   "area": "journal",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Post-call canonical-history and journal comparison on c582781",
+   "found_call": "out-mvuoo3dk-dzip",
+   "symptom": "Each of the three completed quotation journal rows omits a 13-character prepared prefix. The retained final canonical response includes the first priced-coverage segment that is absent from its journal row.",
+   "cause": "The journal reconstructed assistant text from synthesis and old phrase-cache diagnostics, but the prepared-quote diagnostic intentionally contained no text.",
+   "fix": "Emit a versioned private assistant transcript from the existing Player first-output callback. The journal uses that stream once per sequence across ordinary, prepared, cached, opener and filler speech, preserving truncation and legacy-log fallback.",
+   "verified": "Observed on out-mvuoo3dk-dzip: generated quotation character counts were 80, 77 and 80; journal rows contained 67, 64 and 67 characters. The retained final journal row exactly equals the canonical history suffix after its first 13 characters. All six authoritative final line premiums are present in canonical history under the configured rounding rule. A regression reproduced the missing prefix before the source repair. Full journal race tests and focused duplex output/prepared/opener/backchannel race tests passed, and independent review found no blocker. The correction was deployed as d479ab9 after full quality, normal and race CI run 41025553778, with exact build and postdeployment receipts verified. On simulator out-mvupyy53-pvt3, all 13 assistant journal rows match the versioned output stream in text, millisecond timestamp and interruption flag. The stream has one enable marker and 30 accepted segment records, with no sequence gaps, duplicates, invalid records or parsing errors. Each of the three quotations includes its 13-character prepared first segment. The second quotation is correctly marked interrupted and retains its observed prefix. The final six-line quotation exactly matches retained canonical history and contains every authoritative line premium. This verifies journal reconstruction in this call, not acoustic or handset completeness.",
+   "effect": "The deployed journal now preserves the prepared quotation prefix and output timestamp, including interrupted output, on the verified replay. Older archives lacking canonical events cannot recover missing text from this change alone.",
+   "commits": [
+    "d479ab9"
+   ]
+  },
+  {
+   "id": "ISS-083",
+   "title": "A quotation result repeats its complete deterministic readout",
+   "area": "conversation",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "Post-call canonical output and journal review on d479ab9",
+   "found_call": "out-mvupyy53-pvt3",
+   "symptom": "The second quotation speaks the same complete itemized readout twice in one result turn. The caller starts requesting an addition before the second copy finishes.",
+   "cause": "The result turn queues the authoritative readout before model text. The backend then forwarded the model stream unchanged, including an exact repeat of that readout. The context instruction against repetition was not enforced. Unique output-event sequences rule out duplicate journal ingestion.",
+   "fix": "Deployed runtime 7ee447c suppresses one exact, sentence-terminated copy of the current authoritative readout only at the beginning of the model stream. Partial or mismatching text and all subsequent text remain unchanged. The deterministic first readout still queues immediately. Fixed text is also retained only once in generated-response state. A red-before regression confirmed duplicated spoken output and generated-response state. Focused integration and race tests now pass; Full CI run 41028577982, deployment verification and a matched emitted-answer replay have completed.",
+   "verified": "On out-mvupyy53-pvt3, item_6 output segments contain 13, 46 and 59 characters. The third equals the first two concatenated exactly. Its 116-character interrupted journal entry matches the output heard-prefix record: one 59-character readout plus 57 characters of the repeated copy. Only one prepared-quote enqueue is recorded for that result turn, and all canonical sequences are unique. The 958 ms readout onset is real but does not establish successful completion or correct conversational behavior. The regression exercises audio output and completed-response text, arbitrary byte boundaries, revised amounts, partial EOF/provider failure, cancellation and stale turns. Relevant combined duplex race tests, repository-wide vet and all-package compilation passed; independent source review found no blocker. These checks are not a live replay. Matched replay out-mvuqswhl-2dw7 on deployed 7ee447c emits each of its three deterministic readouts exactly once and explicitly completes all three result turns. Their initial 59/59/70-character readouts equal the preceding d479 readouts; short follow-ups contain no further quoted amount or coverage name. The second result has 70 characters rather than a repeated readout and interruption. All three logged totals and priced selections agree with d479; final six line premiums remain unchanged. Raw pre-filter text and a filter-activation counter are not logged, so this passing emitted output does not prove the suppression branch activated in this particular call.",
+   "effect": "The narrow exact-leading-readout defect is covered by failing-before/passing-after tests and the deployed matched replay has no duplicate quotation. This does not promise removal of paraphrased, altered or later repetitions, and it does not establish a twenty-sample or handset latency pass.",
+   "commits": [
+    "7ee447c"
+   ]
+  },
+  {
+   "id": "ISS-084",
+   "title": "Disconnect during speech can omit an answered turn from latency evidence",
+   "area": "metrics",
+   "status": "fixed",
+   "found": "2026-10-30",
+   "found_on": "7ee quotation replay final-output audit and shutdown source review",
+   "found_call": "out-mvuqswhl-2dw7",
+   "symptom": "The final speech-origin reply started output but the receiver disconnected before completion. No latency row was emitted; the strict analyzer silently excluded it while reporting no missing record. A synthetic call with twenty other valid rows could therefore pass despite this unmatched started answer.",
+   "cause": "Engine shutdown cancels posted callback processing before closing the player. Active playback ownership is cleared without a truncation receipt, and already-posted completion receipts can also be lost. Both analyzers previously considered only existing latency records.",
+   "fix": "Retain exact-owner shutdown and pending playback receipts, then finalize their existing monotonic output stamps once without post-close tool or hangup work. Flag unmatched historical canonical answer output as unverified after excluding explicit greetings and backchannels. Preserve archived source files and do not infer latency from transcript timestamps. The journal applies this evidence as a version-four response overlay; stored version-three archives remain unchanged.",
+   "verified": "On out-mvuqswhl-2dw7, item_10 has three canonical started segments totaling 33 characters, no turn-complete or latency event, and non-silent assistant audio at the recording boundary. The deployed report had four answered rows and missing=0. Shutdown and pending-completion regressions failed before the change and passed afterward, including exact superseded ownership, truncated history, cancellation within a detached callback batch, and no invented greeting/backchannel records. Focused shutdown race tests passed twenty repetitions; combined playback and output regressions, all-package compilation and repository vet passed. All 44 Python analyzer tests pass. Go journal race tests and archive integration confirm unmatched output fails the strict gate without altering all five archived files or their manifest. Review also covered malformed canonical sequence overflow and greeting exclusion. Offline reanalysis marks the quotation call with one missing output record and one unverified answer; the 25-answer coverage call still passes at p95 994 ms with none missing. Runtime d85232a passed full CI run 41032112560 and deployment/postverification on 2026-10-30. All eleven prior archives remained unchanged; the 7ee quotation now reports one unverified missing output record in API v4. Replay out-mvurvsmk-u9yk ends naturally with completed farewell and no unmatched whole output records, so it does not exercise disconnect during playback. Its separate mid-call missing content is tracked as ISS-085.",
+   "effect": "A low reported p95 is not reliable evidence for the full answered population when final output lacks a latency record. The real-handset goal remains unproven.",
+   "commits": [
+    "d85232a"
+   ]
+  },
+  {
+   "id": "ISS-085",
+   "title": "Coalesced quotation requests lose their caller origin and repeat a readiness phrase",
+   "area": "latency",
+   "status": "open",
+   "found": "2026-10-31",
+   "found_on": "d85232a quotation simulator review",
+   "found_call": "out-mvurvsmk-u9yk",
+   "symptom": "An identical follow-up reused a queued quotation but received only an opener in its own latency record. The result remained linked solely to the original request, and a redundant generic readiness phrase delayed price output by 1036 ms. A stale continuation then asks a second fit question without a new caller request.",
+   "cause": "The repeat-task path returns the existing task ID without recording the additional caller origin. Result latency and completed-opener qualification retain only the first origin. The reused call also remains an ordinary deferred continuation, so it can resume after the authoritative result has already answered it.",
+   "fix": "Retain bounded distinct coalesced origins for pending tasks, emit explicit monotonic result links for every retained request, and permit the existing generic-posthook omission only for an exact current coalesced origin with proven natural opener completion. Preserve the original request and its slower latency. Preserve its assistant/tool history while suppressing only a deferred response wholly covered by the coalesced task; mixed or unrelated work keeps its existing path.",
+   "verified": "The unchanged simulator trace contains original item_5, coalesced item_6 and result item_7 for task t2. Pricing took 2 ms; result delivery waited 1073 ms across caller activity and acknowledgment. The generic readiness phrase adds 1036 ms before quote output, for a 2881 ms original-request readout. The trace has one missing content record. Source cause is confirmed. Red-before regressions now pass for distinct running/queued origins, original interval preservation, one physical result, natural current-opener qualification, cancellation/drop/supersession, the 32-origin bound and lifecycle cleanup. Fully covered continuations retain assistant/tool history without another backend turn; mixed and unrelated work remain eligible. Focused engine race tests, the journal race suite, 52 Python analyzer tests and all-package compilation pass. Both parsers reject ambiguous, cancelled and overflowing links while preserving valid primary evidence. Complete reports for the retained d852 quotation and both 7ee calls match the previous implementation. Full CI for 964409b and f842928 passed, and the combined release was deployed on 2026-10-31. The next quotation replay and real call did not exercise coalesced origins; matched behavioural verification remains pending.",
+   "effect": "Missing content must not be discarded or repaired with wall-clock inference. All request intervals remain part of the evidence, and removing the posthook alone does not prove the original request meets 1200 ms.",
+   "commits": [
+    "964409b"
+   ]
+  },
+  {
+   "id": "ISS-086",
+   "title": "Playback clock stays in the past after synthesis gaps",
+   "area": "audio",
+   "status": "fixed",
+   "found": "2026-10-31",
+   "found_on": "d85232a real call",
+   "found_call": "out-mvvvt9l4-cauj",
+   "symptom": "Nine canonical segments have playback timestamps 149–499 ms before their emission. The same stale clock permits catch-up bursts and treats synthesis silence as already-heard audio.",
+   "cause": "Paced playback advances its playhead only by PCM duration. When new synthesis arrives after the buffered audio drains, neither the playhead nor the elapsed-audio origin excludes the gap.",
+   "fix": "Before committing a paced chunk whose playhead is in the past, move the playhead to now and shift the elapsed-audio origin by the same gap. Preserve buffered future timestamps, unpaced behavior, emitted duration and exact playback ownership.",
+   "verified": "The real archive has 55 contiguous canonical segments; nine are backdated by more than 5 ms. A regression reproducing a one-second synthesis gap failed before the fix. The corrected test checks current audio/transcript timestamps, unchanged emitted duration and exclusion of the gap from the elapsed-audio clock. Buffered and unpaced controls retain their original clocks. Focused playback, shutdown and coalescence race checks pass; full CI run 41170355117 passed and f842928 was deployed. Replay out-mvvxxkse-wiqh (20 canonical segments) and real call out-mvw03ge0-j0y3 (29 segments) have no timestamps backdated beyond 5 ms. The real call has nine measured replies; physical handset latency remains unverified.",
+   "effect": "Accurate pacing and interruption accounting require excluding silence from played PCM. This is not a measurement of the handset or proof of a latency improvement.",
+   "commits": [
+    "f842928"
+   ]
+  },
+  {
+   "id": "ISS-087",
+   "title": "Started answer content can be erased as an opener backchannel",
+   "area": "metrics",
+   "status": "fixed",
+   "found": "2026-10-31",
+   "found_on": "f842928 quotation replay output audit",
+   "found_call": "out-mvvxxkse-wiqh",
+   "symptom": "Item_9 starts both an opener and answer body, then is labelled a backchannel and loses its latency row. The existing explicit-backchannel parser exemption reports missing=0 despite the missing started answer.",
+   "cause": "The continuation decision uses the caller resume time relative to the opener but does not check whether body output committed while recognition was pending. FinishOpenerAsBackchannel resets the playback owner without ordinary truncation reporting.",
+   "fix": "Atomically require the exact playback generation and no committed answer content before converting an opener. Retire that generation against late/dequeued segments. On refusal, retain the normal barge-in or speculative-abandonment interruption path and its exact-owner evidence.",
+   "verified": "Barge-in and speculative-abandonment regressions failed before the change and pass afterward. Generation mismatch, late producer/dequeued output and later-revision controls pass. Earlier opener-only tests were corrected to block the first backend response rather than accidentally permitting body output. Focused race checks, vet and all-package compilation pass. Full quality, normal and race CI passed in run 41176061770. Commit 9547d22 was deployed and fully warmed on 2026-10-31; actual binary hashes, saved configuration, recording and 80 files across 16 retained archives were verified. A fresh call exercising this exact interruption remains pending. Real call out-mvw03ge0-j0y3 has no such conversion and does not exercise this defect.",
+   "effect": "Interrupted answer content must remain in the measured population. Correcting lost rows is accounting fidelity, not proof of a latency gain or the handset target.",
+   "commits": [
+    "9547d22"
+   ]
   }
  ]
 }

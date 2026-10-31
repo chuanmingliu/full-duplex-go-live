@@ -95,6 +95,10 @@ type Turn struct {
 	// model's first token (a result's opening).
 	Scripted bool
 	Opening  string
+	// Readout is a deterministic tool-result prefix, separate from its
+	// optional posthook so only the figures establish readout output.
+	Readout     string
+	QuoteResult bool
 	// Opened is the opener the engine said for this turn at the pause, before
 	// the model's first clause; the pipe says it once. OpenedMS is its audio.
 	Opened   string
@@ -124,7 +128,11 @@ type Turn struct {
 	firstAudio      time.Time
 	firstAudioOut   time.Time
 	firstContent    time.Time
+	firstContentOut time.Time
+	firstReadoutOut time.Time
 	completedAt     time.Time
+
+	completedNaturally bool
 }
 
 // Timings is a consistent snapshot of a turn's milestones.
@@ -141,7 +149,14 @@ type Timings struct {
 	// FirstContent is when the first segment of the answer itself — not the
 	// opener said at the pause — was ready to play.
 	FirstContent time.Time
-	CompletedAt  time.Time
+	// FirstContentOut is when answer audio first left the player. Being
+	// ready in its queue does not establish that the answer was emitted.
+	FirstContentOut time.Time
+	FirstReadoutOut time.Time
+	CompletedAt     time.Time
+	// CompletedNaturally distinguishes a full playback end from a soft
+	// interruption, which can finish without invalidating the generation.
+	CompletedNaturally bool
 }
 
 // Timings returns the turn's milestones.
@@ -159,7 +174,11 @@ func (t *Turn) Timings() Timings {
 		FirstAudio:      t.firstAudio,
 		FirstAudioOut:   t.firstAudioOut,
 		FirstContent:    t.firstContent,
+		FirstContentOut: t.firstContentOut,
+		FirstReadoutOut: t.firstReadoutOut,
 		CompletedAt:     t.completedAt,
+
+		CompletedNaturally: t.completedNaturally,
 	}
 }
 
@@ -296,18 +315,56 @@ func (t *Turn) MarkFirstAudio() { t.stampOnce(&t.firstAudio) }
 // opener) was ready.
 func (t *Turn) MarkFirstContent() { t.stampOnce(&t.firstContent) }
 
-// MarkCompleted records when the turn finished, and reports whether this call
-// was the one that finished it. A turn can be handed to both completion paths —
+// MarkFirstContentOut records the answer's first audio at the output boundary.
+func (t *Turn) MarkFirstContentOut() { t.stampOnce(&t.firstContentOut) }
+
+// MarkFirstReadoutOut observes deterministic result audio leaving the player.
+func (t *Turn) MarkFirstReadoutOut() { t.stampOnce(&t.firstReadoutOut) }
+
+// markOutput commits all output milestones together with the player's chunk.
+// A concurrent completion snapshot cannot observe audio without its content role.
+func (t *Turn) markOutput(content, readout bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	if t.firstAudioOut.IsZero() {
+		t.firstAudioOut = now
+	}
+	if content && t.firstContentOut.IsZero() {
+		t.firstContentOut = now
+	}
+	if content && readout && t.firstReadoutOut.IsZero() {
+		t.firstReadoutOut = now
+	}
+}
+
+// MarkCompleted records a non-natural end and reports whether this call was
+// the one that finished it; the player's normal end uses markCompletedNaturally.
+// A turn can be handed to both completion paths —
 // a truncation report and a natural end arriving for the same playback turn —
 // and the false return is what keeps the second one from emitting a duplicate
 // set of metrics.
 func (t *Turn) MarkCompleted() bool {
+	return t.markCompletion(false)
+}
+
+func (t *Turn) markCompletedNaturally() bool {
+	return t.markCompletion(true)
+}
+
+func (t *Turn) markCompletion(natural bool) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if !natural {
+		// A late truncation still invalidates playback-completion proof;
+		// the timestamp keeps its existing first-completion semantics.
+		t.completedNaturally = false
+	}
 	if !t.completedAt.IsZero() {
 		return false
 	}
 	t.completedAt = time.Now()
+	t.completedNaturally = natural
 	return true
 }
 

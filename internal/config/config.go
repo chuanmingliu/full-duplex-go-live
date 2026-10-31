@@ -518,6 +518,10 @@ type DuplexConfig struct {
 	// two calls one answer in eight opened with words already said on them.
 	// Needs phrase_cache. 0 keeps only the fixed phrases.
 	PhraseCacheLearnChars int `json:"phrase_cache_learn_chars"`
+	// QuoteReadoutWarmMax bounds optional first-segment synthesis attempts per
+	// telephone call. Zero disables it. Prepared quote audio is private to the
+	// call; unchanged validated results still govern what may be spoken.
+	QuoteReadoutWarmMax int `json:"quote_readout_warm_max"`
 	// BackendPrefixWarm sends the backend a one-token request carrying the
 	// conversation so far when the caller starts speaking, so a provider with a
 	// prefix cache has it loaded by the time the real request follows. It
@@ -979,6 +983,9 @@ func (c *Config) applyEnv() {
 
 // Validate rejects combinations that would fail confusingly later.
 func (c *Config) Validate() error {
+	if c.Duplex.QuoteReadoutWarmMax < 0 || c.Duplex.QuoteReadoutWarmMax > 8 {
+		return fmt.Errorf("config: quote_readout_warm_max must be within 0..8")
+	}
 	switch c.LogFormat {
 	case "", "text", "json":
 		if c.LogFormat == "" {

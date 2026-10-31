@@ -1280,7 +1280,7 @@ func TestSpokenFillersReachTheTranscript(t *testing.T) {
 	// The other direction: it must not become something the model reasons
 	// from. An agent that reads its own "one moment" back as conversation will
 	// answer it.
-	e.recordTurn("bc_1", "稍等一下")
+	e.recordTurn(nil, "bc_1", "稍等一下")
 	done := make(chan struct{})
 	e.post(func() { close(done) })
 	select {
@@ -1323,7 +1323,8 @@ func TestAnswerOwnsTheFloorUntilItEnds(t *testing.T) {
 			heard[id] += len(pcm)
 			mu.Unlock()
 		})
-	p.OnTurnDone(func(id string, ms int64, text string) {
+	p.OnTurnDone(func(r PlaybackReport) {
+		id, ms, text := r.TurnID, r.TotalMS, r.SpokenText
 		mu.Lock()
 		doneID, doneMS, doneText = id, ms, text
 		mu.Unlock()
@@ -1884,7 +1885,8 @@ func TestAbandonedSegmentIsNotReportedAsSpoken(t *testing.T) {
 
 	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
 		func(id string, pcm []byte, _ time.Time) {})
-	p.OnTurnDone(func(id string, ms int64, text string) {
+	p.OnTurnDone(func(r PlaybackReport) {
+		id, text := r.TurnID, r.SpokenText
 		mu.Lock()
 		doneID, doneText = id, text
 		mu.Unlock()

@@ -53,6 +53,9 @@ type pendingResponse struct {
 	// scriptedTask is the task the ack is for: finished already when the
 	// ack is due, it is not said.
 	scriptedTask string
+	// Only exact folds into a still-owned task qualify. They need function
+	// history, but the task result itself answers the follow-up.
+	coalescedCalls map[string]*coalescedTask
 }
 
 func (p *pendingResponse) complete() bool {
@@ -437,9 +440,30 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	if turn.Opening != "" {
 		// A result's fixed opening goes out before the model's first token,
 		// from the phrase cache: the caller hears "保费给您计算好了，" at once.
-		pipe.Push(turn.Opening)
+		pipe.PushFixed(turn.Opening, false)
 		full.WriteString(turn.Opening)
 		turn.AppendResponse(turn.Opening)
+	}
+	if turn.Readout != "" {
+		pipe.PushFixed(turn.Readout, true)
+		full.WriteString(turn.Readout)
+		turn.AppendResponse(turn.Readout)
+	}
+	// Fixed prefixes are already in Turn.Response; append only the model's
+	// continuation when this backend completes.
+	fixedBytes := full.Len()
+	repeatedReadout := newReadoutRepeatFilter(turn.Readout)
+	pushText := func(text string) {
+		if text == "" {
+			return
+		}
+		full.WriteString(text)
+		report(map[string]any{
+			"type":        "response.output_text.delta",
+			"response_id": job.responseID,
+			"delta":       text,
+		})
+		pipe.Push(text)
 	}
 	var calls []provider.ToolCall
 	var usage provider.TokenUsage
@@ -480,13 +504,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				"model", req.Model,
 				"ms", time.Since(started).Milliseconds())
 		}
-		full.WriteString(d.Text)
-		report(map[string]any{
-			"type":        "response.output_text.delta",
-			"response_id": job.responseID,
-			"delta":       d.Text,
-		})
-		pipe.Push(d.Text)
+		pushText(repeatedReadout.Push(d.Text))
 	}
 
 	// A stream that ended because it was cancelled did not complete, and what
@@ -496,8 +514,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		return
 	}
 
+	pushText(repeatedReadout.Flush())
 	text := full.String()
-	turn.AppendResponse(text)
+	turn.AppendResponse(text[fixedBytes:])
 	e.log.Debug("think: backend complete",
 		"turn", turn.ID,
 		"chars", len([]rune(text)),
@@ -528,7 +547,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				// when all are in.
 				e.post(func() { e.onServerCallsAmong(job, mine, theirs) })
 			} else {
-				e.post(func() { e.onToolCalls(job, calls) })
+				// Capture the settled application batch; calls is reassigned
+				// below while this callback may already be running.
+				e.post(func() { e.onToolCalls(job, theirs) })
 			}
 			calls = theirs
 			for i, call := range calls {
@@ -749,8 +770,24 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		// but only if there is a wait: a task that is done within the grace
 		// (a `need` from the rules takes 15 ms) gets no "请您稍等" (the owner,
 		// 22:31 on 10-23); its result is delivered as usual.
+		ts := e.tools
+		if ts == nil {
+			return
+		}
+		if ts.tasks[p.scriptedTask] == nil {
+			e.sayAck(p) // already ready: release the result without a timer
+			return
+		}
+		if ts.ackGraceStarted == nil {
+			ts.ackGraceStarted = map[string]bool{}
+		}
+		ts.ackGraceStarted[p.scriptedTask] = true
 		grace := ackGrace
 		time.AfterFunc(grace, func() { e.post(func() { e.sayAck(p) }) })
+		return
+	}
+	if task := e.coveringCoalescedTask(p); task != nil {
+		e.log.Info("tools: a coalesced follow-up is answered by its task result", "turn", p.turn.ID, "task", task.ID, "calls", len(p.calls))
 		return
 	}
 	turn := e.tracker.Begin("", false)
@@ -771,10 +808,11 @@ var ackGrace = 400 * time.Millisecond
 // floor is free. Loop goroutine.
 func (e *Engine) sayAck(p *pendingResponse) {
 	ts := e.tools
-	if ts == nil {
+	if ts == nil || !ts.ackPending[p.scriptedTask] {
 		return
 	}
 	delete(ts.ackPending, p.scriptedTask)
+	delete(ts.ackGraceStarted, p.scriptedTask)
 	if ts.tasks[p.scriptedTask] == nil {
 		// Done within the grace: no "请您稍等" for a wait that did not happen.
 		// The owner's rule of 23:15 on 10-23 had a quick real result still
@@ -785,6 +823,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		// premium was worked out; the ack only delayed it by 3–4 s. Revised
 		// by the owner, 11:31 on 10-28.
 		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", p.scriptedTask)
+		e.maybeDeliver()
 		return
 	}
 	if e.hangingUp() {
@@ -796,15 +835,22 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		// dropped). The ack waits for the floor, as long as the task runs.
 		if ts.tasks[p.scriptedTask] != nil {
 			ts.ackPending[p.scriptedTask] = true
+			ts.ackGraceStarted[p.scriptedTask] = true
 			time.AfterFunc(150*time.Millisecond, func() { e.post(func() { e.sayAck(p) }) })
 			return
 		}
 		e.log.Info("tools: the task finished while its ack waited for the floor; not saying it", "task", p.scriptedTask)
 		return
 	}
+	origin := ts.origins[p.scriptedTask]
+	followsOrigin := p.turn == e.tracker.Current() && e.completedOriginOpener(origin)
 	turn := e.tracker.Begin("", false)
 	turn.DelegationID = p.delegationID
 	turn.Scripted = true
+	if followsOrigin {
+		origin.ackTurnID = turn.ID
+		ts.origins[p.scriptedTask] = origin
+	}
 	e.specTurn = nil
 	e.commitTurn(turn)
 	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(p.scripted)))
@@ -1004,7 +1050,14 @@ func (e *Engine) AppendCommentary(delegationID, content, clientEventID string) {
 
 // wake asks the loop to look again at whatever is waiting for the floor. It
 // never blocks: the tick is the fallback.
-func (e *Engine) wake() { e.post(e.drainDeferred) }
+func (e *Engine) wake() {
+	e.post(func() {
+		// Match the periodic check's ordering. If the deferred ack is what
+		// releases a result, sayAck performs that delivery itself.
+		e.maybeDeliver()
+		e.drainDeferred()
+	})
+}
 
 // drainDeferred starts the next thing that has been waiting for a quiet caller
 // and a free floor: a function result to read back, then something an

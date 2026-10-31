@@ -46,6 +46,12 @@ type toolState struct {
 	// newest per tool, which supersedes older ones of the same tool.
 	tasks  map[string]*tools.Task
 	latest map[string]string
+	// origins only holds running tasks. Completion moves the immutable
+	// caller origin into the queued delivery; supersession discards it.
+	origins map[string]taskOrigin
+	// Coalesced callers follow the same running-to-delivery lifetime without
+	// replacing the request's original latency origin.
+	coalesced map[string]*coalescedTask
 	// recent is the last submission per tool: the same call again within
 	// a few seconds on the same memory is folded into it, not resubmitted
 	// (the model asked quote_total twice in half a second on 10-21 and the
@@ -74,8 +80,15 @@ type toolState struct {
 	// ackPending holds a task's delivery until its ack has been said or
 	// passed over (the ack comes first, the result after it).
 	ackPending map[string]bool
+	// ackGraceStarted means the calling clause has released the floor and
+	// its continuation is only waiting to decide whether an ack is needed.
+	// A completion may release that wait, but must not cut the calling clause.
+	ackGraceStarted map[string]bool
 	// deliveries are finished tasks waiting for a gap in the conversation.
-	deliveries []*tools.Task
+	deliveries []taskDelivery
+	// handoff keeps the original floor until its clean completion has been
+	// recorded, even if the aborted producer's wake reaches the loop first.
+	handoff *Turn
 	// lastResult is the latest result read out to the caller, kept beside
 	// the working memory so the model still has the figures once the
 	// result note has left a trimmed history (10:48 on 10-26: the second
@@ -91,6 +104,23 @@ type toolState struct {
 	lastResultHeard string
 	// stats
 	calls, async, delivered, dropped, superseded int
+}
+
+type taskOrigin struct {
+	turnID      string
+	speechEndAt time.Time
+	// ackTurnID is set only when this task's ack directly follows the
+	// originating caller's completed, emitted opener.
+	ackTurnID string
+	// ackCompleted requires the natural playback completion callback;
+	// a soft interruption also sets the turn's generic CompletedAt.
+	ackCompleted bool
+}
+
+type taskDelivery struct {
+	task      *tools.Task
+	origin    taskOrigin
+	coalesced *coalescedTask
 }
 
 // setupTools reads the profile.
@@ -238,19 +268,26 @@ func (e *Engine) memoryBlock() string {
 		}
 		fmt.Fprintf(&b, "【最近一次报价结果】基于工作记忆 v%d：%s", t.Request.MemoryVersion, lastResultLine(t))
 		if ts.lastResultCut {
-			fmt.Fprintf(&b, "\n这段报价念到“%s”时被客户打断，客户很可能没听到总价；客户再问价格或方案时，先把总价和改动的险种复述一遍，不必再调用工具。", ts.lastResultHeard)
+			fmt.Fprintf(&b, "\n这段报价念到“%s”时被客户打断。按客户当前问题补充：只问某险种时只答该险种的明细，问总价时再答方案合计；不要强行重报总价。已有明细无需重复查询，缺失的金额须查询，不能推算。", ts.lastResultHeard)
 		} else {
-			b.WriteString("\n已完整念给客户。")
+			b.WriteString("\n播报内容已完整念给客户；明细依据仅供回答追问。")
 		}
 	}
 	return b.String()
 }
 
-// lastResultLine is a delivered result in the words the caller heard — the
-// template's readout when the tool has one, the raw output otherwise.
+// lastResultLine preserves the custom readout and the authoritative prices
+// it may omit, independently of the conversation history's size limit.
 func lastResultLine(t *tools.Task) string {
-	if s := t.Tool.ReadoutFor(t.Result.Output); s != "" {
-		return s
+	readout := t.Tool.ReadoutFor(t.Result.Output)
+	if facts := quoteMemoryFacts(t.Result.Output); facts != "" {
+		if readout != "" {
+			return readout + "\n" + facts
+		}
+		return facts
+	}
+	if readout != "" {
+		return readout
 	}
 	return string(t.Result.Output)
 }
@@ -365,8 +402,9 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			out, taskID := e.submitTask(job, c, t)
+			out, taskID, coalesced := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
+			p.noteCoalescedCall(c.ID, coalesced)
 			if taskID != "" && t.Ack != "" && p.scripted == "" {
 				p.scriptedTask = taskID
 				// The owner's words for the wait, not the model's: said from
@@ -398,7 +436,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			// The model has said goodbye and asked to hang up. Resuming it
 			// with the tool's output would only draw a second goodbye, cut
 			// off by the hangup; the conversation is over.
-			e.log.Debug("tools: end_call accepted; not resuming the backend", "turn", job.turn)
+			e.log.Debug("tools: end_call accepted; not resuming the backend", "turn", job.turn.ID)
 			return
 		}
 		e.continueWith(p)
@@ -699,7 +737,7 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 }
 
 // submitTask starts an async tool and answers the model at once.
-func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string) {
+func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string, *coalescedTask) {
 	ts := e.tools
 	// A `config` in the call is not folded into the plan here: the lead
 	// service lays it over the plan itself, and the plan in memory follows
@@ -709,8 +747,9 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	// chosen (the 10:19, 10:26 and 10:33 simulated calls of 10-28).
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
+		coalesced := e.noteCoalescedTask(r.id, job.turn)
 		e.log.Info("tools: a repeated call was folded into the previous one", "tool", t.Name, "task", r.id, "memory_version", ver)
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), ""
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"note":"同一请求已在处理中，结果出来后会自动通知你；不要重复调用"}`, r.id), "", coalesced
 	}
 	// A newer request for the same tool supersedes the older: its result
 	// would be read out to a caller who has moved on.
@@ -718,6 +757,10 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 		if old := ts.tasks[oldID]; old != nil {
 			old.Cancel()
 			delete(ts.tasks, oldID)
+			delete(ts.origins, oldID)
+			e.discardCoalescedTask(oldID)
+			delete(ts.ackPending, oldID)
+			delete(ts.ackGraceStarted, oldID)
 			ts.superseded++
 			e.log.Info("tools: a task was superseded by a newer one", "tool", t.Name, "task", oldID)
 		}
@@ -728,6 +771,12 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	})
 	ts.tasks[task.ID] = task
 	ts.latest[t.Name] = task.ID
+	if speechEnd := job.turn.Timings().SpeechEndAt; !speechEnd.IsZero() {
+		if ts.origins == nil {
+			ts.origins = map[string]taskOrigin{}
+		}
+		ts.origins[task.ID] = taskOrigin{turnID: job.turn.ID, speechEndAt: speechEnd}
+	}
 	if ts.recent == nil {
 		ts.recent = map[string]recentCall{}
 	}
@@ -740,9 +789,9 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	e.log.Info("tools: task submitted", "tool", c.Name, "task", task.ID, "memory_version", ver, "turn", job.turn.ID)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
 	if t.Ack != "" {
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID, nil
 	}
-	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID
+	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID, nil
 }
 
 type recentCall struct {
@@ -763,6 +812,15 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 		return // superseded or the session is over
 	}
 	delete(ts.tasks, task.ID)
+	origin := ts.origins[task.ID]
+	delete(ts.origins, task.ID)
+	coalesced := ts.coalesced[task.ID]
+	delete(ts.coalesced, task.ID)
+	if ts.ackGraceStarted[task.ID] {
+		delete(ts.ackPending, task.ID)
+		delete(ts.ackGraceStarted, task.ID)
+		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", task.ID)
+	}
 	if ts.latest[task.Tool.Name] == task.ID {
 		delete(ts.latest, task.Tool.Name)
 	}
@@ -771,19 +829,22 @@ func (e *Engine) onTaskDone(task *tools.Task) {
 	// show a quotation's steps: a need (which fields), a quote (total,
 	// lines, skipped) or an error. Never the person's answers.
 	e.log.Info("tools: task result", append([]any{"tool", task.Tool.Name, "task", task.ID}, resultShape(task.Result)...)...)
-	ts.deliveries = append(ts.deliveries, task)
+	ts.deliveries = append(ts.deliveries, taskDelivery{task: task, origin: origin, coalesced: coalesced})
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "done",
 		MemoryVersion: task.Request.MemoryVersion, TookMS: task.Result.Took.Milliseconds(), Error: errString(task.Result.Err)})
+	e.maybeDeliver()
 }
 
-// maybeDeliver, on each tick, announces a finished task at the first gap
-// in the conversation, or after the wait over whatever is going on.
+// maybeDeliver, on completion, floor release and each tick, announces a
+// finished task at the first gap, or after the wait over whatever is going on.
 func (e *Engine) maybeDeliver() {
 	ts := e.tools
-	if ts == nil || len(ts.deliveries) == 0 || e.muted {
+	if ts == nil || len(ts.deliveries) == 0 || e.muted || e.hangingUp() || e.ctx.Err() != nil {
 		return
 	}
-	task := ts.deliveries[0]
+	delivery := ts.deliveries[0]
+	task := delivery.task
+	e.tryReadyQuoteHandoff(delivery)
 	if ts.ackPending[task.ID] {
 		return // its ack first
 	}
@@ -801,6 +862,7 @@ func (e *Engine) maybeDeliver() {
 		// for it to finish rather than cutting "请您稍等" in half.
 		return
 	}
+	ts.deliveries[0] = taskDelivery{}
 	ts.deliveries = ts.deliveries[1:]
 	ts.delivered++
 	if busy {
@@ -808,32 +870,24 @@ func (e *Engine) maybeDeliver() {
 		e.yieldFloor(false)
 	}
 	_, ver := e.memorySnapshot()
+	opening, readout, posthookSkipped := e.quoteResultPrefix(delivery, ver, busy)
 	var note strings.Builder
 	fmt.Fprintf(&note, "【后台任务结果】%s（%s）已完成", task.ID, task.Tool.Name)
 	if task.Result.Err != nil {
 		fmt.Fprintf(&note, "，但失败了：%s。请告诉用户暂时算不出来，并说明会稍后再试或请人工跟进。", task.Result.Err.Error())
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
-		readOut := false
-		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" && task.Request.MemoryVersion == ver {
-			if tools.ResultIsDefault(task.Result.Output) {
-				opening = "" // the default quotation: ready before the call, no "算好了"
-			}
-			if readout := task.Tool.ReadoutFor(task.Result.Output); readout != "" {
-				fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
-				readOut = true
-			} else if opening != "" {
-				fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
-			}
+		if readout != "" {
+			fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
+		} else if opening != "" {
+			fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 		}
 		if task.Request.MemoryVersion != ver {
 			fmt.Fprintf(&note, "\n注意：该结果基于工作记忆 v%d 计算，而当前工作记忆已是 v%d（方案在计算期间有改动）。请先告知结果对应的是之前的方案，并询问是否按最新方案重新计算。", task.Request.MemoryVersion, ver)
-		} else if !readOut {
+		} else if readout == "" {
 			note.WriteString("\n请现在自然地把结果告诉用户，简洁，报总价和关键构成即可。")
 		}
 	}
-	e.log.Info("tools: delivering a task's result", "tool", task.Tool.Name, "task", task.ID,
-		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver)
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "delivered",
 		MemoryVersion: task.Request.MemoryVersion, WaitedMS: waited.Milliseconds(), Interrupting: busy})
 	e.history = append(e.history, provider.Message{Role: provider.RoleSystem, Content: note.String()})
@@ -841,21 +895,24 @@ func (e *Engine) maybeDeliver() {
 		e.recordSelection(task.Result.Output)
 	}
 	turn := e.tracker.Begin("", false)
+	turn.Opening, turn.Readout = opening, readout
+	turn.QuoteResult = task.Result.Err == nil && tools.ResultStatus(task.Result.Output) == "quote"
+	attrs := []any{"tool", task.Tool.Name, "task", task.ID, "turn", turn.ID,
+		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver,
+		"posthook_skipped", posthookSkipped}
+	if turn.QuoteResult {
+		attrs = append(attrs, "quote_result_default", tools.ResultIsDefault(task.Result.Output))
+	}
+	if origin := delivery.origin; origin.turnID != "" && !origin.speechEndAt.IsZero() {
+		attrs = append(attrs, "origin_turn", origin.turnID,
+			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())
+	}
+	e.log.Info("tools: delivering a task's result", attrs...)
+	e.deliverCoalescedTask(delivery, turn)
 	e.specTurn = nil
 	e.commitTurn(turn)
 	if task.Result.Err == nil && task.Tool.OpeningFor(task.Result.Output) != "" {
 		ts.lastResult, ts.lastResultTurn, ts.lastResultCut, ts.lastResultHeard = task, turn.ID, false, ""
-	}
-	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
-		if opening := task.Tool.OpeningFor(task.Result.Output); opening != "" {
-			// The posthook from the cache, then the figures from the template
-			// (synthesized: they change), before the model's first token. The
-			// default quotation gets the figures alone.
-			if tools.ResultIsDefault(task.Result.Output) {
-				opening = ""
-			}
-			turn.Opening = opening + task.Tool.ReadoutFor(task.Result.Output)
-		}
 	}
 	e.beginGeneration(turn, "task_result", false)
 }
@@ -883,6 +940,14 @@ func (e *Engine) closeTools() {
 		ts.dropped++
 	}
 	ts.dropped += len(ts.deliveries)
+	clear(ts.tasks)
+	clear(ts.latest)
+	clear(ts.origins)
+	e.clearCoalescedTasks()
+	clear(ts.ackPending)
+	clear(ts.ackGraceStarted)
+	ts.handoff = nil
+	ts.deliveries = nil
 	if ts.calls > 0 || ts.memory != nil && !ts.memory.Empty() {
 		_, ver := e.memorySnapshot()
 		e.log.Info("tools: this call", "calls", ts.calls, "async", ts.async, "delivered", ts.delivered,
@@ -979,8 +1044,9 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
-			out, taskID := e.submitTask(job, c, t)
+			out, taskID, coalesced := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
+			p.noteCoalescedCall(c.ID, coalesced)
 			if taskID != "" && t.Ack != "" && p.scripted == "" {
 				p.scriptedTask = taskID
 				p.scripted = t.Ack

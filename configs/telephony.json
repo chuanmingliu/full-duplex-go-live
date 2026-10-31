@@ -98,6 +98,7 @@
     "tts_native_rate": true,
     "phrase_cache": true,
     "phrase_cache_learn_chars": 12,
+    "quote_readout_warm_max": 4,
     "opener": true,
     "opener_phrases": ["好的，", "嗯，", "明白，", "好，", "行，", "嗯嗯，", "对，"],
     "opener_question_phrases": ["嗯，", "嗯嗯，", "好的，", "好，", "对，", "行，"],

@@ -57,7 +57,11 @@ type Config struct {
 	// tell such a call from a real one, since the line looks the same to
 	// golive. Empty means every call is taken to be real.
 	SimDials string
-	Log      *slog.Logger
+	// TalkerURL is a fixed local model endpoint used only for an on-demand
+	// status check. TalkerPlayground is the owner's existing desk page.
+	TalkerURL        string
+	TalkerPlayground string
+	Log              *slog.Logger
 }
 
 // Server serves the journal.
@@ -533,6 +537,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/overview", s.handleOverview)
 	mux.HandleFunc("/api/calls/", s.handleCall)
+	mux.HandleFunc("GET /api/talker-status", s.handleTalkerStatus)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
 	mux.HandleFunc("/api/decisions", s.handleFile("decisions.json", `{"decisions":[]}`))
 	mux.HandleFunc("/api/benchmarks", func(w http.ResponseWriter, r *http.Request) {
@@ -731,7 +736,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 	switch what {
 	case "":
 		writeJSON(w, http.StatusOK, map[string]any{
-			"call":          c,
+			"call":          s.withFillerEvidence(s.withLatencyEvidence(c)),
 			"target_ms":     TargetMS,
 			"repo_url":      s.cfg.RepoURL,
 			"audio":         s.audioOf(c),
@@ -782,7 +787,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("download") != "" {
 			w.Header().Set("Content-Disposition", `attachment; filename="`+fileStem(c)+`.txt"`)
 		}
-		_, _ = io.WriteString(w, TranscriptText(c))
+		_, _ = io.WriteString(w, TranscriptText(s.withLatencyEvidence(c)))
 	case "peaks":
 		rec, err := s.recording(c)
 		if err != nil {
