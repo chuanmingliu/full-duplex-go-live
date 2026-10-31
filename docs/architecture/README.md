@@ -4,7 +4,7 @@
 
 golive is a concurrent voice-conversation service. It keeps listening while it recognizes speech, reasons about what to say and plays an answer. The current phone implementation combines Tencent recognition, DeepSeek reasoning and MiniMax synthesis with local turn control, quotation tools and retained call evidence.
 
-This documentation describes `codex/telephony-latency` at **9547d22**, inspected on **31 October 2026**. The architecture is a source/configuration snapshot, not a live service-health dashboard. The last deployment verified during this work was f842928. Values in checked configuration files are distinguished from measured results; historical runbooks can describe older deployments.
+This documentation describes `codex/telephony-latency` at **9547d22**, inspected on **31 October 2026**. The architecture is a source/configuration snapshot, not a live service-health dashboard. The last deployment verified during this work was 9547d22. Values in checked configuration files are distinguished from measured results; historical runbooks can describe older deployments.
 
 ## Explore by concern
 

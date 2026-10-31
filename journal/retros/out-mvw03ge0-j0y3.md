@@ -17,3 +17,7 @@ The caller channel has 1,353 full-scale samples (peak 32,768); the assistant cha
 ## Related correction
 
 The preceding quotation replay `out-mvvxxkse-wiqh` exposed ISS-087: already-started answer content could be discarded as an opener backchannel and lose its latency row. The correction atomically limits this conversion to an exact playback generation with no emitted body, rejects late retired segments, and preserves ordinary interruption handling once body output starts. Both barge-in and speculative-abandonment regressions reproduced the problem before the change. Full CI, deployment and subsequent behavioural verification must be recorded separately; a unit fix does not prove handset latency.
+
+## Deployment follow-up
+
+The correction passed full quality, normal and race CI in [run 41176061770](https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41176061770). Commit `9547d22` was deployed and fully warmed on 2026-10-31. Running binaries, recording, saved configuration and all 80 files in the 16 retained call archives were verified. This deployment does not change the original call measurements; a subsequent call exercising the exact interruption and physical handset measurement remain pending.

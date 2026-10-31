@@ -1404,16 +1404,18 @@
    "id": "ISS-087",
    "title": "Started answer content can be erased as an opener backchannel",
    "area": "metrics",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-10-31",
    "found_on": "f842928 quotation replay output audit",
    "found_call": "out-mvvxxkse-wiqh",
    "symptom": "Item_9 starts both an opener and answer body, then is labelled a backchannel and loses its latency row. The existing explicit-backchannel parser exemption reports missing=0 despite the missing started answer.",
    "cause": "The continuation decision uses the caller resume time relative to the opener but does not check whether body output committed while recognition was pending. FinishOpenerAsBackchannel resets the playback owner without ordinary truncation reporting.",
    "fix": "Atomically require the exact playback generation and no committed answer content before converting an opener. Retire that generation against late/dequeued segments. On refusal, retain the normal barge-in or speculative-abandonment interruption path and its exact-owner evidence.",
-   "verified": "Barge-in and speculative-abandonment regressions failed before the change and pass afterward. Generation mismatch, late producer/dequeued output and later-revision controls pass. Earlier opener-only tests were corrected to block the first backend response rather than accidentally permitting body output. Focused race checks pass; full CI and deployment remain pending. Real call out-mvw03ge0-j0y3 has no such conversion and does not exercise this defect.",
+   "verified": "Barge-in and speculative-abandonment regressions failed before the change and pass afterward. Generation mismatch, late producer/dequeued output and later-revision controls pass. Earlier opener-only tests were corrected to block the first backend response rather than accidentally permitting body output. Focused race checks, vet and all-package compilation pass. Full quality, normal and race CI passed in run 41176061770. Commit 9547d22 was deployed and fully warmed on 2026-10-31; actual binary hashes, saved configuration, recording and 80 files across 16 retained archives were verified. A fresh call exercising this exact interruption remains pending. Real call out-mvw03ge0-j0y3 has no such conversion and does not exercise this defect.",
    "effect": "Interrupted answer content must remain in the measured population. Correcting lost rows is accounting fidelity, not proof of a latency gain or the handset target.",
-   "commits": []
+   "commits": [
+    "9547d22"
+   ]
   }
  ]
 }
