@@ -1,0 +1,32 @@
+# Existing RustPBX remains external. Move it only after its writable state is recovered.
+name: golive-telephony
+services:
+  active-call:
+    profiles: [telephony]
+    image: ${ACTIVE_CALL_IMAGE:?set the verified patched Active Call image ID}
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 30s
+    init: true
+    # Preserve --conf: adding codec flags must not replace the config argument.
+    command: [--conf, /app/config.toml, --codecs, "pcma,pcmu"]
+    volumes:
+      - type: bind
+        source: ${ACTIVE_CALL_CONFIG:?set existing active-call.toml}
+        target: /app/config.toml
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ACTIVE_CALL_PLAYBOOKS:?set existing Active Call config directory}
+        target: /app/config
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ACTIVE_CALL_MODELS:?set existing Active Call models directory}
+        target: /app/models
+        bind: {create_host_path: false}
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+    # No invented HTTP health endpoint. Check SIP, :8081 control and a replay
+    # externally; a running container alone is not media readiness.

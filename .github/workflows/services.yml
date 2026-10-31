@@ -1,0 +1,28 @@
+name: service-definitions
+
+on:
+  push:
+    branches: [codex/service-operations]
+  pull_request:
+    paths:
+      - 'deploy/services/**'
+      - 'docs/services/**'
+      - '.cursor/agents/golive-service-maintainer.md'
+      - 'scripts/check_service_catalog.py'
+      - '.github/workflows/services.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check service ownership and runbook links
+        run: python3 scripts/check_service_catalog.py
+      - name: Validate isolated Compose models
+        run: |
+          docker compose version
+          python3 deploy/services/validate.py

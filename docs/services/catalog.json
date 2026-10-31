@@ -1,0 +1,559 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-31",
+  "timezone": "Asia/Shanghai",
+  "evidence": {
+    "kind": "runner selective read-only inventory",
+    "limitations": [
+      "Running/listening is not a successful application health check unless health results are explicitly included.",
+      "Initial box repository listing stopped at a permission error; successful follow-up recovered selected config, source and runtime arguments.",
+      "Local image IDs are not registry manifest digests.",
+      "Image OCI source labels identify projects, not necessarily the deployed source commit."
+    ],
+    "receipt_basenames": [
+      "codex-services-20261031-1.txt",
+      "codex-services-20261031-2.txt"
+    ]
+  },
+  "live_changes": [],
+  "codebases": {
+    "full-duplex-go-live": {
+      "repository": "https://github.com/chuanmingliu/full-duplex-go-live",
+      "source_branch": "codex/telephony-latency",
+      "box_install": "/home/chuanming/golive-telephony",
+      "type": "shared-source-repository"
+    },
+    "active-call": {
+      "upstream": "https://github.com/miuda-ai/active-call",
+      "repository": null,
+      "type": "patched-adjacent-codebase",
+      "build_recipe": "~/telephony/Dockerfile.patched",
+      "running_source_commit": null,
+      "oci_source": "https://github.com/miuda-ai/active-call"
+    },
+    "rustpbx": {
+      "upstream": "https://github.com/restsend/rustpbx",
+      "repository": null,
+      "type": "adjacent-codebase",
+      "running_source_commit": null,
+      "oci_source": "https://github.com/restsend/rustpbx"
+    },
+    "golive-user-simulator": {
+      "repository": "https://github.com/chuanmingliu/full-duplex-go-live",
+      "type": "separate-workstream-in-shared-repository",
+      "box_install": "/home/chuanming/golive-sim/src",
+      "source_branch": "codex/inbound-user-simulator",
+      "box_source_commit": "5128a8f120345b707ec75fdac2c9d96c169485b1"
+    },
+    "aria-originator": {
+      "repository": null,
+      "type": "unresolved-adjacent-codebase",
+      "box_source_path": "/home/chuanming/aria",
+      "git_metadata_observed": false,
+      "runtime": "Node/TypeScript deployment tree"
+    },
+    "audio8-asr-runtime": {
+      "repository": null,
+      "type": "adjacent-runtime-bundle",
+      "documented_source_bundle": "Edge0/Audio8-ASR-0.1B-onnx-runtime",
+      "git_metadata_observed": false
+    },
+    "audio8-tts-runtime": {
+      "repository": null,
+      "type": "upstream-git-checkout",
+      "upstream": "https://github.com/Audio8-AI/Audio8_TTS",
+      "box_source_commit": "07e40f5d0b03fc473635ef378654bfb581027ac3",
+      "box_source_path": "/home/chuanming/edge/Audio8_TTS"
+    },
+    "external-cloudflared": {
+      "repository": null,
+      "type": "external-package"
+    },
+    "external-openship": {
+      "repository": null,
+      "type": "external-package"
+    },
+    "local-talker": {
+      "repository": "https://github.com/chuanmingliu/full-duplex-go-live",
+      "source_branch": "codex/local-talker",
+      "mac_source_commit": "2dd9a0c486347cb765b5e0301b6cff342c137e5a",
+      "type": "separate-workstream-in-shared-repository"
+    },
+    "mac-aria": {
+      "repository": "https://github.com/chuanmingliu/openai-gpt-live",
+      "source_branch": "codex/public-operator-proxy",
+      "mac_source_commit": "26f5ca36f9df4565ac16874a47546e2cc8155f7c",
+      "runtime_build_commit": "051b03f4a8ef9f1fcae860c276f73249fe183e8d",
+      "runtime_build_dirty": true,
+      "type": "adjacent-codebase"
+    }
+  },
+  "services": [
+    {
+      "id": "phone",
+      "host": "thinkpad",
+      "group": "application",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/golive",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8765"
+      ],
+      "dependencies": [
+        "active-call",
+        "crm",
+        "target-speaker",
+        "provider-asr",
+        "provider-llm",
+        "provider-tts"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "phone",
+      "observed_config": {
+        "profile": "/home/chuanming/golive-telephony/configs/telephony.json",
+        "environment_file": "/home/chuanming/golive-telephony.env"
+      }
+    },
+    {
+      "id": "browser-demo",
+      "host": "thinkpad",
+      "group": "application",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/golive",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:9080"
+      ],
+      "dependencies": [
+        "provider-asr",
+        "provider-llm",
+        "provider-tts"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "browser-demo",
+      "observed_config": {
+        "profile": "/home/chuanming/golive-telephony/configs/tencent-deepseek-minimax.json",
+        "environment_file": "/home/chuanming/golive-telephony.env"
+      }
+    },
+    {
+      "id": "crm",
+      "host": "thinkpad",
+      "group": "application",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/crm",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8791",
+        "192.168.71.9:8791"
+      ],
+      "dependencies": [
+        "phone",
+        "aria-originator",
+        "quotesvc"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "crm",
+      "observed_data_directory": "/home/chuanming/golive-crm"
+    },
+    {
+      "id": "quotesvc",
+      "host": "thinkpad",
+      "group": "application",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/quotesvc",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8793"
+      ],
+      "dependencies": [],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "quotesvc",
+      "observed_data_directory": "/home/chuanming/golive-quotesvc"
+    },
+    {
+      "id": "journal",
+      "host": "thinkpad",
+      "group": "application",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/journal",
+      "observed_state": "listening",
+      "observed_binds": [
+        "192.168.71.9:8790"
+      ],
+      "dependencies": [
+        "phone-log",
+        "working-recordings",
+        "archive",
+        "mac-talker"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "journal",
+      "observed_config": {
+        "log": "/home/chuanming/golive-telephony/golive-telephony.log",
+        "store": "/home/chuanming/golive-calls",
+        "data": "/home/chuanming/golive-journal",
+        "archive": "/home/chuanming/golive-archive",
+        "last_call": "/home/chuanming/golive-last-call.json",
+        "retention_hours": 720,
+        "target_ms": 1200
+      }
+    },
+    {
+      "id": "desk",
+      "host": "thinkpad",
+      "group": "application",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/desk",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8792",
+        "192.168.71.9:8792"
+      ],
+      "dependencies": [
+        "journal",
+        "simulator",
+        "mac-talker"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "desk",
+      "observed_data_directory": "/home/chuanming/golive-desk"
+    },
+    {
+      "id": "edge-gateway",
+      "host": "thinkpad",
+      "group": "models",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "cmd/edge",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8030",
+        "192.168.71.9:8030"
+      ],
+      "dependencies": [
+        "audio8-asr",
+        "audio8-tts",
+        "diarization"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [],
+      "branch_key": "edge-gateway",
+      "observed_data_directory": "/home/chuanming/golive-edge"
+    },
+    {
+      "id": "target-speaker",
+      "host": "thinkpad",
+      "group": "models",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "edge/tsv_server.py",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8032"
+      ],
+      "dependencies": [
+        "campplus-model"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [
+        "Observed cwd /home/chuanming/edge/tsv; native Python 3.14."
+      ],
+      "branch_key": "target-speaker"
+    },
+    {
+      "id": "diarization",
+      "host": "thinkpad",
+      "group": "models",
+      "codebase": "full-duplex-go-live",
+      "source_entry": "edge/diar_server.py",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8031"
+      ],
+      "dependencies": [
+        "diarization-model"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [
+        "Observed cwd /home/chuanming/edge/diar; native Python 3.14."
+      ],
+      "branch_key": "diarization"
+    },
+    {
+      "id": "audio8-asr",
+      "host": "thinkpad",
+      "group": "models",
+      "codebase": "audio8-asr-runtime",
+      "source_entry": "/home/chuanming/edge/asr",
+      "observed_state": "listening",
+      "observed_binds": [
+        "0.0.0.0:7860"
+      ],
+      "dependencies": [
+        "audio8-asr-model"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [
+        "Git remote/revision unresolved. Observed bind differs from documented loopback intent."
+      ],
+      "branch_key": "audio8-asr"
+    },
+    {
+      "id": "audio8-tts",
+      "host": "thinkpad",
+      "group": "models",
+      "codebase": "audio8-tts-runtime",
+      "source_entry": "/home/chuanming/edge/Audio8_TTS/onnx_runtime_0_1b_int8",
+      "observed_state": "listening",
+      "observed_binds": [
+        "127.0.0.1:8024"
+      ],
+      "dependencies": [
+        "audio8-tts-model"
+      ],
+      "current_owner": "native/phone-brain.sh",
+      "notes": [
+        "Verified upstream checkout Audio8-AI/Audio8_TTS at 07e40f5d0b03fc473635ef378654bfb581027ac3; environment drift not measured."
+      ],
+      "branch_key": "audio8-tts"
+    },
+    {
+      "id": "active-call",
+      "host": "thinkpad",
+      "group": "transport",
+      "codebase": "active-call",
+      "observed_state": "running",
+      "current_owner": "compose:telephony",
+      "dependencies": [
+        "rustpbx",
+        "phone"
+      ],
+      "notes": [
+        "Patched local image; source commit of running image unverified."
+      ],
+      "branch_key": "active-call",
+      "observed_config": {
+        "http_addr": "0.0.0.0:8081",
+        "sip_udp_port": 13050,
+        "rtp_range": [
+          25000,
+          29999
+        ]
+      }
+    },
+    {
+      "id": "rustpbx",
+      "host": "thinkpad",
+      "group": "transport",
+      "codebase": "rustpbx",
+      "observed_state": "running",
+      "current_owner": "docker:standalone",
+      "dependencies": [
+        "gsm-gateway"
+      ],
+      "notes": [
+        "Only config.toml is mounted. Database URL sqlite://rustpbx.sqlite3, working directory /app. Writable-layer storage and recording directories observed. Preserve these before recreation."
+      ],
+      "branch_key": "rustpbx",
+      "observed_config": {
+        "http_addr": "0.0.0.0:8080",
+        "sip_udp_port": 5060,
+        "rtp_range": [
+          20000,
+          23999
+        ],
+        "database_url": "sqlite://rustpbx.sqlite3",
+        "working_directory": "/app",
+        "writable_layer_state_dirs": [
+          "/app/storage",
+          "/app/config/recorders"
+        ]
+      }
+    },
+    {
+      "id": "simulator",
+      "host": "thinkpad",
+      "group": "simulator",
+      "codebase": "golive-user-simulator",
+      "observed_state": "running",
+      "current_owner": "compose:golive-user-simulator",
+      "dependencies": [
+        "simulator-activecall"
+      ],
+      "notes": [],
+      "branch_key": "simulator"
+    },
+    {
+      "id": "simulator-activecall",
+      "host": "thinkpad",
+      "group": "simulator",
+      "codebase": "golive-user-simulator",
+      "observed_state": "running",
+      "current_owner": "compose:golive-user-simulator",
+      "dependencies": [
+        "simulator-config"
+      ],
+      "notes": [
+        "Separate gateway, isolated from production SIP."
+      ],
+      "branch_key": "simulator-activecall"
+    },
+    {
+      "id": "aria-originator",
+      "host": "thinkpad",
+      "group": "transport",
+      "codebase": "aria-originator",
+      "observed_state": "running",
+      "current_owner": "systemd:aria.service",
+      "dependencies": [
+        "active-call",
+        "phone"
+      ],
+      "notes": [
+        "Observed unit runs as root in /home/chuanming/aria; no accessible source Git metadata. Port ownership still requires verification."
+      ],
+      "branch_key": "aria-originator",
+      "observed_config": {
+        "unit_file": "/etc/systemd/system/aria.service",
+        "user": "root",
+        "working_directory": "/home/chuanming/aria",
+        "optional_environment_file": "/home/chuanming/aria/deploy/env.lan"
+      }
+    },
+    {
+      "id": "cloudflared",
+      "host": "thinkpad",
+      "group": "ingress",
+      "codebase": "external-cloudflared",
+      "observed_state": "running",
+      "current_owner": "systemd:cloudflared.service",
+      "dependencies": [],
+      "notes": [
+        "Route policy and credentials are private host configuration."
+      ],
+      "branch_key": "cloudflared"
+    },
+    {
+      "id": "openship-edge",
+      "host": "thinkpad",
+      "group": "ingress",
+      "codebase": "external-openship",
+      "observed_state": "running",
+      "current_owner": "docker:standalone",
+      "dependencies": [],
+      "notes": [
+        "Certificates, ACME, static files and sites config are mounted from host."
+      ],
+      "branch_key": "openship-edge"
+    },
+    {
+      "id": "mac-talker",
+      "host": "mac",
+      "group": "models",
+      "codebase": "local-talker",
+      "current_owner": "native detached serve.py launcher",
+      "observed_state": "healthy",
+      "observed_binds": [
+        "0.0.0.0:18081"
+      ],
+      "health_observed": {
+        "path": "/health",
+        "status": 200
+      },
+      "runtime": "llama.cpp b8920, MetalMTL0",
+      "dependencies": [
+        "private-tuned-talker-model"
+      ],
+      "branch_key": "mac-talker",
+      "notes": [
+        "No Talker launchd service found. Do not move Metal serving into Linux Docker."
+      ]
+    },
+    {
+      "id": "mac-aria",
+      "host": "mac",
+      "group": "adjacent",
+      "codebase": "mac-aria",
+      "current_owner": "launchd:com.openai-gpt-live.aria",
+      "observed_state": "healthy",
+      "observed_binds": [
+        "127.0.0.1:3000",
+        "127.0.0.1:8765",
+        "0.0.0.0:8767",
+        "127.0.0.1:8768"
+      ],
+      "health_observed": {
+        "port_3000": [
+          "/healthz=200",
+          "/readyz=200"
+        ],
+        "port_8765": [
+          "/health=200"
+        ]
+      },
+      "dependencies": [],
+      "branch_key": "mac-aria",
+      "notes": [
+        "Runtime build is dirty and differs from editable checkout HEAD. Separate from box Node/TypeScript Aria originator."
+      ]
+    },
+    {
+      "id": "mac-runner",
+      "host": "mac",
+      "group": "operations",
+      "codebase": "full-duplex-go-live",
+      "current_owner": "native shell queue",
+      "observed_state": "running",
+      "source_entry": "scripts/local-ops/runner.sh",
+      "runtime_path": "~/golive/runner.sh",
+      "dependencies": [
+        "box-ssh"
+      ],
+      "branch_key": "mac-runner",
+      "notes": [
+        "Local installed runner belongs to separate golive checkout; portable maintained copy is in scripts/local-ops."
+      ]
+    }
+  ],
+  "unattributed_experimental_listener_groups": [
+    [
+      "127.0.0.1:8865",
+      "127.0.0.1:8868",
+      "127.0.0.1:8870"
+    ],
+    [
+      "127.0.0.1:9565",
+      "127.0.0.1:9568",
+      "127.0.0.1:9570"
+    ]
+  ],
+  "branch_registry": "branches.json",
+  "observed_containers": [
+    {"name":"golive-user-simulator-simulator-1","status":"running","image_reference":"golive-user-simulator:local","local_image_id":"sha256:253d4a6fb11f7c5a860cac25ab1bb56ee328d93d31461f92084043ad66e835c9","network_mode":"golive-user-simulator_simulator","restart_policy":"no","compose_project":"golive-user-simulator","compose_service":"simulator","compose_files":["/home/chuanming/golive-sim/src/deploy/simulator/compose.yml","/home/chuanming/golive-sim/compose.providers.yml","/home/chuanming/golive-sim/compose.sim-domain.yml"],"mounts":[{"host":"/var/lib/docker/volumes/golive-user-simulator_run-data/_data","container":"/data","writable":true},{"host":"/home/chuanming/golive-sim/profile.json","container":"/configs/simulator/profile.json","writable":false}]},
+    {"name":"golive-user-simulator-config-1","status":"exited","image_reference":"golive-user-simulator:local","local_image_id":"sha256:253d4a6fb11f7c5a860cac25ab1bb56ee328d93d31461f92084043ad66e835c9","network_mode":"golive-user-simulator_simulator","restart_policy":"no","compose_project":"golive-user-simulator","compose_service":"config","compose_files":["/home/chuanming/golive-sim/src/deploy/simulator/compose.yml","/home/chuanming/golive-sim/compose.providers.yml","/home/chuanming/golive-sim/compose.sim-domain.yml"],"mounts":[{"host":"/var/lib/docker/volumes/golive-user-simulator_gateway-config/_data","container":"/gateway","writable":true}]},
+    {"name":"golive-user-simulator-activecall-1","status":"running","image_reference":"golive-user-simulator-activecall:eaf7ebc-handshake-v1","local_image_id":"sha256:f0c900413ad47a86d7c43383c4ca0ed327021c2825381f429a77afe6a47d2059","network_mode":"golive-user-simulator_simulator","restart_policy":"no","compose_project":"golive-user-simulator","compose_service":"activecall","compose_files":["/home/chuanming/golive-sim/src/deploy/simulator/compose.yml"],"mounts":[{"host":"/var/lib/docker/volumes/golive-user-simulator_gateway-config/_data","container":"/run/simulator","writable":false}]},
+    {"name":"cx-latency-20261011r7-cx-aria-1","status":"running","image_reference":"cx-aria:20261011r7","local_image_id":"sha256:c8fb1f9ecad0cd56e5497a47d9b9248eb7278909ce66f7b5aaad1822fc5676db","network_mode":"host","restart_policy":"no","compose_project":"cx-latency-20261011r7","compose_service":"cx-aria","compose_files":["/home/chuanming/cx-latency-20261011r7/release/candidate/compose.yml"],"mounts":[{"host":"/etc/live-aria-full-duplex/cx-latency-20261011r7/telephony.env","container":"/run/secrets/cx_telephony","writable":false},{"host":"/etc/live-aria-full-duplex/cx-latency-20261011r7/operator","container":"/var/lib/live-aria-full-duplex","writable":true}]},
+    {"name":"cx-latency-20261011r7-cx-s2s-1","status":"running","image_reference":"cx-s2s:20261011r7","local_image_id":"sha256:b9c52dbc726c931f41a73907184e34c695caaf652fe877d32ca1dba7fe587044","network_mode":"host","restart_policy":"no","compose_project":"cx-latency-20261011r7","compose_service":"cx-s2s","compose_files":["/home/chuanming/cx-latency-20261011r7/release/candidate/compose.yml"],"mounts":[{"host":"/home/chuanming/cx-latency-20261011r7/release/candidate/s2s-profile.json","container":"/run/cx/s2s-profile.json","writable":false}]},
+    {"name":"aria-latency-20261002r5-aria-1","status":"exited","image_reference":"aria-latency-go:20261002r5","local_image_id":"sha256:6583dcb141413f9f54d120124f8aec8a76dff5ca41f2788a7a11b35716de0c1b","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20261002r5","compose_service":"aria","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20261002r5-cleanup-20261009/candidate/compose.yml"],"mounts":[{"host":"/etc/live-aria-full-duplex/latency-20261002r5/telephony.env","container":"/run/secrets/aria_telephony","writable":false},{"host":"/etc/live-aria-full-duplex/latency-20261002r5/operator","container":"/var/lib/live-aria-full-duplex","writable":true}]},
+    {"name":"aria-latency-20261002r5-s2s-1","status":"exited","image_reference":"aria-latency-s2s:20261002r5","local_image_id":"sha256:0a899c7f4ec51d0a4dd639941b23f351e1c01aeefd7cddfb1f8cfc0776ac2b9d","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20261002r5","compose_service":"s2s","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20261002r5-cleanup-20261009/candidate/compose.yml"],"mounts":[{"host":"/home/chuanming/gpt-live-deploy/aria-latency-20261002r5-cleanup-20261009/candidate/s2s-profile.json","container":"/run/aria/s2s-profile.json","writable":false}]},
+    {"name":"aria-latency-20260922r3-aria-1","status":"created","image_reference":"aria-latency-go-base:20260922r3","local_image_id":"sha256:869ff34ccc3833b1ce6457a7fdcf37ab0de7a02e792b51e8ed1aa5c21763c3dc","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20260922r3","compose_service":"aria","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20260922r3/compose.yml"],"mounts":[{"host":"/etc/live-aria-full-duplex/latency-20260922r3/telephony.env","container":"/run/secrets/aria_telephony","writable":false},{"host":"/etc/live-aria-full-duplex/latency-20260922r3/operator","container":"/var/lib/live-aria-full-duplex","writable":true}]},
+    {"name":"aria-latency-20260922r3-s2s-1","status":"exited","image_reference":"aria-latency-s2s:20260922r3","local_image_id":"sha256:cb699b5c6d001be937f545c33a8836770aa313ad6848234ff242d081e26ba772","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20260922r3","compose_service":"s2s","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20260922r3/compose.yml"],"mounts":[{"host":"/home/chuanming/gpt-live-deploy/aria-latency-20260922r3/s2s-profile.json","container":"/run/aria/s2s-profile.json","writable":false}]},
+    {"name":"aria-latency-20260922r2-aria-1","status":"exited","image_reference":"aria-latency-go-base:20260922r2","local_image_id":"sha256:869ff34ccc3833b1ce6457a7fdcf37ab0de7a02e792b51e8ed1aa5c21763c3dc","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20260922r2","compose_service":"aria","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20260922r2/compose.yml"],"mounts":[{"host":"/etc/live-aria-full-duplex/latency-20260922r2/telephony.env","container":"/run/secrets/aria_telephony","writable":false},{"host":"/etc/live-aria-full-duplex/latency-20260922r2/operator","container":"/var/lib/live-aria-full-duplex","writable":true}]},
+    {"name":"aria-latency-20260922r2-s2s-1","status":"exited","image_reference":"aria-latency-s2s:20260922r2","local_image_id":"sha256:4e73191b14b1f6531b011bb3b1ec3764727f3875b9cb1971eed48918413aac8c","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20260922r2","compose_service":"s2s","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20260922r2/compose.yml"],"mounts":[{"host":"/home/chuanming/gpt-live-deploy/aria-latency-20260922r2/s2s-profile.json","container":"/run/aria/s2s-profile.json","writable":false}]},
+    {"name":"aria-latency-20260922-aria-1","status":"exited","image_reference":"aria-latency-go-base:20260922","local_image_id":"sha256:869ff34ccc3833b1ce6457a7fdcf37ab0de7a02e792b51e8ed1aa5c21763c3dc","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20260922","compose_service":"aria","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20260922/compose.yml"],"mounts":[{"host":"/etc/live-aria-full-duplex/latency-20260922/telephony.env","container":"/run/secrets/aria_telephony","writable":false},{"host":"/etc/live-aria-full-duplex/latency-20260922/operator","container":"/var/lib/live-aria-full-duplex","writable":true}]},
+    {"name":"aria-latency-20260922-s2s-1","status":"exited","image_reference":"aria-latency-s2s:20260922","local_image_id":"sha256:39602af4153995d9a6669d64fb364036f8eb73b9e907dfdecf5e662480c89448","network_mode":"host","restart_policy":"no","compose_project":"aria-latency-20260922","compose_service":"s2s","compose_files":["/home/chuanming/gpt-live-deploy/aria-latency-20260922/compose.yml"],"mounts":[{"host":"/home/chuanming/gpt-live-deploy/aria-latency-20260922/s2s-profile.json","container":"/run/aria/s2s-profile.json","writable":false}]},
+    {"name":"aria-full-duplex-aria-1","status":"running","image_reference":"aria-full-duplex-go:local","local_image_id":"sha256:869ff34ccc3833b1ce6457a7fdcf37ab0de7a02e792b51e8ed1aa5c21763c3dc","network_mode":"host","restart_policy":"unless-stopped","compose_project":"aria-full-duplex","compose_service":"aria","compose_files":["/home/chuanming/gpt-live-deploy/full-duplex-current/go/deploy/aria/docker-compose.full-duplex.yml"],"mounts":[{"host":"/etc/live-aria-full-duplex/telephony.env","container":"/run/secrets/aria_telephony","writable":false},{"host":"/var/lib/docker/volumes/aria-full-duplex_aria-state/_data","container":"/var/lib/live-aria-full-duplex","writable":true}]},
+    {"name":"aria-full-duplex-s2s-1","status":"running","image_reference":"aria-full-duplex-s2s:local","local_image_id":"sha256:0630a6afd4b0b2e0d406c50daea3fd9cf4b1621cec5b5310423bef2f0fd1329e","network_mode":"host","restart_policy":"unless-stopped","compose_project":"aria-full-duplex","compose_service":"s2s","compose_files":["/home/chuanming/gpt-live-deploy/full-duplex-current/go/deploy/aria/docker-compose.full-duplex.yml"],"mounts":[{"host":"/home/chuanming/gpt-live-deploy/full-duplex-current/go/deploy/aria/s2s-profile.full-duplex.json","container":"/run/aria/s2s-profile.json","writable":false}]},
+    {"name":"s2s-backend","status":"exited","image_reference":"s2s-custom:feat_0829","local_image_id":"sha256:957455815a2344977777425c1a20507f78354dd7f82b244bdcfc55514c5e3cc9","network_mode":"host","restart_policy":"unless-stopped","compose_project":null,"compose_service":null,"compose_files":[],"mounts":[{"host":"/home/chuanming/telephony/s2s-config-merged.json","container":"/usr/src/app/configs/tencent-deepseek-minimax.json","writable":false}]},
+    {"name":"active-call","status":"running","image_reference":"active-call:patched","local_image_id":"sha256:76b141e9b0f720d80f7d00998cacea95879393b8ce26f53a8bba14332a8b5993","network_mode":"host","restart_policy":"unless-stopped","compose_project":"telephony","compose_service":"active-call","compose_files":["/home/chuanming/telephony/docker-compose.yml"],"mounts":[{"host":"/home/chuanming/telephony/active-call/active-call.toml","container":"/app/config.toml","writable":false},{"host":"/home/chuanming/telephony/active-call/data/models","container":"/app/models","writable":true},{"host":"/home/chuanming/telephony/active-call/config","container":"/app/config","writable":true}]},
+    {"name":"s2s-backend-before-bidi-20260903-002657","status":"exited","image_reference":"s2s-custom:feat_0829","local_image_id":"sha256:957455815a2344977777425c1a20507f78354dd7f82b244bdcfc55514c5e3cc9","network_mode":"host","restart_policy":"no","compose_project":null,"compose_service":null,"compose_files":[],"mounts":[{"host":"/home/chuanming/telephony/s2s-config-merged.json","container":"/usr/src/app/configs/tencent-deepseek-minimax.json","writable":false}]},
+    {"name":"qwen3-asr-ws-asr-1","status":"created","image_reference":"qwen3-asr-ws:0.6b","local_image_id":"sha256:56154afb869d53653165856959673c57b7b6e995a41aa31d5aa358de1e548a71","network_mode":"qwen3-asr-ws_default","restart_policy":"unless-stopped","compose_project":"qwen3-asr-ws","compose_service":"asr","compose_files":["/home/chuanming/qwen3-asr-ws/docker-compose.yml"],"mounts":[{"host":"/var/lib/docker/volumes/qwen3-asr-ws_hf-cache/_data","container":"/models","writable":true}]},
+    {"name":"rustpbx","status":"running","image_reference":"ghcr.io/restsend/rustpbx:latest","local_image_id":"sha256:dca6de8b7213d51f1d57af3424a712091d92c546dd7aff6bc29db4be294699d7","network_mode":"host","restart_policy":"no","compose_project":null,"compose_service":null,"compose_files":[],"mounts":[{"host":"/home/chuanming/telephony/rustpbx/config.toml","container":"/app/config.toml","writable":true}]},
+    {"name":"openship-edge","status":"running","image_reference":"ghcr.io/oblien/openship-edge:0.6.6","local_image_id":"sha256:ffb62d2961fb82d0789111e3d960b1cb005af496775f97f45b31efc797f87113","network_mode":"host","restart_policy":"unless-stopped","compose_project":null,"compose_service":null,"compose_files":[],"mounts":[{"host":"/var/lib/openship/edge/acme","container":"/var/www/acme","writable":true},{"host":"/etc/letsencrypt","container":"/etc/letsencrypt","writable":true},{"host":"/opt/openship/static","container":"/opt/openship/static","writable":true},{"host":"/var/lib/openship/edge/sites-enabled","container":"/usr/local/openresty/nginx/conf/sites-enabled","writable":true}]}
+  ]
+}

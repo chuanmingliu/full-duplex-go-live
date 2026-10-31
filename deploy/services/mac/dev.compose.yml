@@ -1,0 +1,26 @@
+# Optional development UI only. Does not replace native Aria, Talker or runner.
+name: golive-mac-dev
+services:
+  mock:
+    profiles: [dev]
+    build:
+      context: ../../..
+      dockerfile: deploy/services/Dockerfile
+      args: {SOURCE_COMMIT: "${SOURCE_COMMIT:?set checkout commit identity}"}
+    image: golive-services:dev
+    ports: ["127.0.0.1:18080:8080"]
+    command: [-profile, /app/configs/mock.json, -env, /dev/null]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    init: true
+    restart: "no"
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/livez"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}

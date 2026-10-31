@@ -1,0 +1,33 @@
+# STAGED MIGRATION ONLY. Current RustPBX owns unmounted database/recording state.
+# Recover and verify that state and change the private database_url before use.
+name: golive-pbx
+services:
+  rustpbx:
+    profiles: [pbx-migration]
+    image: ${RUSTPBX_IMAGE:?set verified existing RustPBX image ID}
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 30s
+    init: true
+    command: [--conf, /app/config.toml]
+    volumes:
+      - type: bind
+        source: ${RUSTPBX_MIGRATED_CONFIG:?set private config with database_url under /state}
+        target: /app/config.toml
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${RUSTPBX_DATABASE_DIR:?set recovered and verified SQLite state directory}
+        target: /state
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${RUSTPBX_STORAGE_DIR:?set recovered /app/storage directory}
+        target: /app/storage
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${RUSTPBX_RECORDINGS_DIR:?set recovered /app/config/recorders directory}
+        target: /app/config/recorders
+        bind: {create_host_path: false}
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}

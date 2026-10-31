@@ -65,6 +65,9 @@ Explore the [interactive system map and component guides](docs/architecture/READ
 including a [detailed ASR → LLM → TTS walkthrough](docs/architecture/07-streaming-coordination.md)
 covering speculative preparation, turn commitment, streamed playback and interruptions.
 
+For host ownership, per-service GitHub branches, native services and staged Compose
+deployments, use the [Mac and ThinkPad service operations guide](docs/services/README.md).
+
 ```
                         ┌──────────── session (WebSocket) ────────────┐
    browser / SIP ──────▶│  session.start, session.input_audio.append  │

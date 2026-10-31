@@ -1,0 +1,16 @@
+# Allowlist: do not even send private env, journal evidence, playground, or weights.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!web/
+!web/**
+!configs/
+!configs/mock.json
+!deploy/
+!deploy/services/
+!deploy/services/Dockerfile
+!deploy/services/Dockerfile.dockerignore

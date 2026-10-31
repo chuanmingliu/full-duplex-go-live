@@ -1,0 +1,172 @@
+# Linux only: retain localhost API contracts and LAN-specific listeners.
+# No default profile. Resolve/check with the reviewed private core.env first.
+name: golive-core
+x-service: &service
+  image: ${GOLIVE_IMAGE:?set an immutable reviewed service image}
+  pull_policy: never
+  network_mode: host
+  user: "${SERVICE_UID:?set host state owner uid}:${SERVICE_GID:?set host state owner gid}"
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp]
+  logging:
+    driver: local
+    options: {max-size: "10m", max-file: "3"}
+x-health: &health
+  interval: 15s
+  timeout: 3s
+  retries: 3
+  start_period: 30s
+x-bind: &bind
+  type: bind
+  bind: {create_host_path: false}
+
+services:
+  phone:
+    <<: *service
+    profiles: [core]
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - exec golive -profile /config/telephony.json -env /run/private/providers.env -addr 127.0.0.1:8765 >> /logs/golive-telephony.log 2>&1
+    environment:
+      GOLIVE_LOG_LEVEL: ${PHONE_LOG_LEVEL:-debug}
+      GOLIVE_LOG_FORMAT: text
+      GOLIVE_LAST_CALL_FILE: /last-call/last-call.json
+      GOLIVE_STORE_DIR: /calls
+      GOLIVE_REALTIME_STORE_CALLS: "true"
+      GOLIVE_STORE_TTL_HOURS: ${CALLS_TTL_HOURS:-720}
+      GOLIVE_TOOLS_BASE_URL: http://127.0.0.1:8791
+      GOLIVE_TOOLS_TOKEN_FILE: /crm/api.token
+      GOLIVE_FOCUS_TOKEN_FILE: "${FOCUS_TOKEN_FILE:-}"
+      DEEPSEEK_LANES: ${DEEPSEEK_LANES:-8}
+    volumes:
+      - {<<: *bind, source: "${CONFIG_DIR:?set config dir}", target: /config, read_only: true}
+      - {<<: *bind, source: "${PROVIDERS_ENV:?set private provider env file}", target: /run/private/providers.env, read_only: true}
+      - {<<: *bind, source: "${CALLS_DIR:?set existing call store}", target: /calls}
+      - {<<: *bind, source: "${LAST_CALL_DIR:?set migrated last-call directory}", target: /last-call}
+      - {<<: *bind, source: "${LOG_DIR:?set canonical log directory}", target: /logs}
+      - {<<: *bind, source: "${CRM_DIR:?set existing CRM state}", target: /crm, read_only: true}
+      - {<<: *bind, source: "${EDGE_DIR:?set existing edge token and log dir}", target: /edge, read_only: true}
+    depends_on:
+      crm: {condition: service_healthy}
+      journal: {condition: service_healthy}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8765/livez"]
+
+  crm:
+    <<: *service
+    profiles: [core]
+    entrypoint: [crm]
+    environment:
+      CRM_QUOTE_API_BASE: "${CRM_QUOTE_API_BASE:-}"
+    command: [-addr, "127.0.0.1:8791,${BOX_LAN_IP:?set box LAN IP}:8791", -dir, /data, -originator, "http://127.0.0.1:3000", -originator-env, /run/private/originator.env, -golive, "http://127.0.0.1:8765"]
+    volumes:
+      - {<<: *bind, source: "${CRM_DIR:?set existing CRM state}", target: /data}
+      - {<<: *bind, source: "${ORIGINATOR_ENV:?set existing Aria env file}", target: /run/private/originator.env, read_only: true}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8791/healthz"]
+
+  journal:
+    <<: *service
+    profiles: [core]
+    entrypoint: [journal]
+    command:
+      - -addr
+      - "${BOX_LAN_IP:?set box LAN IP}:8790"
+      - -log
+      - /logs/golive-telephony.log
+      - -store
+      - /calls
+      - -data
+      - /data
+      - -archive
+      - /archive
+      - -last-call
+      - /last-call/last-call.json
+      - -sim-dials
+      - /sim/data/dials.jsonl
+      - -notes
+      - /notes
+      - -repo
+      - https://github.com/chuanmingliu/full-duplex-go-live
+      - -retention-hours
+      - "${CALLS_TTL_HOURS:-720}"
+      - -target
+      - "1200"
+      - -talker
+      - "${TALKER_URL:?set Mac Talker URL}"
+      - -talker-playground
+      - "http://${BOX_LAN_IP:?set box LAN IP}:8792/#/talker"
+    volumes:
+      - {<<: *bind, source: "${LOG_DIR:?set canonical log directory}", target: /logs, read_only: true}
+      - {<<: *bind, source: "${CALLS_DIR:?set existing call store}", target: /calls, read_only: true}
+      - {<<: *bind, source: "${LAST_CALL_DIR:?set migrated last-call directory}", target: /last-call, read_only: true}
+      - {<<: *bind, source: "${JOURNAL_DIR:?set existing Journal state}", target: /data}
+      - {<<: *bind, source: "${ARCHIVE_DIR:?set existing archive}", target: /archive}
+      - {<<: *bind, source: "${NOTES_DIR:?set reviewed journal notes}", target: /notes, read_only: true}
+      - {<<: *bind, source: "${SIM_DIR:?set existing simulator home}", target: /sim, read_only: true}
+    healthcheck:
+      <<: *health
+      # UI liveness only; archive verification is a separate explicit check.
+      test: [CMD, wget, -q, -O, /dev/null, "http://${BOX_LAN_IP:?set box LAN IP}:8790/"]
+
+  desk:
+    <<: *service
+    profiles: [core]
+    entrypoint: [desk]
+    command: [-addr, "127.0.0.1:8792,${BOX_LAN_IP:?set box LAN IP}:8792", -dir, /data, -journal, "http://${BOX_LAN_IP:?set box LAN IP}:8790", -journal-port, "8790", -sim-dials, /sim/data/dials.jsonl, -sim-dir, /sim, -sim-tokens, /sim/tokens.env, -talker, "${TALKER_URL:?set Mac Talker URL}"]
+    volumes:
+      - {<<: *bind, source: "${DESK_DIR:?set existing Desk state}", target: /data}
+      # Desk edits scenarios and last-run; it needs write access to this tree.
+      - {<<: *bind, source: "${SIM_DIR:?set existing simulator home}", target: /sim}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8792/healthz"]
+
+  quotesvc:
+    <<: *service
+    profiles: [quotes]
+    entrypoint: [quotesvc]
+    command: [-addr, "127.0.0.1:8793", -dir, /data, -compute-ms, "${QUOTE_COMPUTE_MS:-2500}", -jitter-ms, "${QUOTE_JITTER_MS:-2000}"]
+    volumes:
+      - {<<: *bind, source: "${QUOTE_DIR:?set existing quote service state}", target: /data}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8793/healthz"]
+
+  demo:
+    <<: *service
+    profiles: [demo]
+    entrypoint: [golive]
+    command: [-profile, /config/tencent-deepseek-minimax.json, -env, /run/private/providers.env, -addr, "127.0.0.1:9080"]
+    environment:
+      GOLIVE_WEB_ROOT: /app/web
+      GOLIVE_MAX_SESSIONS: "2"
+      GOLIVE_STORE_DIR: ""
+      GOLIVE_REALTIME_STORE_CALLS: "false"
+      GOLIVE_LAST_CALL_FILE: ""
+      GOLIVE_TELEMETRY_URL: ""
+      GOLIVE_LOG_LEVEL: info
+    volumes:
+      - {<<: *bind, source: "${CONFIG_DIR:?set config dir}", target: /config, read_only: true}
+      - {<<: *bind, source: "${PROVIDERS_ENV:?set private provider env file}", target: /run/private/providers.env, read_only: true}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:9080/livez"]
+
+  edge:
+    <<: *service
+    profiles: [edge]
+    entrypoint: [edge]
+    command: [-addr, "127.0.0.1:8030,${BOX_LAN_IP:?set box LAN IP}:8030", -dir, /data, -audio8-asr, "http://127.0.0.1:7860", -audio8-tts, "http://127.0.0.1:8024", -diarize, "http://127.0.0.1:8031"]
+    volumes:
+      - {<<: *bind, source: "${EDGE_DIR:?set existing edge token and log dir}", target: /data}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8030/healthz"]

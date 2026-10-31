@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "maintained_on": "2026-10-31",
+  "timezone": "Asia/Shanghai",
+  "operations": {
+    "repository": "chuanmingliu/full-duplex-go-live",
+    "branch": "codex/service-operations",
+    "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-operations"
+  },
+  "policy": "Branch names identify maintenance workstreams, not deployed versions. Existing branches are reused without resetting; new integration branches do not imply upstream ownership. Runtime identities are recorded separately in catalog.json.",
+  "services": {
+    "phone": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/telephony-latency",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/telephony-latency"
+    },
+    "browser-demo": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-browser-demo",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-browser-demo"
+    },
+    "crm": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-crm",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-crm"
+    },
+    "quotesvc": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-quotation",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-quotation"
+    },
+    "journal": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-call-journal",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-call-journal"
+    },
+    "desk": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-desk",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-desk"
+    },
+    "edge-gateway": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-edge-gateway",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-edge-gateway"
+    },
+    "target-speaker": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-speaker-verification",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-speaker-verification"
+    },
+    "diarization": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-diarization",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-diarization"
+    },
+    "audio8-asr": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-audio8-asr-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-audio8-asr-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "audio8-tts": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-audio8-tts-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-audio8-tts-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "active-call": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-active-call-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-active-call-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "rustpbx": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-rustpbx-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-rustpbx-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "simulator": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/inbound-user-simulator",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/inbound-user-simulator"
+    },
+    "simulator-activecall": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-simulator-gateway",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-simulator-gateway",
+      "note": "Dedicated simulator gateway build/configuration on the simulator code line; separate from production Active Call."
+    },
+    "aria-originator": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-box-aria-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-box-aria-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "cloudflared": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-cloudflared-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-cloudflared-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "openship-edge": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-edge-proxy-integration",
+      "scope": "deployment-integration",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-edge-proxy-integration",
+      "note": "Owns golive deployment configuration and documentation; upstream source or local-only application source is not imported into this branch."
+    },
+    "mac-talker": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/local-talker",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/local-talker"
+    },
+    "mac-aria": {
+      "repository": "chuanmingliu/openai-gpt-live",
+      "branch": "codex/service-mac-aria",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/openai-gpt-live/tree/codex/service-mac-aria",
+      "note": "Based on the existing published codex/credential-free-backend branch; installed dirty 051b03f4 build is not reconstructed by this branch."
+    },
+    "mac-runner": {
+      "repository": "chuanmingliu/full-duplex-go-live",
+      "branch": "codex/service-local-runner",
+      "scope": "source",
+      "url": "https://github.com/chuanmingliu/full-duplex-go-live/tree/codex/service-local-runner"
+    }
+  }
+}
