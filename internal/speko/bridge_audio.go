@@ -26,13 +26,13 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 	defer tick.Stop()
 	var speaker []byte
 	started := time.Now()
-	var received, played, maxQueue, delegations, trimmed, interruptions int
+	var received, played, maxQueue, delegations, trimmed, interruptions, overflows int
 	defer func() {
 		reason := "closed"
 		if result != nil {
 			reason = result.Error()
 		}
-		slog.Info("speko: bridge summary", "call_id", callID, "elapsed_ms", time.Since(started).Milliseconds(), "received_audio_ms", received/8, "played_audio_ms", played/8, "max_queue_ms", maxQueue/8, "delegations", delegations, "trimmed_silence_ms", trimmed/8, "interruptions", interruptions, "reason", reason)
+		slog.Info("speko: bridge summary", "call_id", callID, "elapsed_ms", time.Since(started).Milliseconds(), "received_audio_ms", received/8, "played_audio_ms", played/8, "max_queue_ms", maxQueue/8, "delegations", delegations, "trimmed_silence_ms", trimmed/8, "interruptions", interruptions, "playout_overflows", overflows, "reason", reason)
 	}()
 	nextMetrics := started.Add(5 * time.Second)
 	nextInput := time.Now().Add(60 * time.Millisecond)
@@ -70,15 +70,21 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 		goodbye.output = ""
 		suppressed = true
 		lastAudio = time.Now()
-		interruptions++
+		instruction := "Stop speaking immediately. The caller has the floor. Listen until they finish, then answer their latest request briefly. Do not resume the interrupted explanation."
+		if reason == "playout_overflow" {
+			overflows++
+			instruction = "Playback backlog exceeded the safe limit. Stop speaking and discard the interrupted explanation. Wait for the caller's next utterance, then answer briefly."
+		} else {
+			interruptions++
+		}
 		if err := finish("cancelled", reason); err != nil {
 			return err
 		}
-		if err := s.send(client, map[string]string{"type": "output_audio_buffer.cleared"}); err != nil {
+		if err := s.send(client, map[string]string{"type": "output_audio_buffer.cleared", "bridge_boundary": reason}); err != nil {
 			return err
 		}
 		slog.Info("speko: playback interrupted", "call_id", callID, "reason", reason)
-		return s.send(upstream, map[string]any{"type": "session.instructions.append", "event_id": "interrupt_" + rand.Text(), "delegation_id": nil, "content": "Stop speaking immediately. The caller has the floor. Listen until they finish, then answer their latest request briefly. Do not resume the interrupted explanation."})
+		return s.send(upstream, map[string]any{"type": "session.instructions.append", "event_id": "interrupt_" + rand.Text(), "delegation_id": nil, "content": instruction})
 	}
 	for {
 		select {
@@ -177,10 +183,18 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					speaker, removed = trimIdleSilence(speaker, silence[0])
 					trimmed += removed
 				}
-				if len(speaker) > bridgeQueueBytes {
-					return errors.New("Speko audio exceeded the bounded playout queue")
-				}
 				maxQueue = max(maxQueue, len(speaker))
+				if len(speaker) > bridgeQueueBytes {
+					// Keep the call and input stream alive. Expanding the queue
+					// would hide delay; silently dropping samples would corrupt speech.
+					// Cancel this whole reply and expose the loss explicitly instead.
+					if err := begin(); err != nil {
+						return err
+					}
+					if err := interrupt("playout_overflow"); err != nil {
+						return err
+					}
+				}
 			case "session.delegation.created":
 				delegations++
 				if s.cfg.DelegationMode == "client" && got.event.Delegation.Target == "client" {

@@ -72,7 +72,7 @@ func TestTrimIdleSilencePreservesSpeechAndFollowingPause(t *testing.T) {
 	}
 }
 
-func TestBridgeStillRejectsExcessQueuedSpeech(t *testing.T) {
+func TestBridgeCancelsExcessQueuedSpeech(t *testing.T) {
 	upstream := router(t, func(c *websocket.Conn, r *http.Request) {
 		var e wireEvent
 		if c.ReadJSON(&e) != nil {
@@ -94,6 +94,9 @@ func TestBridgeStillRejectsExcessQueuedSpeech(t *testing.T) {
 			t.Fatal(err)
 		}
 		if e.Type == "error" {
+			t.Fatal("valid audio burst closed the call")
+		}
+		if e.Type == "output_audio_buffer.cleared" {
 			break
 		}
 		if e.Type == "response.audio.delta" {

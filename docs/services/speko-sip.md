@@ -219,3 +219,11 @@ additional caller speech cancels it. After transcript settling and drained
 voiced audio, the bridge sends normal close `1000 / assistant_hangup`, which
 the SIP adapter turns into BYE. The default is off. This is not a general
 semantic hangup tool and does not fix carrier-to-adapter BYE propagation.
+
+
+If a provider burst exceeds that queue, the SIP bridge cancels the current
+reply (`playout_overflow`), clears playback, and keeps the call and input stream
+open. It waits for the caller's next utterance instead of growing the backlog
+or disconnecting SIP. The lost reply is counted separately in
+`playout_overflows` and must not be treated as a complete answer or latency
+success. Invalid protocol/audio and failed sockets still fail the session.
