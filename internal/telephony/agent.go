@@ -200,6 +200,8 @@ func readAgent(ws *websocket.Conn, m *media, answered *atomic.Bool, r *recorder)
 			}
 		case "conversation.item.input_audio_transcription.completed", "response.audio_transcript.done", "response.output_audio_transcript.done":
 			r.event("transcript", map[string]any{"event": ev.Type, "item_id": ev.ItemID, "response_id": ev.ResponseID, "text": ev.Transcript})
+		case "conversation.item.input_audio_transcription.delta", "response.audio_transcript.delta", "response.output_audio_transcript.delta":
+			r.event("transcript_delta", map[string]any{"event": ev.Type, "item_id": ev.ItemID, "response_id": ev.ResponseID, "text": ev.Delta})
 		case "error":
 			return errors.New("agent reported an error")
 		}
