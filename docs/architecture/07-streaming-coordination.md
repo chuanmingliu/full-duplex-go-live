@@ -40,11 +40,11 @@ sequenceDiagram
     Caller->>E: Audio frames
     E->>A: Stream speech audio
     A-->>E: Partial text, then revisions
-    Note over E,A: Qualifying pause; early final and continuation listening can overlap
+    Note over E,A: Qualifying pause, early final and continuation listening can overlap
     E->>L: Prepare from eligible text + context
     L-->>S: Text deltas
     S->>T: First speakable segment
-    Note over T,P: TTS may prepare before commitment; body output waits
+    Note over T,P: TTS may prepare before commitment, body output waits
     A-->>E: Final text agrees
     E->>P: Commit turn / allow eligible output
     T-->>P: First PCM chunks
