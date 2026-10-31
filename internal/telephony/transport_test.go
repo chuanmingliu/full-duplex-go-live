@@ -342,6 +342,7 @@ func TestCancelLateAnswer(t *testing.T) {
 
 func TestRejectAndDigest(t *testing.T) {
 	c := testConfig(t)
+	c.ContactUser = "adapter-contact"
 	pbx := udpSocket(t)
 	c.PBX = pbx.LocalAddr().String()
 	c.SIPUsername = "test"
@@ -357,6 +358,10 @@ func TestRejectAndDigest(t *testing.T) {
 	sipReply(t, pbx, peer, req, 401, "", "WWW-Authenticate: Digest realm=\"test\", nonce=\"nonce\", algorithm=MD5\r\n")
 	expectMethod(t, pbx, "ACK")
 	req, peer = expectMethod(t, pbx, "INVITE")
+	if !strings.Contains(header(string(req), "Contact"), "sip:adapter-contact@") ||
+		!strings.Contains(header(string(req), "From"), "sip:"+c.FromUser+"@") {
+		t.Fatal("digest retry changed contact or caller identity")
+	}
 	if !strings.HasPrefix(header(string(req), "Authorization"), "Digest ") {
 		t.Fatal("missing digest auth")
 	}

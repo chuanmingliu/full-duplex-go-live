@@ -35,6 +35,7 @@ func TestRealGoliveOpeningAndRemoteHangup(t *testing.T) {
 	httpServer := httptest.NewServer(golive.Handler())
 	defer httpServer.Close()
 	c := testConfig(t)
+	c.ContactUser = "adapter-contact"
 	c.GoliveURL = httpServer.URL
 	pbx, rtp := udpSocket(t), udpSocket(t)
 	c.PBX = pbx.LocalAddr().String()
@@ -52,7 +53,11 @@ func TestRealGoliveOpeningAndRemoteHangup(t *testing.T) {
 	if _, _, _, data, ok := parseRTP(packet, 8); !ok || len(data) != 160 {
 		t.Fatal("actual golive opening did not produce G.711 RTP")
 	}
-	bye := fmt.Sprintf("BYE sip:test@%s SIP/2.0\r\nVia: SIP/2.0/UDP %s;branch=z9hG4bK-remote-bye\r\nFrom: %s\r\nTo: %s\r\nCall-ID: %s\r\nCSeq: 1 BYE\r\nMax-Forwards: 70\r\nContent-Length: 0\r\n\r\n", peer, pbx.LocalAddr(), header(string(ack), "To"), header(string(ack), "From"), header(string(ack), "Call-ID"))
+	contact := strings.Trim(header(string(req), "Contact"), "<>")
+	if contact != "sip:adapter-contact@"+peer.String() {
+		t.Fatalf("wrong dialog contact: %s", contact)
+	}
+	bye := fmt.Sprintf("BYE %s SIP/2.0\r\nVia: SIP/2.0/UDP %s;branch=z9hG4bK-remote-bye\r\nFrom: %s\r\nTo: %s\r\nCall-ID: %s\r\nCSeq: 1 BYE\r\nMax-Forwards: 70\r\nContent-Length: 0\r\n\r\n", contact, pbx.LocalAddr(), header(string(ack), "To"), header(string(ack), "From"), header(string(ack), "Call-ID"))
 	_, _ = pbx.WriteToUDP([]byte(bye), peer)
 	res, _ := readUDP(t, pbx)
 	if !strings.HasPrefix(string(res), "SIP/2.0 200 ") {

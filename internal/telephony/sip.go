@@ -47,7 +47,11 @@ func newSIPEndpoint(c Config) (*sipEndpoint, error) {
 		conn.Close()
 		return fail(err)
 	}
-	dialogs := sipgo.NewDialogClientCache(client, sip.ContactHeader{Address: sip.Uri{Scheme: "sip", User: c.FromUser, Host: c.AdvertiseIP, Port: port}})
+	contactUser := c.ContactUser
+	if contactUser == "" {
+		contactUser = c.FromUser
+	}
+	dialogs := sipgo.NewDialogClientCache(client, sip.ContactHeader{Address: sip.Uri{Scheme: "sip", User: contactUser, Host: c.AdvertiseIP, Port: port}})
 	server, err := sipgo.NewServer(ua)
 	if err != nil {
 		conn.Close()

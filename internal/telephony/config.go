@@ -19,6 +19,8 @@ import (
 
 // Config is private operator configuration, never supplied by a dial request.
 type Config struct {
+	// ContactUser separates dialog routing from the authenticated caller identity.
+	ContactUser       string         `json:"contact_user,omitempty"`
 	GoliveAudioFormat string         `json:"golive_audio_format,omitempty"`
 	SIPListen         string         `json:"sip_listen"`
 	AdvertiseIP       string         `json:"advertise_ip"`
@@ -60,6 +62,9 @@ func (c Config) validate() error {
 	}
 	if !safeID.MatchString(c.FromUser) {
 		return errors.New("invalid SIP from user")
+	}
+	if c.ContactUser != "" && !safeID.MatchString(c.ContactUser) {
+		return errors.New("invalid SIP contact user")
 	}
 	u, err := url.Parse(c.GoliveURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
