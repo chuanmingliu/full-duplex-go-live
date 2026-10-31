@@ -1,0 +1,15 @@
+{
+  "runner": {
+    "source": "~/golive/runner.sh",
+    "original_sha256": "671a3b8a23d29a4ea38d84b612d21e1e82665b797e9e5db7457339c814f8c463",
+    "changes": [
+      "Require BOX instead of embedding one SSH destination",
+      "Use GOLIVE_RUNNER_HOME (default ~/golive) rather than the script directory",
+      "Allow GOLIVE_RUNNER_SOCKET override",
+      "Update launcher comments"
+    ]
+  },
+  "enqueue_source": "/private/tmp/codex-enqueue-existing.py",
+  "stage_source": "/private/tmp/codex-stage-gap-release-20261031-2.py",
+  "helper_changes": "Parameterize local and remote staging paths; validate queue job names and body size"
+}

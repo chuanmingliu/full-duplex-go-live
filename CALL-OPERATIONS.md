@@ -2,6 +2,11 @@
 
 Run on the Linux box from `~/golive-telephony`. Use the existing Mac runner queue for the commands below. The active source repository is full-duplex-go-live, with telephony-realtime as the deployment reference. The project emphasis is the Go ASR/LLM/TTS full-duplex simulation and recognizer-owned turn endings.
 
+The [local operations scripts](scripts/local-ops/README.md) include the Mac runner,
+checked enqueue/staging helpers and exact historical Codex call, collection,
+simulation, deployment and verification bodies. Historical jobs retain their
+original state guards and are not ready-made jobs for the current runtime.
+
 ## Before a call
 
 ```bash
