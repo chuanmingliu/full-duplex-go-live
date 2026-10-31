@@ -103,6 +103,7 @@ exclusive use and the successful session handshake are required here.
 | `media_networks` | Allowed SDP media peers; loopback default only suits a local relay |
 | `rtp_min`, `rtp_max` | Default 31000–31031, separate from existing production ranges |
 | `codec` | `pcma` (PT8) or `pcmu` (PT0), 8 kHz, one codec per call |
+| `golive_audio_format` | `g711` (default) forwards the phone codec; `pcm16` negotiates 16 kHz PCM with GoLive while RTP remains G.711 |
 | `record_dir` | Private records and one-call lock; share it across invocations |
 
 For a LAN media peer, bind `0.0.0.0:15060`, advertise the actual box LAN address,
@@ -176,3 +177,21 @@ its fix, and the longer playback regressions added afterward.
 
 The [ringback recording guide](ringback-recording.md) describes preserving
 carrier ringing in Call Journal without feeding early media into ASR.
+
+## Matching the original GoLive audio profile
+
+The original Active Call connection negotiates 16 kHz PCM. Direct G.711 instead
+runs the GoLive session at 8 kHz, even when the base profile says 16 kHz. A
+transport comparison must account for this change in provider/VAD input.
+
+For native-engine parity, set `"golive_audio_format": "pcm16"` in a separate
+adapter configuration. The adapter requires explicit confirmation of 16 kHz
+PCM before dialing, expands inbound G.711 to 16 kHz, and converts outgoing
+16 kHz PCM back to the negotiated phone codec. Streaming conversion retains
+sample fragments across deltas, discards cancelled fragments, and introduces
+no frame-batching wait. Its simple interpolation/pair averaging is not a claim
+of equivalence to every resampler used by Active Call. Compare audio quality
+as well as latency. SIP/RTP and saved adapter WAVs remain 8 kHz.
+
+The default G.711 mode remains available. The PCM mode is for the original
+native GoLive stack; it does not change the preserved Speko experiment.

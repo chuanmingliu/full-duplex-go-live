@@ -83,7 +83,11 @@ func Run(parent context.Context, c Config, call Call) (stats MediaStats, err err
 	})
 	spawn(func() { m.send(ctx) })
 	spawn(func() {
+		var pcm pcmUpsampler
 		m.receive(ctx, func(b []byte) error {
+			if c.GoliveAudioFormat == "pcm16" {
+				b = pcm.convert(b, c.Codec)
+			}
 			_ = ws.SetWriteDeadline(time.Now().Add(2 * time.Second))
 			return ws.WriteJSON(map[string]any{"type": "input_audio_buffer.append", "audio": base64.StdEncoding.EncodeToString(b)})
 		})

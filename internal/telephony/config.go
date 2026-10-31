@@ -19,23 +19,24 @@ import (
 
 // Config is private operator configuration, never supplied by a dial request.
 type Config struct {
-	SIPListen     string         `json:"sip_listen"`
-	AdvertiseIP   string         `json:"advertise_ip"`
-	PBX           string         `json:"pbx"`
-	AllowedURI    string         `json:"allowed_uri"`
-	FromUser      string         `json:"from_user"`
-	SIPUsername   string         `json:"sip_username"`
-	SIPPassword   string         `json:"-"`
-	GoliveToken   string         `json:"-"`
-	GoliveURL     string         `json:"golive_url"`
-	RecordDir     string         `json:"record_dir"`
-	Codec         string         `json:"codec"`
-	RTPMin        int            `json:"rtp_min"`
-	RTPMax        int            `json:"rtp_max"`
-	QueueMS       int            `json:"queue_ms"`
-	MediaNetworks []netip.Prefix `json:"media_networks"`
-	RingTimeout   time.Duration  `json:"-"`
-	MaxDuration   time.Duration  `json:"-"`
+	GoliveAudioFormat string         `json:"golive_audio_format,omitempty"`
+	SIPListen         string         `json:"sip_listen"`
+	AdvertiseIP       string         `json:"advertise_ip"`
+	PBX               string         `json:"pbx"`
+	AllowedURI        string         `json:"allowed_uri"`
+	FromUser          string         `json:"from_user"`
+	SIPUsername       string         `json:"sip_username"`
+	SIPPassword       string         `json:"-"`
+	GoliveToken       string         `json:"-"`
+	GoliveURL         string         `json:"golive_url"`
+	RecordDir         string         `json:"record_dir"`
+	Codec             string         `json:"codec"`
+	RTPMin            int            `json:"rtp_min"`
+	RTPMax            int            `json:"rtp_max"`
+	QueueMS           int            `json:"queue_ms"`
+	MediaNetworks     []netip.Prefix `json:"media_networks"`
+	RingTimeout       time.Duration  `json:"-"`
+	MaxDuration       time.Duration  `json:"-"`
 }
 
 var safeID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -63,6 +64,9 @@ func (c Config) validate() error {
 	u, err := url.Parse(c.GoliveURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return errors.New("golive URL must be an HTTP(S) origin")
+	}
+	if c.GoliveAudioFormat != "" && c.GoliveAudioFormat != "g711" && c.GoliveAudioFormat != "pcm16" {
+		return errors.New("golive_audio_format must be g711 or pcm16")
 	}
 	if c.Codec != "pcma" && c.Codec != "pcmu" {
 		return errors.New("codec must be pcma or pcmu")

@@ -31,8 +31,9 @@ func TestSimGoliveSpeechPipeline(t *testing.T) {
 	t.Setenv("GOLIVE_MOCK_LLM_TTFT_MS", "80")
 	t.Setenv("GOLIVE_MOCK_TTS_TTFB_MS", "60")
 	for _, codec := range []string{"pcma", "pcmu"} {
-		for _, dialect := range []string{"beta", "ga"} {
-			t.Run(codec+"/"+dialect, func(t *testing.T) {
+		for _, mode := range []struct{ dialect, format string }{{"beta", "g711"}, {"ga", "g711"}, {"beta", "pcm16"}, {"ga", "pcm16"}} {
+			dialect, agentFormat := mode.dialect, mode.format
+			t.Run(codec+"/"+agentFormat+"/"+dialect, func(t *testing.T) {
 				cfg := config.Default()
 				cfg.ASR = "mock"
 				cfg.LLM = "mock"
@@ -52,6 +53,7 @@ func TestSimGoliveSpeechPipeline(t *testing.T) {
 				defer httpServer.Close()
 				c := testConfig(t)
 				c.Codec = codec
+				c.GoliveAudioFormat = agentFormat
 				c.MaxDuration = 15 * time.Second
 				c.GoliveURL = httpServer.URL
 				pbx, rtp := udpSocket(t), udpSocket(t)

@@ -116,7 +116,12 @@ func connectAgent(ctx context.Context, c Config, call Call) (*websocket.Conn, er
 	ws.SetReadLimit(1 << 20)
 	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
 	_ = ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err = ws.WriteJSON(map[string]any{"type": "session.update", "session": map[string]any{"instructions": call.Instructions, "voice": call.Voice, "input_audio_format": c.wireFormat(), "output_audio_format": c.wireFormat()}})
+	session := map[string]any{"instructions": call.Instructions, "voice": call.Voice, "input_audio_format": c.agentFormat(), "output_audio_format": c.agentFormat()}
+	if c.GoliveAudioFormat == "pcm16" {
+		format := map[string]any{"type": "audio/pcm", "rate": 16000}
+		session["audio"] = map[string]any{"input": map[string]any{"format": format}, "output": map[string]any{"format": format}}
+	}
+	err = ws.WriteJSON(map[string]any{"type": "session.update", "session": session})
 	if err == nil {
 		for i := 0; i < 16; i++ {
 			var msg struct {
@@ -124,14 +129,32 @@ func connectAgent(ctx context.Context, c Config, call Call) (*websocket.Conn, er
 				Session struct {
 					Input  string `json:"input_audio_format"`
 					Output string `json:"output_audio_format"`
+					Audio  struct {
+						Input struct {
+							Format struct {
+								Rate int
+								Type string
+							}
+						}
+						Output struct {
+							Format struct {
+								Rate int
+								Type string
+							}
+						}
+					}
 				}
 			}
 			if err = ws.ReadJSON(&msg); err != nil {
 				break
 			}
 			if msg.Type == "session.updated" {
-				if msg.Session.Input != c.wireFormat() || msg.Session.Output != c.wireFormat() {
-					err = errors.New("golive did not accept the G.711 format")
+				if msg.Session.Input != c.agentFormat() || msg.Session.Output != c.agentFormat() {
+					err = errors.New("golive did not accept the requested audio format")
+					break
+				}
+				if c.GoliveAudioFormat == "pcm16" && (msg.Session.Audio.Input.Format.Rate != 16000 || msg.Session.Audio.Output.Format.Rate != 16000 || msg.Session.Audio.Input.Format.Type != "audio/pcm" || msg.Session.Audio.Output.Format.Type != "audio/pcm") {
+					err = errors.New("golive did not accept 16 kHz PCM")
 					break
 				}
 				_ = ws.SetReadDeadline(time.Time{})

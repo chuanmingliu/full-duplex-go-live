@@ -35,6 +35,8 @@ type partial struct {
 }
 
 type media struct {
+	agentPCM16  bool
+	pcmPending  map[string][]byte
 	conn        *net.UDPConn
 	pt, silence byte
 	limit       int
@@ -56,7 +58,7 @@ func newMedia(c Config, r *recorder, fail func(string)) (*media, error) {
 	for port := c.RTPMin; port <= c.RTPMax; port++ {
 		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP(host), Port: port})
 		if err == nil {
-			return &media{conn: conn, pt: c.payloadType(), silence: c.silence(), limit: c.QueueMS * 8, partial: map[string]partial{}, cancelled: map[string]bool{}, wake: make(chan struct{}, 1), record: r, fail: fail}, nil
+			return &media{agentPCM16: c.GoliveAudioFormat == "pcm16", pcmPending: map[string][]byte{}, conn: conn, pt: c.payloadType(), silence: c.silence(), limit: c.QueueMS * 8, partial: map[string]partial{}, cancelled: map[string]bool{}, wake: make(chan struct{}, 1), record: r, fail: fail}, nil
 		}
 	}
 	return nil, errors.New("no RTP port available")
@@ -86,6 +88,13 @@ func (m *media) enqueue(id string, data []byte, done bool) error {
 	if m.cancelled[id] {
 		m.stats.Stale++
 		return nil
+	}
+	if m.agentPCM16 {
+		var err error
+		data, err = m.convertAgentPCM(id, data, done)
+		if err != nil {
+			return err
+		}
 	}
 	n := len(m.queue)*frameBytes + len(data)
 	for _, p := range m.partial {
@@ -142,6 +151,10 @@ func (m *media) clear() {
 	for id := range m.partial {
 		m.cancelled[id] = true
 	}
+	for id := range m.pcmPending {
+		m.cancelled[id] = true
+	}
+	m.pcmPending = map[string][]byte{}
 	m.stats.Cleared += uint64(len(m.queue))
 	m.queue = nil
 	m.partial = map[string]partial{}
@@ -162,6 +175,7 @@ func (m *media) cancelResponse(id string) {
 	m.mu.Lock()
 	m.cancelled[id] = true
 	delete(m.partial, id)
+	delete(m.pcmPending, id)
 	kept := m.queue[:0]
 	for _, f := range m.queue {
 		if f.response == id {
