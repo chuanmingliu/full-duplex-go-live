@@ -172,6 +172,29 @@ func (m *media) cancelResponse(id string) {
 }
 
 func (m *media) send(ctx context.Context) {
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
+	m.sendPaced(ctx, time.Now, func(delay time.Duration) bool {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(delay)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-m.wake:
+		case <-timer.C:
+		}
+		return true
+	})
+}
+
+// sendPaced keeps the RTP sender testable with a controlled scheduler. Socket
+// deadlines use the real clock; now and wait govern only the media timeline.
+func (m *media) sendPaced(ctx context.Context, nowFunc func() time.Time, waitFunc func(time.Duration) bool) {
 	var seed [10]byte
 	_, _ = rand.Read(seed[:])
 	seq := binary.BigEndian.Uint16(seed[:2])
@@ -179,14 +202,12 @@ func (m *media) send(ctx context.Context) {
 	ssrc := binary.BigEndian.Uint32(seed[6:])
 	var next, last time.Time
 	first := map[string]bool{}
-	timer := time.NewTimer(time.Hour)
-	defer timer.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		m.mu.Lock()
-		now := time.Now()
+		now := nowFunc()
 		if len(m.queue) > 0 && m.remote != nil && !now.Before(next) {
 			f := m.queue[0]
 			m.queue = m.queue[1:]
@@ -204,7 +225,7 @@ func (m *media) send(ctx context.Context) {
 			binary.BigEndian.PutUint32(buf[4:], ts)
 			binary.BigEndian.PutUint32(buf[8:], ssrc)
 			copy(buf[12:], f.data)
-			_ = m.conn.SetWriteDeadline(now.Add(20 * time.Millisecond))
+			_ = m.conn.SetWriteDeadline(time.Now().Add(20 * time.Millisecond))
 			_, err := m.conn.WriteToUDP(buf, m.remote)
 			if err == nil {
 				m.stats.Sent++
@@ -222,30 +243,27 @@ func (m *media) send(ctx context.Context) {
 			seq++
 			ts += frameBytes
 			last = now
-			// A delayed scheduler never dumps missed ticks as a catch-up burst.
-			next = now.Add(20 * time.Millisecond)
+			// Preserve the media clock across ordinary scheduler jitter. Adding
+			// 20 ms to the actual wake time on every frame accumulates lateness,
+			// eventually overflowing the queue even with a real-time producer.
+			next = next.Add(20 * time.Millisecond)
+			// Start immediately after idle, but don't dump missed ticks after a
+			// stall. Rebase if recovery would put packets less than 10 ms apart.
+			if next.Before(now.Add(10 * time.Millisecond)) {
+				next = now.Add(20 * time.Millisecond)
+			}
 			continue
 		}
 		wait := time.Hour
 		if len(m.queue) > 0 && m.remote != nil {
-			wait = time.Until(next)
+			wait = next.Sub(nowFunc())
 			if wait < 0 {
 				wait = 0
 			}
 		}
 		m.mu.Unlock()
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer.Reset(wait)
-		select {
-		case <-ctx.Done():
+		if !waitFunc(wait) {
 			return
-		case <-m.wake:
-		case <-timer.C:
 		}
 	}
 }

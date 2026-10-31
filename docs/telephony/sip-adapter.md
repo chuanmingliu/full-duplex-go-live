@@ -169,3 +169,7 @@ existing Active Call runner. This branch does not modify live production service
 
 The [expanded simulation report](sip-adapter-simulation.md) covers fault injection,
 the complete mock speech pipeline, repeated race tests and parser fuzzing.
+
+The [2026-10-31 hangup investigation](2026-10-31-sip-hangup.md) documents the
+sustained-playback pacing defect found in the first isolated handset test,
+its fix, and the longer playback regressions added afterward.
