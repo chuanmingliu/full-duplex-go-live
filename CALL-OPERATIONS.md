@@ -49,6 +49,16 @@ and server recordings do not establish physical handset latency.
 Changing these mappings does not launch, restart, or interrupt a call. A `done`
 message selects analysis of the retained real-call ID, not another dial.
 
+## Current investigation focus (2026-10-31)
+
+The owner stopped GPT-Live-1 and Realtime mini optimization after
+`out-speko-20261031-07`. Resume work on the original GoLive ASR/LLM/TTS stack
+and future replacement of Active Call by the SIP/RTP adapter. Preserve the
+Speko experiment and its recordings for reference; do not run additional
+Speko/mini optimization probes unless requested. Plain `call` continues to
+select the original configuration. This change of focus does not authorize
+a new call or replace any running service.
+
 ## Before a call
 
 ```bash
