@@ -681,6 +681,15 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 			p.mu.Unlock()
 			return
 		}
+		if p.cfg.Paced {
+			// Synthesis can resume after all previously emitted audio drained.
+			// Keep the new output on the current clock, and exclude that silent
+			// gap from the elapsed-audio clock used by interruption accounting.
+			if now := time.Now(); now.After(p.playhead) {
+				p.turnStarted = p.turnStarted.Add(now.Sub(p.playhead))
+				p.playhead = now
+			}
+		}
 		playAt := p.playhead
 		owner := p.owner
 		// Reserve the first body output under the same lock that can hand an

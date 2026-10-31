@@ -1380,6 +1380,21 @@
    "verified": "The unchanged simulator trace contains original item_5, coalesced item_6 and result item_7 for task t2. Pricing took 2 ms; result delivery waited 1073 ms across caller activity and acknowledgment. The generic readiness phrase adds 1036 ms before quote output, for a 2881 ms original-request readout. The trace has one missing content record. Source cause is confirmed. Red-before regressions now pass for distinct running/queued origins, original interval preservation, one physical result, natural current-opener qualification, cancellation/drop/supersession, the 32-origin bound and lifecycle cleanup. Fully covered continuations retain assistant/tool history without another backend turn; mixed and unrelated work remain eligible. Focused engine race tests, the journal race suite, 52 Python analyzer tests and all-package compilation pass. Both parsers reject ambiguous, cancelled and overflowing links while preserving valid primary evidence. Complete reports for the retained d852 quotation and both 7ee calls match the previous implementation. Full candidate CI, deployment and a fresh behavioral replay remain pending.",
    "effect": "Missing content must not be discarded or repaired with wall-clock inference. All request intervals remain part of the evidence, and removing the posthook alone does not prove the original request meets 1200 ms.",
    "commits": []
+  },
+  {
+   "id": "ISS-086",
+   "title": "Playback clock stays in the past after synthesis gaps",
+   "area": "audio",
+   "status": "open",
+   "found": "2026-10-31",
+   "found_on": "d85232a real call",
+   "found_call": "out-mvvvt9l4-cauj",
+   "symptom": "Nine canonical segments have playback timestamps 149–499 ms before their emission. The same stale clock permits catch-up bursts and treats synthesis silence as already-heard audio.",
+   "cause": "Paced playback advances its playhead only by PCM duration. When new synthesis arrives after the buffered audio drains, neither the playhead nor the elapsed-audio origin excludes the gap.",
+   "fix": "Before committing a paced chunk whose playhead is in the past, move the playhead to now and shift the elapsed-audio origin by the same gap. Preserve buffered future timestamps, unpaced behavior, emitted duration and exact playback ownership.",
+   "verified": "The real archive has 55 contiguous canonical segments; nine are backdated by more than 5 ms. A regression reproducing a one-second synthesis gap failed before the fix. The corrected test checks current audio/transcript timestamps, unchanged emitted duration and exclusion of the gap from the elapsed-audio clock. Buffered and unpaced controls retain their original clocks. Focused playback, shutdown and coalescence race checks pass; full candidate CI and a new live replay remain pending.",
+   "effect": "Accurate pacing and interruption accounting require excluding silence from played PCM. This is not a measurement of the handset or proof of a latency improvement.",
+   "commits": []
   }
  ]
 }

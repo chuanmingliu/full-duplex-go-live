@@ -142,6 +142,12 @@ not confirmation of socket delivery or audible handset playback. Corrected
 ownership can expose interrupted-turn records that older builds omitted;
 do not treat a change in that sample population as a latency improvement.
 
+When paced playback runs out of buffered audio, the next emitted chunk starts
+on the current clock. The elapsed-audio clock excludes the intervening silence
+so interruption accounting does not mistake a synthesis gap for heard speech.
+Older canonical segment timestamps can precede their emission after a gap;
+they cannot establish the time content actually reached the handset.
+
 Shutdown retains active playback and pending completion records, so a reply
 cut by disconnect still reports its existing output timestamps. For older
 canonical-output logs, a started answer without a latency record is marked
