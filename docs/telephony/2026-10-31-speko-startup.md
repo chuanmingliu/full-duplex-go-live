@@ -100,3 +100,20 @@ claimed fixed. Structured server diagnostics now retain the upstream code
 and a bounded message with the configured credentials redacted. The client
 receives only the stage and error code. No raw provider message is exposed
 in the client error.
+
+## Reproduced recoverable input-rate failure
+
+A burst-input live probe subsequently reproduced the same fatal bridge error
+and captured `input_audio_rate_limit_exceeded`. The provider message says that
+excess appends are dropped, the input must stay below 1.2 times real time, and
+bursts must not exceed five seconds. The bridge incorrectly ended the call on
+this recoverable warning. This reproduces a concrete remaining failure class;
+the exact error body from the historical handset attempt was not retained.
+
+The bridge now continues on this specific warning and records it once per
+session. Other provider errors remain fatal. It also permits 40 ms of extra
+arrival jitter before filling an input gap, preventing a slightly late RTP
+frame from being added alongside unnecessary synthetic silence. A regression
+fixture injects the warning followed by valid audio and requires that audio
+to reach the client. A second fixture ensures 40 jittered caller frames do
+not inflate into an excessive number of upstream frames.

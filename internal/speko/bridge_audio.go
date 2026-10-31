@@ -23,7 +23,8 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
 	var speaker []byte
-	nextInput := time.Now().Add(20 * time.Millisecond)
+	nextInput := time.Now().Add(60 * time.Millisecond)
+	inputRateWarned := false
 	var responseID, transcript string
 	var lastAudio time.Time
 	suppressed := false
@@ -83,7 +84,9 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					if err := s.send(upstream, map[string]string{"type": "session.input_audio.append", "audio": base64.StdEncoding.EncodeToString(transport.encode(b))}); err != nil {
 						return err
 					}
-					nextInput = time.Now().Add(time.Duration(len(b)) * time.Second / 8000)
+					// Tolerate arrival jitter before adding synthetic silence; otherwise
+					// a late real frame and a filler can double-feed the upstream clock.
+					nextInput = time.Now().Add(time.Duration(len(b))*time.Second/8000 + 40*time.Millisecond)
 				}
 			case "response.cancel":
 				speaker = nil
@@ -176,6 +179,17 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 					return errors.New("Speko delegated response failed")
 				}
 			case "error":
+				var provider struct {
+					Code string `json:"code"`
+				}
+				_ = json.Unmarshal(got.event.Error, &provider)
+				if provider.Code == "input_audio_rate_limit_exceeded" {
+					if !inputRateWarned {
+						_ = s.upstreamFailure("input_rate_warning", got.event.Error)
+						inputRateWarned = true
+					}
+					continue // Dropped input is recoverable; do not hang up the SIP call.
+				}
 				return s.upstreamFailure("session", got.event.Error)
 			case "session.closed":
 				// Socket closure makes the adapter tear down SIP; discard unplayed
