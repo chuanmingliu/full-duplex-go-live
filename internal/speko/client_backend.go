@@ -19,6 +19,7 @@ import (
 type backendResult struct {
 	id, text string
 	err      error
+	elapsed  time.Duration
 }
 type backendMessage struct {
 	Type    string        `json:"type"`
@@ -86,15 +87,16 @@ func (b *clientBackend) start(ctx context.Context, s *Service, id string) error 
 	_ = json.Unmarshal(data, &history)
 	go func() {
 		defer cancel()
+		started := time.Now()
 		text, err := s.clientResponse(work, b.instructions, history)
 		select {
-		case b.result <- backendResult{id, text, err}:
+		case b.result <- backendResult{id, text, err, time.Since(started)}:
 		case <-work.Done():
 			// Parent cancellation needs no response; an expired backend still must
 			// release the spoken task rather than leaving the caller waiting.
 			if ctx.Err() == nil {
 				select {
-				case b.result <- backendResult{id, "", work.Err()}:
+				case b.result <- backendResult{id, "", work.Err(), time.Since(started)}:
 				case <-ctx.Done():
 				}
 			}
@@ -112,7 +114,13 @@ func (s *Service) clientResponse(ctx context.Context, instructions string, histo
 	}
 	system := instructions + "\nYou assist a live voice conversation. Return a concise answer to the latest caller request. Transcript fragments may be incomplete. You have no external tools: do not claim to book, send, save, look up private records, or perform actions. If information is missing, ask for it."
 	input := append([]backendMessage{{"message", "system", []backendText{{"text", system}}}}, history...)
-	body, _ := json.Marshal(map[string]any{"routing": map[string]string{"mode": "explicit", "provider": "openai", "model": s.cfg.ResponsesModel}, "input": input, "max_output_tokens": 256, "stream": false})
+	request := map[string]any{"routing": map[string]string{"mode": "explicit", "provider": "openai", "model": s.cfg.ResponsesModel}, "input": input, "max_output_tokens": 256, "stream": false}
+	// The token limit includes hidden reasoning. An unconstrained reasoning
+	// default can exhaust it before producing a complete spoken answer.
+	if s.cfg.ResponsesReasoning != "provider_default" {
+		request["reasoning_effort"] = s.cfg.ResponsesReasoning
+	}
+	body, _ := json.Marshal(request)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return "", err

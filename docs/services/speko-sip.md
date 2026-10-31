@@ -201,3 +201,21 @@ The isolated runtime enables both flags following the
 [call 05 investigation](../telephony/2026-10-31-speko-responsiveness.md).
 They address setup waiting and local playback control; they do not establish
 sub-1200 ms handset latency or fix the separate PBX hangup propagation issue.
+
+
+## Backend response budget and farewell termination
+
+`SPEKO_RESPONSES_REASONING` defaults to `none`. The 256-token backend response
+cap includes hidden reasoning; the provider default exhausted that cap in the
+[call 06 replay](../telephony/2026-10-31-speko-call06.md). Incomplete answers
+remain errors. `provider_default` omits the field for rollback; explicit
+`minimal`, `low`, `medium`, `high`, and `xhigh` are also accepted. This setting
+controls the delegated text model, not the GPT-Live voice model. Backend logs
+include duration and success without response text.
+
+`SPEKO_AUTO_HANGUP=1` opts the SIP bridge into a narrow reciprocal-goodbye
+policy. Both caller and assistant must say an allowlisted short farewell;
+additional caller speech cancels it. After transcript settling and drained
+voiced audio, the bridge sends normal close `1000 / assistant_hangup`, which
+the SIP adapter turns into BYE. The default is off. This is not a general
+semantic hangup tool and does not fix carrier-to-adapter BYE propagation.

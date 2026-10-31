@@ -20,11 +20,12 @@ func TestClientDelegationThroughBridge(t *testing.T) {
 			t.Error("missing backend credentials")
 		}
 		var request struct {
-			Input   []backendMessage
-			Routing struct{ Model string }
-			Max     int `json:"max_output_tokens"`
+			Input     []backendMessage
+			Routing   struct{ Model string }
+			Max       int    `json:"max_output_tokens"`
+			Reasoning string `json:"reasoning_effort"`
 		}
-		if json.NewDecoder(r.Body).Decode(&request) != nil || request.Routing.Model != "gpt-6-luna" || request.Max != 256 {
+		if json.NewDecoder(r.Body).Decode(&request) != nil || request.Routing.Model != "gpt-6-luna" || request.Max != 256 || request.Reasoning != "none" {
 			t.Error("invalid backend request")
 		}
 		raw, _ := json.Marshal(request.Input)
@@ -108,5 +109,37 @@ func TestClientBackendRejectsIncompleteAndRedactsErrors(t *testing.T) {
 			t.Fatal("incomplete output accepted or credential leaked")
 		}
 		upstream.Close()
+	}
+}
+
+func TestClientBackendReasoningOverride(t *testing.T) {
+	for _, effort := range []string{"none", "minimal", "provider_default"} {
+		t.Run(effort, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if json.NewDecoder(r.Body).Decode(&body) != nil {
+					t.Error("bad request")
+				}
+				if effort == "provider_default" {
+					if _, ok := body["reasoning_effort"]; ok {
+						t.Error("provider default was not omitted")
+					}
+				} else if body["reasoning_effort"] != effort {
+					t.Error("reasoning override lost")
+				}
+				_, _ = w.Write([]byte(`{"stop_reason":"stop","output":[{"type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}]}]}`))
+			}))
+			defer upstream.Close()
+			s, err := New(Config{URL: "ws" + strings.TrimPrefix(upstream.URL, "http") + "/v1/live", ResponsesReasoning: effort})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.clientResponse(context.Background(), "test", nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	if _, err := New(Config{ResponsesReasoning: "typo"}); err == nil {
+		t.Fatal("invalid reasoning effort accepted")
 	}
 }

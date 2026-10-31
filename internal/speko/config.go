@@ -16,33 +16,37 @@ const Model = "gpt-live-1"
 
 // Config contains only server-side settings. Credentials are never serialized.
 type Config struct {
-	URL             string
-	APIKey          string `json:"-"`
-	AuthToken       string `json:"-"`
-	AllowedOrigins  []string
-	MaxSessions     int
-	SessionTimeout  time.Duration
-	SetupTimeout    time.Duration
-	WriteTimeout    time.Duration
-	MaxMessageBytes int64
-	DelegationMode  string
-	ResponsesModel  string
-	HoldTimeout     time.Duration
-	Preconnect      bool
-	LocalBargeIn    bool
+	URL                string
+	APIKey             string `json:"-"`
+	AuthToken          string `json:"-"`
+	AllowedOrigins     []string
+	MaxSessions        int
+	SessionTimeout     time.Duration
+	SetupTimeout       time.Duration
+	WriteTimeout       time.Duration
+	MaxMessageBytes    int64
+	DelegationMode     string
+	ResponsesModel     string
+	ResponsesReasoning string
+	HoldTimeout        time.Duration
+	Preconnect         bool
+	LocalBargeIn       bool
+	AutoHangup         bool
 }
 
 // FromEnv deliberately permits absent keys: health works while readiness and
 // session admission stay closed until credentials are supplied and restarted.
 func FromEnv() Config {
 	return Config{
-		URL:            os.Getenv("SPEKO_LIVE_URL"),
-		Preconnect:     os.Getenv("SPEKO_PRECONNECT") == "1",
-		LocalBargeIn:   os.Getenv("SPEKO_LOCAL_BARGE_IN") == "1",
-		APIKey:         os.Getenv("SPEKO_API_KEY"),
-		AuthToken:      os.Getenv("GOLIVE_AUTH_TOKEN"),
-		ResponsesModel: os.Getenv("SPEKO_RESPONSES_MODEL"),
-		DelegationMode: os.Getenv("SPEKO_DELEGATION_MODE"),
+		URL:                os.Getenv("SPEKO_LIVE_URL"),
+		Preconnect:         os.Getenv("SPEKO_PRECONNECT") == "1",
+		LocalBargeIn:       os.Getenv("SPEKO_LOCAL_BARGE_IN") == "1",
+		AutoHangup:         os.Getenv("SPEKO_AUTO_HANGUP") == "1",
+		APIKey:             os.Getenv("SPEKO_API_KEY"),
+		AuthToken:          os.Getenv("GOLIVE_AUTH_TOKEN"),
+		ResponsesModel:     os.Getenv("SPEKO_RESPONSES_MODEL"),
+		ResponsesReasoning: os.Getenv("SPEKO_RESPONSES_REASONING"),
+		DelegationMode:     os.Getenv("SPEKO_DELEGATION_MODE"),
 	}
 }
 
@@ -91,6 +95,14 @@ func (c *Config) normalize() error {
 	}
 	if c.ResponsesModel == "" {
 		c.ResponsesModel = "gpt-6-luna"
+	}
+	if c.ResponsesReasoning == "" {
+		c.ResponsesReasoning = "none"
+	}
+	switch c.ResponsesReasoning {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "provider_default":
+	default:
+		return fmt.Errorf("speko: invalid Responses reasoning effort")
 	}
 	if c.HoldTimeout == 0 {
 		c.HoldTimeout = 180 * time.Second

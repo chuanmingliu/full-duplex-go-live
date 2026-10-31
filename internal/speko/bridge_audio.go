@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/gorilla/websocket"
 )
 
@@ -40,6 +41,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 	var lastAudio, lastVoicedPlayback time.Time
 	suppressed := false
 	var detector bargeDetector
+	var goodbye goodbyeGate
 	finish := func(status, reason string) error {
 		if responseID == "" {
 			return nil
@@ -65,6 +67,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 	}
 	interrupt := func(reason string) error {
 		speaker = nil
+		goodbye.output = ""
 		suppressed = true
 		lastAudio = time.Now()
 		interruptions++
@@ -85,6 +88,7 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 			if result.id != backend.active {
 				continue
 			}
+			slog.Info("speko: backend completed", "call_id", callID, "elapsed_ms", result.elapsed.Milliseconds(), "ok", result.err == nil)
 			text := result.text
 			if result.err != nil {
 				text = "The backend could not complete this request. Please tell the caller honestly that this information is unavailable and ask them to try again."
@@ -107,6 +111,9 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				// Re-pacing that backlog creates permanent input delay and
 				// can overflow before the first model response.
 				if len(b) > 0 {
+					if s.cfg.AutoHangup {
+						goodbye.audio(b, transport.codec, time.Now())
+					}
 					if s.cfg.LocalBargeIn && detector.observe(b, transport.codec, time.Now()) && !suppressed &&
 						(time.Since(lastVoicedPlayback) < 300*time.Millisecond || !codecSilence(speaker, silence[0])) {
 						if err := interrupt("caller_speech"); err != nil {
@@ -186,6 +193,9 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				if suppressed || got.event.Delta == "" {
 					continue
 				}
+				if s.cfg.AutoHangup {
+					goodbye.assistant(got.event.Delta, time.Now())
+				}
 				if len(transcript)+len(got.event.Delta) > 64<<10 {
 					return errors.New("Speko transcript exceeded the buffer limit")
 				}
@@ -198,6 +208,9 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				}
 			case "session.input_transcript.delta":
 				backend.add("user", got.event.Delta)
+				if s.cfg.AutoHangup && got.event.Delta != "" {
+					goodbye.caller(got.event.Delta, time.Now())
+				}
 				if err := s.send(client, map[string]any{"type": "conversation.item.input_audio_transcription.delta", "item_id": "input_stream", "delta": got.event.Delta}); err != nil {
 					return err
 				}
@@ -234,6 +247,17 @@ func (s *Service) bridgeAudio(ctx context.Context, client, upstream *websocket.C
 				return errors.New("Speko session ended")
 			}
 		case now := <-tick.C:
+			if s.cfg.AutoHangup && !suppressed && goodbye.ready(now, lastVoicedPlayback, codecSilence(speaker, silence[0])) {
+				if err := finish("completed", "reciprocal_goodbye"); err != nil {
+					return err
+				}
+				slog.Info("speko: closing after reciprocal goodbye", "call_id", callID)
+				if err := client.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, live.CloseAssistantHangup), time.Now().Add(time.Second)); err != nil {
+					return err
+				}
+				_ = s.send(upstream, map[string]string{"type": "session.close"})
+				return nil
+			}
 			if !now.Before(nextMetrics) {
 				slog.Info("speko: audio clock", "call_id", callID, "elapsed_ms", now.Sub(started).Milliseconds(), "queue_ms", len(speaker)/8, "received_audio_ms", received/8, "played_audio_ms", played/8)
 				nextMetrics = now.Add(5 * time.Second)
