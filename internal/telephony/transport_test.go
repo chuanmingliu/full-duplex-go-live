@@ -101,15 +101,16 @@ func testRTP(pt byte, seq uint16, ts uint32, payload []byte) []byte {
 }
 
 type fakeAgent struct {
-	server *httptest.Server
-	input  chan []byte
-	opened chan struct{}
-	send   chan any
+	server     *httptest.Server
+	input      chan []byte
+	opened     chan struct{}
+	send       chan any
+	disconnect chan struct{}
 }
 
 func newFakeAgent(t *testing.T, format string) *fakeAgent {
 	t.Helper()
-	a := &fakeAgent{input: make(chan []byte, 32), opened: make(chan struct{}, 8), send: make(chan any, 32)}
+	a := &fakeAgent{input: make(chan []byte, 32), opened: make(chan struct{}, 8), send: make(chan any, 32), disconnect: make(chan struct{})}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/pool", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"ok":true,"service":"golive","in_use":0,"capacity":1,"realtime":{"hold_for_opening":true}}`)
@@ -143,6 +144,9 @@ func newFakeAgent(t *testing.T, format string) *fakeAgent {
 						return
 					}
 				case <-done:
+					return
+				case <-a.disconnect:
+					ws.Close()
 					return
 				}
 			}

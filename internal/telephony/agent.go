@@ -40,13 +40,20 @@ func agentHTTP(ctx context.Context, c Config, path string, body any, out any) er
 	client := http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		return errors.New("golive HTTP connection failed")
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		return errors.New("golive HTTP request rejected")
 	}
-	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
+	err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
+	if err != nil && ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	return err
 }
 
 // Check verifies the dedicated experimental agent without creating a session or
@@ -99,6 +106,10 @@ func connectAgent(ctx context.Context, c Config, call Call) (*websocket.Conn, er
 	if err != nil {
 		return nil, errors.New("golive WebSocket connection failed")
 	}
+	// DialContext stops covering cancellation once the upgrade completes.
+	// Interrupt the session.updated read too, rather than waiting ten seconds.
+	stopCancel := context.AfterFunc(ctx, func() { ws.Close() })
+	defer stopCancel()
 	ws.SetReadLimit(1 << 20)
 	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
 	_ = ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -130,6 +141,9 @@ func connectAgent(ctx context.Context, c Config, call Call) (*websocket.Conn, er
 		}
 	}
 	ws.Close()
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
 	return nil, errors.New("golive session setup failed")
 }
 

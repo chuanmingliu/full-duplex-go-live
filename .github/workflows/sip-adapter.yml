@@ -13,6 +13,21 @@ on:
 permissions:
   contents: read
 jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Repeat adapter simulations with race detection
+        run: go test -race -shuffle=20261031 -count=3 -timeout 2m ./internal/telephony
+      - name: Fuzz RTP parser
+        run: go test -run '^$' -fuzz '^FuzzRTPParser$' -fuzztime=10s -parallel=2 ./internal/telephony
+      - name: Fuzz SDP parser
+        run: go test -run '^$' -fuzz '^FuzzSDPAnswer$' -fuzztime=10s -parallel=2 ./internal/telephony
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30

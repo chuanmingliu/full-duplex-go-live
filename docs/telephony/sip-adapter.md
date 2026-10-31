@@ -166,3 +166,6 @@ remote BYE, duplicate IDs and aligned recordings. CI places synthetic calls only
 Use the [latency report and A/B procedure](sip-adapter-latency.md) before normal
 use. Rollback is stopping the experimental processes and continuing with the
 existing Active Call runner. This branch does not modify live production services.
+
+The [expanded simulation report](sip-adapter-simulation.md) covers fault injection,
+the complete mock speech pipeline, repeated race tests and parser fuzzing.
