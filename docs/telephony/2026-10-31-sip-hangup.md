@@ -79,3 +79,7 @@ handset latency below 1,200 ms. The production services and the original
 `cb6c639` test deployment are preserved pending the operator's version-switch
 instruction. A new handset call is required to validate the fix on the carrier
 path.
+
+The [subsequent handset validation](2026-10-31-sip-handset-validation.md) lasted
+114.56 seconds without overflowing the queue. It also identified a separate
+normal-hangup reporting bug and documents the remaining latency limitations.

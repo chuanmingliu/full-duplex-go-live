@@ -100,6 +100,13 @@ func Run(parent context.Context, c Config, call Call) (stats MediaStats, err err
 			err = errors.Join(err, endDialog(d, r))
 		}
 	}()
+	// Translate a recognized normal agent close before the cleanup above adds
+	// any SIP BYE failure. A rejected/unacknowledged BYE must still fail the call.
+	defer func() {
+		if err == errAgentCompleted {
+			err = nil
+		}
+	}()
 	r.event("dial", map[string]any{"call_id": call.ID, "codec": c.Codec})
 	if err = r.failure(); err != nil {
 		return stats, err

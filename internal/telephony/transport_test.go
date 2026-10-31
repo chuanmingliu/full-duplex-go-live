@@ -140,6 +140,10 @@ func newFakeAgent(t *testing.T, format string) *fakeAgent {
 			for {
 				select {
 				case ev := <-a.send:
+					if close, ok := ev.(*websocket.CloseError); ok {
+						_ = ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(close.Code, close.Text), time.Now().Add(time.Second))
+						return
+					}
 					if ws.WriteJSON(ev) != nil {
 						return
 					}

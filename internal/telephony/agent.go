@@ -13,8 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/gorilla/websocket"
 )
+
+var errAgentCompleted = errors.New("agent completed call")
 
 func agentHTTP(ctx context.Context, c Config, path string, body any, out any) error {
 	var data []byte
@@ -161,6 +164,14 @@ func readAgent(ws *websocket.Conn, m *media, answered *atomic.Bool, r *recorder)
 			} `json:"response"`
 		}
 		if err := ws.ReadJSON(&ev); err != nil {
+			var close *websocket.CloseError
+			if errors.As(err, &close) && close.Code == websocket.CloseNormalClosure && answered.Load() {
+				switch close.Text {
+				case live.CloseAssistantHangup, live.CloseRequested, live.CloseRemoteHangup:
+					r.event("agent_hangup", map[string]any{"reason": close.Text})
+					return errAgentCompleted
+				}
+			}
 			return errors.New("agent connection closed")
 		}
 		switch ev.Type {
