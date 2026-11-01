@@ -1,0 +1,21 @@
+{
+  "recorded_on": "2026-11-01",
+  "purpose": "Historical completed UUID handset call; do not replay",
+  "files": [
+    {
+      "file": "call.py",
+      "bytes": 4811,
+      "sha256": "7b9e6f24dbd1ae2419e07a06dc9c041336e9025000fdec3bddafe9785acd4242"
+    },
+    {
+      "file": "call.sh",
+      "bytes": 354,
+      "sha256": "5dd26934a03d7aaef886fbf2d850ecb2533a035b071d20450574b8d44aa8928d"
+    },
+    {
+      "file": "finalize-call.py",
+      "bytes": 4028,
+      "sha256": "db548a7bf179edb876414790d5660e54ad5334689e270766adee8054ed92d04a"
+    }
+  ]
+}

@@ -79,7 +79,9 @@ workflow unless the owner explicitly selects the candidate.
 Future explicitly authorized adapter calls must use `out-native-sip-<UUIDv4>`
 from `uuid.uuid4()`, with the same value in the call file, receipt and journal.
 The external console rejects date-based IDs as phone-like. Its deployed validator
-accepts the UUID form; ingestion during a future actual call remains unverified.
+accepts the UUID form. The [UUID real-call review](../../journal/retros/out-native-sip-a93db0f8-ff19-4b9d-95f3-09aca39541be.md)
+verified 138 events sent without new failures; console retention remains separate
+from acceptance.
 Do not rename prior records or replay telemetry under a different identity.
 
 Inspect live builds, pool occupancy, recording settings, configured recipient,
