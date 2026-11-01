@@ -1,0 +1,12 @@
+[
+  {
+    "file": "baseline-sim.sh",
+    "sha256": "3e8012ec9b87fb584b34e1022d3bee7ca912727312e28c7089835f3226ffae3a",
+    "bytes": 10319
+  },
+  {
+    "file": "record-aria-binding.sh",
+    "sha256": "a15f505c21381a913fd48dd1106252bdcdbbbf9ec01fe84b5c71140ea5af8ca8",
+    "bytes": 2169
+  }
+]

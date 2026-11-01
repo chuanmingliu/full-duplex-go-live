@@ -170,9 +170,12 @@ type Engine struct {
 	// asrStandby is a recognizer connection dialled on the first suspicion of
 	// speech, waiting to be adopted by the utterance if there turns out to be
 	// one. See maybePredialASR.
-	asrStandby *lazyASR
-	watch      *StabilityWatch
-	specTurn   *Turn
+	asrStandby        *lazyASR
+	asrStandbyStartMS int64
+	asrStandbySamples int
+	asrPrefeedRetryAt time.Time
+	watch             *StabilityWatch
+	specTurn          *Turn
 	// patience is the silence threshold currently imposed on the detector, or
 	// zero for the configured one. See applyPatience.
 	patience int
@@ -326,12 +329,13 @@ type asrEvent struct {
 }
 
 type asrRun struct {
-	id       uint64
-	stream   provider.ASRStream
-	itemID   string
-	startMS  int64
-	endMS    int64
-	lastText string
+	id            uint64
+	stream        provider.ASRStream
+	itemID        string
+	startMS       int64
+	endMS         int64
+	lastText      string
+	prefedSamples int
 	// changedAt is when lastText last changed — changedAtMS the same moment
 	// on the detector's audio clock — and activeAtChange how much of the
 	// utterance had been voiced by then: together, how long the caller has
@@ -740,6 +744,7 @@ func (e *Engine) onAudio(pcm []byte) {
 			continue
 		}
 		e.handleDecision(e.vad.Push(samples))
+		e.maybePredialASR()
 		e.measureLine()
 	}
 	// Per frame, not per tick: the window between "gone quiet" and "turn over"
@@ -748,7 +753,6 @@ func (e *Engine) onAudio(pcm []byte) {
 	// applies to a hold that has run out — every millisecond late is a
 	// millisecond spent talking over someone.
 	e.expireHold()
-	e.maybePredialASR()
 	e.applyPatience()
 	e.maybeEarlyFinal()
 	e.maybeSpeculate()
@@ -807,7 +811,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.prewarm("utterance opened")
 		e.maybeWarmPrefix()
 		e.openASR(d.StartMS)
-		e.writeASR(d.Snapshot)
+		e.writeASROpening(d.Snapshot)
 		e.publishState()
 
 	case audio.DecisionSpeaking:

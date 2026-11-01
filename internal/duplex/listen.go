@@ -71,10 +71,12 @@ func (e *Engine) asrOptions() provider.ASROptions {
 // utterance was over, and the turn closed, before a single hypothesis came
 // back. Dialling on suspicion lets the two waits overlap.
 //
-// The cost of a false alarm is one connection that never carries audio and is
-// closed a few seconds later, at most once per standbyMaxAge.
+// During playback the candidate audio can also be sent ahead of confirmation;
+// its results remain buffered until adoption. A rejected audio candidate is
+// closed, and further audio prefeeding is suppressed for standbyMaxAge. Plain
+// handshake pre-dialling remains available during that cooldown.
 func (e *Engine) maybePredialASR() {
-	if !e.opts.Cfg.Duplex.ASRPredial || e.deps.ASR == nil || e.muted || e.asrStandby != nil {
+	if !e.opts.Cfg.Duplex.ASRPredial || e.deps.ASR == nil || e.muted {
 		return
 	}
 	// A run still waiting on its final transcript does not stop the next
@@ -83,6 +85,12 @@ func (e *Engine) maybePredialASR() {
 		return
 	}
 	if e.vad.CandidateMS() <= 0 {
+		if e.asrStandbySamples > 0 {
+			e.closeStandby()
+			// A rejected audio candidate must not be recycled into a later
+			// utterance or cause speculative connection churn on noise.
+			e.asrPrefeedRetryAt = time.Now().Add(standbyMaxAge)
+		}
 		return
 	}
 	// A recognizer that refused the last dial of this kind is not asked again
@@ -91,7 +99,10 @@ func (e *Engine) maybePredialASR() {
 	if time.Now().Before(e.standbyRetryAt) {
 		return
 	}
-	e.asrStandby = dialLazyASR(e.ctx, e.deps.ASR, e.asrOptions())
+	if e.asrStandby == nil {
+		e.asrStandby = dialLazyASR(e.ctx, e.deps.ASR, e.asrOptions())
+	}
+	e.prefeedBargeInASR()
 }
 
 func (e *Engine) closeStandby() {
@@ -99,6 +110,8 @@ func (e *Engine) closeStandby() {
 		_ = e.asrStandby.Close()
 		e.asrStandby = nil
 	}
+	e.asrStandbySamples = 0
+	e.asrStandbyStartMS = 0
 }
 
 // expireStandby drops a connection dialled for something that turned out not
@@ -187,13 +200,18 @@ func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 	// the loop goroutine no longer waits on a vendor's handshake — and the
 	// audio written in the meantime is delivered, in order, when it completes.
 	stream := e.asrStandby
+	prefed := e.asrStandbySamples
+	compatible := prefed == 0 || (itemID == "" && e.asrStandbyStartMS == startMS)
 	e.asrStandby = nil
-	predialled := stream != nil && stream.usable(standbyMaxAge)
+	e.asrStandbySamples = 0
+	e.asrStandbyStartMS = 0
+	predialled := stream != nil && compatible && stream.usable(standbyMaxAge)
 	if !predialled {
 		if stream != nil {
 			_ = stream.Close()
 		}
 		stream = dialLazyASR(e.ctx, e.deps.ASR, e.asrOptions())
+		prefed = 0
 	}
 
 	e.asrSeq++
@@ -201,12 +219,13 @@ func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 		itemID = fmt.Sprintf("user_%d", e.asrSeq)
 	}
 	run := &asrRun{
-		id:       e.asrSeq,
-		stream:   stream,
-		itemID:   itemID,
-		startMS:  startMS,
-		endMS:    startMS,
-		openedAt: time.Now(),
+		id:            e.asrSeq,
+		stream:        stream,
+		itemID:        itemID,
+		startMS:       startMS,
+		endMS:         startMS,
+		openedAt:      time.Now(),
+		prefedSamples: prefed,
 	}
 	e.asrRun = run
 	up, took := stream.ready()
@@ -217,9 +236,21 @@ func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 		"start_ms", startMS,
 		"predialled", predialled,
 		"connected", up,
+		"prefed_ms", prefed*1000/provider.PipelineRate,
 		"connect_ms", took.Milliseconds())
 
+	var buffered []provider.ASRResult
+	if prefed > 0 {
+		buffered = stream.bufferedResults()
+	}
 	go func(id uint64, s provider.ASRStream) {
+		for _, res := range buffered {
+			select {
+			case e.asrCh <- asrEvent{run: id, res: res}:
+			case <-e.ctx.Done():
+				return
+			}
+		}
 		for res := range s.Results() {
 			select {
 			case e.asrCh <- asrEvent{run: id, res: res}:
