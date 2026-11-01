@@ -1,0 +1,7 @@
+{
+  "golive-covered-f12b6f5-linux": "7d367f327be47ee6abfd29e0bca5bc9cecc940ebacf0130c3bda3cab2bc166a4",
+  "golive-crm-3201ec4-linux": "76f53c252240c94b9947094fbfe7f6533f46acc1da8edee6f3cc8d7023f8bd83",
+  "run-covered-ack-f12b6f5.py": "3c5ca1649b86f39c78ae0b101a383047bb9d44dff37912184ca8bcbcf9913538",
+  "verify-covered-ack-f12b6f5.py": "8c01036d06bfe01b54b863aec6dc259eb29bd8538ee8dbae58f46e28933e059e",
+  "covered-ack-call-latency.py": "793ae0b99e3ae4b3bf68164ea9c4badd3717d624d6f630c3e35c91f6e67ab966"
+}

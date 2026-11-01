@@ -18,8 +18,10 @@ baseline ready-to-delivery was **3010 ms**, candidate **1504 ms**. This isolates
 scheduling, not ASR, TTS, quotation computation or physical handset latency.
 
 The original provider configuration, quotation service delay and Active Call
-rollback remain unchanged. Recorded SIP validation is pending. Quotation
+rollback remain unchanged. The recorded SIP trial completed with verified chat and stereo audio; it did not exercise the new retirement branch. Conversational content p95 was 1105 ms (n=4), but six unverified links and the small sample count fail qualification. Quotation
 completion is reported separately under the owner's accepted policy; the
 conversational gate still requires p95 <1150 ms and at least 20 valid samples.
 Two silent originating turns in the earlier diagnostic still lack playback
 records; they must not be fabricated or silently treated as verified links.
+
+See the [recorded retrospective](../../journal/retros/sim-coveredack-8d3132ed-a69c-4e8c-bbc4-3a10ce5e8fbe.md) for the separate quotation report and unchanged-service checks.
