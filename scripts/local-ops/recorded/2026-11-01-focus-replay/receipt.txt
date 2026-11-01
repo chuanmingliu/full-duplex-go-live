@@ -1,0 +1,7 @@
+[runner] pushed focus-window-replay-20261101.py -> /tmp/focus-window-replay-20261101.py
+{"progress": "offset_complete", "offset_ms": 5132, "enrolments": [{"voiced_ms": 800, "candidates": 1, "agreeing": 1}, {"voiced_ms": 1400, "candidates": 2, "agreeing": 2}, {"voiced_ms": 900, "candidates": 3, "agreeing": 2}, {"voiced_ms": 6300, "candidates": 4, "agreeing": 3}, {"voiced_ms": 1300, "candidates": 5, "agreeing": 4}, {"voiced_ms": 1100, "candidates": 6, "agreeing": 5}]}
+{"progress": "offset_complete", "offset_ms": 5152, "enrolments": [{"voiced_ms": 700, "candidates": 1, "agreeing": 1}, {"voiced_ms": 1400, "candidates": 2, "agreeing": 2}, {"voiced_ms": 900, "candidates": 3, "agreeing": 2}, {"voiced_ms": 6300, "candidates": 4, "agreeing": 3}, {"voiced_ms": 1300, "candidates": 5, "agreeing": 4}, {"voiced_ms": 1100, "candidates": 6, "agreeing": 5}]}
+{"progress": "offset_complete", "offset_ms": 5172, "enrolments": [{"voiced_ms": 700, "candidates": 1, "agreeing": 1}, {"voiced_ms": 1400, "candidates": 2, "agreeing": 2}, {"voiced_ms": 900, "candidates": 3, "agreeing": 2}, {"voiced_ms": 6300, "candidates": 4, "agreeing": 3}, {"voiced_ms": 1300, "candidates": 5, "agreeing": 4}, {"voiced_ms": 1100, "candidates": 6, "agreeing": 5}]}
+{"completed": true, "report": "/tmp/focus-window-replay-20261101.json", "conditions": 72}
+[runner] pulled /tmp/focus-window-replay-20261101.json -> focus-window-replay-20261101.json
+[runner] exit 0 at 15:26:01

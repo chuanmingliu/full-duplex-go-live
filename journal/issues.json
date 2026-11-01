@@ -1539,6 +1539,20 @@
     "7fc4237"
    ],
    "verified_call": "sim-newcaller-16c41c8a-a5b5-413d-ab81-1377d5891a14"
+  },
+  {
+   "id": "ISS-095",
+   "title": "Playback interruption waits for caller identification",
+   "area": "duplex",
+   "status": "open",
+   "found": "2026-11-01",
+   "found_on": "Completed original GoLive real SIP call",
+   "found_call": "280fdab1-4078-4627-bf79-4eef8f627719",
+   "symptom": "Seven playback interruptions: detection-to-cancel p50 182 ms, p95 623 ms, after 320 ms accumulated speech. Eight total generation cancellations reach adapter clear within approximately 2 ms.",
+   "cause": "Slowest trace held the utterance from 15:14:45.162 until caller identification at 15:14:45.762. This establishes a 600 ms confirmation wait, not a proven false rejection or acoustic stop time.",
+   "fix": "No runtime fix selected. Preserve echo/background rejection and original settings; require controlled caller/background evidence before changing confirmation or scoring windows.",
+   "verified": "72 offline model-window conditions completed through existing runner. Shortening 800 ms to 600 ms advances the slowest simplified acceptance by 0/200/0 ms across three alignment checks; 400 ms yields no gain there. Alignment/enrollment affect classifications; no independent negative-control truth. Four focused duplex regressions pass in 31.499 s. Numeric evidence and exact replay archived on Codex branch.",
+   "effect": "Normal real-call content p95 1043 ms n=14, estimated 1093 ms with assumed 50 ms overhead; minimum 20 samples and actual handset capture remain unverified. Quote completion reported separately. No runtime configuration changes, real redial, or deployment from this probe."
   }
  ]
 }

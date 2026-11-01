@@ -1,0 +1,48 @@
+{
+  "purpose": "Historical offline completed-call speaker-window diagnostics; no dial",
+  "call_id": "280fdab1-4078-4627-bf79-4eef8f627719",
+  "conditions": 72,
+  "runtime_changes": false,
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 2568,
+      "sha256": "6fbc7b4ad113009bfce87b7fe264437a7450d39b85afc92f4dd240e0a29eca10"
+    },
+    {
+      "file": "evidence.json",
+      "bytes": 58941,
+      "sha256": "105f725d7f0214a84ce3bc4b146575bd71d7c5a551c5000c7f7889008f52f167"
+    },
+    {
+      "file": "issue.json",
+      "bytes": 1584,
+      "sha256": "73859d7a394ebf1b9aaa43cd785e9d34c00fc7d931b76ae2787f6a2bce9f120e"
+    },
+    {
+      "file": "publication-receipt.txt",
+      "bytes": 320,
+      "sha256": "8d8de88cd6e65c357174202341d8bc1c8b7879bb8fa228d71ff9bfb61293c609"
+    },
+    {
+      "file": "publish.sh",
+      "bytes": 2720,
+      "sha256": "f5615f270d7b406c71a1aff4612e901888059d04e82ffc2e6c9a80fbf12a23b6"
+    },
+    {
+      "file": "receipt.txt",
+      "bytes": 1447,
+      "sha256": "d231fd2db117d14e7252bf8b44e2db8e5a284ca2bf784041cd2248520e6486db"
+    },
+    {
+      "file": "replay.py",
+      "bytes": 5246,
+      "sha256": "c398c4e47fe501a28da6cbb720b51a930dbd7911ff0d13ada148661d4f911d3f"
+    },
+    {
+      "file": "replay.sh",
+      "bytes": 627,
+      "sha256": "964c9b6791566b2307b84ee2015fb7962419b10ca4ff535bb2faaf805845d726"
+    }
+  ]
+}
