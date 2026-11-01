@@ -1,0 +1,55 @@
+[
+  {
+    "id": "ISS-095",
+    "title": "Playback interruption waits for caller identification",
+    "area": "duplex",
+    "status": "open",
+    "found": "2026-11-01",
+    "found_on": "Completed original GoLive real SIP call",
+    "found_call": "280fdab1-4078-4627-bf79-4eef8f627719",
+    "symptom": "Seven playback interruptions: detection-to-cancel p50 182 ms, p95 623 ms, after 320 ms accumulated speech. Eight total generation cancellations reach adapter clear within approximately 2 ms.",
+    "cause": "Slowest trace held the utterance from 15:14:45.162 until caller identification at 15:14:45.762. This establishes a 600 ms confirmation wait, not a proven false rejection or acoustic stop time.",
+    "fix": "No runtime fix selected. Preserve echo/background rejection and original settings; require controlled caller/background evidence before changing confirmation or scoring windows.",
+    "verified": "72 offline model-window conditions completed through existing runner. Shortening 800 ms to 600 ms advances the slowest simplified acceptance by 0/200/0 ms across three alignment checks; 400 ms yields no gain there. Alignment/enrollment affect classifications; no independent negative-control truth. Four focused duplex regressions pass in 31.499 s. Numeric evidence and exact replay archived on Codex branch. Follow-up UUID 3af753f8-d623-43ff-a619-6c4a6557cccb: 13 playback detections, median 232 ms, p95 2087 ms to cancellation. Slowest focus veto-to-accept wait 2040 ms; all 16 adapter clears within approximately 2 ms. No acoustic stop proof.",
+    "effect": "Normal real-call content p95 1043 ms n=14, estimated 1093 ms with assumed 50 ms overhead; minimum 20 samples and actual handset capture remain unverified. Quote completion reported separately. No runtime configuration changes, real redial, or deployment from this probe."
+  },
+  {
+    "id": "ISS-096",
+    "title": "Handset capture rejects UUID calls and lacks separate quote SLA",
+    "area": "measurement",
+    "status": "open",
+    "found": "2026-11-01",
+    "found_on": "Preflight for real handset acoustic capture",
+    "symptom": "Recorder export and acoustic verifier accept only out-prefixed call IDs, blocking the native UUID workflow. The acoustic gate still imposes the response target on quotation calculation.",
+    "cause": "Legacy call-ID validation and quotation gate predate the UUID call mode and owner-approved separate calculation SLA.",
+    "fix": "Accept canonical UUIDs in recorder and verifier without changing provenance; add explicit --quote-sla separate while preserving strict default, mandatory quote boundaries, first-audio gate and >=20 non-quotation content samples. Add handset suite to SIP adapter CI.",
+    "verified": "UUID regressions fail on prior recorder and verifier. All 45 handset tests pass: 28 acoustic verifier, 3 local HTTP server, 14 browser/audio tests. Separate mode retains evidence failures, exact-1200 rejection and minimum non-quote counts. Corrected assets served on Mac loopback; no microphone started by agent.",
+    "effect": "Full CI 41285082027 passed. UUID WAV and JSON successfully exported with separate quotation SLA available. Actual capture is invalid due to sample_clock_discontinuity, independently of UUID support; handset qualification remains outstanding. Original runtime configuration unchanged."
+  },
+  {
+    "id": "ISS-097",
+    "title": "Playback replacement loses the previous output completion receipt",
+    "area": "measurement",
+    "status": "open",
+    "found": "2026-11-01",
+    "found_call": "3af753f8-d623-43ff-a619-6c4a6557cccb",
+    "symptom": "item_28 started three transcript segments but has no final response timing in either archive or full engine log. Strict gate correctly rejects the incomplete population.",
+    "cause": "ensureTurnLocked resets an active old owner on new valid generation dispatch without reporting its played audio. A held interruption can allow a final transcript to advance the tracker before explicit Interrupt.",
+    "fix": "Snapshot the old exact owner and heard prefix before replacement; report outside the player mutex. Preserve opener adoption and suppress receipts for unplayed turns.",
+    "verified": "Baseline fails four new-turn/revision dispatch cases and heard-prefix regression. Focused race tests pass; replacement and acknowledgment tests pass 30 repetitions. Full CI pending.",
+    "effect": "Accounting repair only, no claimed latency saving. Historical missing evidence stays invalid; no original configuration changes."
+  },
+  {
+    "id": "ISS-098",
+    "title": "Handset capture has an unlocated sample-clock discontinuity",
+    "area": "measurement",
+    "status": "open",
+    "found": "2026-11-01",
+    "found_call": "3af753f8-d623-43ff-a619-6c4a6557cccb",
+    "symptom": "Saved 382.149-second mono 48 kHz capture has matching WAV hash but capture_complete=false and sample_clock_discontinuity. Gap positions were not retained.",
+    "cause": "AudioWorklet context-frame continuity check failed; the historical sidecar cannot distinguish gap direction, count or location. Underlying browser/audio cause remains unverified.",
+    "fix": "Retain total discontinuity count and first 64 expected/actual frame offsets for future recordings, without relaxing integrity validation or altering historical files.",
+    "verified": "Forward-gap, overlap, contiguous and bounded-diagnostic tests pass; complete handset suite 46 tests passes. Full CI pending.",
+    "effect": "Actual handset p95 remains unqualified. Next capture needs a clean recording integrity preflight; server normal p95 1260 ms is separately measured."
+  }
+]

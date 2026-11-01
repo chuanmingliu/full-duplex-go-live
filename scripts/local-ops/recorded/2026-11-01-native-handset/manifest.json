@@ -1,0 +1,31 @@
+{
+  "call_id": "3af753f8-d623-43ff-a619-6c4a6557cccb",
+  "engine": "7fc4237",
+  "adapter": "fb11e2c",
+  "stage": "completed_and_analyzed",
+  "user_confirmed_recording": true,
+  "handset_capture_verified": false,
+  "recorder_ui_issue": "sample_clock_discontinuity",
+  "analysis_pending_owner_done": false,
+  "files": {
+    "README.md": "7dd6ffea9ae4b911a554d8fd05cfaf6850686a70b523759f5461039308401021",
+    "analyze.py": "bbca70d5cdcebd3cbaacd5e473b3f6cbeb3d4dbbfe4a614e4677c197152f130e",
+    "call.py": "defe3a5af86b2be27f45a6ef839e43d8fc92ba0a61064a27860f09310d6fb702",
+    "call.sh": "d2b5d88376f385d8c1effca1a81b41e6b947308306d8eac7f78192c418640dc6",
+    "finalize.py": "64c809bc03ccb7fc795164af29cf4947739c39f27961f2a5195da65d4b13e849",
+    "handset-integrity.json": "84689c731990acf6a150653ff9caff5ba758044a822ac02660705d1cb8f95a94",
+    "interruption-evidence.json": "b6d5bbd892653735486d7187cd35ffcf58494901dacfd14396862969853217af",
+    "issues-published.json": "a8ecabda906138468c786c9a4198059a9174dc85b47b0ee6d39961030afada9b",
+    "latency.json": "696f14dec8c13133e54f0930b9fbad460c3770489ca826a78b4fca3908145392",
+    "publication-receipt.txt": "f50703c706de8fafe3736260f9ad34fb96084c506c115fb95b5c406be8327db2",
+    "publish.sh": "b579954b77b638d4b0ba5dfee7f8690c09c55ec9d330a4a0604220b58549856e",
+    "receipt.txt": "912ef73b3602e7562d208e33e95b93745d09fe862e72b623116c100725b9c066"
+  },
+  "archive_files_verified": 7,
+  "real_normal_samples": 30,
+  "real_normal_content_p95_ms": 1260,
+  "assumed_handset_overhead_ms": 50,
+  "estimated_handset_content_p95_ms": 1310,
+  "qualification_passed": false,
+  "publication_job_sha256": "b579954b77b638d4b0ba5dfee7f8690c09c55ec9d330a4a0604220b58549856e"
+}

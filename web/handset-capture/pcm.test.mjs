@@ -23,6 +23,8 @@ test('short recording flushes its exact tail before completion and exports PCM16
   assert.deepEqual(r.events, ['start', 'chunk', 'finish']);
   assert.deepEqual(r.issues, []);
   assert.equal(r.summary.frames, 5);
+  assert.equal(r.summary.clock_discontinuity_count, 0);
+  assert.deepEqual(r.summary.clock_discontinuities, []);
   assert.equal(r.summary.first_audio_context_frame, 2048);
   assert.equal(r.summary.final_audio_context_frame, 2053);
   const wav = new DataView(r.received.wav(48000));
@@ -51,6 +53,9 @@ test('missing render frames retain their time and invalidate evidence', () => {
   const r = record([[0, new Float32Array([0.5, 0.5])], [5, new Float32Array([0.5])]]);
   assert.deepEqual(r.issues, ['sample_clock_discontinuity']);
   assert.equal(r.summary.frames, 6);
+  assert.equal(r.summary.clock_discontinuity_count, 1);
+  assert.deepEqual(r.summary.clock_discontinuities, [{ output_frame: 2,
+    expected_context_frame: 2, actual_context_frame: 5, gap_frames: 3 }]);
   assert.deepEqual([...r.received.chunks[0]], [16384, 16384, 0, 0, 0, 16384]);
 });
 
@@ -60,10 +65,22 @@ test('missing input is explicit missing evidence, not a valid silent caller', ()
   assert.equal(r.summary.frames, 4);
 });
 
+test('clock diagnostics remain bounded while counting every discontinuity', () => {
+  const blocks = Array.from({ length: 100 }, (_, i) => [i * 2, new Float32Array([0.5])]);
+  const r = record(blocks);
+  assert.deepEqual(r.issues, ['sample_clock_discontinuity']);
+  assert.equal(r.summary.clock_discontinuity_count, 99);
+  assert.equal(r.summary.clock_discontinuities.length, 64);
+  assert.equal(r.summary.frames, 199);
+});
+
 test('overlapping render frames are not duplicated and remain invalid', () => {
   const r = record([[10, new Float32Array([0.25, 0.25, 0.25])], [12, new Float32Array([0.5, 0.5])]]);
   assert.deepEqual(r.issues, ['sample_clock_discontinuity']);
   assert.equal(r.summary.frames, 4);
+  assert.equal(r.summary.clock_discontinuity_count, 1);
+  assert.deepEqual(r.summary.clock_discontinuities, [{ output_frame: 3,
+    expected_context_frame: 13, actual_context_frame: 12, gap_frames: -1 }]);
 });
 
 test('duration cap is bounded and cannot masquerade as a complete user stop', () => {

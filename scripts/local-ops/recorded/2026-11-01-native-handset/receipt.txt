@@ -1,0 +1,4 @@
+[runner] pushed call-native-handset-20261101.py -> /tmp/call-native-handset-20261101.py
+{"call_id": "3af753f8-d623-43ff-a619-6c4a6557cccb", "kind": "real", "adapter_commit": "fb11e2c", "engine_commit": "7fc4237", "journal": "http://192.168.71.9:9896", "stage": "submitted", "at": "2026-11-01T07:32:25.536867+00:00", "physical_handset_capture_verified": false, "assumed_handset_overhead_ms": 50, "container": "golive-native-sip-call-3af753f8-d623-43ff-a619-6c4a6557cccb"}
+{"call_id": "3af753f8-d623-43ff-a619-6c4a6557cccb", "stage": "answered", "recording_events_present": true}
+[runner] exit 0 at 15:32:33

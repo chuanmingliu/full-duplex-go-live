@@ -1,0 +1,13 @@
+{
+  "id": "ISS-096",
+  "title": "Handset capture rejects UUID calls and lacks separate quote SLA",
+  "area": "measurement",
+  "status": "open",
+  "found": "2026-11-01",
+  "found_on": "Preflight for real handset acoustic capture",
+  "symptom": "Recorder export and acoustic verifier accept only out-prefixed call IDs, blocking the native UUID workflow. The acoustic gate still imposes the response target on quotation calculation.",
+  "cause": "Legacy call-ID validation and quotation gate predate the UUID call mode and owner-approved separate calculation SLA.",
+  "fix": "Accept canonical UUIDs in recorder and verifier without changing provenance; add explicit --quote-sla separate while preserving strict default, mandatory quote boundaries, first-audio gate and >=20 non-quotation content samples. Add handset suite to SIP adapter CI.",
+  "verified": "UUID regressions fail on prior recorder and verifier. All 45 handset tests pass: 28 acoustic verifier, 3 local HTTP server, 14 browser/audio tests. Separate mode retains evidence failures, exact-1200 rejection and minimum non-quote counts. Corrected assets served on Mac loopback; no microphone started by agent.",
+  "effect": "Prepared for actual handset evidence; full CI pending. Production engine, saved prompt, providers, quotation delay and Active Call unchanged. No new real call placed."
+}

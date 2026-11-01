@@ -1,0 +1,201 @@
+{
+  "call_id": "3af753f8-d623-43ff-a619-6c4a6557cccb",
+  "interruptions": [
+    {
+      "generation": 2,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:32:36.337Z",
+      "cancelled_at": "2026-11-01T07:32:36.600Z",
+      "detection_to_cancel_ms": 263,
+      "cancel_to_adapter_clear_ms": 0.465
+    },
+    {
+      "generation": 4,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:32:43.574Z",
+      "cancelled_at": "2026-11-01T07:32:43.762Z",
+      "detection_to_cancel_ms": 188,
+      "cancel_to_adapter_clear_ms": 0.295
+    },
+    {
+      "generation": 7,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:32:47.969Z",
+      "cancelled_at": "2026-11-01T07:32:48.109Z",
+      "detection_to_cancel_ms": 140,
+      "cancel_to_adapter_clear_ms": 0.612
+    },
+    {
+      "generation": 16,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:33:26.296Z",
+      "cancelled_at": "2026-11-01T07:33:26.734Z",
+      "detection_to_cancel_ms": 438,
+      "cancel_to_adapter_clear_ms": 0.655
+    },
+    {
+      "generation": 24,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:34:14.257Z",
+      "cancelled_at": "2026-11-01T07:34:14.401Z",
+      "detection_to_cancel_ms": 144,
+      "cancel_to_adapter_clear_ms": 0.95
+    },
+    {
+      "generation": 32,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:35:04.172Z",
+      "cancelled_at": "2026-11-01T07:35:04.301Z",
+      "detection_to_cancel_ms": 129,
+      "cancel_to_adapter_clear_ms": 1.041
+    },
+    {
+      "generation": 35,
+      "during_playback": false,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:35:13.371Z",
+      "cancelled_at": "2026-11-01T07:35:13.624Z",
+      "detection_to_cancel_ms": 253,
+      "cancel_to_adapter_clear_ms": 0.932
+    },
+    {
+      "generation": 39,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:35:21.298Z",
+      "cancelled_at": "2026-11-01T07:35:21.552Z",
+      "detection_to_cancel_ms": 254,
+      "cancel_to_adapter_clear_ms": 0.851
+    },
+    {
+      "generation": 43,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:35:39.177Z",
+      "cancelled_at": "2026-11-01T07:35:41.264Z",
+      "detection_to_cancel_ms": 2087,
+      "cancel_to_adapter_clear_ms": 0.938
+    },
+    {
+      "generation": 46,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:35:54.334Z",
+      "cancelled_at": "2026-11-01T07:35:54.566Z",
+      "detection_to_cancel_ms": 232,
+      "cancel_to_adapter_clear_ms": 0.859
+    },
+    {
+      "generation": 54,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:36:29.211Z",
+      "cancelled_at": "2026-11-01T07:36:29.867Z",
+      "detection_to_cancel_ms": 656,
+      "cancel_to_adapter_clear_ms": 0.722
+    },
+    {
+      "generation": 62,
+      "during_playback": false,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:36:54.815Z",
+      "cancelled_at": "2026-11-01T07:36:55.227Z",
+      "detection_to_cancel_ms": 412,
+      "cancel_to_adapter_clear_ms": 1.383
+    },
+    {
+      "generation": 64,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:36:58.049Z",
+      "cancelled_at": "2026-11-01T07:36:58.281Z",
+      "detection_to_cancel_ms": 232,
+      "cancel_to_adapter_clear_ms": 0.974
+    },
+    {
+      "generation": 71,
+      "during_playback": false,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:37:16.340Z",
+      "cancelled_at": "2026-11-01T07:37:16.642Z",
+      "detection_to_cancel_ms": 302,
+      "cancel_to_adapter_clear_ms": 0.397
+    },
+    {
+      "generation": 73,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:37:21.890Z",
+      "cancelled_at": "2026-11-01T07:37:22.059Z",
+      "detection_to_cancel_ms": 169,
+      "cancel_to_adapter_clear_ms": 0.493
+    },
+    {
+      "generation": 75,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:37:29.136Z",
+      "cancelled_at": "2026-11-01T07:37:29.624Z",
+      "detection_to_cancel_ms": 488,
+      "cancel_to_adapter_clear_ms": 0.827
+    }
+  ],
+  "playback_detection_to_cancel": {
+    "n": 13,
+    "p50_ms": 232,
+    "p95_ms": 2087,
+    "max_ms": 2087
+  },
+  "cancel_to_adapter_clear": {
+    "n": 16,
+    "p50_ms": 0.827,
+    "p95_ms": 1.383,
+    "max_ms": 1.383
+  },
+  "quotation_tasks": [
+    {
+      "task": "t1",
+      "observed_completion_ms": 0
+    },
+    {
+      "task": "t2",
+      "observed_completion_ms": 1
+    },
+    {
+      "task": "t3",
+      "observed_completion_ms": 3
+    },
+    {
+      "task": "t4",
+      "observed_completion_ms": 1
+    }
+  ],
+  "adapter_end": {
+    "at": "2026-11-01T07:37:36.404481521Z",
+    "data": {
+      "failed": false,
+      "media": {
+        "received_packets": 15174,
+        "sent_packets": 11059,
+        "rejected_packets": 310,
+        "late_or_duplicate_packets": 0,
+        "lost_packets": 0,
+        "cleared_frames": 260,
+        "stale_audio_events": 0,
+        "max_queue_ms": 360,
+        "early_media_packets": 222
+      },
+      "reason": "completed"
+    },
+    "elapsed_us": 310623443,
+    "type": "call_end"
+  },
+  "acoustic_stop_latency_verified": false,
+  "caveat": "Detection follows accumulated speech; VAD start includes pre-roll. Queue clear is not handset stop."
+}

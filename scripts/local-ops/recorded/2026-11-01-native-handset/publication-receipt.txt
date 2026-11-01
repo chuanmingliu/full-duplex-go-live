@@ -1,0 +1,6 @@
+[runner] pushed native-handset-retro-20261101.md -> /tmp/native-handset-retro-20261101.md
+[runner] pushed native-handset-issues-20261101.json -> /tmp/native-handset-issues-20261101.json
+[runner] pushed finalize-native-handset-20261101.py -> /tmp/finalize-native-handset-20261101.py
+{"call_id": "3af753f8-d623-43ff-a619-6c4a6557cccb", "stage": "archived", "verified_files": 7, "audio_seconds": 310.66, "ringback_seconds": 7.161125, "speakers": {"assistant": 40, "caller": 41}, "retrospective": true, "active_call_preserved": true}
+{"retrospective": "3af753f8-d623-43ff-a619-6c4a6557cccb", "desk_updated": true, "issues_updated": ["ISS-095", "ISS-096", "ISS-097", "ISS-098"]}
+[runner] exit 0 at 15:46:25

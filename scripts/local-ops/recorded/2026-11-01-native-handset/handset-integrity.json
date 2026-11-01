@@ -1,0 +1,18 @@
+{
+  "call_id": "3af753f8-d623-43ff-a619-6c4a6557cccb",
+  "sample_rate": 48000,
+  "frames": 18343168,
+  "channels": 1,
+  "capture_complete": false,
+  "issues": [
+    "sample_clock_discontinuity"
+  ],
+  "started_at": "2026-11-01T07:31:24.861Z",
+  "ended_at": "2026-11-01T07:37:47.046Z",
+  "wav_sha256": "b90d14a7fdfd9d98cdee14bd8cb4b997c4fe690c14d1b6c3ec9da2a6c8230883",
+  "wav_hash_verified": true,
+  "sidecar_sha256": "fff5af140dd812ab2ba9d9c75e90ff0787c49ce5513f4609b96176a110dc36e6",
+  "seconds": 382.14933333333335,
+  "actual_handset_latency_qualified": false,
+  "gap_locations_available": false
+}
