@@ -1,0 +1,391 @@
+[
+  {
+    "crm_version": "3201ec4",
+    "crm_phases": [
+      {
+        "time": "2026-11-01T15:01:09.710+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "false",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:12.716+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "false",
+        "total_ms": "3005",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "2",
+        "poll_wait_ms": "3001",
+        "polls": "7",
+        "poll_errors": "0",
+        "stale_results": "6",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:12.731+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:16.237+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "3505",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "3501",
+        "polls": "8",
+        "poll_errors": "0",
+        "stale_results": "7",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:16.239+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:19.742+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "3503",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "3498",
+        "polls": "8",
+        "poll_errors": "0",
+        "stale_results": "7",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:19.757+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:23.765+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "4007",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "4003",
+        "polls": "9",
+        "poll_errors": "0",
+        "stale_results": "8",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:23.780+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:27.287+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "3507",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "3503",
+        "polls": "8",
+        "poll_errors": "0",
+        "stale_results": "7",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:27.302+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:30.307+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "3005",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "3001",
+        "polls": "7",
+        "poll_errors": "0",
+        "stale_results": "6",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:30.322+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:33.830+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "3508",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "3503",
+        "polls": "8",
+        "poll_errors": "0",
+        "stale_results": "7",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:33.845+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:37.855+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "4009",
+        "before_ms": "1",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "4004",
+        "polls": "9",
+        "poll_errors": "0",
+        "stale_results": "8",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      },
+      {
+        "time": "2026-11-01T15:01:37.869+08:00",
+        "msg": "crm: quote gate acquired",
+        "memory_version": "0",
+        "ahead": "true",
+        "waited_ms": "0"
+      },
+      {
+        "time": "2026-11-01T15:01:41.377+08:00",
+        "msg": "crm: quote phases",
+        "memory_version": "0",
+        "ahead": "true",
+        "total_ms": "3507",
+        "before_ms": "0",
+        "submit_ms": "0",
+        "poll_http_ms": "3",
+        "poll_wait_ms": "3502",
+        "polls": "8",
+        "poll_errors": "0",
+        "stale_results": "7",
+        "unpriced_results": "0",
+        "before_failed": "false",
+        "phase": "complete",
+        "failed": "false"
+      }
+    ],
+    "call": "sim-interaction-ab988aa8-b778-4a5d-aab2-b51464cc2768",
+    "version": "7fc4237",
+    "run": "sim-cafbc749762c43faf105070c",
+    "archive_files_verified": 5,
+    "audio_seconds": 302.051,
+    "speakers": {
+      "assistant": 27,
+      "caller": 26
+    },
+    "audio_channels_with_signal": 2,
+    "conversation_complete": true,
+    "receiver_gaps_ms": [
+      2,
+      437,
+      513,
+      566,
+      574,
+      604,
+      833,
+      843,
+      891,
+      900,
+      951,
+      967,
+      983,
+      989,
+      1013,
+      1030,
+      1060,
+      1088,
+      1193,
+      1257
+    ],
+    "receiver_failure_count": 0,
+    "gate_exit": 0,
+    "input_origin_links": 1,
+    "unrooted_deliveries": 0,
+    "new_caller_protections": 0,
+    "ready_ack_releases": 1,
+    "retired_coalesced_continuations": 0,
+    "release_reasons": {
+      "playback_completed": 1
+    },
+    "tasks": [
+      {
+        "msg": "tools: task done",
+        "task": "t1",
+        "took_ms": "0"
+      },
+      {
+        "msg": "tools: delivering a task's result",
+        "task": "t1",
+        "waited_for_gap_ms": "38",
+        "origin_to_result_start_ms": "381",
+        "memory_changed": "false"
+      }
+    ],
+    "metrics": {
+      "counts": {
+        "records": 28,
+        "answered": 26,
+        "non_speech": 2,
+        "cancelled": 0,
+        "interrupted_answers": 7,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 1,
+        "tool_results_joined": 1,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 1
+      },
+      "first_audio": {
+        "n": 26,
+        "p50_ms": 796.0,
+        "p90_ms": 1028,
+        "p95_ms": 1087,
+        "max_ms": 1106,
+        "at_or_above_target": 0
+      },
+      "first_content": {
+        "n": 26,
+        "p50_ms": 845.0,
+        "p90_ms": 1057,
+        "p95_ms": 1087,
+        "max_ms": 1106,
+        "at_or_above_target": 0
+      },
+      "conversational_first_content": {
+        "n": 25,
+        "p50_ms": 853,
+        "p90_ms": 1057,
+        "p95_ms": 1087,
+        "max_ms": 1106,
+        "at_or_above_target": 0
+      },
+      "tool_result": {
+        "n": 1,
+        "p50_ms": 761,
+        "p90_ms": 761,
+        "p95_ms": 761,
+        "max_ms": 761,
+        "at_or_above_target": 0
+      },
+      "quote_readout": {
+        "n": 1,
+        "p50_ms": 761,
+        "p90_ms": 761,
+        "p95_ms": 761,
+        "max_ms": 761,
+        "at_or_above_target": 0
+      },
+      "tool_result_rows": [
+        {
+          "session": "sess_00c66e6a8737699def90f662",
+          "task": "t1",
+          "origin_turn": "item_4",
+          "result_turn": "item_5",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 381,
+          "child_first_content_ms": 0,
+          "total_ms": 761,
+          "quotation": true,
+          "interrupted": true,
+          "origin_evidence": "caller_input_v1"
+        }
+      ],
+      "quote_readout_rows": [
+        {
+          "session": "sess_00c66e6a8737699def90f662",
+          "task": "t1",
+          "origin_turn": "item_4",
+          "result_turn": "item_5",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 381,
+          "origin_evidence": "caller_input_v1",
+          "status": "observed",
+          "child_first_readout_ms": 0,
+          "total_ms": 761
+        }
+      ],
+      "gate": {
+        "enabled": true,
+        "metric": "both",
+        "min_turns": 20,
+        "quote_sla": "separate",
+        "passed": true,
+        "reasons": []
+      }
+    },
+    "physical_handset_capture": false,
+    "assumed_handset_overhead_ms": 50,
+    "server_target_ms": 1150
+  }
+]

@@ -91,3 +91,30 @@ quote-only handoff is excluded from conversational content. The gate still
 fails: one missing response, two unverified links, and fewer than 20 valid
 samples. The assumed handset content estimate is 1066 ms, not a qualification.
 All 56 public-command regression tests pass; the branch CI now runs them too.
+
+## Optimization priority after the owner's clarification
+
+Calculation-related delay has extra tolerance. Preserve the original quote
+service delay and report it separately; do not spend the next optimization
+cycle trying to force a fresh calculated amount into the conversational limit.
+
+The next cases to measure are:
+
+| Interaction | Measurement |
+| --- | --- |
+| Opening | SIP answer to first audible greeting; exclude pre-answer ringing |
+| Ordinary answer | Caller last sound to first audio and separately first substantive content |
+| Acknowledgment | Request end to acknowledgment audio, with quote completion reported independently |
+| Interruption | Caller speech onset to old answer stopping, then caller speech end to the new answer |
+| Question while a quote runs | The ordinary-answer measurement while calculation remains pending |
+
+Ordinary and interruption-follow-up responses retain the strictly below 1150 ms
+server p95 target and at least 20 valid samples. The assumed 50 ms allowance
+gives an estimated handset figure; it is not acoustic evidence. Opening and
+interruption-stop timing have different origins and are reported separately,
+without inventing a threshold or treating a fast filler as substantive content.
+
+Separate calculation time from avoidable scheduling delay: a pending quote
+must not block an unrelated answer, and an old ready result must not immediately
+steal a new caller's response. Keep known quote lineage/readout issues visible
+as correctness limitations while prioritizing these conversational cases.
