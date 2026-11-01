@@ -86,7 +86,15 @@ was overwritten by a later system opening. Canonical logs prove the first
 41-character opening matched the saved greeting; the later event had 12
 characters. A follow-up Journal-only fix preserves the first opening while
 keeping all system openings outside the response SLA (ISS-100). This follow-up
-has focused race coverage; it is not part of deployed `45b5564`.
+passed focused race tests and full push/PR CI, then deployed as Journal-only
+`0c2ba18`. The phone engine remains `45b5564`. The initial deployment preflight
+stopped before changes because the existing command uses a relative executable
+path; the corrected operation preserves that exact argv. Its final audit
+verified 654 unchanged existing raw files across 178 archive entries and exactly
+three greeting-only summary changes backed by canonical logs. Older incomplete
+archive entries are not reclassified as complete by this integrity check.
+See [Journal deployment](evidence/2026-11-01-active-call-rollout/journal-deployment.json)
+and [CI receipt](evidence/2026-11-01-active-call-rollout/journal-ci.json).
 
 ## Next measurements
 
@@ -100,3 +108,44 @@ Numeric evidence: [baseline](evidence/2026-11-01-active-call-rollout/baseline.js
 [candidate](evidence/2026-11-01-active-call-rollout/candidate.json),
 [scripted interruptions](evidence/2026-11-01-active-call-rollout/scripted-interruptions.json),
 [deployment](evidence/2026-11-01-active-call-rollout/deployment.json).
+
+
+## Provider timing diagnosis
+
+Time-window-correlated provider records for the two slow candidate turns show
+high prefix-cache reuse: 8832/9040 and 9088/9359 prompt tokens. Their winning
+requests reached first provider text after 703/453 ms, then the configured
+four-character hedge selected them at about 820/571 ms. The engine's
+`llm_first_token_ms` includes this selection; it is not raw provider TTFT.
+The log records lack a direct provider-request-to-turn ID, so this is a timing
+correlation with exactly eight physical requests in each selected window.
+
+The first answer's TTS audio was ready in 178 ms. The second's primary TTS
+connection failed at 162 ms and the alternate delivered audio at 357 ms.
+The failure's upstream cause is not established; the existing fallback avoided
+a missing answer. This is separate from quotation computation. No provider,
+prompt, hedge threshold or rate setting was changed. The numeric
+[provider phase evidence](evidence/2026-11-01-active-call-rollout/provider-phases.json)
+contains no text, request bodies or credentials.
+
+
+## Repeat on the unchanged engine
+
+After the Journal-only fix, `out-mvxlfkke-kr5y` repeated the same coverage
+scenario on engine `45b5564`. It has **30 normal samples**: content p50/p95/max
+**787/1049/1147 ms**, first audio including opener **380/380/404 ms**.
+The strict server gate passes; p95 plus the assumed 50 ms is **1099 ms**.
+There are no simulator warnings/failures or missing/duplicate/unverified output
+records. Semantic quality is not independently scored. Five archive files and
+both stereo channels were verified across 296.954 seconds. There are no
+quotation result samples.
+
+Seven answered records were interrupted; one paired VAD-open to active-playback
+cut decision took 336 ms, excluding the 320 ms detection window and audible
+playout stop. This one event cannot establish a general interruption p95.
+
+This is a repeat on the same engine, not another speech optimization. Keep its
+result separate from the earlier p95 1200 ms run; generated dialogue and
+provider timing vary. The successful simulation does not establish actual
+handset latency. Evidence: [repeat](evidence/2026-11-01-active-call-rollout/repeat.json)
+and [cut decisions](evidence/2026-11-01-active-call-rollout/repeat-cut-decisions.json).

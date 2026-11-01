@@ -1,0 +1,18 @@
+{
+  "stage": "verified",
+  "commit": "0c2ba1804e8bbd790883a427732412c9efb0390d",
+  "engine_unchanged": "45b5564",
+  "old_sha256": "4b098f57749623de459dd99cd3abb9f0c72e367fec6432eac30bbb7a05231cc1",
+  "new_sha256": "7dabde9169796c502340a66502c11192b0ec95154ab2ea0f23a04d72f1e9c700",
+  "archive_count": 178,
+  "ci_run": 41289836788,
+  "release": "/home/chuanming/golive-releases/journal-0c2ba18",
+  "pid_identity": [
+    "1332408",
+    "183976146"
+  ],
+  "raw_archive_files_unchanged": 654,
+  "greeting_summaries_corrected": 3,
+  "configuration_preserved": true,
+  "other_services_preserved": true
+}

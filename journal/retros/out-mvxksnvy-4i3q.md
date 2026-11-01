@@ -19,5 +19,5 @@ Initial verification stopped on the Journal greeting field. Read-only collection
 proved the first 41-character opening exactly matched the saved greeting;
 a later 12-character system opening overwrote the derived field. ISS-100 fixes
 the Journal parser to retain the initial greeting. Call audio was not altered,
-the failed receipt is retained, and no redial was made. The parser fix is not
-part of deployed build 45b5564.
+the failed receipt is retained, and no redial was made. Journal-only fix `0c2ba18` is now deployed after full CI. The phone engine
+remains `45b5564`; this metadata correction does not change its latency.

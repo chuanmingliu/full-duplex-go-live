@@ -1572,9 +1572,11 @@
    "symptom": "Post-call config verification reports a changed greeting although the initial opening matches the saved 41-character greeting.",
    "cause": "The journal assigned Greeting for every speak: opening line event; a later 12-character system utterance replaced it.",
    "fix": "Keep the first nonempty opening as the call greeting; still classify every system opening outside the response SLA.",
-   "verified": "Focused Journal and cmd/journal race tests pass, including a regression with separate opening and farewell events. Runtime is still 45b5564; this journal-only follow-up is not deployed.",
+   "verified": "Regression fails against the deployed 45b5564 parser and passes with the fix; Journal and cmd/journal race tests pass. Full push/PR CI 41289836788/41289841450 passed. Journal-only rollout verified on 2026-11-01: three greeting summaries corrected from canonical initial openings, 654 existing raw files across 178 archived entries unchanged, original configurations and all other services preserved. Engine remains 45b5564.",
    "effect": "Restores initial-greeting provenance; no speech or latency change.",
-   "commits": []
+   "commits": [
+    "0c2ba18"
+   ]
   }
  ]
 }

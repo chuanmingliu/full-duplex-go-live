@@ -43,3 +43,17 @@ recorded separately under `docs/telephony/evidence/2026-11-01-active-call-rollou
   updates while preserving unrelated entries, and appends one authorized Desk
   work-log line. The receipt verifies the retros are visible and Desk control
   state is unchanged. Never replay this publication job.
+- `deploy-journal-0c2ba18.sh`: successful Journal-only rollout after full CI.
+  A first attempt stopped before changes on a relative argv-path guard; this
+  corrected body preserves the existing argv and environment exactly. The
+  final audit permits only proven initial-greeting corrections in call.json.
+- `repeat-45b5564.sh`: same coverage scenario on the unchanged phone engine,
+  requiring the successful Journal rollout receipt before dialing the simulator.
+- `provider-phases.py`: read-only, time-window-correlated provider diagnostics
+  for two selected slow turns. The provider logs lack direct turn IDs; the
+  script asserts eight physical requests and one hedge winner in each window.
+- `publish-repeat.sh`: publishes the completed repeat review and Journal fix
+  status, preserving other issues and Desk control state. Receipt verified.
+- `preflight-rejected-journal-0c2ba18.sh`: retained first deployment attempt,
+  rejected before any service change by the relative-executable-path check.
+  It is historical evidence only and must not be replayed.

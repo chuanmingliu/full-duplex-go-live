@@ -1,0 +1,13 @@
+{
+  "stage": "verified",
+  "engine": "45b5564",
+  "journal": "0c2ba18",
+  "repeat_call": "out-mvxlfkke-kr5y",
+  "normal_n": 30,
+  "content_p95_ms": 1049,
+  "handset_proven": false,
+  "issues_sha256": "30d86434256d33acbcb440ff1bf9e45344843f86cb17e5eaace70e9279ae7cdc",
+  "retros_verified": 2,
+  "desk_lines_added": 1,
+  "desk_control_preserved": true
+}
