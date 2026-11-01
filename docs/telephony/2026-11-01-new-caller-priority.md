@@ -29,5 +29,23 @@ actual answer to a newer caller; quotation completion remains separately timed.
 The regression fails on the previous code before output and after output starts.
 The candidate's focused race suite passes in 23.213 seconds, covering timeout,
 playback completion, configurable limits, same-caller direct/coalesced results,
-old acknowledgment cleanup and existing delivery guards. Recorded SIP testing
-and full CI remain required; no handset speedup is claimed from unit tests.
+old acknowledgment cleanup and existing delivery guards. The later recorded SIP test below exercises the guard five times. Full CI
+[41281964710](https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41281964710)
+passes for exact source `7fc4237`; no handset speedup is claimed from unit tests.
+
+## Recorded validation
+
+The follow-up 90-second SIP trial exercises the new guard five times.
+Conversational p95 is 988 ms across six responses; quote readout p95 is
+6341 ms across five verified results. The strict gate still fails for the
+small sample and one unverified chained result/readout. See
+[the full retrospective](../../journal/retros/sim-newcaller-16c41c8a-a5b5-413d-ab81-1377d5891a14.md).
+
+## Deployment
+
+Native SIP test engine 9895 now runs `7fc4237`, verified at 14:55:38 on Nov 1.
+Full CI, readiness and no-dial adapter preflight pass. The prior `f12b6f5`
+binary is retained for rollback. Original GoLive 8765, saved settings, quote
+delay, native Journal and Active Call remain intact. The running adapter is
+still `fb11e2c`; this release changes its GoLive engine, not SIP/RTP code.
+See [the exact operation and receipt](../../scripts/local-ops/recorded/2026-11-01-native-7fc4237/).

@@ -1,0 +1,18 @@
+{
+  "id": "ISS-094",
+  "title": "Old ready result steals a newly finalized caller answer",
+  "area": "tools",
+  "status": "open",
+  "found": "2026-11-01",
+  "found_on": "Original GoLive SIP simulation and scheduler regression",
+  "found_call": "sim-inputtiming-96bb8a33-8c9b-4bb5-ac65-69dd84ed95af",
+  "symptom": "An old result starts 42 ms after a newer caller utterance finalizes, before its response plays. The result continuation then launches another task without a direct caller origin.",
+  "cause": "The result wait deadline measures age from task completion. Once a newer caller finishes speaking, that already-expired deadline can immediately cancel the newer answer, even though its own response window just began.",
+  "fix": "While an unrelated newer caller answer owns the floor, retain the existing configured delivery wait from that caller endpoint, or until its playback completes. Direct and explicitly coalesced results for that same caller remain eligible immediately. Preserve old acknowledgment cleanup and caller-speech guards.",
+  "verified": "Baseline regression fails; focused race suite passes in 23.213 s. Recorded 7fc4237 SIP trial exercises protection five times, including measured content on three protected caller turns. Five archive files and both audio directions verified; zero receiver warnings. Exact-source full CI 41281964710 passes verify and simulate. Native SIP engine 9895 deployed 7fc4237 at 14:55:38; readiness and no-dial adapter preflight passed.",
+  "effect": "Confirmed newer-answer priority now holds within the configured window. Recorded conversational p95 988 ms n=6; strict gate still fails for sample count and one unverified chained result/readout. Quote readout p95 6341 ms n=5 remains separate; original 2500–4500 ms delay and Active Call preserved. Physical handset validation remains outstanding. Previous f12b6f5 binary retained for rollback; original GoLive 8765, original configs, native Journal and Active Call preserved.",
+  "commits": [
+    "7fc4237"
+  ],
+  "verified_call": "sim-newcaller-16c41c8a-a5b5-413d-ab81-1377d5891a14"
+}

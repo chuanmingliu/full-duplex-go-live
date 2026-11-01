@@ -1,0 +1,10 @@
+{
+  "stage": "rolled_back",
+  "old_pid": 969960,
+  "old_sha256": "f6fb27f2866243337ffa482d6503e9efef80ca34a8dfd5c7a4bd285c65712968",
+  "new_sha256": "ca3e4d8adfa306c6e3533668f8c6fd993c2826ba93aa7703153f7c81883a02b4",
+  "source": "302267b0e67501b0324a09a3b434bec41ba673bc",
+  "ci_run": 41280951451,
+  "new_pid": 1122437,
+  "rollback_pid": 1122450
+}
