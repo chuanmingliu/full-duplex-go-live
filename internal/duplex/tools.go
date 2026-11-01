@@ -844,16 +844,22 @@ func (e *Engine) maybeDeliver() {
 	}
 	delivery := ts.deliveries[0]
 	task := delivery.task
+	e.releaseCompletedCallingAck(task.ID)
 	e.tryReadyQuoteHandoff(delivery)
 	if ts.ackPending[task.ID] {
 		return // its ack first
+	}
+	// A delivery deadline may interrupt the assistant, never the caller or
+	// an utterance whose transcript/focus decision is still pending.
+	if e.userOpen || e.awaitingFinal() || e.hold != nil {
+		return
 	}
 	waited := time.Since(task.Submitted.Add(task.Result.Took))
 	wait := time.Duration(e.opts.Cfg.ToolsDeliverWaitMS) * time.Millisecond
 	if wait <= 0 {
 		wait = 1500 * time.Millisecond
 	}
-	busy := e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.liveSpeculation() != nil
+	busy := e.assistantHasFloor() || e.liveSpeculation() != nil
 	if busy && waited < wait {
 		return
 	}

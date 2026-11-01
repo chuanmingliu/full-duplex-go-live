@@ -752,18 +752,7 @@ func (e *Engine) startTypedTurn() {
 
 // startContinuation resumes a backend response with its function results.
 func (e *Engine) startContinuation(p *pendingResponse) {
-	// The calls and their results enter history together, in the order the
-	// model made them.
-	e.history = append(e.history, provider.Message{Role: provider.RoleAssistant, ToolCalls: p.calls})
-	for _, c := range p.calls {
-		e.history = append(e.history, provider.Message{
-			Role:       provider.RoleTool,
-			Name:       c.Name,
-			ToolCallID: c.ID,
-			Content:    p.outputs[c.ID],
-		})
-	}
-	e.trimHistory()
+	e.recordContinuation(p)
 
 	if p.scripted != "" {
 		// The owner's words for the wait, in place of resuming the model —
