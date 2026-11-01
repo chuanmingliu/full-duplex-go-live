@@ -1,0 +1,129 @@
+{
+  "call_id": "280fdab1-4078-4627-bf79-4eef8f627719",
+  "interruptions": [
+    {
+      "generation": 3,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:12:44.772Z",
+      "cancelled_at": "2026-11-01T07:12:44.953Z",
+      "detection_to_cancel_ms": 181,
+      "cancel_to_adapter_clear_ms": 0.375
+    },
+    {
+      "generation": 5,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:12:46.458Z",
+      "cancelled_at": "2026-11-01T07:12:46.660Z",
+      "detection_to_cancel_ms": 202,
+      "cancel_to_adapter_clear_ms": 0.412
+    },
+    {
+      "generation": 9,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:13:01.420Z",
+      "cancelled_at": "2026-11-01T07:13:01.602Z",
+      "detection_to_cancel_ms": 182,
+      "cancel_to_adapter_clear_ms": 1.359
+    },
+    {
+      "generation": 19,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:14:07.291Z",
+      "cancelled_at": "2026-11-01T07:14:07.410Z",
+      "detection_to_cancel_ms": 119,
+      "cancel_to_adapter_clear_ms": 0.98
+    },
+    {
+      "generation": 22,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:14:23.938Z",
+      "cancelled_at": "2026-11-01T07:14:24.220Z",
+      "detection_to_cancel_ms": 282,
+      "cancel_to_adapter_clear_ms": 0.185
+    },
+    {
+      "generation": 24,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:14:30.904Z",
+      "cancelled_at": "2026-11-01T07:14:31.046Z",
+      "detection_to_cancel_ms": 142,
+      "cancel_to_adapter_clear_ms": 1.09
+    },
+    {
+      "generation": 27,
+      "during_playback": false,
+      "active_speech_at_detection_ms": 240,
+      "detected_at": "2026-11-01T07:14:40.417Z",
+      "cancelled_at": "2026-11-01T07:14:40.650Z",
+      "detection_to_cancel_ms": 233,
+      "cancel_to_adapter_clear_ms": 0.841
+    },
+    {
+      "generation": 29,
+      "during_playback": true,
+      "active_speech_at_detection_ms": 320,
+      "detected_at": "2026-11-01T07:14:45.139Z",
+      "cancelled_at": "2026-11-01T07:14:45.762Z",
+      "detection_to_cancel_ms": 623,
+      "cancel_to_adapter_clear_ms": 0.886
+    }
+  ],
+  "playback_detection_to_cancel": {
+    "n": 7,
+    "p50_ms": 182,
+    "p95_ms": 623,
+    "max_ms": 623
+  },
+  "cancel_to_adapter_clear": {
+    "n": 8,
+    "p50_ms": 0.841,
+    "p95_ms": 1.359,
+    "max_ms": 1.359
+  },
+  "quotation_tasks": [
+    {
+      "task": "t1",
+      "observed_completion_ms": 0
+    },
+    {
+      "task": "t2",
+      "observed_completion_ms": 1
+    },
+    {
+      "task": "t3",
+      "observed_completion_ms": 1
+    },
+    {
+      "task": "t4",
+      "observed_completion_ms": 2
+    }
+  ],
+  "adapter_end": {
+    "at": "2026-11-01T07:15:29.943928652Z",
+    "data": {
+      "failed": false,
+      "media": {
+        "received_packets": 9050,
+        "sent_packets": 6425,
+        "rejected_packets": 186,
+        "late_or_duplicate_packets": 0,
+        "lost_packets": 0,
+        "cleared_frames": 129,
+        "stale_audio_events": 0,
+        "max_queue_ms": 351,
+        "early_media_packets": 108
+      },
+      "reason": "completed"
+    },
+    "elapsed_us": 186144416,
+    "type": "call_end"
+  },
+  "acoustic_stop_latency_verified": false,
+  "caveat": "Detection follows accumulated speech; VAD start includes pre-roll. Queue clear is not handset stop."
+}

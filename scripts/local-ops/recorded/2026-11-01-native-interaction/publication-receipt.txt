@@ -1,0 +1,5 @@
+[runner] pushed native-interaction-retro-20261101.md -> /tmp/native-interaction-retro-20261101.md
+[runner] pushed finalize-native-interaction-20261101.py -> /tmp/finalize-native-interaction-20261101.py
+{"call_id": "280fdab1-4078-4627-bf79-4eef8f627719", "stage": "archived", "verified_files": 7, "audio_seconds": 186.2, "ringback_seconds": 5.18675, "speakers": {"assistant": 23, "caller": 20}, "retrospective": true, "active_call_preserved": true}
+{"retrospective": "280fdab1-4078-4627-bf79-4eef8f627719", "desk_updated": true}
+[runner] exit 0 at 15:23:07
