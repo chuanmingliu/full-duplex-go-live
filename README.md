@@ -1,5 +1,8 @@
 # golive
 
+[![Built with Codex](https://img.shields.io/badge/Built_with-Codex-000000?style=flat)](https://openai.com/codex/)
+[![Built with Cursor](https://img.shields.io/badge/Built_with-Cursor-000000?style=flat)](https://cursor.com/)
+
 A full-duplex realtime audio service in Go.
 
 It speaks the **gpt-live-1 event protocol** over a WebSocket, and simulates
