@@ -132,3 +132,79 @@ func TestSweepRemovesOnlyWhatHasExpired(t *testing.T) {
 		t.Errorf("the fresh session was removed: %v", err)
 	}
 }
+
+// A phone bridge delivered the caller's audio two frames in a hundred faster
+// than time passed. The caller's track must stay on the session clock — or the
+// two sides of the recording slide apart — and must do it without losing a
+// frame that differs from the one before it.
+func TestTheCallersTrackStaysOnTheClockWhenAudioArrivesFast(t *testing.T) {
+	const rate, frame = 16000, 320 // 20 ms
+	record := func(everyUS int64) (track []byte, meta Meta, speech, clockS float64) {
+		s, err := Open(t.TempDir(), time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const id = "sess_0123456789abcdef"
+		rec, err := s.Create(id, rate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clock := rec.started
+		rec.now = func() time.Time { return clock }
+		idle := constant(8, frame)
+		n := 0
+		// A minute: three seconds of speech, two of a quiet line, and again.
+		for us := int64(0); us < 60_000_000; us += everyUS {
+			clock = rec.started.Add(time.Duration(us) * time.Microsecond)
+			pcm := idle
+			if us%5_000_000 < 3_000_000 {
+				n++
+				pcm = constant(int16(1000+n), frame) // each speech frame unlike any other
+				speech += 0.02
+			}
+			rec.WriteInput(pcm)
+		}
+		clockS = clock.Sub(rec.started).Seconds()
+		if err := rec.Close(Meta{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+		track, _ = os.ReadFile(filepath.Join(s.dir, id, inputFile))
+		meta, _ = s.Meta(id)
+		return track, meta, speech, clockS
+	}
+	kept := func(track []byte) (frames int, inOrder bool) {
+		last := int16(0)
+		inOrder = true
+		for i := 0; i+frame*2 <= len(track); i += frame * 2 {
+			v := int16(binary.LittleEndian.Uint16(track[i:]))
+			if v > 1000 {
+				frames++
+				if v != last+1 && last != 0 {
+					inOrder = false
+				}
+				last = v
+			}
+		}
+		return frames, inOrder
+	}
+
+	// 19.6 ms a frame: 2% fast.
+	track, meta, speech, clockS := record(19_600)
+	length := float64(len(track)) / 2 / rate
+	if d := length - clockS; d < -0.25 || d > 0.25 {
+		t.Errorf("the caller's track is %.2f s long after %.2f s of call: %+.2f s adrift", length, clockS, d)
+	}
+	frames, inOrder := kept(track)
+	if want := int(speech/0.02 + 0.5); frames != want || !inOrder {
+		t.Errorf("%d speech frames kept of %d, in order %v: speech must never be dropped", frames, want, inOrder)
+	}
+	if !meta.InputOnClock || meta.InputDroppedMS < 900 || meta.InputDroppedMS > 1500 {
+		t.Errorf("the record says on_clock=%v, dropped %d ms; about 1200 ms of a quiet line's repeats should have gone", meta.InputOnClock, meta.InputDroppedMS)
+	}
+
+	// On time, nothing is dropped, quiet line or not.
+	track, meta, _, clockS = record(20_000)
+	if d := float64(len(track))/2/rate - clockS; d < -0.05 || d > 0.05 || meta.InputDroppedMS != 0 {
+		t.Errorf("audio that arrived on time: track %+.2f s adrift, %d ms dropped", d, meta.InputDroppedMS)
+	}
+}

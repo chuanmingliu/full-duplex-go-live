@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -85,11 +86,28 @@ type Session struct {
 	seed      *store.Meta
 	createdAt time.Time
 
+	// rt is set when the primary connection speaks the OpenAI Realtime event
+	// protocol rather than gpt-live-1. The session and its engine are the
+	// same; only the wire is translated, in realtime.go. Sidebands on such a
+	// session still speak gpt-live-1, which is what makes one a tap on a phone
+	// call.
+	rt *realtimeState
+	// tel reports turn boundaries to an external latency console. Nil unless
+	// the server has somewhere to send them.
+	tel *telSession
+
 	newEngine   EngineFactory
 	closeMsg    atomic.Pointer[string]
 	audioEvents atomic.Int64
 	audioOut    atomic.Int64
 	lastActive  atomic.Int64
+	// The line filler (vad.line_fill_ms): when the last client frame came
+	// in, and how much silence has been put on the line in its place.
+	lastAudio atomic.Int64
+	fillMS    atomic.Int64
+	fillRuns  atomic.Int64
+	fillStop  chan struct{}
+	fillOnce  sync.Once
 }
 
 // peer is one WebSocket attached to a session.
@@ -124,6 +142,11 @@ type SessionOptions struct {
 	Store *store.Store
 	// Seed is the stored session this one is forked from.
 	Seed *store.Meta
+	// Realtime makes the primary connection speak the OpenAI Realtime event
+	// protocol. Nil for a gpt-live-1 session.
+	Realtime *RealtimeOptions
+	// Telemetry receives turn-boundary events, if the server posts them.
+	Telemetry *telPoster
 }
 
 // NewSession wires a connection to the protocol handler.
@@ -151,6 +174,12 @@ func NewSession(opts SessionOptions) *Session {
 		createdAt: time.Now(),
 	}
 	s.lastActive.Store(time.Now().UnixNano())
+	if opts.Realtime != nil {
+		s.rt = newRealtimeState(*opts.Realtime)
+	}
+	if opts.Telemetry != nil {
+		s.tel = newTelSession(opts.Telemetry, s.id, s.CallID(), s.rt != nil)
+	}
 	return s
 }
 
@@ -192,6 +221,7 @@ func (s *Session) Serve(ctx context.Context) {
 
 	var usage *live.UsageBody
 	var history []provider.Message
+	var gate []audio.GateSample
 	record := resolved
 	if engine != nil {
 		if rec != nil {
@@ -202,7 +232,14 @@ func (s *Session) Serve(ctx context.Context) {
 		}
 		u := engine.Usage()
 		usage = &u
+		s.stopFill()
+		if runs := s.fillRuns.Load(); runs > 0 {
+			s.log.Info("listen: the line went quiet and was filled with silence", "times", runs, "filled_ms", s.fillMS.Load())
+		}
 		engine.Close()
+		if rec != nil {
+			gate = engine.GateTrace()
+		}
 	}
 	if rec != nil {
 		if err := rec.Close(store.Meta{
@@ -210,6 +247,7 @@ func (s *Session) Serve(ctx context.Context) {
 			CreatedAt: s.createdAt,
 			Session:   record,
 			History:   history,
+			Gate:      gate,
 		}); err != nil {
 			s.log.Warn("stored session did not close cleanly", "err", err)
 		}
@@ -247,12 +285,51 @@ func (s *Session) Serve(ctx context.Context) {
 // the lag worse.
 func (s *Session) Emit(event any) { s.deliver(nil, event) }
 
+// hangupLine asks the call gateway to end the phone call: Active Call's
+// command route takes {"command":"hangup"} for the call's dialog, which is
+// the call id its controller gave golive at session open. Done before the
+// socket closes, synchronously but briefly, so the BYE goes out while the
+// farewell's last audio is still fresh. A session with no call id (the
+// browser demo, the bench) has no line to hang up.
+func (s *Session) hangupLine(reason string) {
+	url := s.cfg.HangupURL
+	call := s.CallID()
+	if url == "" || call == "" {
+		return
+	}
+	url = strings.ReplaceAll(url, "{call}", call)
+	body := `{"command":"hangup","reason":"normal","initiator":"system","refer":false}`
+	client := hangupClient
+	if client == nil {
+		client = &http.Client{Timeout: 2 * time.Second}
+	}
+	resp, err := client.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		s.log.Warn("session: the gateway could not be told to hang up", "err", err, "call", call)
+		return
+	}
+	defer resp.Body.Close()
+	s.log.Info("session: the gateway was told to hang up", "call", call, "status", resp.StatusCode, "reason", reason)
+}
+
+// hangupClient is the HTTP client hangupLine uses; tests replace it.
+var hangupClient *http.Client
+
 // reply queues an event for one connection only: the answer to a command it
 // sent, which is nobody else's business.
 func (s *Session) reply(to *peer, event any) { s.deliver(to, event) }
 
 func (s *Session) deliver(only *peer, event any) {
 	switch ev := event.(type) {
+	case live.HangupEvent:
+		// The assistant ended the call. The phone line is hung up by
+		// telling the gateway so (hangupLine); closing the connection alone
+		// leaves a phone call up. Nothing is sent to the client.
+		s.log.Info("session: the assistant hung up", "reason", ev.Reason)
+		s.hangupLine(ev.Reason)
+		s.setCloseReason(live.CloseAssistantHangup)
+		s.finish()
+		return
 	case live.ErrorEvent:
 		metrics.Default().Error(ev.Error.Code)
 	case live.OutputAudioDelta:
@@ -271,6 +348,23 @@ func (s *Session) deliver(only *peer, event any) {
 		event = ev
 	}
 
+	if s.tel != nil && only == nil {
+		s.tel.observe(event, s.cfg)
+	}
+
+	// A Realtime primary is sent the event translated; everything else below
+	// is for connections that speak gpt-live-1, and when the primary is not
+	// one of them and nobody is listening on a sideband there is nothing more
+	// to do — which, at fifty audio chunks a second, is worth not doing.
+	if s.rt != nil {
+		if only == nil || only == s.primary {
+			s.deliverRealtime(event)
+		}
+		if only == s.primary || (only == nil && s.sideCount.Load() == 0) {
+			return
+		}
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		s.log.Error("marshalling server event", "err", err)
@@ -283,7 +377,9 @@ func (s *Session) deliver(only *peer, event any) {
 		s.enqueue(only, data)
 		return
 	}
-	s.enqueue(s.primary, data)
+	if s.rt == nil {
+		s.enqueue(s.primary, data)
+	}
 	if s.sideCount.Load() > 0 {
 		s.sideMu.RLock()
 		for p := range s.sides {
@@ -340,6 +436,48 @@ func (s *Session) logOutbound(data []byte) {
 
 // finish ends the read loop. The writers keep running until Serve has queued
 // session.closed.
+// fillLine keeps time passing for the gate and the recognizer when the
+// client stops sending audio: every frame period with nothing from the line,
+// a frame of silence is pushed in its place, until audio returns. A phone
+// line that sends every 20 ms never trips it; a SIP peer with silence
+// suppression does, between every two things it says.
+func (s *Session) fillLine(ctx context.Context, engine *duplex.Engine, rec *store.Recording, rate int, gap time.Duration) {
+	frame := 20 * time.Millisecond
+	silence := make([]byte, rate/50*2) // 20 ms of PCM16
+	t := time.NewTicker(frame)
+	defer t.Stop()
+	filling := false
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.fillStop:
+			return
+		case <-t.C:
+		}
+		idle := time.Since(time.Unix(0, s.lastAudio.Load()))
+		if idle < gap {
+			filling = false
+			continue
+		}
+		if !filling {
+			filling = true
+			s.fillRuns.Add(1)
+		}
+		s.fillMS.Add(20)
+		if rec != nil {
+			rec.WriteInput(silence)
+		}
+		engine.PushAudio(silence)
+	}
+}
+
+func (s *Session) stopFill() {
+	if s.fillStop != nil {
+		s.fillOnce.Do(func() { close(s.fillStop) })
+	}
+}
+
 func (s *Session) finish() {
 	s.stopReadOnce.Do(func() {
 		close(s.stopRead)
@@ -381,7 +519,7 @@ func (s *Session) setCloseReason(reason string) {
 func (s *Session) writeClose(p *peer, reason string) {
 	code := websocket.CloseGoingAway
 	switch reason {
-	case live.CloseRequested, live.CloseRemoteHangup:
+	case live.CloseRequested, live.CloseRemoteHangup, live.CloseAssistantHangup:
 		code = websocket.CloseNormalClosure
 	case live.CloseFlooded:
 		code = websocket.CloseTryAgainLater
@@ -554,6 +692,7 @@ func (s *Session) pushAudio(p *peer, wire []byte, eventID string) {
 		return
 	}
 	pcm := codec.ToPCM16(wire)
+	s.lastAudio.Store(time.Now().UnixNano())
 	if rec != nil {
 		rec.WriteInput(pcm)
 	}
@@ -579,6 +718,9 @@ func (s *Session) pushAudio(p *peer, wire []byte, eventID string) {
 }
 
 func (s *Session) handleEvent(ctx context.Context, p *peer, data []byte) error {
+	if s.rt != nil && p == s.primary {
+		return s.handleRealtimeEvent(ctx, p, data)
+	}
 	eventType, eventID, err := live.DecodeType(data)
 	if err != nil {
 		s.reply(p, live.NewError("invalid_request_error", "malformed_event", err.Error(), ""))
@@ -682,6 +824,14 @@ func (s *Session) withEngine(f func(*duplex.Engine)) {
 	}
 }
 
+// The range a session may ask its end-of-turn silence to be in. Below the
+// floor, the gaps inside words close turns; above the ceiling the session is
+// simply not answering.
+const (
+	minSessionSilenceMS = 100
+	maxSessionSilenceMS = 3000
+)
+
 func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, eventID string) error {
 	var ev live.SessionStartEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
@@ -743,10 +893,22 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		s.reply(p, live.NewError("server_error", "llm_unavailable", err.Error(), eventID))
 		return err
 	}
+	llm = provider.HedgeLLMOnClause(llm, s.cfg.LLMHedge, time.Duration(s.cfg.LLMHedgeAfterMS)*time.Millisecond, s.cfg.LLMHedgeClauseChars, s.log)
 	tts, err := provider.OpenTTS(ttsName)
 	if err != nil {
 		s.reply(p, live.NewError("server_error", "tts_unavailable", err.Error(), eventID))
 		return err
+	}
+	tts = provider.HedgeTTSPool(tts, s.cfg.TTSHedge, s.cfg.TTSHedgeRPM,
+		time.Duration(s.cfg.TTSHedgeAfterMS)*time.Millisecond,
+		provider.TTSPool{AccountRPM: s.cfg.TTSAccountRPM, After: time.Duration(s.cfg.TTSPoolAfterMS) * time.Millisecond},
+		s.log)
+	if s.cfg.TTSFallback != "" && s.cfg.TTSFallback != ttsName {
+		if second, err := provider.OpenTTS(s.cfg.TTSFallback); err != nil {
+			s.log.Warn("tts fallback: not available; this session has none", "provider", s.cfg.TTSFallback, "err", err)
+		} else {
+			tts = provider.FallbackTTS(tts, second, time.Duration(s.cfg.TTSFallbackAfterMS)*time.Millisecond, s.log)
+		}
 	}
 
 	history := seeded
@@ -809,6 +971,15 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		if g.Greeting != nil {
 			greeting = *g.Greeting
 		}
+		if g.MinSilenceMS != 0 {
+			if g.MinSilenceMS < minSessionSilenceMS || g.MinSilenceMS > maxSessionSilenceMS {
+				s.reply(p, live.NewError("invalid_request_error", "invalid_min_silence_ms",
+					fmt.Sprintf("golive.min_silence_ms %d must be between %d and %d",
+						g.MinSilenceMS, minSessionSilenceMS, maxSessionSilenceMS), eventID))
+				return fmt.Errorf("live: bad min_silence_ms %d", g.MinSilenceMS)
+			}
+			cfg.VAD.MinSilenceMS = g.MinSilenceMS
+		}
 		if g.Backchannel != nil {
 			backchannel = *g.Backchannel
 		}
@@ -840,6 +1011,7 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 	engine := s.newEngine(duplex.Options{
 		Cfg:              cfg,
 		SessionID:        s.id,
+		CallID:           s.CallID(),
 		ClientRate:       resolved.Audio.Format.Rate,
 		Instructions:     resolved.Instructions,
 		Voice:            duplex.ResolveVoice(s.cfg, voiceOf(request)),
@@ -870,6 +1042,11 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 	s.mu.Unlock()
 
 	engine.Start(ctx)
+	if gap := s.cfg.VAD.LineFillMS; gap > 0 {
+		s.fillStop = make(chan struct{})
+		s.lastAudio.Store(time.Now().UnixNano())
+		go s.fillLine(ctx, engine, rec, resolved.Audio.Format.Rate, time.Duration(gap)*time.Millisecond)
+	}
 
 	s.log.Info("session started",
 		"model", resolved.Model,
@@ -881,6 +1058,8 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		"stored", rec != nil,
 		"forked", s.seed != nil,
 		"on_new_query", onNewQueryOr(onNewQuery, s.cfg.Duplex.OnNewQuery),
+		"realtime", s.rt != nil,
+		"call", s.CallID(),
 		"asr", asrName, "llm", llmName, "tts", ttsName)
 
 	s.Emit(live.SessionStartedEvent{

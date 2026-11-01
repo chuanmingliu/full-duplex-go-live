@@ -1448,6 +1448,11 @@ func TestSpeculationStillSkipsPlainAcknowledgements(t *testing.T) {
 	e.bcSet = NewPhraseSet([]string{"嗯", "好的"})
 	e.asrRun = &asrRun{lastText: "嗯嗯"}
 	e.watch = NewStabilityWatch(200*time.Millisecond, 2)
+	e.player = NewPlayer(PlayerConfig{}, func(string, []byte, time.Time) {})
+	// Said over an answer that is on its way: that is what makes it an
+	// acknowledgement. The same word into a silence is the caller's reply
+	// (TestAListedWordSaidIntoSilenceKeepsItsHeadStart).
+	e.backendPending.Store(1)
 
 	e.maybeSpeculate()
 	if e.specWhy == "" {

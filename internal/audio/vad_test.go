@@ -2,6 +2,7 @@ package audio
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -357,5 +358,379 @@ func TestVADPatienceIsPerUtterance(t *testing.T) {
 	}
 	if got := v.MinSilenceMS(); got != base {
 		t.Errorf("the override outlived its utterance: min silence is %d, want %d", got, base)
+	}
+}
+
+// A stop says how long the speaker had already been quiet. That pause is part
+// of what a caller waits through, and it is not always the configured one: a
+// session may ask for a shorter silence, and a turn held open mid-thought
+// closes on a longer one.
+func TestVADStopCarriesThePauseItWasJudgedOn(t *testing.T) {
+	for _, silence := range []int{200, 380} {
+		cfg := DefaultVADConfig()
+		cfg.MinSilenceMS = silence
+		v := NewVAD(cfg)
+		var stop *Decision
+		audio := append(tone(cfg.SampleRate, 600, 0.3), quiet(cfg.SampleRate, 900)...)
+		for _, d := range feed(v, audio) {
+			if d.Kind == DecisionStopped {
+				d := d
+				stop = &d
+			}
+		}
+		if stop == nil {
+			t.Fatalf("min silence %d: the utterance never closed", silence)
+		}
+		if got := int(stop.SilenceMS); got < silence || got > silence+cfg.FrameMS {
+			t.Errorf("min silence %d: the stop reports a pause of %d ms", silence, got)
+		}
+	}
+}
+
+// TestVADKeepsTheBarUpWhileTheLineStillCarriesTheAssistant: on a phone call the
+// end of the assistant's sentence comes back through the caller's handset
+// after this side has finished sending it. Heard as speech, it opens a turn
+// nobody took — and that turn's "words" cancel whatever the caller says next.
+func TestVADKeepsTheBarUpWhileTheLineStillCarriesTheAssistant(t *testing.T) {
+	const rate = RatePipeline
+	// The tail of our own voice returning: well above an idle line, well under
+	// somebody talking into the handset.
+	echo := func() []float32 { return append(quiet(rate, 100), tone(rate, 400, 0.02)...) }
+	opens := func(v *VAD, samples []float32) bool {
+		for _, d := range feed(v, samples) {
+			if d.Kind == DecisionStarted {
+				return true
+			}
+		}
+		return false
+	}
+	finishSpeaking := func(cfg VADConfig) *VAD {
+		v := NewVAD(cfg)
+		v.SetAssistantSpeaking(true)
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(false)
+		return v
+	}
+	base := VADConfig{SampleRate: rate, BargeInMarginDB: 20, BargeInMinSpeechMS: 320}
+
+	if !opens(finishSpeaking(base), echo()) {
+		t.Fatal("with no echo tail the returning voice should open an utterance; this test proves nothing otherwise")
+	}
+
+	tailed := base
+	tailed.EchoTailMS = 700
+	v := finishSpeaking(tailed)
+	if opens(v, echo()) {
+		t.Fatal("the assistant's own voice, still on the line, was taken for the caller")
+	}
+	// The caller answering at once is still heard.
+	if !opens(finishSpeaking(tailed), append(quiet(rate, 100), tone(rate, 600, 0.4)...)) {
+		t.Fatal("a caller replying straight after the assistant was not heard")
+	}
+	// And once the line has drained, a quiet caller is too.
+	feed(v, quiet(rate, 400))
+	if !opens(v, echo()) {
+		t.Fatal("the raised bar outlived the echo tail")
+	}
+}
+
+// echoReturns feeds samples and takes a measurement after every frame, as the
+// engine does, returning the times handed out.
+func echoReturns(v *VAD, samples []float32) []float64 {
+	var out []float64
+	frame := v.FrameSamples()
+	for off := 0; off+frame <= len(samples); off += frame {
+		v.Push(samples[off : off+frame])
+		if ms, _, ok := v.TakeEchoReturn(); ok {
+			out = append(out, ms)
+		}
+	}
+	return out
+}
+
+// returningVoice is the assistant's own voice as a phone line hands it back:
+// about -30 dBFS, far over an idle line and far under a caller.
+func returningVoice(rate, ms int) []float32 { return tone(rate, ms, 0.1) }
+
+// The phone leg has no clock of its own, but the line returns what is said
+// into it, so the time from the assistant starting to its voice arriving back
+// on a quiet input is a measurement of the trip there and back.
+func TestEchoReturnIsTimedFromTheAssistantStartingToItsVoiceComingBack(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+
+	if got := echoReturns(v, quiet(rate, 400)); len(got) != 0 {
+		t.Fatalf("an echo return of %v ms was reported before the assistant had said anything", got)
+	}
+	v.SetAssistantSpeaking(true)
+	got := echoReturns(v, append(quiet(rate, 300), returningVoice(rate, 600)...))
+	if len(got) != 1 {
+		t.Fatalf("the voice came back once, 300 ms after it left; measurements: %v", got)
+	}
+	if math.Abs(got[0]-300) > v.FrameMS() {
+		t.Errorf("echo return timed at %.0f ms; the voice came back after 300", got[0])
+	}
+	if ms, _, ok := v.TakeEchoReturn(); ok {
+		t.Errorf("the same measurement (%.0f ms) was handed out a second time", ms)
+	}
+}
+
+// The level that comes with the time is that of the frame the voice arrived in.
+func TestEchoReturnCarriesTheLevelOfWhatCameBack(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	feed(v, quiet(rate, 300))
+	back := returningVoice(rate, 20)
+	v.Push(back)
+	_, level, ok := v.TakeEchoReturn()
+	if !ok {
+		t.Fatal("no echo return was timed")
+	}
+	if want := DBFS(RMS(back)); math.Abs(level-want) > 0.01 {
+		t.Errorf("level reported as %.1f dB; the frame that came back was at %.1f", level, want)
+	}
+	if level < -36 || level > -24 {
+		t.Errorf("the returning voice in this test is at %.1f dB; it is meant to be about -30", level)
+	}
+}
+
+// A sound after the assistant starts is its echo only if the line was quiet
+// before. A caller between two words is not a quiet line, and their next word
+// would be timed as an echo that came back in a few tens of milliseconds.
+func TestNoEchoReturnIsTimedWhenTheCallerIsMakingSound(t *testing.T) {
+	const rate = RatePipeline
+
+	t.Run("in a gap between syllables", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 100, 0.45)...))
+		feed(v, quiet(rate, 60))
+		v.SetAssistantSpeaking(true)
+		got := echoReturns(v, append(quiet(rate, 60), tone(rate, 600, 0.45)...))
+		if len(got) != 0 {
+			t.Fatalf("the caller's next sound was timed as the assistant's echo: %v ms", got)
+		}
+	})
+
+	t.Run("in a pause inside an utterance that is still open", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 600, 0.45)...))
+		// Long enough to count as a quiet line, short of ending the utterance.
+		feed(v, quiet(rate, 240))
+		if v.ActiveMS() == 0 {
+			t.Fatal("the utterance has closed; this test is about one that is still open")
+		}
+		v.SetAssistantSpeaking(true)
+		got := echoReturns(v, append(quiet(rate, 60), tone(rate, 600, 0.45)...))
+		if len(got) != 0 {
+			t.Fatalf("the caller carrying on was timed as the assistant's echo: %v ms", got)
+		}
+	})
+}
+
+// Sound in the very frame the assistant starts in left the caller before the
+// assistant had said anything.
+func TestASoundInTheFrameTheAssistantStartsInIsNotItsEcho(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	if got := echoReturns(v, returningVoice(rate, 600)); len(got) != 0 {
+		t.Fatalf("sound that was already arriving was timed as an echo: %v ms", got)
+	}
+}
+
+// A line with echo cancellation returns nothing. The wait ends, and the caller
+// answering two seconds later is not an echo return of two seconds.
+func TestNoEchoReturnIsTimedWhenNothingComesBack(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	if got := echoReturns(v, quiet(rate, 1600)); len(got) != 0 {
+		t.Fatalf("an echo return was timed on a silent line: %v ms", got)
+	}
+	if got := echoReturns(v, returningVoice(rate, 600)); len(got) != 0 {
+		t.Fatalf("a sound after the wait had run out was timed as an echo: %v ms", got)
+	}
+}
+
+// The origin is the start of the answer. Being told again that the assistant is
+// speaking, part-way through, must not move it.
+func TestEchoReturnIsTimedFromTheStartOfTheAnswerNotAReminderOfIt(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate})
+	feed(v, quiet(rate, 400))
+	v.SetAssistantSpeaking(true)
+	feed(v, quiet(rate, 100))
+	v.SetAssistantSpeaking(true)
+	got := echoReturns(v, append(quiet(rate, 200), returningVoice(rate, 600)...))
+	if len(got) != 1 {
+		t.Fatalf("the voice came back once; measurements: %v", got)
+	}
+	if math.Abs(got[0]-300) > v.FrameMS() {
+		t.Errorf("echo return timed at %.0f ms; the answer began 300 ms before its voice came back", got[0])
+	}
+}
+
+// echoMisses feeds samples and returns the reason of every attempt to time the
+// echo that came to nothing.
+func echoMisses(v *VAD, samples []float32) []string {
+	var out []string
+	frame := v.FrameSamples()
+	for off := 0; off+frame <= len(samples); off += frame {
+		v.Push(samples[off : off+frame])
+		if miss, ok := v.TakeEchoMiss(); ok {
+			out = append(out, miss.Reason)
+		}
+	}
+	return out
+}
+
+// The first real call with the estimator reported nothing, on a line that
+// echoes at -28 dB, and nothing said why. Each attempt that comes to nothing
+// now says which of the conditions failed, once.
+func TestAnEchoThatIsNotTimedSaysWhy(t *testing.T) {
+	const rate = RatePipeline
+	one := func(t *testing.T, got []string, want string) {
+		t.Helper()
+		if len(got) != 1 || !strings.Contains(got[0], want) {
+			t.Fatalf("reasons given: %q; want one, about %q", got, want)
+		}
+	}
+
+	t.Run("the line was not quiet", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 100, 0.45)...))
+		feed(v, quiet(rate, 60))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, quiet(rate, 400)), "not been quiet")
+	})
+	t.Run("the caller was mid-utterance", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, append(quiet(rate, 400), tone(rate, 600, 0.45)...))
+		feed(v, quiet(rate, 240))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, quiet(rate, 100)), "mid-utterance")
+	})
+	t.Run("nothing came back", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, quiet(rate, 2000)), "nothing came back")
+	})
+	t.Run("a sound in the frame it began in", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(true)
+		one(t, echoMisses(v, returningVoice(rate, 200)), "in the frame the assistant began in")
+	})
+	t.Run("and a measurement is not a miss", func(t *testing.T) {
+		v := NewVAD(VADConfig{SampleRate: rate})
+		feed(v, quiet(rate, 400))
+		v.SetAssistantSpeaking(true)
+		if got := echoMisses(v, append(quiet(rate, 300), returningVoice(rate, 300)...)); len(got) != 0 {
+			t.Fatalf("an echo that was timed was also reported as not timed: %q", got)
+		}
+	})
+}
+
+// rumble is a line that is never quiet: a low tone with a slow wobble, like a
+// subway car, at about the given dBFS. Its zero-crossing rate is speech-like,
+// so energy is all the gate has to go on.
+func rumble(rate, ms int, dbfs float64) []float32 {
+	n := rate * ms / 1000
+	out := make([]float32, n)
+	amp := math.Pow(10, dbfs/20) * math.Sqrt2
+	for i := range out {
+		t := float64(i) / float64(rate)
+		wobble := 1 + 0.15*math.Sin(2*math.Pi*0.7*t)
+		out[i] = float32(amp * wobble * math.Sin(2*math.Pi*85*t))
+	}
+	return out
+}
+
+// A noise that sits above the bar and never dips used to hold an utterance
+// open until the 30 s cap: the floor adapts only on frames it believes are
+// not speech, and it believed every one of these was. The tracker raises
+// the floor to the quietest recent frame once nothing has dipped under the
+// bar for FloorTrackMS, and the utterance then closes on the noise.
+func TestVADLearnsANoiseFloorThatSitsAboveTheBar(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate, FloorTrackMS: 2000})
+	signal := append(quiet(rate, 200), rumble(rate, 12000, -36)...)
+	decisions := feed(v, signal)
+	var stop *Decision
+	for i := range decisions {
+		if decisions[i].Kind == DecisionStopped {
+			stop = &decisions[i]
+			break
+		}
+	}
+	if stop == nil {
+		t.Fatalf("the utterance never closed on 12 s of steady noise")
+	}
+	if stop.EndMS > 3500 {
+		t.Fatalf("the utterance closed at %d ms; it should close soon after the %d ms the tracker needs", stop.EndMS, v.cfg.FloorTrackMS)
+	}
+	if v.NoiseFloorDB() < -42 {
+		t.Fatalf("noise floor %.1f dB; the tracker should have raised it to about the noise", v.NoiseFloorDB())
+	}
+	if _, to, ok := v.TakeFloorRaise(); !ok || to < -42 {
+		t.Fatalf("the raise was not reported (ok=%v to=%.1f)", ok, to)
+	}
+	var raised int
+	for _, g := range v.Trace() {
+		if g.Raised {
+			raised++
+		}
+	}
+	if raised != 1 {
+		t.Fatalf("trace marks %d raises, want 1", raised)
+	}
+}
+
+// Speech has gaps, and the tracker must not mistake a long sentence for noise:
+// a caller who talks for four seconds is heard to the end.
+func TestVADDoesNotCutOffASustainedSpeaker(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate, FloorTrackMS: 2000})
+	signal := append(quiet(rate, 200), tone(rate, 4000, 0.45)...)
+	signal = append(signal, quiet(rate, 800)...)
+	decisions := feed(v, signal)
+	var stops []Decision
+	for _, d := range decisions {
+		if d.Kind == DecisionStopped {
+			stops = append(stops, d)
+		}
+	}
+	if len(stops) != 1 {
+		t.Fatalf("stops: %d, want 1", len(stops))
+	}
+	if stops[0].EndMS < 4000 {
+		t.Fatalf("the utterance closed at %d ms, before the speaker finished at 4200", stops[0].EndMS)
+	}
+}
+
+// The trace is a sample every TraceMS with the levels and the gate's state.
+func TestVADTraceFollowsTheGate(t *testing.T) {
+	const rate = RatePipeline
+	v := NewVAD(VADConfig{SampleRate: rate, TraceMS: 100})
+	signal := append(quiet(rate, 300), tone(rate, 600, 0.45)...)
+	signal = append(signal, quiet(rate, 600)...)
+	feed(v, signal)
+	tr := v.Trace()
+	if len(tr) != 15 {
+		t.Fatalf("samples: %d, want 15", len(tr))
+	}
+	if tr[0].Open || tr[0].VoicedMS != 0 || tr[0].Lo > -90 {
+		t.Fatalf("first sample should be quiet and closed: %+v", tr[0])
+	}
+	if !tr[5].Open || tr[5].VoicedMS != 100 || tr[5].Hi < tr[5].Bar {
+		t.Fatalf("sample during speech should be open, voiced and over the bar: %+v", tr[5])
+	}
+	if tr[14].Open {
+		t.Fatalf("last sample should be closed: %+v", tr[14])
 	}
 }

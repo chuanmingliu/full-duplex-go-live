@@ -35,6 +35,8 @@ type Registry struct {
 
 	specHeld      atomic.Int64
 	specAbandoned atomic.Int64
+	focusVetoed   atomic.Int64
+	focusLate     atomic.Int64
 
 	histN      atomic.Int64
 	histSumMS  atomic.Int64
@@ -119,6 +121,11 @@ func (r *Registry) SpeculationHeld() { r.specHeld.Add(1) }
 // what tells an operator whether the speculation windows are set too eagerly.
 func (r *Registry) SpeculationAbandoned() { r.specAbandoned.Add(1) }
 
+// FocusVetoed counts answers abandoned because the utterance was another
+// voice's; FocusLate those judged so only after the caller had heard them.
+func (r *Registry) FocusVetoed() { r.focusVetoed.Add(1) }
+func (r *Registry) FocusLate()   { r.focusLate.Add(1) }
+
 // SetBuild stamps the process identity onto /metrics.
 func (r *Registry) SetBuild(version, commit string) {
 	r.buildMu.Lock()
@@ -195,6 +202,8 @@ func (r *Registry) WritePrometheus(w io.Writer) {
 	fmt.Fprintf(w, "# TYPE golive_speculations_total counter\n")
 	fmt.Fprintf(w, "golive_speculations_total{outcome=\"held\"} %d\n", r.specHeld.Load())
 	fmt.Fprintf(w, "golive_speculations_total{outcome=\"abandoned\"} %d\n", r.specAbandoned.Load())
+	fmt.Fprintf(w, "golive_focus_total{outcome=\"vetoed\"} %d\n", r.focusVetoed.Load())
+	fmt.Fprintf(w, "golive_focus_total{outcome=\"too_late\"} %d\n", r.focusLate.Load())
 
 	r.buildMu.Lock()
 	ver, commit := r.buildVersion, r.buildCommit

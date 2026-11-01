@@ -30,6 +30,7 @@ import (
 
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/provider/fish"
 	"github.com/chuanmingliu/golive/internal/provider/minimax"
 )
 
@@ -54,6 +55,10 @@ type variant struct {
 	Name     string `json:"name"`
 	Endpoint string `json:"endpoint"`
 	Flush    bool   `json:"flush"`
+	// TTS, when set, is another vendor's client to measure as this variant,
+	// in the same rounds as the MiniMax ones.
+	TTS   provider.TTS `json:"-"`
+	Voice string       `json:"-"`
 }
 
 type sample struct {
@@ -68,18 +73,28 @@ type sample struct {
 
 func run() error {
 	var (
-		envPath   = flag.String("env", ".env.local", "dotenv file with credentials")
-		runs      = flag.Int("runs", 8, "measured passes over the text set, per variant")
-		warmup    = flag.Int("warmup", 1, "unmeasured passes first; the socket and the vendor cache are cold otherwise")
-		textsFlag = flag.String("texts", "", "comma-separated texts to synthesize (default: a representative set)")
-		compare   = flag.Bool("compare-endpoints", false, "measure the standard and bidirectional endpoints side by side")
-		flushMode = flag.String("flush", "auto", "task_flush: on, off, both, or auto (both when the endpoint is bidirectional)")
-		rate      = flag.Int("rate", provider.PipelineRate, "PCM sample rate")
-		voice     = flag.String("voice", "", "voice id (default: MINIMAX_TTS_VOICE_ID)")
-		jsonOut   = flag.String("json", "", "write raw samples here")
-		adapter   = flag.Bool("adapter", false, "run golive's own MiniMax adapter against both endpoints and report the bytes each segment produced")
-		trace     = flag.Bool("trace", false, "print the frames each endpoint sends for one segment, with and without task_flush, and say what terminated it")
-		traceWait = flag.Duration("trace-wait", 20*time.Second, "how long -trace waits for a terminator before calling it a deadline")
+		envPath    = flag.String("env", ".env.local", "dotenv file with credentials")
+		runs       = flag.Int("runs", 8, "measured passes over the text set, per variant")
+		warmup     = flag.Int("warmup", 1, "unmeasured passes first; the socket and the vendor cache are cold otherwise")
+		textsFlag  = flag.String("texts", "", "comma-separated texts to synthesize (default: a representative set)")
+		compare    = flag.Bool("compare-endpoints", false, "measure the standard and bidirectional endpoints side by side")
+		flushMode  = flag.String("flush", "auto", "task_flush: on, off, both, or auto (both when the endpoint is bidirectional)")
+		rate       = flag.Int("rate", provider.PipelineRate, "PCM sample rate")
+		voice      = flag.String("voice", "", "voice id (default: MINIMAX_TTS_VOICE_ID)")
+		jsonOut    = flag.String("json", "", "write raw samples here")
+		adapter    = flag.Bool("adapter", false, "run golive's own MiniMax adapter against both endpoints and report the bytes each segment produced")
+		trace      = flag.Bool("trace", false, "print the frames each endpoint sends for one segment, with and without task_flush, and say what terminated it")
+		traceWait  = flag.Duration("trace-wait", 20*time.Second, "how long -trace waits for a terminator before calling it a deadline")
+		callTurnsN = flag.Int("call", 0, "pace synthesis as one phone call of this many turns: one session, a short first segment and a sentence per turn; reports first audio and any rate-limit refusals")
+		callEvery  = flag.Duration("every", 6*time.Second, "with -call, how often a turn comes")
+		callHedge  = flag.Int("hedge", 2, "with -call, connections asked for each first segment (tts_hedge)")
+		callAfter  = flag.Duration("after", 0, "with -call, ask the second connection only when the first has produced no audio for this long (tts_hedge_after_ms); 0 asks both at once")
+		poolRounds = flag.Int("pool", 0, "ask every account of the pool (MINIMAX_TTS_API_KEYS_FILE) for the same clause at once, this many rounds, and print each one's first audio; paced by -every")
+		saveDir    = flag.String("save", "", "with -pool, also write the same sentence from each account to this directory as account-N.wav, to be listened to side by side")
+		account    = flag.Int("account", 0, "run on this account of the pool alone (1 is the first key); 0 is the pool as configured")
+		accountRPM = flag.Int("account-rpm", 0, "with -call on a pool, requests a minute one account is trusted with (tts_account_rpm); 0 is no limit")
+		fishModels = flag.String("fish", "", "also measure Fish Audio (FISH_TTS_API_KEY, FISH_TTS_VOICE_ID) with these models, comma-separated: s2.1-pro,drama-3; with -call, paces each like a call too")
+		fishOnly   = flag.Bool("fish-only", false, "with -fish: leave MiniMax out")
 	)
 	flag.Parse()
 
@@ -88,12 +103,47 @@ func run() error {
 	}
 
 	base, err := minimax.New()
-	if err != nil {
+	if err != nil && (*fishModels == "" || !*fishOnly) {
 		return err
 	}
+	var fishVariants []variant
+	if *fishModels != "" {
+		f, err := fish.New()
+		if err != nil {
+			return err
+		}
+		for _, m := range splitTrim(*fishModels) {
+			c := *f
+			c.Model = m
+			fishVariants = append(fishVariants, variant{Name: "fish " + m, TTS: &c, Voice: f.VoiceID})
+		}
+	}
 
+	if *poolRounds > 0 {
+		return runPool(base, *voice, *rate, *poolRounds, *callEvery, *saveDir)
+	}
+	if *account > 0 {
+		if *account > base.Accounts() {
+			return fmt.Errorf("-account %d: the pool holds %d", *account, base.Accounts())
+		}
+		base = base.OnAccount(*account - 1)
+	}
 	if *adapter {
 		return runAdapter(base, *voice, *rate)
+	}
+	if *callTurnsN > 0 {
+		if !*fishOnly {
+			if err := runCall(base, *voice, *rate, *callTurnsN, *callHedge, *callEvery, *callAfter, *accountRPM); err != nil {
+				return err
+			}
+		}
+		for _, v := range fishVariants {
+			fmt.Printf("\n== %s, paced like a call\n", v.Name)
+			if err := runCallOn(v.TTS, v.Voice, *rate, *callTurnsN, *callEvery); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
 	if *trace {
@@ -109,10 +159,13 @@ func run() error {
 		texts = splitTrim(*textsFlag)
 	}
 
-	variants, err := plan(base, *compare, *flushMode)
-	if err != nil {
-		return err
+	var variants []variant
+	if !*fishOnly {
+		if variants, err = plan(base, *compare, *flushMode); err != nil {
+			return err
+		}
 	}
+	variants = append(variants, fishVariants...)
 
 	fmt.Printf("ttsprobe: %d variant(s), %d text(s), %d run(s) + %d warmup\n\n",
 		len(variants), len(texts), *runs, *warmup)
@@ -133,12 +186,15 @@ func run() error {
 		for _, v := range variants {
 			st, ok := streams[v.Name]
 			if !ok {
-				tts := clientFor(base, v, *voice)
-				st, err = tts.Open(ctx, provider.TTSOptions{
-					SampleRate: *rate,
-					Voice:      orEnv(*voice, base.VoiceID),
-					Speed:      base.Speed,
-				})
+				var tts provider.TTS
+				opts := provider.TTSOptions{SampleRate: *rate}
+				if v.TTS != nil {
+					tts, opts.Voice = v.TTS, v.Voice
+				} else {
+					tts = clientFor(base, v, *voice)
+					opts.Voice, opts.Speed = orEnv(*voice, base.VoiceID), base.Speed
+				}
+				st, err = tts.Open(ctx, opts)
 				if err != nil {
 					return fmt.Errorf("opening %s: %w", v.Name, err)
 				}

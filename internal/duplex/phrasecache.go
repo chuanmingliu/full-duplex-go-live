@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/segment"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // PhraseKey identifies one piece of synthesized audio: these exact words, in
@@ -151,7 +154,7 @@ func ResolveVoice(cfg config.Config, requested string) string {
 	if v, ok := cfg.VoiceAliases[requested]; ok {
 		return v
 	}
-	if liveVoiceNames[requested] {
+	if liveVoiceNames[requested] || realtimeVoiceNames[requested] {
 		// A gpt-live-1 voice name with no mapping. Handing it to a vendor
 		// fails the session at the first sentence; the configured voice is
 		// what the operator meant a caller to hear.
@@ -165,6 +168,14 @@ var liveVoiceNames = map[string]bool{
 	"marin": true, "cedar": true, "quartz": true, "ripple": true, "vesper": true,
 	"willow": true, "stone": true, "gleam": true, "meridian": true, "bossa": true,
 	"tempo": true, "beacon": true, "delta": true, "cinder": true,
+}
+
+// realtimeVoiceNames are the OpenAI Realtime API's voices, which is what a
+// client of /v1/realtime sends — "alloy", unless it was told otherwise.
+var realtimeVoiceNames = map[string]bool{
+	"alloy": true, "ash": true, "ballad": true, "coral": true, "echo": true,
+	"sage": true, "shimmer": true, "verse": true, "fable": true, "onyx": true,
+	"nova": true,
 }
 
 // segmentWhole cuts a complete piece of text the way a speech pipe does when
@@ -206,45 +217,241 @@ func WarmPhrases(ctx context.Context, cfg config.Config, tts provider.TTS, log *
 	if cfg.Duplex.HoldingFiller {
 		texts = append(texts, cfg.Duplex.HoldingFillerPhrases...)
 	}
+	if cfg.Duplex.Opener {
+		texts = append(texts, cfg.Duplex.OpenerPhrases...)
+		texts = append(texts, cfg.Duplex.OpenerQuestionPhrases...)
+	}
+	for _, t := range cfg.Tools {
+		if t.Ack != "" {
+			texts = append(texts, segmentWhole(cfg, t.Ack)...)
+		}
+		if t.ResultOpening != "" {
+			texts = append(texts, segmentWhole(cfg, t.ResultOpening)...)
+		}
+	}
+	added, _, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, ""), cfg.ClientRate, cfg.Language, log)
+	return added, err
+}
+
+// WarmTexts synthesizes short phrases exactly as given into the shared cache
+// for the default voice and rate — the openers a panel has just saved, so
+// the first caller to draw one hears it at the pause. It returns how many it
+// added (phrases already cached count as done, not added).
+func WarmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, log *slog.Logger) (int, error) {
+	if tts == nil || len(texts) == 0 {
+		return 0, nil
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	added, _, err := warmTexts(ctx, cfg, tts, texts, ResolveVoice(cfg, ""), cfg.ClientRate, cfg.Language, log)
+	return added, err
+}
+
+// FetchOpenersFor reads the lead service's `openers` config with the
+// profile's token.
+func FetchOpenersFor(cfg config.Config) (tools.Openers, error) {
+	if cfg.ToolsBaseURL == "" {
+		return tools.Openers{}, fmt.Errorf("no lead service configured")
+	}
+	token := ""
+	if cfg.ToolsTokenFile != "" {
+		if b, err := os.ReadFile(cfg.ToolsTokenFile); err == nil {
+			token = strings.TrimSpace(string(b))
+		}
+	}
+	return tools.FetchOpeners(cfg.ToolsBaseURL, token, 3*time.Second)
+}
+
+// MissingPhrases says which of the texts are not yet in the cache for the
+// default voice and rate.
+func MissingPhrases(cfg config.Config, tts provider.TTS, texts []string) []string {
+	voice := ResolveVoice(cfg, "")
+	want := SynthesisRate(cfg, cfg.ClientRate)
+	var out []string
+	for _, t := range texts {
+		k := PhraseKey{Provider: provider.VoiceName(tts), Voice: voice, Speed: cfg.Speed, Language: cfg.Language, Rate: want, Text: t}
+		if _, ok := Phrases().Get(k); !ok {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// WarmOpeners reads the lead service's `openers` config and caches every
+// phrase in it. Run at start-up after WarmPhrases, and by /v1/phrases when
+// the panel saves the config.
+func WarmOpeners(ctx context.Context, cfg config.Config, tts provider.TTS, log *slog.Logger) (tools.Openers, int, error) {
+	if !cfg.Duplex.Opener || !cfg.Duplex.PhraseCache || cfg.ToolsBaseURL == "" {
+		return tools.Openers{}, 0, nil
+	}
+	o, err := FetchOpenersFor(cfg)
+	if err != nil {
+		return tools.Openers{}, 0, err
+	}
+	n, err := WarmTexts(ctx, cfg, tts, o.Phrases(), log)
+	return o, n, err
+}
+
+// WarmSpeech synthesizes one piece of text into the shared cache ahead of the
+// session that will say it, cut into the segments that session will ask for.
+// It returns how many bytes of audio the whole of it comes to, cached before
+// this call or by it.
+//
+// This is how an opening line is ready the instant a phone is answered: the
+// call is known about while it is still ringing, and the first thing the
+// assistant says on it is known too. voice and language are as a session would
+// state them; clientRate is the session's audio rate.
+func WarmSpeech(ctx context.Context, cfg config.Config, tts provider.TTS, text, voice string, clientRate int, language string, log *slog.Logger) (int, error) {
+	if tts == nil {
+		return 0, fmt.Errorf("no synthesizer")
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+	if language == "" {
+		language = cfg.Language
+	}
+	texts := segmentWhole(cfg, strings.TrimSpace(text))
 	if len(texts) == 0 {
 		return 0, nil
 	}
+	_, bytes, err := warmTextsPaced(ctx, cfg, tts, texts, ResolveVoice(cfg, voice), clientRate, language, log, false)
+	return bytes, err
+}
 
-	voice := ResolveVoice(cfg, "")
-	want := SynthesisRate(cfg, cfg.ClientRate)
+// warmTexts fills the cache for segments exactly as given, and reports how many
+// it added and the size of all of them.
+func warmTexts(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, voice string, clientRate int, language string, log *slog.Logger) (added, bytes int, err error) {
+	return warmTextsPaced(ctx, cfg, tts, texts, voice, clientRate, language, log, true)
+}
+
+// warmTextsPaced is warmTexts with the pacing and the yield to live calls
+// optional: an opening line synthesized while the phone rings is on the
+// call's path and is not paced.
+func warmTextsPaced(ctx context.Context, cfg config.Config, tts provider.TTS, texts []string, voice string, clientRate int, language string, log *slog.Logger, paced bool) (added, bytes int, err error) {
+	want := SynthesisRate(cfg, clientRate)
+	key := func(text string) PhraseKey {
+		return PhraseKey{
+			Provider: provider.VoiceName(tts), Voice: voice, Speed: cfg.Speed,
+			Language: language, Rate: want, Text: text,
+		}
+	}
+	var missing []string
+	for _, text := range texts {
+		if cached, ok := Phrases().Get(key(text)); ok {
+			bytes += len(cached.PCM)
+		} else {
+			missing = append(missing, text)
+		}
+	}
+	if len(missing) == 0 {
+		return 0, bytes, nil
+	}
+
 	stream, err := tts.Open(ctx, provider.TTSOptions{
 		SampleRate: want,
 		Voice:      voice,
 		Speed:      cfg.Speed,
-		Language:   cfg.Language,
+		Language:   language,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("warming phrases: %w", err)
+		return 0, bytes, fmt.Errorf("warming phrases: %w", err)
 	}
 	defer stream.Close()
 
-	added := 0
-	for _, text := range texts {
-		key := PhraseKey{
-			Provider: tts.Name(), Voice: voice, Speed: cfg.Speed,
-			Language: cfg.Language, Rate: want, Text: text,
+	for i, text := range missing {
+		if paced && warmPace > 0 {
+			if err := waitForQuiet(ctx, log); err != nil {
+				return added, bytes, err
+			}
 		}
-		if _, ok := Phrases().Get(key); ok {
-			continue
+		if paced && i > 0 && warmPace > 0 {
+			// Paced: a batch of phrases warmed in a burst is refused by the
+			// synthesizer's rate limit (11:49 on 10-27: 16 profile phrases
+			// then 17 openers in four seconds, "1002: rate limit exceeded").
+			select {
+			case <-time.After(warmPace):
+			case <-ctx.Done():
+				return added, bytes, ctx.Err()
+			}
 		}
 		started := time.Now()
-		pcm, err := synthesizeWhole(ctx, stream, text)
-		if err != nil {
-			return added, fmt.Errorf("warming %q: %w", text, err)
+		var pcm []byte
+		for attempt := 0; ; attempt++ {
+			pcm, err = synthesizeWhole(ctx, stream, text)
+			if err == nil || attempt >= warmRetries || !isRateLimited(err) || ctx.Err() != nil {
+				break
+			}
+			log.Info("phrase cache: the synthesizer's rate limit; waiting before the next phrase", "text", text, "attempt", attempt+1)
+			select {
+			case <-time.After(warmBackoff):
+			case <-ctx.Done():
+				return added, bytes, ctx.Err()
+			}
+			// The refused request may have left the stream unusable; a new one.
+			stream.Close()
+			if stream, err = tts.Open(ctx, provider.TTSOptions{SampleRate: want, Voice: voice, Speed: cfg.Speed, Language: language}); err != nil {
+				return added, bytes, fmt.Errorf("warming %q: %w", text, err)
+			}
 		}
-		Phrases().Put(key, PhraseAudio{PCM: pcm, Rate: stream.SampleRate()})
+		if err != nil {
+			return added, bytes, fmt.Errorf("warming %q: %w", text, err)
+		}
+		Phrases().Put(key(text), PhraseAudio{PCM: pcm, Rate: stream.SampleRate()})
 		added++
+		bytes += len(pcm)
 		log.Debug("phrase cached",
 			"text", text,
 			"audio_ms", int(audio.PCM16(stream.SampleRate()).DurationMS(pcm)),
 			"ms", time.Since(started).Milliseconds())
 	}
-	return added, nil
+	return added, bytes, nil
+}
+
+// warmPace is the gap between two phrases warmed in a batch (about 20 a
+// minute, the roomier synthesis account's allowance); warmBackoff the wait
+// after a refusal, warmRetries how many refusals a phrase survives. Tests
+// set the pace to zero.
+var (
+	warmPace    = 3 * time.Second
+	warmBackoff = 12 * time.Second
+	warmRetries = 4
+)
+
+// CallsLive, when set by the server, says how many calls are in progress.
+// A batch warm waits while it is above zero: the synthesizer's allowance
+// belongs to the caller (11:50 on 10-27: a warm burst at start-up had the
+// next call's opening line refused with the same 1002).
+var CallsLive func() int
+
+// waitForQuiet holds a batch warm while a call is live, within the context.
+func waitForQuiet(ctx context.Context, log *slog.Logger) error {
+	if CallsLive == nil {
+		return nil
+	}
+	waited := false
+	for CallsLive() > 0 {
+		if !waited {
+			log.Debug("phrase cache: a call is live; the warm waits")
+			waited = true
+		}
+		select {
+		case <-time.After(2 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// isRateLimited says whether a synthesis error is the vendor's rate limit.
+func isRateLimited(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "rate limit") || strings.Contains(msg, "1002") || strings.Contains(msg, "429") || strings.Contains(msg, "too many requests")
 }
 
 // synthesizeWhole runs one segment to completion and returns its audio.

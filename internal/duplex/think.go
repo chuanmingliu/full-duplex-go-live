@@ -47,6 +47,12 @@ type pendingResponse struct {
 	calls        []provider.ToolCall
 	outputs      map[string]string
 	createdAt    time.Time
+	// scripted, when set, is said in place of resuming the model: an async
+	// tool's ack. The model hears the result later, as a task_result turn.
+	scripted string
+	// scriptedTask is the task the ack is for: finished already when the
+	// ack is due, it is not said.
+	scriptedTask string
 }
 
 func (p *pendingResponse) complete() bool {
@@ -155,6 +161,12 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	if len([]rune(turn.Transcript)) < e.opts.Cfg.Duplex.DelegateMinChars && turn.Transcript != "" {
 		return
 	}
+	if e.hangingUp() {
+		// The call is ending; whatever was heard after the goodbye is not
+		// answered (it would be cut by the hangup anyway).
+		e.log.Debug("hangup: not answering after the farewell", "turn", turn.ID, "reason", reason)
+		return
+	}
 	// Only stamp the origin when it belongs to this turn. While the utterance
 	// is still open — which is the case for a mid-pause speculative turn — the
 	// engine's speechEndAt is the *previous* utterance's, and stamping it here
@@ -163,7 +175,7 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 	// wrong zero. A speculative turn is stamped when speech actually ends, and
 	// a turn nobody spoke has no origin at all.
 	if spoken && !e.userOpen && !e.speechEndAt.IsZero() {
-		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS)
+		turn.MarkSpeechEnd(e.speechEndAt, e.speechEndMS, e.speechEndSilenceMS)
 	}
 	// Something the caller said earlier and was never answered — they carried
 	// on after a pause that closed the turn, or asked again before the answer
@@ -172,10 +184,20 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 		e.ensureUserRecorded(prev)
 	}
 
+	if turn.Transcript != "" && !turn.Scripted {
+		e.planOpener(turn)
+	}
 	e.delegatedAt = time.Now()
 	e.delegatedTurn = turn
 	e.filled = false
 	e.cancelBackend()
+	if spoken {
+		end := e.speechEndMS
+		if e.userOpen {
+			end = e.inputMS.Load()
+		}
+		e.focusNote(turn, e.utterStartMS, end, e.userOpen)
+	}
 
 	e.log.Debug("think: delegating",
 		"turn", turn.ID,
@@ -292,6 +314,7 @@ func (e *Engine) backendRequest(msgs []provider.Message, front bool) provider.LL
 		req.MaxTokens = e.backend.MaxOutputTokens
 	}
 	req.Tools = append([]json.RawMessage(nil), e.backend.Tools...)
+	req.Tools = append(req.Tools, e.toolDefinitions()...)
 	req.ToolChoice = e.backend.ToolChoice
 	req.ParallelToolCalls = e.backend.ParallelToolCalls
 	return req
@@ -310,8 +333,16 @@ func (e *Engine) systemPrompt(front bool) string {
 	if !e.clientMode() {
 		parts = append(parts, strings.TrimSpace(e.backend.Instructions))
 	}
+	// The engine's own rules for its tools, after the owner's prompt so
+	// they stand where a later instruction outweighs an earlier one.
+	parts = append(parts, strings.TrimSpace(e.opts.Cfg.InstructionsAppend))
 	if front {
 		parts = append(parts, delegationPolicy)
+	}
+	// The working memory last: everything before it is the same from one
+	// turn to the next and stays in the provider's prefix cache.
+	if !front {
+		parts = append(parts, e.memoryBlock())
 	}
 	var kept []string
 	for _, p := range parts {
@@ -332,6 +363,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	msgs = append(msgs, e.history...)
 	if turn != nil && turn.Transcript != "" && !e.recordedUser[turn.ID] {
 		msgs = appendUserMessage(msgs, turn.Transcript)
+	}
+	if turn != nil && turn.OpenerPlanned != "" && !front {
+		// After the user's words, so everything before stays in the
+		// provider's prefix cache.
+		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: openerNote(turn.OpenerPlanned)})
 	}
 	return msgs
 }
@@ -398,6 +434,13 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	pipe := e.newSpeechPipe(turn, false)
 	settled()
 	var full strings.Builder
+	if turn.Opening != "" {
+		// A result's fixed opening goes out before the model's first token,
+		// from the phrase cache: the caller hears "保费给您计算好了，" at once.
+		pipe.Push(turn.Opening)
+		full.WriteString(turn.Opening)
+		turn.AppendResponse(turn.Opening)
+	}
 	var calls []provider.ToolCall
 	var usage provider.TokenUsage
 	started := time.Now()
@@ -476,8 +519,18 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		// result for a call the engine has not yet recorded would be refused.
 		if job.front {
 			e.post(func() { e.onDelegateCalls(job, calls) })
+		} else if mine, theirs := e.splitCalls(calls); len(theirs) == 0 {
+			e.post(func() { e.onServerCalls(job, mine) })
 		} else {
-			e.post(func() { e.onToolCalls(job, calls) })
+			if len(mine) > 0 {
+				// Both kinds in one response: the engine's are run and their
+				// outputs wait with the application's; the backend resumes
+				// when all are in.
+				e.post(func() { e.onServerCallsAmong(job, mine, theirs) })
+			} else {
+				e.post(func() { e.onToolCalls(job, calls) })
+			}
+			calls = theirs
 			for i, call := range calls {
 				report(map[string]any{
 					"type":         "response.output_item.done",
@@ -691,6 +744,15 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 	}
 	e.trimHistory()
 
+	if p.scripted != "" {
+		// The owner's words for the wait, in place of resuming the model —
+		// but only if there is a wait: a task that is done within the grace
+		// (a `need` from the rules takes 15 ms) gets no "请您稍等" (the owner,
+		// 22:31 on 10-23); its result is delivered as usual.
+		grace := ackGrace
+		time.AfterFunc(grace, func() { e.post(func() { e.sayAck(p) }) })
+		return
+	}
 	turn := e.tracker.Begin("", false)
 	turn.DelegationID = p.delegationID
 	e.specTurn = nil
@@ -699,6 +761,57 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		"delegation", p.delegationID, "turn", turn.ID, "calls", len(p.calls),
 		"waited_ms", time.Since(p.createdAt).Milliseconds())
 	e.beginGeneration(turn, "tool_result", false)
+}
+
+// ackGrace is how long a submitted task is given to finish before its ack
+// is said: a result inside it is delivered instead, with no wait announced.
+var ackGrace = 400 * time.Millisecond
+
+// sayAck says an async tool's ack if its task is still running and the
+// floor is free. Loop goroutine.
+func (e *Engine) sayAck(p *pendingResponse) {
+	ts := e.tools
+	if ts == nil {
+		return
+	}
+	delete(ts.ackPending, p.scriptedTask)
+	if ts.tasks[p.scriptedTask] == nil {
+		// Done within the grace: no "请您稍等" for a wait that did not happen.
+		// The owner's rule of 23:15 on 10-23 had a quick real result still
+		// announced with the ack, for the 15 ms placeholder rules; with the
+		// pre-quotations (10-26) a cached hit is the common case, and the
+		// caller heard 保费呢，→ 正在给您计算保费 → 保费给您计算好了 before the
+		// figure (the 09:39 call of 10-28). The posthook still says the
+		// premium was worked out; the ack only delayed it by 3–4 s. Revised
+		// by the owner, 11:31 on 10-28.
+		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", p.scriptedTask)
+		return
+	}
+	if e.hangingUp() {
+		return
+	}
+	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() {
+		// Somebody is speaking — the model's own sentence, as often as not
+		// ("好的，我帮您算一下" on the 22:39 call of 10-24, and the ack was
+		// dropped). The ack waits for the floor, as long as the task runs.
+		if ts.tasks[p.scriptedTask] != nil {
+			ts.ackPending[p.scriptedTask] = true
+			time.AfterFunc(150*time.Millisecond, func() { e.post(func() { e.sayAck(p) }) })
+			return
+		}
+		e.log.Info("tools: the task finished while its ack waited for the floor; not saying it", "task", p.scriptedTask)
+		return
+	}
+	turn := e.tracker.Begin("", false)
+	turn.DelegationID = p.delegationID
+	turn.Scripted = true
+	e.specTurn = nil
+	e.commitTurn(turn)
+	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(p.scripted)))
+	pipe := e.newSpeechPipe(turn, true)
+	pipe.Push(p.scripted)
+	pipe.Close()
+	turn.AppendResponse(p.scripted)
 }
 
 // --- function calls: the conversational model delegating ---
@@ -948,7 +1061,24 @@ func (e *Engine) SetBackend(b BackendOptions) {
 // provider without such a cache can use, which is why it is off unless asked
 // for. See duplex.backend_prefix_warm.
 func (e *Engine) maybeWarmPrefix() {
-	if !e.opts.Cfg.Duplex.BackendPrefixWarm || e.deps.LLM == nil {
+	if !e.opts.Cfg.Duplex.BackendPrefixWarm {
+		return
+	}
+	e.warmPrefix("utterance opened")
+}
+
+// warmAtOpening is the same request at the two moments of a call when nobody
+// can be waiting on the backend: when the session opens, and when the opening
+// line starts to play. See duplex.backend_prefix_warm_start.
+func (e *Engine) warmAtOpening(reason string) {
+	if !e.opts.Cfg.Duplex.BackendPrefixWarmStart {
+		return
+	}
+	e.warmPrefix(reason)
+}
+
+func (e *Engine) warmPrefix(reason string) {
+	if e.deps.LLM == nil {
 		return
 	}
 	if e.clientMode() && !e.clientAuto() {
@@ -962,7 +1092,10 @@ func (e *Engine) maybeWarmPrefix() {
 	req := e.backendRequest(e.snapshotMessages(nil, front), front)
 	req.MaxTokens = 1
 	go func() {
-		ctx, cancel := context.WithTimeout(e.ctx, 5*time.Second)
+		// Every copy, to its end: with a pool of keys behind the backend each
+		// copy goes to a different account, and each account keeps its own
+		// cache. Racing them would warm one.
+		ctx, cancel := context.WithTimeout(provider.WithEveryCopy(e.ctx), 5*time.Second)
 		defer cancel()
 		started := time.Now()
 		deltas, err := e.deps.LLM.Stream(ctx, req)
@@ -977,6 +1110,6 @@ func (e *Engine) maybeWarmPrefix() {
 				e.cachedTok.Add(int64(d.Usage.CachedInputTokens))
 			}
 		}
-		e.log.Debug("think: prefix warmed", "ms", time.Since(started).Milliseconds())
+		e.log.Debug("think: prefix warmed", "reason", reason, "ms", time.Since(started).Milliseconds())
 	}()
 }

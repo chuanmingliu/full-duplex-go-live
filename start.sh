@@ -4,6 +4,8 @@
 #   ./start.sh              mock providers, no credentials, full debug logging
 #   ./start.sh real         Tencent + DeepSeek + MiniMax, reads .env.local
 #   ./start.sh prod         production profile (auth required, json logs, no demo)
+#   ./start.sh telephony    the voice agent behind a SIP gateway: OpenAI Realtime
+#                           protocol on 127.0.0.1:8765, reads .env.local
 #   PORT=9000 ./start.sh    listen somewhere else
 #
 # If a Go toolchain is present the binary is rebuilt from source first, so what
@@ -15,8 +17,18 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PORT="${PORT:-8080}"
 MODE="${1:-mock}"
+if [ "$MODE" = telephony ]; then
+  # Where a media gateway looks for its agent, and nowhere else: this mode
+  # serves a phone line, not a browser.
+  PORT="${PORT:-8765}"
+  BIND="${BIND:-127.0.0.1}"
+  LOGFILE="${LOGFILE:-golive-telephony.log}"
+else
+  PORT="${PORT:-8080}"
+  BIND="${BIND:-}"
+  LOGFILE="${LOGFILE:-golive.log}"
+fi
 
 case "$(uname -s)" in
   Darwin) OS=darwin ;;
@@ -30,7 +42,9 @@ case "$(uname -m)" in
 esac
 
 BIN="bin/golive"
-if command -v go >/dev/null 2>&1; then
+# Only where there is source to build: a deploy bundle carries binaries and no
+# go.mod, and on a box that happens to have Go that used to fail the start.
+if command -v go >/dev/null 2>&1 && [ -f go.mod ]; then
   echo "· building from source"
   GOPROXY="${GOPROXY:-direct}" \
     go build -ldflags "-s -w" -o bin/golive ./cmd/golive
@@ -75,6 +89,19 @@ case "$MODE" in
     ENVFILE=.env.local
     LOG_LEVEL="${LOG_LEVEL:-info}"
     ;;
+  telephony)
+    ENVFILE="${ENVFILE:-.env.local}"
+    if [ ! -f "$ENVFILE" ]; then
+      echo "telephony mode needs provider keys — $ENVFILE not found" >&2
+      echo "point ENVFILE at an existing one:  ENVFILE=~/golive/.env.local ./start.sh telephony" >&2
+      exit 1
+    fi
+    PROFILE=configs/telephony.json
+    # Debug: the first calls on a new line are the ones you will want to read
+    # back turn by turn. Transcripts are in it; set GOLIVE_LOG_LEVEL=info once
+    # it is behaving.
+    LOG_LEVEL="${LOG_LEVEL:-debug}"
+    ;;
   *)
     PROFILE=configs/mock.json
     ENVFILE=/dev/null
@@ -84,13 +111,19 @@ case "$MODE" in
 esac
 
 echo
-echo "  golive — $MODE providers"
-echo "  open:  http://localhost:$PORT"
-echo "  log:   $(pwd)/golive.log"
+if [ "$MODE" = telephony ]; then
+  echo "  golive — voice agent for a SIP gateway"
+  echo "  agent: ws://$BIND:$PORT/v1/realtime   (OpenAI Realtime protocol)"
+  echo "  calls: curl -s http://$BIND:$PORT/v1/pool"
+else
+  echo "  golive — $MODE providers"
+  echo "  open:  http://localhost:$PORT"
+fi
+echo "  log:   $(pwd)/$LOGFILE"
 echo "  stop:  Ctrl-C"
 echo
 
 # Mock keeps debug so the demo is inspectable. Real/prod inherit info unless
 # GOLIVE_LOG_LEVEL is set — debug logs contain transcripts.
 GOLIVE_LOG_LEVEL="$LOG_LEVEL" \
-  "./$BIN" -profile "$PROFILE" -env "$ENVFILE" -addr ":$PORT" 2>&1 | tee golive.log
+  "./$BIN" -profile "$PROFILE" -env "$ENVFILE" -addr "$BIND:$PORT" 2>&1 | tee "$LOGFILE"

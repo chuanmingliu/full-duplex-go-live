@@ -148,6 +148,10 @@ func (a *ASR) Open(ctx context.Context, opts provider.ASROptions) (provider.ASRS
 		"voice_id", voiceID,
 		"rate", opts.SampleRate)
 
+	return newStream(ctx, conn), nil
+}
+
+func newStream(ctx context.Context, conn *websocket.Conn) *stream {
 	s := &stream{
 		conn:    conn,
 		results: make(chan provider.ASRResult, 32),
@@ -156,7 +160,7 @@ func (a *ASR) Open(ctx context.Context, opts provider.ASROptions) (provider.ASRS
 	}
 	go s.readLoop()
 	go s.writeLoop()
-	return s, nil
+	return s
 }
 
 type stream struct {
@@ -170,6 +174,9 @@ type stream struct {
 	partial  string
 	sendDone bool
 	closed   bool
+	// finished: the read side is done and results is closed. Nothing may be
+	// sent on it after this.
+	finished bool
 }
 
 type asrFrame struct {
@@ -313,8 +320,22 @@ func (s *stream) emit(r provider.ASRResult) {
 	}
 }
 
+// fail reports a failed write. It comes from the write side, which can
+// outlive the read side: when the service refuses a recognition part-way — an
+// account error, a quota — the reader reports that, closes results and is gone
+// while audio is still being written to a socket that is now shut. The write
+// that then fails has nothing left to report to, and sending on the closed
+// channel took the whole process down with it.
 func (s *stream) fail(err error) {
-	s.emit(provider.ASRResult{Err: err})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished {
+		return
+	}
+	select {
+	case s.results <- provider.ASRResult{Err: err}:
+	default:
+	}
 }
 
 // finish closes the results channel exactly once.
@@ -322,11 +343,12 @@ func (s *stream) finish() {
 	s.mu.Lock()
 	already := s.closed
 	s.closed = true
+	s.finished = true
+	close(s.results)
 	s.mu.Unlock()
 	if !already {
 		_ = s.conn.Close()
 	}
-	close(s.results)
 }
 
 func newVoiceID() string {

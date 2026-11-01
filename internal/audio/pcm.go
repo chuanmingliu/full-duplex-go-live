@@ -207,3 +207,107 @@ func (f *Framer) Flush() []byte {
 
 // Buffered reports how many bytes are held back in a partial frame.
 func (f *Framer) Buffered() int { return len(f.buf) }
+
+// TrimTrailingSilence cuts the quiet tail off PCM16 audio: everything after
+// the last 10 ms window whose peak is above floorDB (dBFS), plus keepMS of
+// it. A synthesizer renders a trailing comma as a pause of a few hundred
+// milliseconds; for a phrase that something else follows at once, that pause
+// is dead air. Audio with no sound above the floor is returned unchanged.
+func TrimTrailingSilence(pcm []byte, rate int, floorDB float64, keepMS int) []byte {
+	if rate <= 0 || len(pcm) < 4 {
+		return pcm
+	}
+	win := rate / 100 * 2 // 10 ms of samples, in bytes
+	if win < 2 {
+		win = 2
+	}
+	thr := int32(32767 * math.Pow(10, floorDB/20))
+	last := -1
+	for off := 0; off+1 < len(pcm); off += win {
+		end := off + win
+		if end > len(pcm) {
+			end = len(pcm)
+		}
+		for i := off; i+1 < end; i += 2 {
+			v := int32(int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8))
+			if v < 0 {
+				v = -v
+			}
+			if v > thr {
+				last = end
+				break
+			}
+		}
+	}
+	if last < 0 {
+		return pcm
+	}
+	cut := last + keepMS*rate/1000*2
+	if cut >= len(pcm) {
+		return pcm
+	}
+	return pcm[:cut]
+}
+
+// TrimLeadingSilence cuts the quiet head off PCM16 audio: everything before
+// the first 10 ms window whose peak is above floorDB (dBFS), less keepMS of
+// it so the onset is not clipped. A synthesizer opens a rendering with a few
+// tens of milliseconds of nothing; for a phrase said at the pause that is
+// dead air the caller waits through, and it puts the words that follow it
+// later by the same amount. Audio with no sound above the floor is returned
+// unchanged.
+func TrimLeadingSilence(pcm []byte, rate int, floorDB float64, keepMS int) []byte {
+	if rate <= 0 || len(pcm) < 4 {
+		return pcm
+	}
+	win := rate / 100 * 2 // 10 ms of samples, in bytes
+	if win < 2 {
+		win = 2
+	}
+	thr := int32(32767 * math.Pow(10, floorDB/20))
+	first := -1
+	for off := 0; off+1 < len(pcm) && first < 0; off += win {
+		end := off + win
+		if end > len(pcm) {
+			end = len(pcm)
+		}
+		for i := off; i+1 < end; i += 2 {
+			v := int32(int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8))
+			if v < 0 {
+				v = -v
+			}
+			if v > thr {
+				first = off
+				break
+			}
+		}
+	}
+	if first < 0 {
+		return pcm
+	}
+	cut := first - keepMS*rate/1000*2
+	if cut <= 0 {
+		return pcm
+	}
+	return pcm[cut:]
+}
+
+// FadeOutPCM16 applies a linear fade over the last fadeMS of PCM16 audio, so a
+// cut made for length is not heard as a click.
+func FadeOutPCM16(pcm []byte, rate, fadeMS int) []byte {
+	n := len(pcm) / 2
+	f := rate * fadeMS / 1000
+	if f <= 0 || n == 0 {
+		return pcm
+	}
+	if f > n {
+		f = n
+	}
+	for i := n - f; i < n; i++ {
+		v := float64(int16(uint16(pcm[2*i]) | uint16(pcm[2*i+1])<<8))
+		v *= float64(n-1-i) / float64(f)
+		s := int16(v)
+		pcm[2*i], pcm[2*i+1] = byte(uint16(s)), byte(uint16(s)>>8)
+	}
+	return pcm
+}

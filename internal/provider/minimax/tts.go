@@ -32,8 +32,17 @@ func init() {
 
 // TTS is a MiniMax T2A client.
 type TTS struct {
-	Endpoint       string
-	APIKey         string
+	Endpoint string
+	APIKey   string
+	// APIKeys is the pool of accounts, APIKey first; see pool.go. Empty is a
+	// pool of the one key.
+	APIKeys []string
+	// VoiceIDs is each account's own name for the voice, by its place in
+	// APIKeys; an empty entry is VoiceID. See voiceFor.
+	VoiceIDs []string
+	// RPMs is how many requests a minute each account allows, by its place in
+	// APIKeys; 0 is not known. See AccountRPM.
+	RPMs           []int
 	Model          string
 	VoiceID        string
 	Speed          float64
@@ -99,20 +108,30 @@ type TTS struct {
 	// copies one per variant to vary the endpoint, and a bare sync.Once would
 	// make that a vet error.
 	warnOnce *sync.Once
+
+	// rests is when each account may be used again after a refusal. A pointer
+	// for the same reason, and so that copies of a client share what one of
+	// them learned about a key.
+	rests *keyRests
 }
 
 // New builds the client from the environment.
 func New() (*TTS, error) {
-	key, err := config.EnvRequired("MINIMAX_TTS_API_KEY")
+	keys, err := config.EnvKeys("MINIMAX_TTS_API_KEY")
 	if err != nil {
 		return nil, err
 	}
+	key := keys[0]
 	return &TTS{
 		// api.minimaxi.com for mainland-platform keys, api.minimax.io for
 		// global ones. Using the wrong host authenticates and then fails at
 		// task_start, which is a confusing way to find out.
 		Endpoint:      config.Env("MINIMAX_TTS_WEBSOCKET_ENDPOINT", "wss://api.minimaxi.com/ws/v1/t2a_v2"),
 		APIKey:        key,
+		APIKeys:       keys,
+		VoiceIDs:      accountVoices(keys),
+		RPMs:          accountRPMs(keys),
+		rests:         &keyRests{},
 		Model:         config.Env("MINIMAX_TTS_MODEL", "speech-2.8-turbo"),
 		VoiceID:       config.Env("MINIMAX_TTS_VOICE_ID", ""),
 		Speed:         config.EnvFloat("MINIMAX_TTS_SPEED", 1.2),
@@ -255,11 +274,7 @@ func supportedRate(want int) int {
 // Open implements provider.TTS.
 func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
 	rate := supportedRate(opts.SampleRate)
-	voice := opts.Voice
-	if voice == "" {
-		voice = t.VoiceID
-	}
-	if voice == "" {
+	if opts.Voice == "" && t.VoiceID == "" {
 		return nil, fmt.Errorf("minimax tts: no voice configured; set MINIMAX_TTS_VOICE_ID or session.audio.output.voice")
 	}
 	speed := opts.Speed
@@ -269,10 +284,24 @@ func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSS
 	s := &stream{
 		tts:   t,
 		rate:  rate,
-		voice: voice,
 		speed: speed,
 	}
-	if err := s.connect(ctx); err != nil {
+	// One account after another until one takes the session: a key that is
+	// refused — wrong, out of credit, without this voice — is rested and the
+	// next is asked, so a bad key in the pool costs a session one handshake
+	// and not its voice.
+	keys := t.keys()
+	var err error
+	for _, n := range t.order(ctx) {
+		s.key, s.account, s.voice = keys[n], n, t.voiceFor(n, opts.Voice)
+		if err = s.connect(ctx); err == nil {
+			break
+		}
+		if !t.rest(n, err) {
+			return nil, err
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	s.startKeepAlive()
@@ -284,6 +313,10 @@ type stream struct {
 	rate  int
 	voice string
 	speed float64
+	// key is the account this session is on, and account its place in the
+	// pool. A reconnect stays on it.
+	key     string
+	account int
 
 	// busy serializes Synthesize calls; the provider contract says callers do
 	// not overlap them, and the MiniMax task is a single ordered stream.
@@ -430,13 +463,17 @@ func (s *stream) connect(ctx context.Context) error {
 		WriteBufferSize:  16 << 10,
 	}
 	header := http.Header{}
-	header.Set("Authorization", "Bearer "+s.tts.APIKey)
+	key := s.key
+	if key == "" {
+		key = s.tts.APIKey
+	}
+	header.Set("Authorization", "Bearer "+key)
 
 	dialStarted := time.Now()
 	conn, resp, err := dialer.DialContext(ctx, s.tts.Endpoint, header)
 	if err != nil {
 		if resp != nil {
-			return fmt.Errorf("minimax tts: dial failed with HTTP %d: %w", resp.StatusCode, err)
+			return &refusal{http: resp.StatusCode, err: fmt.Errorf("minimax tts: dial failed with HTTP %d: %w", resp.StatusCode, err)}
 		}
 		return fmt.Errorf("minimax tts: dial failed: %w", err)
 	}
@@ -457,6 +494,7 @@ func (s *stream) connect(ctx context.Context) error {
 		"endpoint", s.tts.Endpoint,
 		"model", s.tts.Model,
 		"voice", s.voice,
+		"account", s.account+1,
 		"rate", s.rate,
 		"speed", s.speed,
 		"ms", time.Since(dialStarted).Milliseconds())
@@ -944,8 +982,8 @@ func (s *stream) expect(ctx context.Context, event string, timeout time.Duration
 			return err
 		}
 		if frame.BaseResp != nil && frame.BaseResp.StatusCode != 0 {
-			return fmt.Errorf("minimax tts: %s failed with status %d: %s",
-				event, frame.BaseResp.StatusCode, frame.BaseResp.StatusMsg)
+			return &refusal{status: frame.BaseResp.StatusCode, err: fmt.Errorf("minimax tts: %s failed with status %d: %s",
+				event, frame.BaseResp.StatusCode, frame.BaseResp.StatusMsg)}
 		}
 		if frame.Event == event {
 			return nil
