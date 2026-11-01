@@ -69,7 +69,7 @@ scripts/phone-brain.sh desk status
 DESK_AS=codex scripts/desk.sh me
 ```
 
-`record` reports a **setting**, not the live process. Enabling it is `scripts/phone-brain.sh record on`, followed by the normal idle-only restart. At launch that setting exports `GOLIVE_STORE_DIR`, `GOLIVE_REALTIME_STORE_CALLS=1`, and the retention setting. Check those three names only in the running process environment if live confirmation is needed; never print its entire environment. The current script defaults to `CALLS_TTL_HOURS=720` for the working store. The journal's `/api/overview` `recording` flag only proves that its configured store directory exists.
+`record` reports a **setting**, not the live process. Enabling it is `scripts/phone-brain.sh record on`, followed by the normal idle-only restart. At launch that setting exports `GOLIVE_STORE_DIR`, `GOLIVE_REALTIME_STORE_CALLS=1`, and the retention setting. Check those three names only in the running process environment if live confirmation is needed; never print its entire environment. The current script defaults to `CALLS_TTL_HOURS=8760` (365 days, set 2026-11-01) for the working store. Finished-call archives remain permanent. The journal's `/api/overview` `recording` flag only proves that its configured store directory exists.
 
 The journal normally binds the LAN address, e.g. `http://192.168.71.9:8790`, **not localhost**. Read its configured address from `journal status`. Its current latency target defaults to **1200**, reaffirmed on 2026-10-29. Earlier 1000 ms trials remain historical evidence. The strict latency gate has a separate explicit `--target-ms 1200`.
 
