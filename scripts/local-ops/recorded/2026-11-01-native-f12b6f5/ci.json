@@ -1,0 +1,18 @@
+{
+  "headSha": "f12b6f5f1e0c949fad49cbc2321ff353f2046dd8",
+  "status": "completed",
+  "conclusion": "success",
+  "url": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41280473376",
+  "jobs": [
+    {
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "simulate",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ]
+}

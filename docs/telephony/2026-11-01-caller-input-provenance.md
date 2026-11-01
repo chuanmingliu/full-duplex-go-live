@@ -42,5 +42,14 @@ legacy behavior, conflicts, duplicate/overflow/partial metadata, missing
 readout, non-quote slow results, and no inflated conversational sample count.
 
 This is a measurement repair, not a latency saving. Original provider settings,
-quotation delay, scheduling and production services are unchanged. Fresh
-recorded SIP validation is required; the six old links remain unverified.
+quotation delay, scheduling and production services are unchanged. The six old links remain unverified; no historical timing is invented.
+
+## Recorded validation
+
+The [fresh SIP trial](../../journal/retros/sim-inputtiming-96bb8a33-8c9b-4bb5-ac65-69dd84ed95af.md)
+verified four direct input links, including silent calling turns. Journal and
+analyzer results match on the same archive with the same 1150 ms threshold.
+Two tasks launched by result turns still lack caller lineage; they remain
+unverified. The gate also fails on two missing readouts, only six conversational
+samples, and 1178 ms conversational p95. This instrumentation repairs direct
+input measurement but does not establish the overall latency objective.

@@ -1,0 +1,14 @@
+{
+  "stage": "verified",
+  "version": "f12b6f5",
+  "old_version": "9547d22",
+  "ci": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41280473376",
+  "binary_sha256": "7d367f327be47ee6abfd29e0bca5bc9cecc940ebacf0130c3bda3cab2bc166a4",
+  "backup": "/home/chuanming/golive-sip-ab/native-real-fb11e2c/releases/engine-f12b6f5-20261101/golive-9547d22",
+  "started_at": "2026-11-01T06:35:11.711322+00:00",
+  "no_dial": true,
+  "completed_at": "2026-11-01T06:35:12.826989+00:00",
+  "original_configs_unchanged": true,
+  "active_call_unchanged": true,
+  "journal_unchanged": true
+}
