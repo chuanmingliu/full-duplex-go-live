@@ -1513,7 +1513,7 @@
    "found_on": "Recorded original GoLive SIP simulator",
    "found_call": "sim-coveredack-8d3132ed-a69c-4e8c-bbc4-3a10ce5e8fbe",
    "symptom": "Six explicit result links have output records on the result turn but no playback metric on their originating calling turn. Strict analyzer cannot verify those intervals.",
-   "cause": "Caller clock and endpoint silence are previously recovered only from calling-turn playback metrics; speculative calling turns may submit a task without ever emitting audio.",
+   "cause": "Caller clock and endpoint silence are previously recovered only from calling-turn playback metrics; speculative calling turns may submit a task without ever emitting audio. Further trace inspection shows old ready results can cancel a newer caller turn and start result handling with that newer conversation context (ISS-094). Blindly inheriting the old task origin would therefore risk assigning the wrong caller.",
    "fix": "Capture caller-input timing at task submission/coalescing and include versioned numeric provenance on delivery. Analyzer and Journal validate it independently of calling playback, retain evidence failures and do not create conversational samples.",
    "verified": "62 analyzer checks and full Journal race suite pass; baseline public-command regression fails. Recorded 302267b SIP trial validates four captured input links, including silent calling turns. Journal/parser numeric parity verified on the immutable archive at 1150 ms. Five archive files and both audio directions verified; zero receiver warnings.",
    "effect": "Direct caller-input provenance is repaired, but two tasks submitted from result turns still lack parent/caller lineage. Keep open. Separate SLA gate fails: conversational p95 1178 ms n=6, two unverified links and two missing quotation readouts. No handset qualification; original configurations, deliberate quote delay and Active Call unchanged.",
@@ -1521,6 +1521,20 @@
     "302267b"
    ],
    "verified_call": "sim-inputtiming-96bb8a33-8c9b-4bb5-ac65-69dd84ed95af"
+  },
+  {
+   "id": "ISS-094",
+   "title": "Old ready result steals a newly finalized caller answer",
+   "area": "tools",
+   "status": "open",
+   "found": "2026-11-01",
+   "found_on": "Original GoLive SIP simulation and scheduler regression",
+   "found_call": "sim-inputtiming-96bb8a33-8c9b-4bb5-ac65-69dd84ed95af",
+   "symptom": "An old result starts 42 ms after a newer caller utterance finalizes, before its response plays. The result continuation then launches another task without a direct caller origin.",
+   "cause": "The result wait deadline measures age from task completion. Once a newer caller finishes speaking, that already-expired deadline can immediately cancel the newer answer, even though its own response window just began.",
+   "fix": "While an unrelated newer caller answer owns the floor, retain the existing configured delivery wait from that caller endpoint, or until its playback completes. Direct and explicitly coalesced results for that same caller remain eligible immediately. Preserve old acknowledgment cleanup and caller-speech guards.",
+   "verified": "Regression fails on 302267b behavior both before audio and after first audio. Candidate focused race suite passes in 23.213 s, including configured-window, playback-completion, direct/coalesced result and existing acknowledgment regressions. Recorded SIP validation pending.",
+   "effect": "Prevents a confirmed conversation-priority failure without changing configs or inventing timing lineage. Does not yet establish latency p95 or handset qualification."
   }
  ]
 }

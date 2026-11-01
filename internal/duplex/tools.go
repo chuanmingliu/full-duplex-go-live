@@ -124,6 +124,8 @@ type taskDelivery struct {
 	task      *tools.Task
 	origin    taskOrigin
 	coalesced *coalescedTask
+	// Deduplicate the diagnostic while one newer caller owns the grace window.
+	protectedCaller string
 }
 
 // setupTools reads the profile.
@@ -863,6 +865,14 @@ func (e *Engine) maybeDeliver() {
 		wait = 1500 * time.Millisecond
 	}
 	busy := e.assistantHasFloor() || e.liveSpeculation() != nil
+	if busy && e.newerCallerAnswerPending(delivery, wait) {
+		caller := e.tracker.Current()
+		if ts.deliveries[0].protectedCaller != caller.ID {
+			ts.deliveries[0].protectedCaller = caller.ID
+			e.log.Info("tools: ready result yields to a newer caller answer", "task", task.ID, "turn", caller.ID, "grace_ms", wait.Milliseconds())
+		}
+		return
+	}
 	if busy && waited < wait {
 		return
 	}
