@@ -1452,6 +1452,20 @@
    "verified": "Local race regressions pass. On the box, the independent Contact routed BYE to adapter port 15064 and received 200. One 60-second probe and two full-length simulator calls exited 0 without stale cleanup; all three reported no receiver failures. Existing handset/Speko profiles were not changed.",
    "effect": "Fix verified for the isolated native simulator profile. Call-control correctness is separate from latency; handset and other profiles require their own qualification.",
    "verified_call": "ab-sim-0cb916cd1580aa3f47dc3397"
+  },
+  {
+   "id": "ISS-090",
+   "title": "Date-based native call ID rejected by latency console",
+   "area": "metrics",
+   "status": "open",
+   "found": "2026-11-01",
+   "found_on": "fb11e2c isolated native real call",
+   "found_call": "out-native-sip-20261101-01",
+   "symptom": "External telemetry reports sent=0, failed=88; HTTP 400 Invalid canonical field: callId. Call Journal archive and canonical latency records remain complete.",
+   "cause": "The deployed console phone-like identifier privacy filter matches the digit sequence in the date-based call ID.",
+   "fix": "For future explicitly authorized native calls use out-native-sip-<UUIDv4>. Preserve the privacy validator and historical identities; do not replay archived telemetry under a new identity.",
+   "verified": "Read-only invocation of the deployed isSafeTelemetryIdentifier rejects the historical ID and accepts a prefixed UUID. No call was placed for this check. Fresh-call ingestion is not yet verified.",
+   "effect": "Operational identifier compatibility, not a speech latency improvement. Keep open until a future authorized call confirms ingestion."
   }
  ]
 }

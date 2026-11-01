@@ -1,0 +1,151 @@
+{
+  "name": "golive-native-sip-fb11e2c",
+  "services": {
+    "engine": {
+      "image": "golive-sip-ringback:c3e049b",
+      "network_mode": "host",
+      "user": "1000:1000",
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:rw,nosuid,nodev,size=64m"
+      ],
+      "volumes": [
+        "./private:/private:ro",
+        "./state:/data:rw",
+        "./bin:/runtime:ro",
+        "/home/chuanming/golive-telephony:/home/chuanming/golive-telephony:ro",
+        "/home/chuanming/golive-crm/api.token:/home/chuanming/golive-crm/api.token:ro",
+        "/home/chuanming/golive-edge/api.token:/home/chuanming/golive-edge/api.token:ro",
+        "/home/chuanming/golive-deepseek.keys:/home/chuanming/golive-deepseek.keys:ro",
+        "/home/chuanming/golive-siliconflow.keys:/home/chuanming/golive-siliconflow.keys:ro",
+        "/home/chuanming/golive-openrouter.keys:/home/chuanming/golive-openrouter.keys:ro",
+        "/home/chuanming/golive-fish.keys:/home/chuanming/golive-fish.keys:ro"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "restart": "unless-stopped",
+      "stop_grace_period": "45s",
+      "command": [
+        "/bin/sh",
+        "-c",
+        "exec /runtime/golive -profile /private/agent.json -env /private/providers.env -addr 127.0.0.1:9895 >> /data/golive.log 2>&1"
+      ],
+      "env_file": [
+        {
+          "path": "./private/engine.env",
+          "format": "raw"
+        }
+      ],
+      "working_dir": "/home/chuanming/golive-telephony"
+    },
+    "journal": {
+      "image": "golive-sip-ringback:c3e049b",
+      "network_mode": "host",
+      "user": "1000:1000",
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:rw,nosuid,nodev,size=64m"
+      ],
+      "volumes": [
+        "./private:/private:ro",
+        "./state:/data:rw",
+        "./bin:/runtime:ro"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "restart": "unless-stopped",
+      "command": [
+        "/runtime/journal",
+        "-addr",
+        "192.168.71.9:9896",
+        "-log",
+        "/data/golive.log",
+        "-store",
+        "/data/store",
+        "-data",
+        "/data/journal",
+        "-archive",
+        "/data/archive",
+        "-adapter-records",
+        "/data/adapter",
+        "-notes",
+        "/data/notes",
+        "-last-call",
+        "/data/last-call.json",
+        "-retention-hours",
+        "720",
+        "-target",
+        "1200",
+        "-repo",
+        "https://github.com/chuanmingliu/full-duplex-go-live"
+      ]
+    },
+    "adapter": {
+      "image": "golive-sip-ringback:c3e049b",
+      "network_mode": "host",
+      "user": "1000:1000",
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:rw,nosuid,nodev,size=64m"
+      ],
+      "volumes": [
+        "./private:/private:ro",
+        "./state:/data:rw",
+        "./bin:/runtime:ro"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "profiles": [
+        "call"
+      ],
+      "restart": "no",
+      "stop_grace_period": "45s",
+      "env_file": [
+        {
+          "path": "./private/adapter.env",
+          "format": "raw"
+        }
+      ],
+      "entrypoint": [
+        "/runtime/adapter"
+      ],
+      "command": [
+        "-config",
+        "/private/adapter.json"
+      ]
+    }
+  }
+}

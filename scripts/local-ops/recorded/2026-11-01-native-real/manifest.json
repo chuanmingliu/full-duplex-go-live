@@ -1,0 +1,31 @@
+{
+  "recorded_on": "2026-11-01",
+  "purpose": "Historical authorized native real call; initial deployment failed until final Compose mounts were corrected; not reusable jobs",
+  "files": [
+    {
+      "file": "deploy-initial.py",
+      "bytes": 5585,
+      "sha256": "d56bd2fc481435aaf28d09e2a31a807230985ae4647e5916001d4ac43065fd54"
+    },
+    {
+      "file": "call-01.py",
+      "bytes": 3882,
+      "sha256": "d688c8117676998e5badd8ce1b2c4f3aa6775d91ce71087325be1bf66ed98f60"
+    },
+    {
+      "file": "call-01.sh",
+      "bytes": 320,
+      "sha256": "a75e244fa8b8ea1308b766cd6f93d612b867366632bbac79066db2f530df7ff9"
+    },
+    {
+      "file": "compose.deployed.json",
+      "bytes": 3833,
+      "sha256": "92d2701ab9a95835f35c305d2b9a6ddbb79e5b4315298001e51b00f14f500a99"
+    },
+    {
+      "file": "finalize-call.py",
+      "bytes": 3978,
+      "sha256": "c31e4a37c38994a78aa42e3468682462621ea7e0e9bc3788817affb35f703c93"
+    }
+  ]
+}
