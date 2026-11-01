@@ -1,0 +1,35 @@
+{
+  "recorded_on": "2026-11-01",
+  "files": [
+    {
+      "file": "run.py",
+      "bytes": 9742,
+      "sha256": "5032848a41bd1cdf3835c56779de26909960c0f8965bbabbbd7ab7ba50f1c02a"
+    },
+    {
+      "file": "run.sh",
+      "bytes": 902,
+      "sha256": "898c54841221fe3abf2ac1002a31f1e6473a8a28d666dfb5d28175c037aafdc1"
+    },
+    {
+      "file": "verify.py",
+      "bytes": 4870,
+      "sha256": "024e6ff71d6eb9ac402ee74658ba779334a7b200e533d625c384c115c968bf73"
+    },
+    {
+      "file": "verify.sh",
+      "bytes": 634,
+      "sha256": "66bad56acb6be62f7497d4c2e2adf84cafb499d5489a6bb28d7a12b1dfb098d3"
+    },
+    {
+      "file": "publish-notes.py",
+      "bytes": 1728,
+      "sha256": "fab8701216b7c9bd772c54cca61b627dd903ea3d24a4e69aee402317b41f2e2e"
+    },
+    {
+      "file": "publish-notes.sh",
+      "bytes": 589,
+      "sha256": "927bd7e4d61e6da66bbe94a45f3be8f2884345a6b77e43b141414807e3245ef2"
+    }
+  ]
+}

@@ -842,17 +842,17 @@ func (e *Engine) maybeDeliver() {
 	if ts == nil || len(ts.deliveries) == 0 || e.muted || e.hangingUp() || e.ctx.Err() != nil {
 		return
 	}
+	// Leave continuations in order until the caller releases the floor.
+	// In particular, repeated tool requests may still be joining their result.
+	if e.userOpen || e.awaitingFinal() || e.hold != nil {
+		return
+	}
 	delivery := ts.deliveries[0]
 	task := delivery.task
 	e.releaseCompletedCallingAck(task.ID)
 	e.tryReadyQuoteHandoff(delivery)
 	if ts.ackPending[task.ID] {
 		return // its ack first
-	}
-	// A delivery deadline may interrupt the assistant, never the caller or
-	// an utterance whose transcript/focus decision is still pending.
-	if e.userOpen || e.awaitingFinal() || e.hold != nil {
-		return
 	}
 	waited := time.Since(task.Submitted.Add(task.Result.Took))
 	wait := time.Duration(e.opts.Cfg.ToolsDeliverWaitMS) * time.Millisecond
