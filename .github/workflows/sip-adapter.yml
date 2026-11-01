@@ -45,6 +45,8 @@ jobs:
           go vet ./...
       - name: Regression and local simulated calls
         run: go test -race -timeout 25m ./...
+      - name: Latency qualification regression tests
+        run: python3 -B scripts/test_call_latency.py
       - name: Build Linux adapter
         run: CGO_ENABLED=0 go build -trimpath -o /tmp/golive-telephony ./cmd/golive-telephony
       - name: Upload adapter

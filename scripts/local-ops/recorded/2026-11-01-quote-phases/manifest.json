@@ -1,0 +1,40 @@
+{
+  "recorded_on": "2026-11-01",
+  "files": [
+    {
+      "file": "run.py",
+      "bytes": 9883,
+      "sha256": "8aab4ce90c8adc3991e413929c2a7d9f359497ef871ad478913e332045e34bec"
+    },
+    {
+      "file": "verify.py",
+      "bytes": 5846,
+      "sha256": "6c2235c6eb698b02c68f9e0d8985c4014819521fecd3085d21359b49026bf31c"
+    },
+    {
+      "file": "run.sh",
+      "bytes": 1436,
+      "sha256": "ab4e7b08729235a677fea7f6a6ad9bd75975d378dffb4fa69d6fe150ab738040"
+    },
+    {
+      "file": "publish-notes.py",
+      "bytes": 1866,
+      "sha256": "1ae2bd4226e2bb9720d54394e45ed62f0cd87a9f3c26bc4bd110e809245d3a39"
+    },
+    {
+      "file": "publish-notes.sh",
+      "bytes": 601,
+      "sha256": "adf48f5e27baadbbde3bc689529a12b7cc4cc05a14efd798bcac58d1d16c2949"
+    },
+    {
+      "file": "publish-policy.py",
+      "bytes": 2805,
+      "sha256": "c7a3bce737aab63cd96784f115e2b458864f533f30fc6141b498751032c40823"
+    },
+    {
+      "file": "publish-policy.sh",
+      "bytes": 589,
+      "sha256": "683c551765ff6f13ed494f0a653f82764ad2cc9edbf3f7e70b1ca59fd9aa9b33"
+    }
+  ]
+}

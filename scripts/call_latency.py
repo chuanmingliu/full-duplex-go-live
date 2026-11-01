@@ -212,6 +212,7 @@ def join_tool_results(records, links, counts):
                             origin_to_result_start_ms=offset,
                             child_first_content_ms=child_content,
                             total_ms=pause + offset + child_content,
+                            quotation=boolean(child, "quote_result") is True,
                             interrupted=boolean(child, "truncated"))
         return origin, child, result
 
@@ -227,6 +228,7 @@ def join_tool_results(records, links, counts):
         origin["first_content_ms"] = result["origin_to_result_start_ms"] + result["child_first_content_ms"]
         origin["first_content_present"] = True
         origin["_tool_result_interrupted"] = boolean(child, "truncated")
+        origin["_quote_result_joined"] = result["quotation"]
         counts["tool_results_joined"] += 1
 
     valid_primaries = {}
@@ -282,8 +284,10 @@ def analyse(lines, pause, target):
         "records", "answered", "non_speech", "cancelled", "interrupted_answers",
         "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause",
         "tool_result_links", "tool_results_joined", "invalid_tool_links",
-        "quote_readouts_missing", "quote_readouts_unverified", "missing_output_records")})
+        "quote_readouts_missing", "quote_readouts_unverified", "missing_output_records",
+        "quote_only_responses")})
     seen, rows, audio, content, reply = set(), [], [], [], []
+    conversational_content = []
     records, links = [], []
     output, nonanswers, sequences = set(), set(), {}
     for line in lines:
@@ -390,20 +394,27 @@ def analyse(lines, pause, target):
             reply.append(first_audio)
         if first_content is not None:
             content.append(first_content + silence)
+            if row.get("_quote_result_joined") is True:
+                counts["quote_only_responses"] += 1
+            else:
+                conversational_content.append(first_content + silence)
         rows.append((row, first_audio, first_content, silence))
     return dict(scope="last_sound_to_golive_output", target_ms=target,
                 percentile="nearest_rank", counts=dict(counts),
                 first_audio=distribution(audio, target), first_content=distribution(content, target),
+                conversational_first_content=distribution(conversational_content, target),
+                conversational_content_scope="first_content_excluding_verified_quote_only_handoffs",
                 reply=distribution(reply, target),
                 tool_result=distribution([r["total_ms"] for r in tool_results], target),
                 tool_result_scope="last_sound_to_linked_result_first_content_may_include_posthook",
                 tool_result_rows=tool_results,
+                non_quote_tool_result=distribution([r["total_ms"] for r in tool_results if not r["quotation"]], target),
                 quote_readout=distribution([r["total_ms"] for r in quote_readouts if r["status"] == "observed"], target),
                 quote_readout_scope="last_sound_to_deterministic_quote_readout_output",
                 quote_readout_rows=quote_readouts), rows
 
 
-def gate_reasons(report, minimum, metric):
+def gate_reasons(report, minimum, metric, quote_sla="shared"):
     counts = report["counts"]
     reasons = []
     for key in ("missing", "unverified", "duplicates", "malformed"):
@@ -412,6 +423,8 @@ def gate_reasons(report, minimum, metric):
     names = {"first-audio": ("first_audio",), "content": ("first_content",),
              "both": ("first_audio", "first_content")}[metric]
     for name in names:
+        if name == "first_content" and quote_sla == "separate":
+            name = "conversational_first_content"
         stats = report[name]
         if stats["n"] < minimum:
             reasons.append(f"{name}: {stats['n']} samples, need {minimum}")
@@ -424,7 +437,8 @@ def gate_reasons(report, minimum, metric):
         for key in ("quote_readouts_missing", "quote_readouts_unverified"):
             if counts[key]:
                 reasons.append(f"{counts[key]} {key} record(s)")
-        for name in ("tool_result", "quote_readout"):
+        result_names = ("tool_result", "quote_readout") if quote_sla == "shared" else ("non_quote_tool_result",)
+        for name in result_names:
             stats = report[name]
             if stats["p95_ms"] is not None and stats["p95_ms"] >= report["target_ms"]:
                 reasons.append(f"{name}: p95 {stats['p95_ms']} ms is not below {report['target_ms']} ms")
@@ -456,6 +470,7 @@ def print_report(report, rows, gated):
           ", ".join(f"{key}={value}" for key, value in report["counts"].items() if key != "answered"))
     for name, label in (("first_audio", "last sound → first audio"),
                         ("first_content", "last sound → first content"),
+                        ("conversational_first_content", "last sound → conversational content (excludes quote-only handoffs)"),
                         ("tool_result", "last sound → linked result first content (may be a posthook)"),
                         ("quote_readout", "last sound → quotation readout output"),
                         ("reply", "turn judged over → first audio")):
@@ -467,7 +482,7 @@ def print_report(report, rows, gated):
     print("First content and linked result content can be explanatory lead-ins. "
           "Quotation readout requires the deterministic readout's actual output timestamp.")
     if report["tool_result_rows"]:
-        print("Linked tool results (separate from first content; included in content/both gates):")
+        print("Linked tool results (quotation latency gate policy: " + report["gate"].get("quote_sla", "shared") + "):")
         for i, result in enumerate(report["tool_result_rows"], 1):
             print(f"  result {i}: pause {result['end_silence_ms']} + origin-to-result "
                   f"{result['origin_to_result_start_ms']} + result content {result['child_first_content_ms']}"
@@ -481,6 +496,8 @@ def print_report(report, rows, gated):
     if report["counts"]["unverified"]:
         print("Legacy/ambiguous records or started output without a latency record cannot certify the gate.")
     if gated:
+        if report["gate"].get("quote_sla") == "separate":
+            print("Quote completion latency is reported separately; quote-only handoffs do not count toward conversational samples. Evidence checks still apply.")
         print("Gate: " + ("PASS" if report["gate"]["passed"] else "FAIL — " + "; ".join(report["gate"]["reasons"])))
 
 
@@ -499,7 +516,9 @@ def main():
     parser.add_argument("--target-ms", type=positive, default=1200)
     parser.add_argument("--min-turns", type=positive, default=20)
     parser.add_argument("--metric", choices=("first-audio", "content", "both"), default="first-audio",
-                        help="content and both also require verified quotation readouts and gate linked result/readout p95")
+                        help="content and both require verified readout evidence; quotation latency follows --quote-sla")
+    parser.add_argument("--quote-sla", choices=("shared", "separate"), default="shared",
+                        help="shared gates quote timing too; separate reports it without counting quote-only handoffs as conversational content")
     parser.add_argument("--json", action="store_true", help="output timings and record identifiers without transcripts")
     args = parser.parse_args()
     try:
@@ -508,8 +527,9 @@ def main():
     except (OSError, UnicodeError) as error:
         print(f"cannot read latency log: {error}", file=sys.stderr)
         return 2
-    reasons = gate_reasons(report, args.min_turns, args.metric)
+    reasons = gate_reasons(report, args.min_turns, args.metric, args.quote_sla)
     report["gate"] = dict(enabled=args.gate, metric=args.metric, min_turns=args.min_turns,
+                          quote_sla=args.quote_sla,
                           passed=not reasons, reasons=reasons)
     if args.json:
         print(json.dumps(report, indent=2))

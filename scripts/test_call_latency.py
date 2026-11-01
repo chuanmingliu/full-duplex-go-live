@@ -74,6 +74,53 @@ class CallLatencyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 2, result.stderr)
         return result.returncode, json.loads(result.stdout)
 
+    def test_separate_quote_sla_keeps_slow_quotes_visible_without_gating_them(self):
+        origin, child = quote_pair(first_content_ms=100, first_readout_ms=1000)
+        rows = [turn(i) for i in range(100, 120)] + [
+            origin, child, delivery(tool="quote_total", origin_to_result_start_ms=5000)]
+        shared_code, shared = self.run_report(rows, "--gate", "--metric", "both", "--target-ms", "1150")
+        code, report = self.run_report(rows, "--gate", "--metric", "both", "--target-ms", "1150", "--quote-sla", "separate")
+        self.assertEqual(shared_code, 1)
+        self.assertEqual(code, 0, report["gate"]["reasons"])
+        self.assertEqual(report["gate"]["quote_sla"], "separate")
+        self.assertEqual(report["counts"]["quote_only_responses"], 1)
+        self.assertEqual(report["conversational_first_content"]["n"], 20)
+        self.assertEqual(report["first_content"]["n"], 21)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 6380)
+        self.assertEqual(report["quote_readout"], shared["quote_readout"])
+
+    def test_quote_only_handoffs_cannot_supply_conversational_samples(self):
+        origin, child = quote_pair(first_content_ms=100, first_readout_ms=1000)
+        code, report = self.run_report([origin, child, delivery(tool="quote_total")],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["conversational_first_content"]["n"], 0)
+        self.assertTrue(any("conversational_first_content: 0 samples" in r for r in report["gate"]["reasons"]))
+
+    def test_separate_quote_sla_still_rejects_missing_and_ambiguous_evidence(self):
+        for child_change in [dict(first_readout_present=False), dict(readout_expected=None)]:
+            origin, child = quote_pair(**child_change)
+            code, report = self.run_report([turn(100), origin, child, delivery(tool="quote_total")],
+                                          "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+            self.assertEqual(code, 1)
+            self.assertTrue(any("quote_readouts_" in r for r in report["gate"]["reasons"]))
+        code, report = self.run_report([turn(100), turn(101, first_content_present=False)],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertGreater(report["counts"]["missing"], 0)
+
+    def test_separate_quote_sla_does_not_exempt_slow_conversation_or_other_tools(self):
+        code, report = self.run_report([turn(1, first_content_ms=1800)],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["conversational_first_content"]["p95_ms"], 2180)
+        origin, child = tool_pair(quote_result=False)
+        code, report = self.run_report([origin, child, delivery(tool="lookup", origin_to_result_start_ms=5000)],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["quote_only_responses"], 0)
+        self.assertEqual(report["non_quote_tool_result"]["p95_ms"], 5380)
+
     def test_coalesced_result_preserves_both_caller_intervals_and_primary_row(self):
         primary, child = quote_pair(first_content_ms=100, first_readout_ms=1036)
         extra = turn(3, first_content_present=False, first_content_ms=0)
