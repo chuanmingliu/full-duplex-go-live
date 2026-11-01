@@ -544,7 +544,11 @@ func (p *Player) PendingMS() int64 {
 	return int64(remaining)
 }
 
-func (p *Player) ensureTurnLocked(seg Segment) {
+// ensureTurnLocked returns the previous owner's receipt when a valid new
+// generation replaces it without an explicit Interrupt. The caller must report
+// it after releasing mu, just like Interrupt; otherwise its output disappears
+// from both history and latency accounting when the stale end marker is dropped.
+func (p *Player) ensureTurnLocked(seg Segment) TruncationReport {
 	if p.adoptedOpenerLocked(seg) && p.activeTurn == "" {
 		// A begin marker may already be dequeued when the revision inherits
 		// its opener. Its first dispatch claims the explicit new owner.
@@ -554,27 +558,34 @@ func (p *Player) ensureTurnLocked(seg Segment) {
 		p.playhead = p.turnStarted
 	}
 	if p.matchesSegmentLocked(seg) {
-		return
+		return TruncationReport{}
 	}
+	heard := p.heardMSLocked()
+	previous := TruncationReport{owner: p.owner, Generation: p.activeGen, Revision: p.activeRevision,
+		TurnID: p.activeTurn, PlayedMS: int64(heard), TotalMS: int64(p.emittedMS),
+		SpokenText: p.spokenPrefixLocked(heard)}
 	p.resetTurnLocked()
 	// Keep dropTurn: a late backchannel producer must stay dropped.
 	p.activeTurn, p.owner = seg.TurnID, seg.owner
 	p.activeGen, p.activeRevision = seg.Gen, seg.Revision
 	p.turnStarted = time.Now()
 	p.playhead = p.turnStarted
+	return previous
 }
 
 func (p *Player) beginSegment(gen *Generation, seg Segment) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if !p.allowedLocked(seg, gen) {
+		p.mu.Unlock()
 		return
 	}
-	p.ensureTurnLocked(seg)
+	previous := p.ensureTurnLocked(seg)
 	p.pendingText = seg.Text
 	p.pendingFrom = p.emittedMS
 	p.pendingAnnounced = false
 	p.pendingContent = seg.content
+	p.mu.Unlock()
+	p.reportTruncation(previous)
 }
 
 // abandonSegment drops the text announced by a SegBegin that produced no audio.
@@ -660,9 +671,10 @@ func (p *Player) playAudio(gen *Generation, seg Segment) {
 		p.mu.Unlock()
 		return
 	}
-	p.ensureTurnLocked(seg)
+	previous := p.ensureTurnLocked(seg)
 	p.setSpeakingLocked(true)
 	p.mu.Unlock()
+	p.reportTruncation(previous)
 
 	for off := 0; off < len(seg.PCM); off += chunkBytes {
 		if !p.allowed(seg, gen) {

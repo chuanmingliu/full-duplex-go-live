@@ -347,7 +347,7 @@ func (e *Engine) focusBargeInWait() time.Duration {
 // later was let go at the quiet close as mostly another voice's — the caller
 // heard the answer stop and nothing follow (ISS-055).
 func callerSpeaksOver(a focus.Attribution) bool {
-	primaryMS := int64(a.Primary * float64(a.VoicedMS))
+	primaryMS := a.PrimaryMS
 	return primaryMS >= 400 || (primaryMS >= 160 && a.Primary >= a.Others)
 }
 
@@ -361,7 +361,7 @@ func (e *Engine) judgeBargeInFocus(text string) bargeInVerdict {
 	echo := fs.tracker.Echo()
 	waited := time.Since(h.started)
 	verdict, why := bargeInYield, ""
-	primaryMS := int64(a.Primary * float64(a.VoicedMS))
+	primaryMS := a.PrimaryMS
 	switch {
 	case !a.Known:
 		why = "no primary speaker known yet"
@@ -576,7 +576,7 @@ func (e *Engine) judgeUtteranceFocus() {
 	if !a.Known {
 		return
 	}
-	primaryMS := int64(a.Primary * float64(a.VoicedMS))
+	primaryMS := a.PrimaryMS
 	switch {
 	case primaryMS >= 160 && (!e.speaking.Load() || e.uttVerdict != uttIgnored || callerSpeaksOver(a)):
 		if e.uttVerdict == uttIgnored {

@@ -426,8 +426,11 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 	// phone", so two in flight for the same vehicle read each other's result
 	// (the 11:53 probe on 10-26: neighbours priced two at a time came back in
 	// identical pairs). A caller's own ask goes next; the neighbours wait.
+	waitBegan := time.Now()
 	s.takeAPITurn(req.prequote)
 	defer s.releaseAPITurn()
+	s.log.Info("crm: quote gate acquired", "call", req.Call, "memory_version", req.MemoryVersion,
+		"ahead", req.prequote, "waited_ms", time.Since(waitBegan).Milliseconds())
 	return s.quoteViaAPINow(api, v, req)
 }
 
@@ -440,7 +443,10 @@ func (s *Service) quoteViaAPINow(api *QuoteAPI, v *ConfigVersion, req QuoteReque
 		}
 	}
 	sort.Strings(rec.Coverages)
-	q, _, err := api.Quote(context.Background(), s.quoteClient, req)
+	var timing quoteAPITiming
+	q, _, err := api.quoteTimed(context.Background(), s.quoteClient, req, &timing)
+	s.log.Info("crm: quote phases", append([]any{"call", req.Call, "memory_version", req.MemoryVersion,
+		"ahead", req.prequote, "failed", err != nil}, timing.fields()...)...)
 	rec.ComputeMS = time.Since(began).Milliseconds()
 	if q != nil {
 		rec.Total, rec.InsureFlowCode, rec.QuotePriceID = q.Total, q.InsureFlowCode, q.QuotePriceID

@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [dev, master, telephony-realtime]
+    branches: [dev, master, telephony-realtime, codex/telephony-latency]
   pull_request:
 
 jobs:

@@ -1,6 +1,17 @@
-# Operating the go-gpt-live-1 call improvement loop
+# Operating the GoLive Active Call improvement loop
 
-Run on the Linux box from `~/golive-telephony`. Use the existing Mac runner queue for the commands below. The active source repository is full-duplex-go-live, with telephony-realtime as the deployment reference. The project emphasis is the Go ASR/LLM/TTS full-duplex simulation and recognizer-owned turn endings.
+Run on the Linux box from `~/golive-telephony`. Use the existing Mac runner queue for the commands below. The active source repository is full-duplex-go-live, with `codex/telephony-latency` as the optimization branch and Active Call as the phone transport. `telephony-realtime` remains the historical deployment reference. The project emphasis is the Go ASR/LLM/TTS full-duplex simulation and recognizer-owned turn endings.
+
+As of 2026-11-01, SIP/RTP replacement exploration is parked. Plain `call` uses
+the original GoLive configuration through Active Call; `call sim` uses its
+simulator workflow. Keep existing deployments available for rollback and verify
+the running version before an idle-only update. A Git push does not deploy the
+box. See the [selective integration record](docs/telephony/2026-11-01-active-call-integration.md).
+
+Optimize normal responses and interruptions against the 1200 ms target. Keep
+quotation calculation time and result completion separate, using
+`--quote-sla separate` in the latency tools. Do not shorten the configured
+quotation-service calculation delay to improve the conversational score.
 
 The [local operations scripts](scripts/local-ops/README.md) include the Mac runner,
 checked enqueue/staging helpers and exact historical Codex call, collection,

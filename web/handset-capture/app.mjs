@@ -35,11 +35,11 @@ function downloads() {
   if (!completed) return;
   const s = completed;
   const callID = el('call').value.trim();
-  const validID = /^out-[A-Za-z0-9-]{1,80}$/.test(callID);
+  const validID = /^(?:out-[A-Za-z0-9-]{1,80}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$/.test(callID);
   el('wav').hidden = el('metadata').hidden = !validID;
   el('save-hint').textContent = validID
     ? 'Download both files. Starting another recording replaces this unsaved capture.'
-    : 'Enter the matching out-… call ID to enable both downloads.';
+    : 'Enter the matching UUID or out-… call ID to enable both downloads.';
   if (!validID) return;
   const metadata = {
     schema: 'handset-acoustic-capture/v1',

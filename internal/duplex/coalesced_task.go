@@ -55,7 +55,7 @@ func (e *Engine) noteCoalescedTask(id string, caller *Turn) *coalescedTask {
 			return state
 		}
 	}
-	state.origins = append(state.origins, taskOrigin{turnID: caller.ID, speechEndAt: speechEnd})
+	state.origins = append(state.origins, taskOriginFromTurn(caller))
 	return state
 }
 
@@ -77,10 +77,9 @@ func (e *Engine) deliverCoalescedTask(delivery taskDelivery, turn *Turn) {
 	}
 	state.delivered = true
 	for _, origin := range state.origins {
-		e.log.Info("tools: delivering a coalesced task result",
-			"tool", delivery.task.Tool.Name, "task", delivery.task.ID, "turn", turn.ID,
-			"origin_turn", origin.turnID, "primary_origin_turn", delivery.origin.turnID,
-			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())
+		attrs := []any{"tool", delivery.task.Tool.Name, "task", delivery.task.ID, "turn", turn.ID,
+			"primary_origin_turn", delivery.origin.turnID}
+		e.log.Info("tools: delivering a coalesced task result", origin.appendTiming(attrs, turn)...)
 	}
 	state.origins = nil // continuations need delivery proof, not caller timings
 }
@@ -140,4 +139,25 @@ func (e *Engine) coveringCoalescedTask(p *pendingResponse) *tools.Task {
 		}
 	}
 	return nil
+}
+
+// A delivered task has already answered every function in this continuation.
+// Its history still belongs before the next continuation, but retiring that
+// bookkeeping needs no free audio floor and must not start another generation.
+// Keep incomplete, mixed, scripted, cancelled and merely pending work queued.
+func (e *Engine) retireDeliveredCoalescedContinuations() {
+	for len(e.continuations) > 0 {
+		p := e.continuations[0]
+		if p.scripted != "" {
+			return
+		}
+		task := e.coveringCoalescedTask(p)
+		if task == nil || !p.coalescedCalls[p.calls[0].ID].delivered {
+			return
+		}
+		e.continuations[0] = nil
+		e.continuations = e.continuations[1:]
+		e.recordContinuation(p)
+		e.log.Info("tools: retired a delivered coalesced continuation", "task", task.ID, "calls", len(p.calls))
+	}
 }

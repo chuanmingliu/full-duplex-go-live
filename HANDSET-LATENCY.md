@@ -22,9 +22,13 @@ page before downloading loses that recording.
    their positions and the microphone device fixed through the call.
 2. Confirm that setup in the page and start the recorder **before dialing**.
    Grant microphone access to this local page if the browser requests it.
+   Check that its status has no capture-integrity warning. If it already reports
+   a clock gap or processing/device issue, save the diagnostic files and resolve
+   the capture problem before dialing a call intended for acoustic qualification.
 3. Place the real call through the established `runner.sh` workflow. Keep
-   the box's recording enabled too. Enter the actual `out-…` call ID from
-   the dial receipt before exporting the local recording.
+   the box's recording enabled too. Enter the actual call ID from
+   the dial receipt before exporting the local recording. Both canonical UUIDs
+   and legacy `out-…` IDs are accepted without renaming the call.
 4. After the conversation ends, stop the recorder and download both its
    WAV and metadata JSON. Keep the original files together. Do not trim,
    resample, normalize, denoise or otherwise replace the original WAV.
@@ -39,6 +43,13 @@ capture. Device interruptions, missing frames, context suspensions and a
 recording limit make the evidence incomplete; the export must retain those
 facts. A browser or device that cannot supply the required evidence may
 still produce useful diagnostic audio, but cannot silently pass the gate.
+
+New sidecars include `clock_discontinuity_count` and the first 64
+`clock_discontinuities`, each with the output-frame position, expected/actual
+AudioContext frames and signed gap. Positive gaps were padded and negative gaps
+overlapped earlier input; both remain invalid timing evidence. These diagnostics
+cannot reconstruct the locations missing from an older sidecar or repair its
+recording. Preserve the original warning and files.
 
 Starting the server does not start the microphone. The recorder does not
 dial, start another golive session, or change the deployed service.
@@ -84,7 +95,7 @@ distinct from this physical measurement.
 
 ```bash
 python3 scripts/handset_latency.py recording.wav capture.json annotations.json \
-  --target-ms 1200 --min-turns 20 --json
+  --target-ms 1200 --min-turns 20 --quote-sla separate --json
 ```
 
 `capture.json` is the unchanged metadata downloaded beside the WAV.
@@ -101,6 +112,13 @@ satisfy the numeric gate, exit 1 means valid supplied evidence misses the
 target or minimum sample count, and exit 2 means evidence is invalid.
 Neither a successful exit nor checked metadata replaces independent
 acoustic review. The target and sample count can only be made stricter.
+
+The owner permits separate quotation calculation time. `--quote-sla separate`
+therefore gates first audio and non-quotation first content, with at least 20
+valid responses in each population. Quotation requests do not fill the normal
+response count. Their result latency remains reported and their reviewed result
+boundaries remain mandatory; missing evidence still fails. Omitting this option
+preserves the original strict gate on all content and quotation-result latency.
 
 Run `make handset-test` to test recording, file validation and arithmetic
 using synthetic audio. Those tests do not access a microphone or establish

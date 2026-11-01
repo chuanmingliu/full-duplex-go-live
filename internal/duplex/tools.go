@@ -107,8 +107,11 @@ type toolState struct {
 }
 
 type taskOrigin struct {
-	turnID      string
-	speechEndAt time.Time
+	turnID       string
+	speechEndAt  time.Time
+	inputKnown   bool
+	speechEndMS  int64
+	endSilenceMS int64
 	// ackTurnID is set only when this task's ack directly follows the
 	// originating caller's completed, emitted opener.
 	ackTurnID string
@@ -121,6 +124,8 @@ type taskDelivery struct {
 	task      *tools.Task
 	origin    taskOrigin
 	coalesced *coalescedTask
+	// Deduplicate the diagnostic while one newer caller owns the grace window.
+	protectedCaller string
 }
 
 // setupTools reads the profile.
@@ -775,7 +780,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 		if ts.origins == nil {
 			ts.origins = map[string]taskOrigin{}
 		}
-		ts.origins[task.ID] = taskOrigin{turnID: job.turn.ID, speechEndAt: speechEnd}
+		ts.origins[task.ID] = taskOriginFromTurn(job.turn)
 	}
 	if ts.recent == nil {
 		ts.recent = map[string]recentCall{}
@@ -842,8 +847,14 @@ func (e *Engine) maybeDeliver() {
 	if ts == nil || len(ts.deliveries) == 0 || e.muted || e.hangingUp() || e.ctx.Err() != nil {
 		return
 	}
+	// Leave continuations in order until the caller releases the floor.
+	// In particular, repeated tool requests may still be joining their result.
+	if e.userOpen || e.awaitingFinal() || e.hold != nil {
+		return
+	}
 	delivery := ts.deliveries[0]
 	task := delivery.task
+	e.releaseCompletedCallingAck(task.ID)
 	e.tryReadyQuoteHandoff(delivery)
 	if ts.ackPending[task.ID] {
 		return // its ack first
@@ -853,7 +864,15 @@ func (e *Engine) maybeDeliver() {
 	if wait <= 0 {
 		wait = 1500 * time.Millisecond
 	}
-	busy := e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.liveSpeculation() != nil
+	busy := e.assistantHasFloor() || e.liveSpeculation() != nil
+	if busy && e.newerCallerAnswerPending(delivery, wait) {
+		caller := e.tracker.Current()
+		if ts.deliveries[0].protectedCaller != caller.ID {
+			ts.deliveries[0].protectedCaller = caller.ID
+			e.log.Info("tools: ready result yields to a newer caller answer", "task", task.ID, "turn", caller.ID, "grace_ms", wait.Milliseconds())
+		}
+		return
+	}
 	if busy && waited < wait {
 		return
 	}
@@ -904,8 +923,7 @@ func (e *Engine) maybeDeliver() {
 		attrs = append(attrs, "quote_result_default", tools.ResultIsDefault(task.Result.Output))
 	}
 	if origin := delivery.origin; origin.turnID != "" && !origin.speechEndAt.IsZero() {
-		attrs = append(attrs, "origin_turn", origin.turnID,
-			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())
+		attrs = origin.appendTiming(attrs, turn)
 	}
 	e.log.Info("tools: delivering a task's result", attrs...)
 	e.deliverCoalescedTask(delivery, turn)

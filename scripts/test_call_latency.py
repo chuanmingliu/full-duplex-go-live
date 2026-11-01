@@ -51,6 +51,13 @@ def coalesced(origin=3, **changes):
                     primary_origin_turn="item_1", tool="quote_total", **changes)
 
 
+def input_delivery(**changes):
+    row = delivery(tool="quote_total", origin_timing_version=1,
+                   origin_speech_end_ms=1000, origin_end_silence_ms=380)
+    row.update(changes)
+    return row
+
+
 def output(index, seq=1, **changes):
     row = dict(msg="transcript: assistant segment started", version=1,
                session="sess_test", turn=f"item_{index}", seq=seq,
@@ -73,6 +80,130 @@ class CallLatencyTests(unittest.TestCase):
                                     text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 2, result.stderr)
         return result.returncode, json.loads(result.stdout)
+
+    def test_input_origin_times_quote_without_inventing_conversation(self):
+        _, child = quote_pair(first_content_ms=100, first_readout_ms=1000)
+        rows = [turn(i) for i in range(100, 120)] + [child, input_delivery(origin_to_result_start_ms=5000)]
+        code, report = self.run_report(rows, "--gate", "--metric", "both", "--target-ms", "1150", "--quote-sla", "separate")
+        self.assertEqual(code, 0, report["gate"]["reasons"])
+        self.assertEqual(report["first_audio"]["n"], 20)
+        self.assertEqual(report["conversational_first_content"]["n"], 20)
+        self.assertEqual(report["counts"]["tool_results_joined"], 0)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 6380)
+        self.assertEqual(report["quote_readout_rows"][0]["origin_evidence"], "caller_input_v1")
+        code, report = self.run_report(rows[-2:], "--gate", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["conversational_first_content"]["n"], 0)
+
+    def test_input_origin_keeps_readout_and_nonquote_failures(self):
+        _, child = quote_pair(first_readout_present=False)
+        base = [turn(i) for i in range(100, 120)]
+        code, report = self.run_report(base + [child, input_delivery()], "--gate", "--metric", "both", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["quote_readouts_missing"], 1)
+        _, child = tool_pair(first_content_ms=2000, quote_result=False)
+        code, report = self.run_report(base + [child, input_delivery(tool="lookup")], "--gate", "--metric", "both", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["non_quote_tool_result"]["p95_ms"], 2780)
+
+    def test_input_origin_rejects_incomplete_or_invalid_metadata(self):
+        _, child = quote_pair()
+        for key, value in [("origin_timing_version", None), ("origin_timing_version", 2),
+                           ("origin_timing_version", True), ("origin_speech_end_ms", None),
+                           ("origin_speech_end_ms", -1), ("origin_end_silence_ms", None),
+                           ("origin_end_silence_ms", -1), ("origin_end_silence_ms", "1.0"),
+                           ("origin_end_silence_ms", "١"), ("origin_end_silence_ms", 2**63),
+                           ("origin_end_silence_ms", 2**63-1)]:
+            with self.subTest(key=key, value=value):
+                link = input_delivery(**{key: value})
+                if value is None: del link[key]
+                _, report = self.run_report([child, link])
+                self.assertEqual(report["counts"]["invalid_tool_links"], 1)
+                self.assertEqual(report["tool_result"]["n"], 0)
+
+    def test_input_origin_never_overrides_conflicting_or_duplicate_playback(self):
+        origin, child = quote_pair()
+        cases = [[origin, origin, child, input_delivery()],
+                 [turn(1, response_to_speech=False), child, input_delivery()],
+                 [origin, child, input_delivery(origin_end_silence_ms=400)],
+                 [child, child, input_delivery()],
+                 [child, input_delivery(), input_delivery()],
+                 [input_delivery()],
+                 [child, input_delivery(), output(1)]]
+        for rows in cases:
+            with self.subTest(rows=rows):
+                code, report = self.run_report(rows, "--gate", "--quote-sla", "separate", "--min-turns", "1")
+                self.assertEqual(code, 1)
+                self.assertGreater(report["counts"]["unverified"], 0)
+
+    def test_input_origin_preserves_cancelled_opener_without_joining(self):
+        origin, child = quote_pair()
+        origin["truncated"] = True
+        _, report = self.run_report([origin, child, input_delivery()])
+        self.assertEqual(report["tool_result"]["n"], 1)
+        self.assertEqual(report["counts"]["cancelled"], 1)
+        self.assertEqual(report["counts"]["tool_results_joined"], 0)
+        self.assertEqual(report["first_content"]["n"], 0)
+
+    def test_input_origin_coalescing_requires_unique_matching_primary(self):
+        _, child = quote_pair()
+        extra = coalesced(origin_timing_version=1, origin_speech_end_ms=1200,
+                          origin_end_silence_ms=100, origin_to_result_start_ms=200)
+        _, report = self.run_report([extra, child, input_delivery()])
+        self.assertEqual(report["counts"]["invalid_tool_links"], 0)
+        self.assertEqual(report["tool_result"]["n"], 2)
+        self.assertEqual([r["total_ms"] for r in report["tool_result_rows"]], [780, 300])
+        self.assertEqual(report["first_audio"]["n"], 0)
+        _, report = self.run_report([extra, extra, child, input_delivery()])
+        self.assertEqual(report["counts"]["invalid_tool_links"], 2)
+        self.assertEqual(report["tool_result"]["n"], 1)
+
+    def test_separate_quote_sla_keeps_slow_quotes_visible_without_gating_them(self):
+        origin, child = quote_pair(first_content_ms=100, first_readout_ms=1000)
+        rows = [turn(i) for i in range(100, 120)] + [
+            origin, child, delivery(tool="quote_total", origin_to_result_start_ms=5000)]
+        shared_code, shared = self.run_report(rows, "--gate", "--metric", "both", "--target-ms", "1150")
+        code, report = self.run_report(rows, "--gate", "--metric", "both", "--target-ms", "1150", "--quote-sla", "separate")
+        self.assertEqual(shared_code, 1)
+        self.assertEqual(code, 0, report["gate"]["reasons"])
+        self.assertEqual(report["gate"]["quote_sla"], "separate")
+        self.assertEqual(report["counts"]["quote_only_responses"], 1)
+        self.assertEqual(report["conversational_first_content"]["n"], 20)
+        self.assertEqual(report["first_content"]["n"], 21)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 6380)
+        self.assertEqual(report["quote_readout"], shared["quote_readout"])
+
+    def test_quote_only_handoffs_cannot_supply_conversational_samples(self):
+        origin, child = quote_pair(first_content_ms=100, first_readout_ms=1000)
+        code, report = self.run_report([origin, child, delivery(tool="quote_total")],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["conversational_first_content"]["n"], 0)
+        self.assertTrue(any("conversational_first_content: 0 samples" in r for r in report["gate"]["reasons"]))
+
+    def test_separate_quote_sla_still_rejects_missing_and_ambiguous_evidence(self):
+        for child_change in [dict(first_readout_present=False), dict(readout_expected=None)]:
+            origin, child = quote_pair(**child_change)
+            code, report = self.run_report([turn(100), origin, child, delivery(tool="quote_total")],
+                                          "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+            self.assertEqual(code, 1)
+            self.assertTrue(any("quote_readouts_" in r for r in report["gate"]["reasons"]))
+        code, report = self.run_report([turn(100), turn(101, first_content_present=False)],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertGreater(report["counts"]["missing"], 0)
+
+    def test_separate_quote_sla_does_not_exempt_slow_conversation_or_other_tools(self):
+        code, report = self.run_report([turn(1, first_content_ms=1800)],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["conversational_first_content"]["p95_ms"], 2180)
+        origin, child = tool_pair(quote_result=False)
+        code, report = self.run_report([origin, child, delivery(tool="lookup", origin_to_result_start_ms=5000)],
+                                      "--gate", "--metric", "both", "--min-turns", "1", "--quote-sla", "separate")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["counts"]["quote_only_responses"], 0)
+        self.assertEqual(report["non_quote_tool_result"]["p95_ms"], 5380)
 
     def test_coalesced_result_preserves_both_caller_intervals_and_primary_row(self):
         primary, child = quote_pair(first_content_ms=100, first_readout_ms=1036)

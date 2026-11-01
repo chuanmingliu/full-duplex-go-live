@@ -85,8 +85,14 @@ func TestSoftlyTruncatedAckKeepsDefaultPosthook(t *testing.T) {
 			}
 			e.player.Run(&e.gen)
 			e.runPosted()
-			if !e.tracker.IsCurrent(ack) || ack.Timings().CompletedAt.IsZero() || ack.Timings().FirstAudioOut.IsZero() {
-				t.Fatal("test did not reproduce a current, emitted, truncated acknowledgement")
+			// Draining posted callbacks may already deliver a queued result
+			// after the floor is released. Its scheduling does not change the
+			// old ack's truncation proof or authorize omitting the posthook.
+			if ack.Timings().CompletedAt.IsZero() || ack.Timings().CompletedNaturally || ack.Timings().FirstAudioOut.IsZero() {
+				t.Fatal("test did not reproduce an emitted, truncated acknowledgement")
+			}
+			if !readyDuringAck && !e.tracker.IsCurrent(ack) {
+				t.Fatal("running task unexpectedly replaced the acknowledgement")
 			}
 			if ack.Spoken != "Please wait." {
 				t.Fatalf("soft stop did not discard the acknowledgement's tail: %q", ack.Spoken)

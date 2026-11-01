@@ -83,7 +83,7 @@ func TestTaskResultLogsOriginalMonotonicOffsetForCachedOutput(t *testing.T) {
 	e.log = slog.New(slog.NewJSONHandler(&logs, nil))
 	origin := time.Now().Add(-time.Second)
 	p.turn.MarkSpeechEnd(origin, 0, 380)
-	e.tools.origins = map[string]taskOrigin{task.ID: {turnID: p.turn.ID, speechEndAt: origin}}
+	e.tools.origins = map[string]taskOrigin{task.ID: taskOriginFromTurn(p.turn)}
 	e.speechEndAt = time.Now() // an unrelated, newer caller boundary cannot replace the origin
 	e.onTaskDone(task)
 	if len(e.tools.origins) != 0 || len(e.tools.deliveries) != 1 {
@@ -119,6 +119,12 @@ func TestTaskResultLogsOriginalMonotonicOffsetForCachedOutput(t *testing.T) {
 		delivery["origin_to_result_start_ms"] != float64(want) || want < 1000 {
 		t.Fatalf("wrong caller origin: %v, expected offset %d", delivery, want)
 	}
+	if delivery["origin_timing_version"] != float64(1) || delivery["origin_speech_end_ms"] != float64(0) || delivery["origin_end_silence_ms"] != float64(380) {
+		t.Fatalf("missing original input timing: %v", delivery)
+	}
+	if !p.turn.Timings().FirstAudioOut.IsZero() {
+		t.Fatal("input provenance invented original playback")
+	}
 	if metric["response_to_speech"] != false || metric["first_content_present"] != true || metric["first_content_ms"] != float64(0) {
 		t.Fatalf("cached child metrics changed their origin or lost measured zero: %v", metric)
 	}
@@ -149,6 +155,9 @@ func TestTaskOriginMetadataFollowsTaskLifetime(t *testing.T) {
 	first := submit(p.turn, `{"n":1}`)
 	old := ts.tasks[first]
 	origin := ts.origins[first]
+	if !origin.inputKnown || origin.endSilenceMS != 380 || origin.speechEndMS != 0 || origin.speechEndAt != p.turn.Timings().SpeechEndAt {
+		t.Fatal("submission did not snapshot its own input timing")
+	}
 	origin.ackTurnID = "old_ack"
 	origin.ackCompleted = true
 	ts.origins[first] = origin

@@ -28,7 +28,7 @@ func TestMissingOutputRecordIsAnUnverifiedResponseOverlay(t *testing.T) {
 	before, _ := json.Marshal(c)
 	s := NewServer(Config{})
 	got := s.withLatencyEvidence(c)
-	if got.Latency.Version != 4 || got.Latency.MissingOutputRecords != 1 || got.Latency.Unverified != 1 || got.Latency.FirstContent.N != 20 || *got.Latency.FirstContent.P95 != 880 {
+	if got.Latency.Version != 5 || got.Latency.MissingOutputRecords != 1 || got.Latency.Unverified != 1 || got.Latency.FirstContent.N != 20 || *got.Latency.FirstContent.P95 != 880 {
 		t.Fatalf("missing complete record was hidden or timing invented: %+v", got.Latency)
 	}
 	again := s.withLatencyEvidence(got)
@@ -106,7 +106,7 @@ func TestMissingOutputRecordRecomputesArchiveWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s.withLatencyEvidence(archived)
-	if got.Latency.Version != 4 || got.Latency.MissingOutputRecords != 1 || got.Latency.Unverified != 1 || !got.Latency.Recomputed || archived.Latency.Unverified != 0 {
+	if got.Latency.Version != 5 || got.Latency.MissingOutputRecords != 1 || got.Latency.Unverified != 1 || !got.Latency.Recomputed || archived.Latency.Unverified != 0 {
 		t.Fatalf("archive overlay missing or source mutated: %+v", got.Latency)
 	}
 	// A normal index refresh is still free to archive the original base view.

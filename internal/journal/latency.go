@@ -11,23 +11,25 @@ import (
 // LatencyEvidence separates heard fillers from answer content. These are
 // server-output measurements; neither distribution includes handset playout.
 type LatencyEvidence struct {
-	Version              int                   `json:"version"`
-	Recomputed           bool                  `json:"recomputed,omitempty"`
-	FirstAudio           LatencyDistribution   `json:"first_audio"`
-	FirstContent         LatencyDistribution   `json:"first_content"`
-	ToolResult           LatencyDistribution   `json:"tool_result"`
-	ResultRows           []ToolResultLatency   `json:"tool_result_rows"`
-	QuoteReadout         LatencyDistribution   `json:"quote_readout"`
-	QuoteRows            []QuoteReadoutLatency `json:"quote_readout_rows"`
-	QuoteMissing         int                   `json:"quote_readouts_missing"`
-	QuoteUnknown         int                   `json:"quote_readouts_unverified"`
-	Missing              int                   `json:"missing"`
-	Unverified           int                   `json:"unverified"`
-	Duplicates           int                   `json:"duplicates"`
-	Cancelled            int                   `json:"cancelled"`
-	Joined               int                   `json:"tool_results_joined"`
-	InvalidLinks         int                   `json:"invalid_tool_links"`
-	MissingOutputRecords int                   `json:"missing_output_records,omitempty"`
+	Version                    int                   `json:"version"`
+	Recomputed                 bool                  `json:"recomputed,omitempty"`
+	FirstAudio                 LatencyDistribution   `json:"first_audio"`
+	FirstContent               LatencyDistribution   `json:"first_content"`
+	ConversationalFirstContent LatencyDistribution   `json:"conversational_first_content"`
+	QuoteOnlyResponses         int                   `json:"quote_only_responses"`
+	ToolResult                 LatencyDistribution   `json:"tool_result"`
+	ResultRows                 []ToolResultLatency   `json:"tool_result_rows"`
+	QuoteReadout               LatencyDistribution   `json:"quote_readout"`
+	QuoteRows                  []QuoteReadoutLatency `json:"quote_readout_rows"`
+	QuoteMissing               int                   `json:"quote_readouts_missing"`
+	QuoteUnknown               int                   `json:"quote_readouts_unverified"`
+	Missing                    int                   `json:"missing"`
+	Unverified                 int                   `json:"unverified"`
+	Duplicates                 int                   `json:"duplicates"`
+	Cancelled                  int                   `json:"cancelled"`
+	Joined                     int                   `json:"tool_results_joined"`
+	InvalidLinks               int                   `json:"invalid_tool_links"`
+	MissingOutputRecords       int                   `json:"missing_output_records,omitempty"`
 }
 
 // ToolResultLatency measures a linked result turn's first content. That can
@@ -43,6 +45,7 @@ type ToolResultLatency struct {
 	Interrupted       bool   `json:"interrupted"`
 	Coalesced         bool   `json:"coalesced,omitempty"`
 	PrimaryOriginTurn string `json:"primary_origin_turn,omitempty"`
+	OriginEvidence    string `json:"origin_evidence,omitempty"`
 }
 
 type QuoteReadoutLatency struct {
@@ -56,6 +59,7 @@ type QuoteReadoutLatency struct {
 	Status            string `json:"status"`
 	Coalesced         bool   `json:"coalesced,omitempty"`
 	PrimaryOriginTurn string `json:"primary_origin_turn,omitempty"`
+	OriginEvidence    string `json:"origin_evidence,omitempty"`
 }
 
 func (e *LatencyEvidence) quoteReadout(child, link Line, result ToolResultLatency) {
@@ -68,7 +72,7 @@ func (e *LatencyEvidence) quoteReadout(child, link Line, result ToolResultLatenc
 	}
 	r := QuoteReadoutLatency{Task: result.Task, OriginTurn: result.OriginTurn, ResultTurn: result.ResultTurn,
 		PauseMS: result.PauseMS, OffsetMS: result.OffsetMS, Status: "unverified",
-		Coalesced: result.Coalesced, PrimaryOriginTurn: result.PrimaryOriginTurn}
+		Coalesced: result.Coalesced, PrimaryOriginTurn: result.PrimaryOriginTurn, OriginEvidence: result.OriginEvidence}
 	switch {
 	case quoted != "true" || expected != "true" || !boolKnown(child, "first_readout_present"):
 		e.QuoteUnknown++
@@ -141,7 +145,13 @@ func answeredSpeech(l Line) bool {
 func (cb *callBuild) latencyEvidence() LatencyEvidence {
 	e := LatencyEvidence{Version: 3, ResultRows: []ToolResultLatency{}, QuoteRows: []QuoteReadoutLatency{}}
 	joined := cb.joinedContent(&e)
-	var audio, content []int
+	quoteOnly := map[string]bool{}
+	for _, result := range e.ResultRows {
+		if _, ok := joined[result.OriginTurn]; ok && cb.turns[result.ResultTurn].latency.Get("quote_result") == "true" {
+			quoteOnly[result.OriginTurn] = true
+		}
+	}
+	var audio, content, conversational []int
 	for _, id := range cb.order {
 		t := cb.turns[id]
 		if t.latency == nil {
@@ -181,12 +191,18 @@ func (cb *callBuild) latencyEvidence() LatencyEvidence {
 		}
 		if hasContent {
 			content = append(content, pause+c)
+			if quoteOnly[id] {
+				e.QuoteOnlyResponses++
+			} else {
+				conversational = append(conversational, pause+c)
+			}
 		}
 		if !hasAudio || !hasContent {
 			e.Missing++
 		}
 	}
 	e.FirstAudio, e.FirstContent = latencyDistribution(audio), latencyDistribution(content)
+	e.ConversationalFirstContent = latencyDistribution(conversational)
 	var results []int
 	for _, r := range e.ResultRows {
 		results = append(results, r.TotalMS)
@@ -216,14 +232,14 @@ func (cb *callBuild) missingOutputLatencyRecords() int {
 }
 
 func withOutputLatencyEvidence(c *Call) *Call {
-	if !c.outputLatencyChecked || c.Latency == nil || c.Latency.Version >= 4 {
+	if !c.outputLatencyChecked || c.Latency == nil || c.Latency.Version >= 5 {
 		return c
 	}
 	copy := *c
 	evidence := *c.Latency
-	evidence.Version = 4
+	evidence.Version = 5
 	evidence.MissingOutputRecords = c.missingOutputRecords
-	evidence.Unverified += c.missingOutputRecords
+	evidence.Unverified += c.missingOutputRecords - c.Latency.MissingOutputRecords
 	copy.Latency = &evidence
 	return &copy
 }
@@ -242,7 +258,9 @@ func (cb *callBuild) joinedContent(e *LatencyEvidence) map[string]int {
 	add := func(l Line, result ToolResultLatency) {
 		e.ResultRows = append(e.ResultRows, result)
 		e.quoteReadout(*cb.turns[result.ResultTurn].latency, l, result)
-		if cb.turns[result.OriginTurn].latency.Get("first_content_present") != "true" {
+		origin := cb.turns[result.OriginTurn]
+		if origin != nil && origin.latency != nil && origin.latency.Get("first_audio_present") == "true" &&
+			origin.latency.Get("truncated") != "true" && origin.latency.Get("first_content_present") != "true" {
 			out[result.OriginTurn] = result.OffsetMS + result.ChildContentMS
 			e.Joined++
 		}
@@ -287,36 +305,37 @@ func (cb *callBuild) joinedContent(e *LatencyEvidence) map[string]int {
 // turn. Both ordinary and coalesced relationships require the same evidence.
 func (cb *callBuild) linkedContent(l Line) (ToolResultLatency, bool) {
 	result := ToolResultLatency{}
-	origin, child := cb.turns[l.Get("origin_turn")], cb.turns[l.Get("turn")]
+	child := cb.turns[l.Get("turn")]
 	offset, known := l.Int("origin_to_result_start_ms")
 	if l.Get("task") == "" || l.Get("origin_turn") == "" || l.Get("turn") == "" ||
-		l.Get("origin_turn") == l.Get("turn") || !known || offset < 0 || origin == nil || child == nil ||
-		origin.latency == nil || child.latency == nil || origin.latencyCount != 1 || child.latencyCount != 1 {
+		l.Get("origin_turn") == l.Get("turn") || !known || offset < 0 || child == nil ||
+		child.latency == nil || child.latencyCount != 1 {
 		return result, false
 	}
-	o, c := *origin.latency, *child.latency
-	oa, hasOA := o.Int("first_audio_out_ms")
-	pause, hasPause := o.Int("end_silence_ms")
+	pause, oa, hasOA, input, originOK := linkedOriginTiming(l, cb.turns[l.Get("origin_turn")])
+	if !originOK {
+		return result, false
+	}
+	c := *child.latency
 	ca, hasCA := c.Int("first_audio_out_ms")
 	cc, hasCC := c.Int("first_content_ms")
 	cp, hasCP := c.Int("end_silence_ms")
-	audio, audioFits := latencySum(oa, pause)
 	total, totalFits := latencySum(pause, offset, cc)
-	cancelledOrigin := o.Get("first_content_present") == "false" && o.Get("truncated") == "true"
-	valid := o.Get("response_to_speech") == "true" && o.Get("first_audio_present") == "true" &&
-		boolKnown(o, "first_content_present") && !cancelledOrigin && boolKnown(o, "truncated") && boolKnown(o, "opened") &&
-		hasOA && hasPause && pause >= 0 && audioFits && audio >= 0 &&
-		c.Get("response_to_speech") == "false" && c.Get("first_audio_present") == "true" &&
+	valid := c.Get("response_to_speech") == "false" && c.Get("first_audio_present") == "true" &&
 		c.Get("first_content_present") == "true" && boolKnown(c, "opened") && boolKnown(c, "truncated") &&
-		hasCP && cp == 0 && hasCA && hasCC && ca >= 0 && cc >= ca && totalFits && offset+cc >= oa
+		hasCP && cp == 0 && hasCA && hasCC && ca >= 0 && cc >= ca && totalFits && (!hasOA || offset+cc >= oa)
 	if !valid {
 		return result, false
 	}
-	return ToolResultLatency{
+	result = ToolResultLatency{
 		Task: l.Get("task"), OriginTurn: l.Get("origin_turn"), ResultTurn: l.Get("turn"),
 		PauseMS: pause, OffsetMS: offset, ChildContentMS: cc,
 		TotalMS: total, Interrupted: c.Get("truncated") == "true",
-	}, true
+	}
+	if input {
+		result.OriginEvidence = "caller_input_v1"
+	}
+	return result, true
 }
 
 // Enrich an older saved call from its immutable archive. Re-indexing is
@@ -325,7 +344,7 @@ func (s *Server) withLatencyEvidence(c *Call) *Call {
 	if c.outputLatencyChecked {
 		return withOutputLatencyEvidence(c)
 	}
-	if (c.Latency != nil && c.Latency.Version >= 4) || s.archive == nil || c.Session == "" {
+	if (c.Latency != nil && c.Latency.Version >= 5) || s.archive == nil || c.Session == "" {
 		return c
 	}
 	f, err := os.Open(s.archive.Path(c.ID, archLog))

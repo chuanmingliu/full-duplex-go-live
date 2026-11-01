@@ -1,0 +1,260 @@
+{
+  "scope": "Controlled in-process simulation; no phone dial, no handset or Active Call transport timing",
+  "baseline": "be11821d82a8d90d740bfe0f0e403904e6d44119",
+  "candidate": "Selective shared backport from ad1de9c plus exact focus-duration fix; see containing commit",
+  "fixture_sha256": {
+    "internal/duplex/quote_ack_latency_sim_test.go": "ba4da8f4c35403694af23991ad0a08342772268c2ad832784af7f06693e8835d",
+    "internal/duplex/ready_ack_latency_sim_test.go": "eec65982f76b1b2e4850f2eec097157da6266a2596407aa665a9ec0bedfb878b",
+    "internal/crm/quote_latency_sim_test.go": "5c3f1f2b761b39bb7866fc39420a4c2f5f137c0a449dc8971ef24c4d1e787639"
+  },
+  "samples": {
+    "baseline": [
+      {
+        "ack_audio_ms": "2380",
+        "result_ready_after_ack_start_ms": "610",
+        "modeled_remaining_wait_ms": "1770"
+      },
+      {
+        "calling_completed": "true",
+        "covered_continuation": "false",
+        "configured_wait_ms": "1500",
+        "unrelated_floor_ms": "3000",
+        "ready_to_delivery_ms": "3004"
+      },
+      {
+        "calling_completed": "false",
+        "covered_continuation": "false",
+        "configured_wait_ms": "1500",
+        "unrelated_floor_ms": "3000",
+        "ready_to_delivery_ms": "3002"
+      },
+      {
+        "calling_completed": "true",
+        "covered_continuation": "true",
+        "configured_wait_ms": "1500",
+        "unrelated_floor_ms": "3000",
+        "ready_to_delivery_ms": "3006"
+      },
+      {
+        "upstream_ms": "0",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "663",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "0",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "662",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "0",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "663",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "663",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "664",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "662",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "800",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "1253",
+        "queries": "2"
+      },
+      {
+        "upstream_ms": "800",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "1245",
+        "queries": "2"
+      },
+      {
+        "upstream_ms": "800",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "1244",
+        "queries": "2"
+      },
+      {
+        "upstream_ms": "1350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "1827",
+        "queries": "3"
+      },
+      {
+        "upstream_ms": "1350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "1827",
+        "queries": "3"
+      },
+      {
+        "upstream_ms": "1350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "1827",
+        "queries": "3"
+      }
+    ],
+    "candidate": [
+      {
+        "ack_audio_ms": "1540",
+        "result_ready_after_ack_start_ms": "610",
+        "modeled_remaining_wait_ms": "930"
+      },
+      {
+        "calling_completed": "true",
+        "covered_continuation": "false",
+        "configured_wait_ms": "1500",
+        "unrelated_floor_ms": "3000",
+        "ready_to_delivery_ms": "1503"
+      },
+      {
+        "calling_completed": "false",
+        "covered_continuation": "false",
+        "configured_wait_ms": "1500",
+        "unrelated_floor_ms": "3000",
+        "ready_to_delivery_ms": "1504"
+      },
+      {
+        "calling_completed": "true",
+        "covered_continuation": "true",
+        "configured_wait_ms": "1500",
+        "unrelated_floor_ms": "3000",
+        "ready_to_delivery_ms": "1504"
+      },
+      {
+        "upstream_ms": "0",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "162",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "0",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "161",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "0",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "161",
+        "queries": "1"
+      },
+      {
+        "upstream_ms": "350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "661",
+        "queries": "2"
+      },
+      {
+        "upstream_ms": "350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "662",
+        "queries": "2"
+      },
+      {
+        "upstream_ms": "350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "663",
+        "queries": "2"
+      },
+      {
+        "upstream_ms": "800",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "1163",
+        "queries": "3"
+      },
+      {
+        "upstream_ms": "800",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "1163",
+        "queries": "3"
+      },
+      {
+        "upstream_ms": "800",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "1163",
+        "queries": "3"
+      },
+      {
+        "upstream_ms": "1350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "0",
+        "tool_ms": "1666",
+        "queries": "4"
+      },
+      {
+        "upstream_ms": "1350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "1",
+        "tool_ms": "1664",
+        "queries": "4"
+      },
+      {
+        "upstream_ms": "1350",
+        "http_ms": "80",
+        "poll_ms": "500",
+        "trial": "2",
+        "tool_ms": "1665",
+        "queries": "4"
+      }
+    ]
+  }
+}

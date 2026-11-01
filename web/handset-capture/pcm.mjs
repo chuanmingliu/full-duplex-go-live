@@ -15,6 +15,8 @@ export class PCMEncoder {
     this.used = 0;
     this.issues = new Set();
     this.clipped = 0;
+    this.clockDiscontinuities = [];
+    this.clockDiscontinuityCount = 0;
   }
 
   issue(code) {
@@ -57,6 +59,15 @@ export class PCMEncoder {
     const gap = contextFrame - (this.firstFrame + this.frames);
     if (gap !== 0) {
       this.issue('sample_clock_discontinuity');
+      this.clockDiscontinuityCount++;
+      // Retain bounded diagnostics in the sidecar. Never hide or repair the
+      // integrity failure: even a padded gap remains invalid timing evidence.
+      if (this.clockDiscontinuities.length < 64) this.clockDiscontinuities.push({
+        output_frame: this.frames,
+        expected_context_frame: this.firstFrame + this.frames,
+        actual_context_frame: contextFrame,
+        gap_frames: gap,
+      });
       // Keep a forward gap on the timeline; it remains invalid evidence.
       for (let i = 0; i < gap && this.active; i++) this.append(0);
       skip = Math.max(0, -gap);
@@ -84,6 +95,8 @@ export class PCMEncoder {
       first_audio_context_frame: this.firstFrame,
       final_audio_context_frame: this.firstFrame === null ? null : this.firstFrame + this.frames,
       clipped_samples: this.clipped,
+      clock_discontinuity_count: this.clockDiscontinuityCount,
+      clock_discontinuities: this.clockDiscontinuities,
       stop_reason: reason,
     });
   }

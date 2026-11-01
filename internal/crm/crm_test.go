@@ -606,11 +606,12 @@ func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
 // describes it: the inquiry answers "ok" at once; the query returns the
 // quote that was there before until, a few polls later, the new one.
 type fakeIntranet struct {
-	mu        sync.Mutex
-	inquiries []map[string]any
-	queries   int
-	readyAt   int // the query number at which the new quote appears
-	fail      bool
+	mu           sync.Mutex
+	inquiries    []map[string]any
+	queries      int
+	readyAt      int           // the query number at which the new quote appears
+	inquiryDelay time.Duration // simulated upstream work, independent of polling
+	fail         bool
 }
 
 func (f *fakeIntranet) handler() http.Handler {
@@ -621,6 +622,7 @@ func (f *fakeIntranet) handler() http.Handler {
 		f.mu.Lock()
 		f.inquiries = append(f.inquiries, body)
 		f.mu.Unlock()
+		time.Sleep(f.inquiryDelay)
 		w.Write([]byte(`{"code":0,"msg":"ok","data":"ok"}`))
 	})
 	mux.HandleFunc("POST /intranet/vehicle/simpleProcess/queryLastQuoteDetailByPhone", func(w http.ResponseWriter, r *http.Request) {
@@ -1020,11 +1022,11 @@ func TestInquiriesAreOneAtATimeAndCallersGoFirst(t *testing.T) {
 // on 10-26: the background work must not stop).
 func TestACallersMissGoesNextAndTheNeighboursStillFinish(t *testing.T) {
 	fx := newFixture(t)
-	fake := &fakeIntranet{}
+	fake := &fakeIntranet{inquiryDelay: 120 * time.Millisecond}
 	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
 	api := strings.Replace(DefaultQuoteAPI, `"base_url": ""`, `"base_url": "`+srv.URL+`/intranet"`, 1)
-	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 120`, 1) // each inquiry ~120 ms
+	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 120`, 1) // polling policy is independent of simulated upstream work
 	api = strings.Replace(api, `"timeout_ms": 90000`, `"timeout_ms": 5000, "default_phone": "13800000000"`, 1)
 	if code, body := fx.do("PUT", "/api/configs/"+QuoteAPIName+"?note=test", api, nil); code != 200 {
 		t.Fatalf("config: %d %s", code, body)
