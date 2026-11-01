@@ -18,6 +18,9 @@ audio directions, retain the call ID, and wait for the owner's `done` before dee
 analysis. `done` does not authorize redialing. Protect credentials and customer
 data from logs, commits and reports.
 
+Keep the original scenario/preset openers as the conversational baseline. Leave
+Talker-generated openers disabled; preserve the coordinated opener/answer flow.
+
 Prioritize normal response and interruption latency. Report quotation
 calculation and result completion separately; preserve its configured delay.
 Keep server-output measurements, the owner's optional 50 ms handset estimate,

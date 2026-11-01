@@ -20,6 +20,11 @@ quotation calculation time and result completion separate, using
 `--quote-sla separate` in the latency tools. Do not shorten the configured
 quotation-service calculation delay to improve the conversational score.
 
+Keep the original preset opener pools and coordinated main-LLM continuation.
+Talker-generated openers remain disabled. The [opener and hangup implementation
+guide](docs/architecture/08-openers-and-hangup.md) distinguishes literal scenario
+matching, semantic model decisions and transport hangup.
+
 The [local operations scripts](scripts/local-ops/README.md) include the Mac runner,
 checked enqueue/staging helpers and exact historical Codex call, collection,
 simulation, deployment and verification bodies. Historical jobs retain their

@@ -118,6 +118,8 @@ type Engine struct {
 	talkerAttempts, talkerUtteranceAttempts int
 	deps                                    Deps
 	log                                     *slog.Logger
+	// Coalesced notification: speaker labels changed, but decisions stay on the loop.
+	focusReady chan struct{}
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -420,17 +422,18 @@ func New(opts Options, deps Deps) *Engine {
 	vad := audio.NewVAD(vcfg)
 
 	e := &Engine{
-		opts:     opts,
-		deps:     deps,
-		log:      deps.Log.With("session", opts.SessionID),
-		vad:      vad,
-		framer:   audio.NewFramer(vad.FrameBytes()),
-		audioCh:  make(chan []byte, 64),
-		asrCh:    make(chan asrEvent, 64),
-		ctrlSig:  make(chan struct{}, 1),
-		loopDone: make(chan struct{}),
-		history:  append([]provider.Message(nil), opts.History...),
-		instr:    opts.Instructions,
+		opts:       opts,
+		deps:       deps,
+		log:        deps.Log.With("session", opts.SessionID),
+		vad:        vad,
+		framer:     audio.NewFramer(vad.FrameBytes()),
+		audioCh:    make(chan []byte, 64),
+		asrCh:      make(chan asrEvent, 64),
+		focusReady: make(chan struct{}, 1),
+		ctrlSig:    make(chan struct{}, 1),
+		loopDone:   make(chan struct{}),
+		history:    append([]provider.Message(nil), opts.History...),
+		instr:      opts.Instructions,
 		watch: NewStabilityWatch(
 			time.Duration(opts.Cfg.Duplex.SpeculativeStableMS)*time.Millisecond,
 			opts.Cfg.Duplex.SpeculativeMinChars,
@@ -721,6 +724,8 @@ func (e *Engine) loop() {
 			e.onAudio(pcm)
 		case ev := <-e.asrCh:
 			e.onASREvent(ev)
+		case <-e.focusReady:
+			e.onFocusEvidence()
 		case <-e.ctrlSig:
 			e.runPosted()
 		case <-tick.C:

@@ -21,7 +21,7 @@ import (
 // is in hand ~210 ms after the last sound — and early enough to abandon an
 // answer, which takes ~650 ms more to become audio. So every turn begun on
 // the caller's words is also noted here with the span of audio it answers
-// (focusNote), and on each tick the span's attribution is asked for
+// (focusNote), and on new labels or each tick the span's attribution is asked for
 // (judgeFocus): once most of it is labelled, an utterance that was mostly
 // another voice's, with the primary silent, has its answer abandoned — before
 // the first audio when that is still possible, with a "too late" in the log
@@ -116,8 +116,25 @@ func (e *Engine) startFocus(ctx context.Context) {
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		focus.Run(ctx, client, fs.tracker, nil)
+		focus.Run(ctx, client, fs.tracker, func(focus.Frame) {
+			// Observe has already updated the locked tracker. One wakeup covers
+			// a burst of labels; never queue one closure per model frame.
+			select {
+			case e.focusReady <- struct{}{}:
+			default:
+			}
+		})
 	}()
+}
+
+// The same evidence gates as the audio/timer paths, now also run when the
+// awaited evidence arrives. This does not guess the caller's identity, shorten
+// a hold, or bypass transcript/backchannel checks. All state remains loop-owned.
+func (e *Engine) onFocusEvidence() {
+	e.expireHold()
+	e.judgeUtteranceFocus()
+	e.judgeFocus()
+	e.maybeCloseOnCallerQuiet()
 }
 
 func (e *Engine) focusVetoShare() float64 {

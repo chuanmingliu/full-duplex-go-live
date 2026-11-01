@@ -1443,8 +1443,10 @@ func (e *Engine) planFragmentOpener(turn *Turn) string {
 
 // planOpener chooses the opener for a turn's answer from the pool that fits
 // how the caller's words read — a question gets 嗯，/这个呀，/我看一下，…, a
-// statement 好的，/明白，/行，… — never one said in the last three turns, and
-// records it on the turn so the model is told to continue from it.
+// statement 好的，/明白，/行，…. It prefers the least recently selected phrase,
+// avoids an immediate repeat when possible, and records the choice so the
+// model is told to continue from it. The recent-three window expands a small
+// pool with generic candidates; it is not a strict three-turn exclusion.
 func (e *Engine) planOpener(turn *Turn) string {
 	d := e.opts.Cfg.Duplex
 	if !d.Opener || turn == nil || turn.OpenerPlanned != "" {
@@ -1463,8 +1465,9 @@ func (e *Engine) planOpener(turn *Turn) string {
 	if sc := e.openers.Match(turn.Transcript, question); sc != nil {
 		pool, scenario = sc.Phrases, sc.ID
 	}
-	// The least recently said phrase of the pool, never the one said last;
-	// when every phrase of a small scenario pool has been said this call,
+	// The least recently selected phrase of the pool, never the one selected
+	// last when alternatives exist; when every phrase of a small scenario
+	// pool appears in the recent-three selection history,
 	// the profile's generic pool joins the candidates. Random choice among
 	// "not in the last three" let 保费呢， come twice in five price questions
 	// (the owner, 10:07 on 10-28: "I hear 保费呢 more than once").

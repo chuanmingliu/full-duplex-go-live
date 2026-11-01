@@ -16,6 +16,7 @@ This documentation describes `codex/telephony-latency` at **9547d22**, inspected
 | [4. Recordings and evidence](04-recordings-and-evidence.md) | Working store, permanent archive, Journal, Desk, telemetry and handset measurement |
 | [5. Development and deployment](05-development-and-deployment.md) | Mac, runner.sh, GitHub, CI, release verification, browser demo and tunnel boundaries |
 | [7. Streaming coordination](07-streaming-coordination.md) | ASR partials, early final, speculation, commitment, text/audio streaming, interruptions and timing |
+| [8. Openers and hangup](08-openers-and-hangup.md) | Keyword selection, LLM continuation, semantic/tool hangup, regex/timer rules and safeguards; verified 1 November 2026 |
 | [6. Simulator and model lab](06-simulator-and-model-lab.md) | Synthetic customer, Talker, edge models and diagnostic tools |
 
 Each component has its own section with responsibility, deployment boundary, location, inputs, outputs, operation, limitations and implementation/runbook links. The explorer contains the same component descriptions. Select a view and a node to highlight its incoming and outgoing relationships. The whole-system view also shows the other connections faintly. Source links in the explorer point to the inspected commit; Markdown links open the local checkout.
