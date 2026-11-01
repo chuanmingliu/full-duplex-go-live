@@ -10,13 +10,24 @@ import (
 // ended, a task is ready, and an unrelated answer holds the floor for 3s.
 // Report task-ready-to-delivery time, not handset or quotation-readout latency.
 func TestCompletedCallingAckLatencySimulation(t *testing.T) {
+	runCallingAckLatencySimulation(t, true)
+}
+
+func TestSilentCallingAckLatencySimulation(t *testing.T) {
+	runCallingAckLatencySimulation(t, false)
+}
+
+func runCallingAckLatencySimulation(t *testing.T, completed bool) {
+	t.Helper()
 	if os.Getenv("GOLIVE_TOOL_LATENCY_SIM") != "1" {
 		t.Skip("opt-in controlled scheduling simulation")
 	}
 	e, _, task, p := newAckHandoffTest(t)
 	e.opts.Cfg.ToolsDeliverWaitMS = 1500
 	e.continuations = append(e.continuations, p)
-	p.turn.MarkCompleted()
+	if completed {
+		p.turn.MarkCompleted()
+	}
 	followup := e.tracker.Begin("Unrelated response", false)
 	e.commitTurn(followup)
 	e.backendPending.Store(1)
@@ -37,5 +48,5 @@ func TestCompletedCallingAckLatencySimulation(t *testing.T) {
 	if e.tools.delivered != 1 {
 		t.Fatal("simulation did not deliver its result")
 	}
-	t.Logf("LATENCY_SIM configured_wait_ms=1500 unrelated_floor_ms=3000 ready_to_delivery_ms=%d", time.Since(start).Milliseconds())
+	t.Logf("LATENCY_SIM calling_completed=%t configured_wait_ms=1500 unrelated_floor_ms=3000 ready_to_delivery_ms=%d", completed, time.Since(start).Milliseconds())
 }

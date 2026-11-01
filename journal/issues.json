@@ -1494,12 +1494,13 @@
    "symptom": "Ready tasks waited 8963–18187 ms; no scripted acknowledgment was spoken. A controlled calling-turn completion remained blocked behind a newer answer.",
    "cause": "ackPending is checked before the delivery timeout; the scripted continuation normally waits for the entire conversation floor, even after its own calling playback ended.",
    "fix": "Release the ready task acknowledgment after its own playback completion, preserving function history once. Retain unfinished-clause and scripted-ack guards; prevent result timeout from taking the caller floor during speech, pending ASR finalization or focus hold.",
-   "verified": "Controlled scheduler: 3004 ms baseline vs 1501 ms candidate. Recorded original-GoLive SIP trials 1e38bac/151b2e3 completed with verified archives and zero receiver failures. Candidate exercised two releases, but strict gate failed: first content n=5 p95=995 ms, linked quotation readout n=1 14387 ms, one missing response and eight invalid/unverified links. Full CI remains pending. Follow-up silent-calling-turn regression fails on 151b2e3; targeted race suite passes in 23.025 seconds, including coalescing and playback-owner protections.",
-   "effect": "Not production-qualified. Candidate t2 ready wait 11485 ms overlaps 10031 ms of caller VAD-open intervals; t4 waits 12427 ms without caller VAD overlap. Calling turns item_7/item_10 have no playback completion record. A regression reproduces a superseded zero-audio calling turn blocking its result; follow-up guards allow release only after generation invalidation and no retained playback permission. No acoustic handset gain established.",
+   "verified": "Both regressions fail on their prior baseline and focused race tests pass. Controlled silent-turn scheduler: 3005 ms on 151b2e3 vs 1503 ms on f8e4d83. Recorded f8e4d83 SIP simulation exercised two silent releases and one playback-completed release; all ready-task waits <=1597 ms, archives verified. Strict 1150 ms gate still fails: content n=9 p95=5180 ms, linked readout n=3 p95=7113 ms, two unverified links and one receiver TTS warning. 151b2e3 full CI passed; f8e4d83 full CI remains in progress.",
+   "effect": "Scheduling behavior improved in controlled reproduction and exercised in recorded simulation. No causal real-call speedup or handset qualification established. Cold revised quote task took 5266 ms including 4006 ms upstream service time. Keep issue open; original services and Active Call preserved.",
    "commits": [
-    "151b2e3"
+    "151b2e3",
+    "f8e4d83"
    ],
-   "verified_call": "sim-readyack-c573d9bc-0670-4217-b0ea-36f8e4e1d19f"
+   "verified_call": "sim-silentack-8395ce4c-0e58-4939-afa1-ded9247c784b"
   }
  ]
 }

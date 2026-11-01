@@ -104,3 +104,46 @@ response minimum and all missing/ambiguous-evidence failures. Use
 This is a planning assumption, not measured physical-handset evidence. It does
 not turn the failed simulations above into a pass or satisfy the acoustic
 completion requirement.
+
+### Silent-calling-turn scheduling comparison
+
+The same opt-in fixture on `151b2e3` and `f8e4d83` leaves the original calling
+turn silent, starts a newer answer, and keeps that newer floor busy for 3000 ms.
+Both use the unchanged 1500 ms delivery wait. Baseline ready-to-delivery was
+3005 ms; candidate was 1503 ms, a 1502 ms reduction in this single deterministic
+case. This is scheduling time only, not first audible content, readout or
+handset p95. The new fixture is `TestSilentCallingAckLatencySimulation`.
+
+## Recorded silent-turn follow-up
+
+Both 90-second original-GoLive SIP trials completed, with verified two-sided
+archives. The `f8e4d83` candidate exercised the new silent-turn release twice and
+the completed-playback release once. Its ready-task waits were 182, 1530, 0 and
+1597 ms. The previous 11–15 second backlog did not appear in this conversation;
+this is not a causal comparison because the conversational turns differ.
+
+| Server metric | 151b2e3 p95 (samples) | f8e4d83 p95 (samples) |
+| --- | ---: | ---: |
+| First audio | 967 ms (6) | 1181 ms (9) |
+| First non-opener content | 8806 ms (6) | 5180 ms (9) |
+| Linked tool result | 8806 ms (1) | 6162 ms (3) |
+| Linked quotation readout | 9969 ms (1) | 7113 ms (3) |
+
+Both fail the stricter 1150 ms server gate. Baseline has three unverified links;
+candidate has two, plus one receiver `tts_chunk_failed` warning. Neither has
+20 valid responses. Candidate cached results t2 and t4 were interrupted before
+readout, so their short output delays cannot count as completed quotations.
+
+The baseline CRM logged foreground quotation-service durations of 3507 and
+3505 ms for the revised requests, while their tool tasks took 6064 and 5082 ms.
+The candidate's cold revised request took 5266 ms, including a 4006 ms service
+request. The remaining elapsed time includes queueing and local HTTP/tool work;
+these existing logs do not isolate every phase. The CRM intentionally serializes
+inquiries because the upstream returns the latest quote for a phone/vehicle;
+parallelizing them can associate the wrong price with a requested plan. Keep
+that correctness guard while investigating the remaining delay.
+
+[Baseline](../../journal/retros/sim-silentack-a8305880-1a53-4030-b30f-218e6038fe5e.md)
+and [candidate](../../journal/retros/sim-silentack-8395ce4c-0e58-4939-afa1-ded9247c784b.md)
+record the full gate reasons. No real handset was dialed and original service
+hashes plus Active Call identity/start time were unchanged.
