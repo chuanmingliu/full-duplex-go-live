@@ -1577,6 +1577,34 @@
    "commits": [
     "0c2ba18"
    ]
+  },
+  {
+   "id": "ISS-101",
+   "title": "Silence hangup rule can fire on the tick between the floor's release and the quiet being stamped",
+   "area": "engine",
+   "status": "fixed",
+   "found": "2026-11-02",
+   "found_call": "",
+   "symptom": "With the caller's last word older than the rule and a long answer ending, a 120 ms tick can see assistantHasFloor false while lastQuietAt is still unstamped: the silence rule applies and the farewell is said as the answer ends (the ISS-051 shape, by a narrower window).",
+   "cause": "The player clears speaking and activeTurn under its own lock in finishTurn and only then posts the completion receipt; noteAssistantQuiet runs when that posted callback reaches the loop. checkHangupRules on a tick between the two read the clock from lastCallerAt alone. The quiet is also never stamped when the tracker has moved on before the receipt runs.",
+   "fix": "toolState.floorHeldAt is stamped on every checkHangupRules pass that sees the floor held, or a playback completion receipt posted and not yet run (playbackReceiptPending); the silence clock runs from the latest of lastCallerAt, lastQuietAt and floorHeldAt (silenceClockStart). The duration rule reads the same floorHeld value. Loop-goroutine state only; assistantHasFloor is unchanged for turn-taking.",
+   "verified": "TestTheSilenceClockRunsFromTheLastTickThatSawTheFloorHeld, TestAPostedPlaybackReceiptKeepsTheSilenceClock and TestTheSilenceClockStartsFromWhoeverWasLastHeard fail with the stamp and the receipt check removed and pass with them; the ISS-051 tests still pass. Not yet seen on a call: the window is sub-millisecond and the rule is 25 s on the box, so a call will not show it either way.",
+   "effect": "No latency change; removes a wrong hangup at the end of a long answer.",
+   "commits": []
+  },
+  {
+   "id": "ISS-102",
+   "title": "A quick tool's late continuation resumes the model over the caller's newer question and discards its head start",
+   "area": "engine",
+   "status": "fixed",
+   "found": "2026-11-02",
+   "found_call": "",
+   "symptom": "A continuation posted back by a quick (synchronous) tool, or by a client's response.create, is started by drainDeferred whenever the audio floor is free, even when the caller has since asked something new: the stale answer plays first, and startContinuation clears specTurn, so the speculative answer begun on the new question is thrown away and it is answered a whole backend round late.",
+   "cause": "continueWith checked the turn only at enqueue time (and only for a turn both non-current and dead, which a barge-in does not produce); drainDeferred checked userOpen, awaitingFinal and assistantHasFloor but not a floor hold, a live speculation or a newer committed caller turn. The result delivery has had these guards since ISS-092/ISS-094; the continuation path had none.",
+   "fix": "drainDeferred, for a non-scripted continuation of the engine's own tools (pendingResponse.server, set in onServerCalls): one whose turn was killed or whose caller has a newer committed turn of their own words (continuationSuperseded) is retired with its function history recorded and the model not resumed. Any non-scripted continuation is held while a barge-in is being judged (hold) or a speculation is live. A client's function result (ContinueResponse) is still read back however late it comes; scripted acks are untouched (sayAck has its own guards).",
+   "verified": "TestALateContinuationDoesNotResumeOverANewerCallerTurn, TestAContinuationOfAKilledTurnIsNotResumed, TestAContinuationWaitsForALiveSpeculation (committed and abandoned) and TestAContinuationWaitsWhileABargeInIsJudged fail without the guards and pass with them; TestAScriptedAckContinuationIsNotHeldAsStale guards the ack path and TestAClientsLateFunctionResultIsStillResumed the client path (the first race run failed TestConversationContinuesWhileAFunctionIsPending until the rule was scoped to the engine's tools). The opt-in ack latency simulations give ready_to_delivery 1500/1503/1501 ms, the recorded candidate figures. Not yet exercised on a call.",
+   "effect": "On a call where a quick tool returns after the caller has gone on, the new question keeps its speculative head start (one backend round, ~400-900 ms at the hour) and no stale answer precedes it.",
+   "commits": []
   }
  ]
 }

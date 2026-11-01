@@ -53,6 +53,11 @@ type pendingResponse struct {
 	// scriptedTask is the task the ack is for: finished already when the
 	// ack is due, it is not said.
 	scriptedTask string
+	// server: the engine's own tools made the calls (onServerCalls), and
+	// the continuation is the engine's to retire when the caller has gone
+	// on. A client's function result (ContinueResponse) is the point of
+	// the delegation and is read back however late it comes.
+	server bool
 	// Only exact folds into a still-owned task qualify. They need function
 	// history, but the task result itself answers the follow-up.
 	coalescedCalls map[string]*coalescedTask
@@ -1069,6 +1074,28 @@ func (e *Engine) drainDeferred() {
 	}
 	if len(e.continuations) > 0 {
 		p := e.continuations[0]
+		if p.scripted == "" {
+			// A quick tool's continuation arrives off the loop, whenever
+			// the tool returns; by then the caller may have gone on. The
+			// result delivery has had these guards since ISS-094; the
+			// continuation had none, and a late one took the floor over a
+			// newer question — and threw away the head start begun on it
+			// (startContinuation clears specTurn), a whole backend round
+			// on top of the stale answer.
+			if p.server && e.continuationSuperseded(p) {
+				e.continuations[0] = nil
+				e.continuations = e.continuations[1:]
+				e.recordContinuation(p)
+				e.log.Info("tools: a late continuation is not resumed; the caller has gone on",
+					"turn", p.turn.ID, "calls", len(p.calls), "waited_ms", time.Since(p.createdAt).Milliseconds())
+				e.drainDeferred()
+				return
+			}
+			if e.hold != nil || e.liveSpeculation() != nil {
+				return
+			}
+		}
+		e.continuations[0] = nil
 		e.continuations = e.continuations[1:]
 		e.startContinuation(p)
 		return
@@ -1088,6 +1115,25 @@ func (e *Engine) drainDeferred() {
 	pipe.Push(text)
 	pipe.Close()
 	turn.AppendResponse(text)
+}
+
+// continuationSuperseded says the caller has moved on from the turn whose
+// function results this continuation carries: that turn was killed, or a
+// newer turn of the caller's own words has been committed since. The
+// results still go into the history, where the newer answer can use them;
+// the model is not resumed to answer a question the caller has left.
+// Judged only for the engine's own tools' continuations (pendingResponse.
+// server): an application's late function result is still read back
+// (TestConversationContinuesWhileAFunctionIsPending).
+func (e *Engine) continuationSuperseded(p *pendingResponse) bool {
+	if p.turn == nil {
+		return false
+	}
+	if p.turn.Dead() {
+		return true
+	}
+	cur := e.tracker.Current()
+	return cur != nil && cur != p.turn && cur.Transcript != "" && !cur.Scripted && cur.Committed()
 }
 
 // SetBackend replaces the session's delegation.responses settings for

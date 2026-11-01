@@ -72,6 +72,14 @@ type toolState struct {
 	// and the rule hung up as the second one ended).
 	lastCallerAt time.Time
 	lastQuietAt  time.Time
+	// floorHeldAt is the last tick that saw the assistant holding the
+	// floor. The player clears its speaking state under its own lock and
+	// only then posts the completion that stamps lastQuietAt, so a tick
+	// between the two sees a free floor and a stale clock: with the
+	// caller's last word older than the rule, the silence rule fired as
+	// the answer ended, the very thing ISS-051's fix was for. The clock
+	// runs from the latest of the three.
+	floorHeldAt time.Time
 	// callerTurns counts the caller's turns that were committed with words
 	// (what the hangup rules' min_turns is judged on). netHeldUntil keeps
 	// the goodbye net from acting on the farewell of a refused end_call.
@@ -388,7 +396,7 @@ func (e *Engine) isServerTool(name string) bool {
 func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 	ts := e.tools
 	e.ensureUserRecorded(job.turn)
-	p := &pendingResponse{delegationID: job.delegationID, turn: job.turn, calls: calls, outputs: map[string]string{}, createdAt: time.Now()}
+	p := &pendingResponse{delegationID: job.delegationID, turn: job.turn, calls: calls, outputs: map[string]string{}, createdAt: time.Now(), server: true}
 	folded := foldedIntoComparison(calls)
 	var wait []provider.ToolCall
 	for _, c := range calls {
@@ -634,6 +642,13 @@ func (e *Engine) checkHangupRules(callerWords string) {
 	if age < minCallForEndCall {
 		return
 	}
+	// Seen held now, or a completion receipt for the answer that just
+	// ended is still on its way to the loop: either way the assistant has
+	// only just gone quiet, and the silence clock must say so.
+	floorHeld := e.assistantHasFloor() || e.playbackReceiptPending()
+	if floorHeld {
+		ts.floorHeldAt = time.Now()
+	}
 	for _, r := range ts.engine {
 		switch r.Kind {
 		case "keyword":
@@ -645,18 +660,12 @@ func (e *Engine) checkHangupRules(callerWords string) {
 				continue
 			}
 			// At a quiet moment, not over the caller.
-			if e.userOpen || e.assistantHasFloor() {
+			if e.userOpen || floorHeld {
 				continue
 			}
 		case "silence":
-			since := ts.lastCallerAt
-			if since.IsZero() {
-				since = ts.started
-			}
-			if ts.lastQuietAt.After(since) {
-				since = ts.lastQuietAt
-			}
-			if time.Since(since) < time.Duration(r.Seconds)*time.Second || e.userOpen || e.assistantHasFloor() {
+			since := e.silenceClockStart()
+			if time.Since(since) < time.Duration(r.Seconds)*time.Second || e.userOpen || floorHeld {
 				continue
 			}
 		default:
@@ -673,6 +682,34 @@ func (e *Engine) checkHangupRules(callerWords string) {
 		go e.endCallWhenQuiet(r.ID)
 		return
 	}
+}
+
+// silenceClockStart is when the silence rule's clock began: the latest of
+// the caller's last word, the assistant's last word and the last tick that
+// saw the assistant holding the floor (see toolState.floorHeldAt). Loop
+// goroutine.
+func (e *Engine) silenceClockStart() time.Time {
+	ts := e.tools
+	since := ts.lastCallerAt
+	if since.IsZero() {
+		since = ts.started
+	}
+	if ts.lastQuietAt.After(since) {
+		since = ts.lastQuietAt
+	}
+	if ts.floorHeldAt.After(since) {
+		since = ts.floorHeldAt
+	}
+	return since
+}
+
+// playbackReceiptPending says a playback completion has been posted and
+// not yet run on the loop: the player has already let go of the floor,
+// but the quiet it reports has not been stamped.
+func (e *Engine) playbackReceiptPending() bool {
+	e.playbackMu.Lock()
+	defer e.playbackMu.Unlock()
+	return len(e.playbackPending) > 0
 }
 
 // hangingUp says whether the model's request to end the call stands.
