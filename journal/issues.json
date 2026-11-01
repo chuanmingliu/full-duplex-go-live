@@ -1558,7 +1558,7 @@
    "id": "ISS-096",
    "title": "Handset capture rejects UUID calls and lacks separate quote SLA",
    "area": "measurement",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-11-01",
    "found_on": "Preflight for real handset acoustic capture",
    "symptom": "Recorder export and acoustic verifier accept only out-prefixed call IDs, blocking the native UUID workflow. The acoustic gate still imposes the response target on quotation calculation.",
@@ -1571,14 +1571,17 @@
    "id": "ISS-097",
    "title": "Playback replacement loses the previous output completion receipt",
    "area": "measurement",
-   "status": "open",
+   "status": "fixed",
    "found": "2026-11-01",
    "found_call": "3af753f8-d623-43ff-a619-6c4a6557cccb",
    "symptom": "item_28 started three transcript segments but has no final response timing in either archive or full engine log. Strict gate correctly rejects the incomplete population.",
    "cause": "ensureTurnLocked resets an active old owner on new valid generation dispatch without reporting its played audio. A held interruption can allow a final transcript to advance the tracker before explicit Interrupt.",
    "fix": "Snapshot the old exact owner and heard prefix before replacement; report outside the player mutex. Preserve opener adoption and suppress receipts for unplayed turns.",
-   "verified": "Baseline fails four new-turn/revision dispatch cases and heard-prefix regression. Focused race tests pass; replacement and acknowledgment tests pass 30 repetitions. Full CI pending.",
-   "effect": "Accounting repair only, no claimed latency saving. Historical missing evidence stays invalid; no original configuration changes."
+   "verified": "Baseline regression fails all four new-turn/revision begin/audio cases and heard-prefix test. Focused race suite and 30 repeated replacement/ack cases pass. Full CI 41286136566 passed verify and simulate. Fresh original-config SIP candidate: 10 normal outputs, no missing/duplicate/unverified records, no receiver warnings, two scripted interruptions completed and five archive files verified. Native engine 9895 deployed at 15:58:40; idle readiness and no-dial adapter preflight pass.",
+   "effect": "Preserves the old playback owner in accounting and history. Prior 7fc4237 binary retained; original configurations, native Journal, other engines and Active Call unchanged. Historical missing record remains unverified; neither short simulation nor the clock-discontinuous handset capture establishes the latency goal.",
+   "commits": [
+    "2891b52"
+   ]
   },
   {
    "id": "ISS-098",
@@ -1590,7 +1593,7 @@
    "symptom": "Saved 382.149-second mono 48 kHz capture has matching WAV hash but capture_complete=false and sample_clock_discontinuity. Gap positions were not retained.",
    "cause": "AudioWorklet context-frame continuity check failed; the historical sidecar cannot distinguish gap direction, count or location. Underlying browser/audio cause remains unverified.",
    "fix": "Retain total discontinuity count and first 64 expected/actual frame offsets for future recordings, without relaxing integrity validation or altering historical files.",
-   "verified": "Forward-gap, overlap, contiguous and bounded-diagnostic tests pass; complete handset suite 46 tests passes. Full CI pending.",
+   "verified": "All 46 handset tests and full CI 41286136566 pass. Served recorder assets contain bounded discontinuity diagnostics for the next page load. Underlying browser/audio clock cause remains unverified; historical recording remains invalid.",
    "effect": "Actual handset p95 remains unqualified. Next capture needs a clean recording integrity preflight; server normal p95 1260 ms is separately measured."
   }
  ]

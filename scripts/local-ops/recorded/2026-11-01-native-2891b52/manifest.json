@@ -1,0 +1,17 @@
+{
+  "source_commit": "2891b52af96194eb8e9dfca5d4d56f599c390f0a",
+  "binary_sha256": "82152bb45d6ef50a57370e9dd8c6d26caf60db6c4be566015586dd8dd8fa7472",
+  "build_source": "clean git archive; unrelated local modifications excluded",
+  "ci_run": 41286136566,
+  "files": {
+    "README.md": "f45414833fffe167f4ff278bbefdc558c7c9d62553f589ab58df1d09eedf7842",
+    "ci.json": "145faaf952da0f853ee5400da061779834db8fb2459cf6264db3775af68e28a3",
+    "deploy.py": "abc6245f4af711b9fad852e649f41deebfe22d045086e6f28922ca1ae8286c41",
+    "deploy.sh": "c0ad7c7376f331699cff90082c084bce0e5207cbce4f02e6407afc499896ca44",
+    "issues-published.json": "f049f64a42b4b11ec7c4fc6cb7fc3521882b5d64cd4b1bb1785b8156932bad56",
+    "publication-receipt.txt": "7b883d8f4a55d346973a334101667a54e7eaa80f712d50b984341163718b2963",
+    "publish.sh": "2ee2d6e4097e59c1f4ebf4460570d1b64171e289339f63b851b7ef7a4968c873",
+    "receipt.json": "6ab48d9580379444d98147971f4a1f2ac4764ab31f64d2de0f7a3b9a4acd7d90",
+    "receipt.txt": "fcfe630204f47f0a64c98fac088b80ee00b1b2c81be548648fb17634c8e11aca"
+  }
+}

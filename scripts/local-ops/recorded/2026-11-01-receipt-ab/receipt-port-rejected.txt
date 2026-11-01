@@ -1,0 +1,15 @@
+[runner] pushed run-receipt-ab-2891b52-v2.py -> /tmp/run-receipt-ab-2891b52-v2.py
+[runner] pushed verify-receipt-ab-2891b52-v2.py -> /tmp/verify-receipt-ab-2891b52-v2.py
+[runner] pushed receipt-ab-v2-overrides.json -> /tmp/receipt-ab-v2-overrides.json
+Traceback (most recent call last):
+  File "/tmp/run-receipt-ab-2891b52-v2.py", line 63, in <module>
+    sock.bind(('0.0.0.0', port))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 98] Address already in use
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+  File "/usr/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/tmp/run-receipt-ab-2891b52-v2.py']' returned non-zero exit status 1.
+[runner] exit 1 at 15:48:55

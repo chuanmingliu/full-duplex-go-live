@@ -1,0 +1,4 @@
+[runner] pushed native-2891b52-ci.json -> /tmp/native-2891b52-ci.json
+[runner] pushed deploy-native-2891b52.py -> /tmp/deploy-native-2891b52.py
+{"stage": "verified", "version": "2891b52", "old_version": "7fc4237", "ci": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41286136566", "binary_sha256": "82152bb45d6ef50a57370e9dd8c6d26caf60db6c4be566015586dd8dd8fa7472", "backup": "/home/chuanming/golive-sip-ab/native-real-fb11e2c/releases/engine-2891b52-20261101/golive-7fc4237", "started_at": "2026-11-01T07:58:38.544392+00:00", "no_dial": true, "completed_at": "2026-11-01T07:58:39.632803+00:00", "original_configs_unchanged": true, "active_call_unchanged": true, "journal_unchanged": true}
+[runner] exit 0 at 15:58:40

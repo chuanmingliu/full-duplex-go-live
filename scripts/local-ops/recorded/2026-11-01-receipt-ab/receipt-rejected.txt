@@ -1,0 +1,36 @@
+[runner] pushed golive-receipt-2891b52-linux -> /tmp/golive-receipt-2891b52-linux
+[runner] pushed run-receipt-ab-2891b52.py -> /tmp/run-receipt-ab-2891b52.py
+[runner] pushed verify-receipt-ab-2891b52.py -> /tmp/verify-receipt-ab-2891b52.py
+[runner] pushed receipt-ab-overrides.json -> /tmp/receipt-ab-overrides.json
+[runner] pushed receipt-call-latency.py -> /tmp/receipt-call-latency.py
+Traceback (most recent call last):
+  File "/tmp/run-receipt-ab-2891b52.py", line 113, in <module>
+    reservation = sim('/sim/v1/runs', scenario, 'receipt-ab-2891b52-' + str(idx))
+  File "/tmp/run-receipt-ab-2891b52.py", line 38, in sim
+    return request('http://127.0.0.1:18865' + path, body, token, key)
+  File "/tmp/run-receipt-ab-2891b52.py", line 33, in request
+    with urllib.request.urlopen(req, timeout=40) as response:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/urllib/request.py", line 493, in open
+    response = meth(req, response)
+  File "/usr/lib/python3.14/urllib/request.py", line 602, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "/usr/lib/python3.14/urllib/request.py", line 531, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.14/urllib/request.py", line 611, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 400: Bad Request
+Traceback (most recent call last):
+  File "<stdin>", line 11, in <module>
+  File "/usr/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/tmp/run-receipt-ab-2891b52.py']' returned non-zero exit status 1.
+[runner] exit 1 at 15:48:07
