@@ -38,7 +38,8 @@ func TestQuotePollStartsPromptlyAndRetainsFreshness(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := QuoteAPI{BaseURL: srv.URL, DefaultPhone: "test", DefaultVehicleNo: "test", PollEveryMS: 80, TimeoutMS: 2000}
-	q, _, err := a.Quote(context.Background(), srv.Client(), QuoteRequest{Config: map[string]any{"交强险": true}})
+	var timing quoteAPITiming
+	q, _, err := a.quoteTimed(context.Background(), srv.Client(), QuoteRequest{Config: map[string]any{"交强险": true}}, &timing)
 	if err != nil || q == nil || q.QuotePriceID != 2 {
 		t.Fatalf("quote=%+v err=%v", q, err)
 	}
@@ -46,6 +47,13 @@ func TestQuotePollStartsPromptlyAndRetainsFreshness(t *testing.T) {
 	defer mu.Unlock()
 	if len(starts) != 4 {
 		t.Fatalf("old/unpriced result was accepted: %d queries", len(starts))
+	}
+	if timing.Polls != 4 || timing.Stale != 2 || timing.Unpriced != 1 || timing.PollErrors != 0 || timing.BeforeFailed || timing.Phase != "complete" {
+		t.Fatalf("timing lost freshness decisions: %+v", timing)
+	}
+	if timing.Before <= 0 || timing.Submit <= 0 || timing.PollHTTP <= 0 || timing.PollWait < 100*time.Millisecond ||
+		timing.Total < timing.Before+timing.Submit+timing.PollHTTP+timing.PollWait {
+		t.Fatalf("timing phases do not reconcile: %+v", timing)
 	}
 	for i := 1; i < len(starts); i++ {
 		if starts[i].Sub(starts[i-1]) < 70*time.Millisecond {
