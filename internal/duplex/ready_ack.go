@@ -25,6 +25,10 @@ func (e *Engine) releaseCompletedCallingAck(taskID string) {
 	if !ts.ackPending[taskID] || len(e.continuations) == 0 {
 		return
 	}
+	e.retireDeliveredCoalescedContinuations()
+	if len(e.continuations) == 0 {
+		return
+	}
 	p := e.continuations[0]
 	if p.scripted == "" || p.scriptedTask != taskID || !p.complete() || p.turn == nil {
 		return

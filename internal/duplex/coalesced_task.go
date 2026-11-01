@@ -141,3 +141,24 @@ func (e *Engine) coveringCoalescedTask(p *pendingResponse) *tools.Task {
 	}
 	return nil
 }
+
+// A delivered task has already answered every function in this continuation.
+// Its history still belongs before the next continuation, but retiring that
+// bookkeeping needs no free audio floor and must not start another generation.
+// Keep incomplete, mixed, scripted, cancelled and merely pending work queued.
+func (e *Engine) retireDeliveredCoalescedContinuations() {
+	for len(e.continuations) > 0 {
+		p := e.continuations[0]
+		if p.scripted != "" {
+			return
+		}
+		task := e.coveringCoalescedTask(p)
+		if task == nil || !p.coalescedCalls[p.calls[0].ID].delivered {
+			return
+		}
+		e.continuations[0] = nil
+		e.continuations = e.continuations[1:]
+		e.recordContinuation(p)
+		e.log.Info("tools: retired a delivered coalesced continuation", "task", task.ID, "calls", len(p.calls))
+	}
+}
