@@ -1,0 +1,23 @@
+[
+  {
+    "id": "native-sip",
+    "title": "Real SIP/RTP calls",
+    "kind": "real",
+    "description": "Original GoLive real-phone trials, including the UUID call. Chat, audio, carrier ringback and post-call reviews.",
+    "url": "http://192.168.71.9:9896"
+  },
+  {
+    "id": "tool-ack",
+    "title": "Tool / acknowledgment A/B",
+    "kind": "simulated",
+    "description": "Four broad baseline/candidate simulations. One candidate has an incomplete conversation; TTS warnings and failed qualification are retained in the reviews.",
+    "url": "http://192.168.71.9:9906"
+  },
+  {
+    "id": "tool-ack-focused",
+    "title": "Quotation A/B",
+    "kind": "simulated",
+    "description": "Two focused quotation simulations comparing baseline and candidate. These runs do not establish a reliable end-to-end latency improvement.",
+    "url": "http://192.168.71.9:9916"
+  }
+]

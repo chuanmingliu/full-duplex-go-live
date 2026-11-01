@@ -3,6 +3,11 @@
 (function () {
   'use strict';
 
+  var mount = location.pathname.match(/^\/experiments\/[a-z0-9-]+/);
+  var API_BASE = mount ? mount[0] : '';
+  var SOURCE_KIND = '';
+  if (mount) document.querySelector('[data-nav=experiments]').hidden = true;
+
   // ---------- small DOM helpers ----------
 
   var SVGNS = 'http://www.w3.org/2000/svg';
@@ -114,6 +119,7 @@
     var timer = setTimeout(function () { ctl.abort(); }, 12000);
     opts = opts || {};
     opts.signal = ctl.signal;
+    if (path.indexOf('/api/') === 0) path = API_BASE + path;
     return fetch(path, opts).then(function (r) {
       clearTimeout(timer);
       if (!r.ok) {
@@ -132,6 +138,7 @@
 
   function loadOverview() {
     return api('/api/overview').then(function (ov) {
+      if (SOURCE_KIND === 'simulated') (ov.calls || []).forEach(function (c) { c.kind = 'simulated'; });
       S.ov = ov; S.ovAt = new Date(); takeLimits(ov);
       updateTop();
       return ov;
@@ -580,7 +587,7 @@
       return;
     }
     stopRowPlay();
-    a = new Audio('/api/calls/' + encodeURIComponent(c.id) + '/audio.wav');
+    a = new Audio(API_BASE + '/api/calls/' + encodeURIComponent(c.id) + '/audio.wav');
     a.preload = 'auto';
     rowPlay = { id: c.id, audio: a, failed: null };
     ['play', 'playing', 'pause', 'timeupdate', 'durationchange', 'ended', 'error'].forEach(function (ev) {
@@ -632,7 +639,7 @@
   // WAV, or one side alone. A link, so the browser's own download does the work
   // and a long call is never held in the page.
   function audioHref(id, side) {
-    return '/api/calls/' + encodeURIComponent(id) + '/audio.wav?download=1' + (side ? '&side=' + side : '');
+    return API_BASE + '/api/calls/' + encodeURIComponent(id) + '/audio.wav?download=1' + (side ? '&side=' + side : '');
   }
   function rowDownloadButton(c) {
     var label = 'Download the recording of the call of ' + when(c.started_at) + ' (WAV, both sides)';
@@ -772,7 +779,7 @@
     var turns = (call.turns || []).filter(function (t) { return t.last_sound_s >= 0 && t.audio_out_s >= 0; });
     var markers = (call.markers || []).filter(function (m) { return m.t_s >= 0; });
 
-    var audio = h('audio', { preload: 'metadata', src: '/api/calls/' + encodeURIComponent(call.id) + '/audio.wav' });
+    var audio = h('audio', { preload: 'metadata', src: API_BASE + '/api/calls/' + encodeURIComponent(call.id) + '/audio.wav' });
     var playBtn = h('button', { type: 'button', class: 'btn play', 'aria-label': 'Play' }, h('i', { class: 'pp', 'aria-hidden': 'true' }), h('span', null, 'Play'));
     var timeEl = h('span', { class: 'ptime num' }, '0:00.0 / ' + pos(D));
     var canvas = h('canvas', { class: 'wave' });
@@ -1579,6 +1586,7 @@
   // ----- your notes -----
 
   function feedbackForm(call, fb, state) {
+    if (mount) return h('p', { class: 'standing-note' }, 'Read-only experiment journal. ' + (fb && fb.note ? fb.note : 'No owner note saved.'));
     var rating = fb ? fb.rating : 0;
     var saved = { rating: rating, note: fb ? fb.note : '' };
     var words = ['', 'bad', 'poor', 'fair', 'good', 'natural'];
@@ -1662,7 +1670,7 @@
 
     view.appendChild(h('div', { class: 'call-head' },
       pager('top'),
-      h('div', { class: 'call-title' }, h('h1', null, (d.sim_run ? 'Simulated call of ' : 'Call of '), h('span', { class: 'num' }, when(call.started_at))), d.sim_run ? h('span', { class: 'sim-badge' }, 'sim') : null, verdictChip(st), intervalGauge(st)),
+      h('div', { class: 'call-title' }, h('h1', null, (d.sim_run || SOURCE_KIND === 'simulated' ? 'Simulated call of ' : 'Call of '), h('span', { class: 'num' }, when(call.started_at))), d.sim_run ? h('span', { class: 'sim-badge' }, 'sim') : null, verdictChip(st), intervalGauge(st)),
       h('nav', { class: 'jump', 'aria-label': 'On this page' },
         [['Read the conversation', 'sec-conversation', 'jump-main'], ['Turn by turn', 'sec-turns'], ['Talker / fillers', 'sec-fillers'], ['Where the time goes', 'sec-stages'], ['Retrospective', 'sec-retro'], ['Your notes', 'sec-notes']].map(function (j) {
           var b = h('button', { type: 'button', class: 'linkbtn' + (j[2] ? ' ' + j[2] : '') }, j[0]);
@@ -1696,7 +1704,7 @@
         h('p', null, 'Recording was off when it was made. Everything below comes from the log and is complete without it.'));
     }
     // where the call is kept, and its files to take away
-    var ar = d.archive, base = '/api/calls/' + encodeURIComponent(call.id) + '/';
+    var ar = d.archive, base = API_BASE + '/api/calls/' + encodeURIComponent(call.id) + '/';
     var kept = h('p', { class: 'archive-line' }, h('span', { class: 'archive-tag' }, 'Archive'), ' ');
     if (ar && ar.archived) {
       addKids(kept, [(ar.audio ? 'Recording and conversation' : 'Conversation and measurements') + ' kept for good, ',
@@ -2055,11 +2063,22 @@
   // Router, refresh, keys
   // ====================================================================
 
+  function routeExperiments() {
+    ++S.token;
+    if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+    setNav('experiments');
+    document.title = 'SIP/RTP tests – Call journal';
+    clear(view);
+    S.cleanup = window.JournalExperiments(view, { h: h, api: api });
+    return Promise.resolve();
+  }
+
   function parseRoute() {
     var p = (location.hash || '#/').replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
     if (p[0] === 'call' && p[1]) return { name: 'call', id: p[1] };
     if (p[0] === 'issues') return { name: 'issues', id: p[1] || '' };
     if (p[0] === 'decisions') return { name: 'decisions' };
+    if (p[0] === 'experiments' && !mount) return { name: 'experiments' };
     if (p[0] === 'benchmarks') return { name: 'benchmarks' };
     return { name: 'overview' };
   }
@@ -2067,6 +2086,7 @@
     hideTip();
     var r = parseRoute();
     if (r.name !== 'overview') stopRowPlay(); // the list's player belongs to the list
+    if (r.name === 'experiments') return routeExperiments();
     if (r.name === 'call') return routeCall(r.id);
     if (r.name === 'issues') return routeIssues(r.id);
     if (r.name === 'decisions') return routeDecisions();
@@ -2098,7 +2118,8 @@
     refreshBtn.disabled = true;
     var done = function () { refreshBtn.disabled = false; };
     var p;
-    if (r.name === 'call') {
+    if (r.name === 'experiments') p = routeExperiments();
+    else if (r.name === 'call') {
       if (busyCall()) p = loadOverview().catch(markStale); // a playing recording or an unsaved note is not disturbed
       else p = routeCall(r.id, true);
     } else if (r.name === 'issues') p = loadOverview().catch(markStale).then(function () { return routeIssues(r.id); });
@@ -2123,5 +2144,12 @@
     if (S.callView && S.callView.dirty) { e.preventDefault(); e.returnValue = ''; }
   });
 
-  route();
+  if (mount) {
+    api('/api/source').then(function (source) {
+      SOURCE_KIND = source.kind;
+      var banner = h('aside', { class: 'experiment-context' }, source.title + ' · ' + (source.kind === 'simulated' ? 'Simulation' : 'Real phone calls') + ' · Read-only. ' + source.description + ' Timings are not handset acoustic measurements.');
+      document.body.insertBefore(banner, view);
+      route();
+    }).catch(function (err) { showError(err, route, 'Experiment journal'); });
+  } else route();
 })();

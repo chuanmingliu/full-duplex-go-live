@@ -1,0 +1,6 @@
+.experiment-panel { padding: 24px 0; }
+.experiment-choices { display: flex; gap: 12px; flex-wrap: wrap; margin: 24px 0 12px; }
+.experiment-choices [aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+.experiment-frame { display: block; width: 100%; height: 78vh; min-height: 580px; border: 1px solid #8886; border-radius: 8px; margin-top: 18px; background: Canvas; }
+[hidden] { display: none !important; }
+.experiment-context { padding: 14px 24px; border-bottom: 1px solid #8886; font-size: 14px; line-height: 1.6; }

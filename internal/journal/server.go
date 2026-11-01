@@ -543,6 +543,7 @@ func (s *Server) archiveOf(c *Call) map[string]any {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/overview", s.handleOverview)
+	mux.HandleFunc("GET /api/experiments", s.handleExperiments)
 	mux.HandleFunc("/api/calls/", s.handleCall)
 	mux.HandleFunc("GET /api/talker-status", s.handleTalkerStatus)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
@@ -573,6 +574,7 @@ func (s *Server) Handler() http.Handler {
 		sub, _ := fs.Sub(uiFiles, "ui")
 		static = http.FileServer(http.FS(sub))
 	}
+	mux.Handle("/experiments/", s.experimentHandler(static))
 	// The page's script and style are revalidated on every load: a browser
 	// that kept the old app.js showed a journal without its newest sections
 	// twice (the Quotation section on 10-20, the Benchmarks tab on 10-21)
