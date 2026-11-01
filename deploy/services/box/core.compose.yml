@@ -38,7 +38,7 @@ services:
       GOLIVE_LAST_CALL_FILE: /last-call/last-call.json
       GOLIVE_STORE_DIR: /calls
       GOLIVE_REALTIME_STORE_CALLS: "true"
-      GOLIVE_STORE_TTL_HOURS: ${CALLS_TTL_HOURS:-720}
+      GOLIVE_STORE_TTL_HOURS: ${CALLS_TTL_HOURS:-8760}
       GOLIVE_TOOLS_BASE_URL: http://127.0.0.1:8791
       GOLIVE_TOOLS_TOKEN_FILE: /crm/api.token
       GOLIVE_FOCUS_TOKEN_FILE: "${FOCUS_TOKEN_FILE:-}"
@@ -96,7 +96,7 @@ services:
       - -repo
       - https://github.com/chuanmingliu/full-duplex-go-live
       - -retention-hours
-      - "${CALLS_TTL_HOURS:-720}"
+      - "${CALLS_TTL_HOURS:-8760}"
       - -target
       - "1200"
       - -talker
