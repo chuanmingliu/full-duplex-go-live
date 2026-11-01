@@ -1,0 +1,34 @@
+{
+  "call": "out-mvxo348d-w5pb",
+  "kind": "real",
+  "transport": "Active Call",
+  "engine": "45b5564",
+  "journal": "0c2ba18",
+  "all_playback_cuts": {
+    "n": 14,
+    "p50_ms": 275.5,
+    "p95_ms": 686,
+    "max_ms": 686
+  },
+  "cut_scope": "VAD utterance-open to server cut decision; excludes onset before detection and audible handset stop",
+  "vad_active_ms": 320,
+  "quotation_api_cycles": {
+    "n": 17,
+    "ahead_true": 16,
+    "min_ms": 3004,
+    "max_ms": 4509,
+    "failed": 0,
+    "scope": "CRM API submission/poll cycle duration, not isolated backend calculation time or foreground caller latency"
+  },
+  "foreground_quote_tool_ms": [
+    0,
+    1,
+    2
+  ],
+  "hangup_requested_at": "2026-11-01T18:14:17.483+08:00",
+  "acoustic_handset_verified": false,
+  "handset_capture_status": "Current call WAV and metadata not yet available for review",
+  "normal_p95_plus_assumed_50_ms": 1128,
+  "normal_p95_plus_50_scope": "Owner assumption only; not an acoustic measurement",
+  "source_log_sha256": "7f1c546a736ebbc8d9d4f8f3873ab2b0cc6cf491e0880c80f09d5c77af28c64a"
+}
