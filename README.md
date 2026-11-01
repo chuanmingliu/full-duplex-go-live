@@ -1,6 +1,7 @@
 # GoLive SIP/RTP adapter
 
 [![Built with Codex](https://img.shields.io/badge/Built_with-Codex-000000?style=flat)](https://openai.com/codex/)
+[![Built with Cursor](https://img.shields.io/badge/Built_with-Cursor-000000?style=flat)](https://cursor.com/)
 
 `codex/sip-rtp-adapter` implements an experimental outbound phone transport:
 
