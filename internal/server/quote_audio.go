@@ -10,7 +10,7 @@ const maxQuoteAudioCalls = 1024
 var quoteAudioCallID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 func (s *Server) claimQuoteAudio(call string) bool {
-	if s.cfg.Duplex.QuoteReadoutWarmMax <= 0 || !quoteAudioCallID.MatchString(call) {
+	if (s.cfg.Duplex.QuoteReadoutWarmMax <= 0 && !(s.cfg.Duplex.Opener && s.cfg.Duplex.TalkerOpenerURL != "")) || !quoteAudioCallID.MatchString(call) {
 		return false
 	}
 	s.mu.Lock()

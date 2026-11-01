@@ -1,0 +1,304 @@
+{
+  "experiment": {
+    "kind": "isolated_realtime_loopback_simulation",
+    "active_call_transport_included": false,
+    "stage": "completed",
+    "source_build": "f1fd9a6",
+    "candidate_build": "e89438b-talker-sim-d",
+    "original_config_sha256": "072ab8dbda962eff682fa56fcd049f70cd3717530e64a06bec97e66618878e7d",
+    "saved_context_sha256": {
+      "instructions": "639dcecf24dddc73274a7412c017e36258b51679c2fd3ad4e72a595453aa8d25",
+      "greeting": "fa7c33a6b9c732413d932a7453c5c85d4936fcdd8515822bf92e3fc07e2f4df8",
+      "voice": "65d9d6c5c7c2d5c29e38b777edf8da1dbd764f67deeeaa230724967cafe4e684"
+    },
+    "original_config_and_runtime_preserved": true,
+    "aria_route_preserved": true,
+    "isolated_processes_stopped": true
+  },
+  "modes": {
+    "preset": {
+      "measured_sessions": 10,
+      "errors": 0,
+      "client_first_audio": {
+        "n": 10,
+        "p50_ms": 380.0,
+        "p90_ms": 381,
+        "p95_ms": 381,
+        "max_ms": 381,
+        "at_or_above_target": 0
+      },
+      "server": {
+        "scope": "last_sound_to_golive_output",
+        "target_ms": 1200,
+        "percentile": "nearest_rank",
+        "counts": {
+          "records": 10,
+          "answered": 10,
+          "non_speech": 0,
+          "cancelled": 0,
+          "interrupted_answers": 4,
+          "missing": 0,
+          "unverified": 0,
+          "duplicates": 0,
+          "malformed": 0,
+          "content_fallbacks": 0,
+          "assumed_pause": 0,
+          "tool_result_links": 0,
+          "tool_results_joined": 0,
+          "invalid_tool_links": 0,
+          "quote_readouts_missing": 0,
+          "quote_readouts_unverified": 0,
+          "missing_output_records": 0,
+          "quote_only_responses": 0
+        },
+        "first_audio": {
+          "n": 10,
+          "p50_ms": 380.0,
+          "p90_ms": 380,
+          "p95_ms": 380,
+          "max_ms": 380,
+          "at_or_above_target": 0
+        },
+        "first_content": {
+          "n": 10,
+          "p50_ms": 1016.0,
+          "p90_ms": 1196,
+          "p95_ms": 1224,
+          "max_ms": 1224,
+          "at_or_above_target": 1
+        },
+        "conversational_first_content": {
+          "n": 10,
+          "p50_ms": 1016.0,
+          "p90_ms": 1196,
+          "p95_ms": 1224,
+          "max_ms": 1224,
+          "at_or_above_target": 1
+        },
+        "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+        "reply": {
+          "n": 10,
+          "p50_ms": 0.0,
+          "p90_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0,
+          "at_or_above_target": 0
+        },
+        "tool_result": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+        "tool_result_rows": [],
+        "non_quote_tool_result": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "quote_readout": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+        "quote_readout_rows": [],
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "conversational_first_content: p95 1224 ms is not below 1200 ms"
+          ],
+          "quote_sla": "separate"
+        }
+      },
+      "opener": {
+        "prepared_statuses": {},
+        "selection_sources": {},
+        "selection_reasons": {},
+        "enqueued_sources": {
+          "preset": 10
+        },
+        "canonical_output_sources": {
+          "preset": 10
+        },
+        "unverified_enqueues": 0,
+        "model": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "preparation": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        }
+      }
+    },
+    "talker": {
+      "measured_sessions": 10,
+      "errors": 0,
+      "client_first_audio": {
+        "n": 10,
+        "p50_ms": 380.5,
+        "p90_ms": 381,
+        "p95_ms": 381,
+        "max_ms": 381,
+        "at_or_above_target": 0
+      },
+      "server": {
+        "scope": "last_sound_to_golive_output",
+        "target_ms": 1200,
+        "percentile": "nearest_rank",
+        "counts": {
+          "records": 10,
+          "answered": 10,
+          "non_speech": 0,
+          "cancelled": 0,
+          "interrupted_answers": 3,
+          "missing": 0,
+          "unverified": 0,
+          "duplicates": 0,
+          "malformed": 0,
+          "content_fallbacks": 0,
+          "assumed_pause": 0,
+          "tool_result_links": 0,
+          "tool_results_joined": 0,
+          "invalid_tool_links": 0,
+          "quote_readouts_missing": 0,
+          "quote_readouts_unverified": 0,
+          "missing_output_records": 0,
+          "quote_only_responses": 0
+        },
+        "first_audio": {
+          "n": 10,
+          "p50_ms": 380.0,
+          "p90_ms": 380,
+          "p95_ms": 380,
+          "max_ms": 380,
+          "at_or_above_target": 0
+        },
+        "first_content": {
+          "n": 10,
+          "p50_ms": 1033.0,
+          "p90_ms": 1200,
+          "p95_ms": 1344,
+          "max_ms": 1344,
+          "at_or_above_target": 2
+        },
+        "conversational_first_content": {
+          "n": 10,
+          "p50_ms": 1033.0,
+          "p90_ms": 1200,
+          "p95_ms": 1344,
+          "max_ms": 1344,
+          "at_or_above_target": 2
+        },
+        "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+        "reply": {
+          "n": 10,
+          "p50_ms": 0.0,
+          "p90_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0,
+          "at_or_above_target": 0
+        },
+        "tool_result": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+        "tool_result_rows": [],
+        "non_quote_tool_result": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "quote_readout": {
+          "n": 0,
+          "p50_ms": null,
+          "p90_ms": null,
+          "p95_ms": null,
+          "max_ms": null,
+          "at_or_above_target": 0
+        },
+        "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+        "quote_readout_rows": [],
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "conversational_first_content: p95 1344 ms is not below 1200 ms"
+          ],
+          "quote_sla": "separate"
+        }
+      },
+      "opener": {
+        "prepared_statuses": {
+          "rejected": 18,
+          "tts_unavailable": 2
+        },
+        "selection_sources": {
+          "preset": 8
+        },
+        "selection_reasons": {
+          "rejected": 8
+        },
+        "enqueued_sources": {
+          "preset": 10
+        },
+        "canonical_output_sources": {
+          "preset": 10
+        },
+        "unverified_enqueues": 0,
+        "model": {
+          "n": 20,
+          "p50_ms": 131.0,
+          "p90_ms": 142,
+          "p95_ms": 145,
+          "max_ms": 158,
+          "at_or_above_target": 0
+        },
+        "preparation": {
+          "n": 20,
+          "p50_ms": 132.5,
+          "p90_ms": 145,
+          "p95_ms": 157,
+          "max_ms": 158,
+          "at_or_above_target": 0
+        }
+      }
+    }
+  },
+  "method": {
+    "rate_hz": 16000,
+    "unique_call_ids": true,
+    "warmups_per_arm": 2,
+    "measured_sessions_per_arm": 10,
+    "synthetic_topics": 5,
+    "response_collection_timeout_seconds": 12,
+    "handset_measurement": false,
+    "active_call_sip_transport": false,
+    "production_enablement_recommended": false
+  }
+}

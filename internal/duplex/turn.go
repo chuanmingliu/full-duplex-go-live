@@ -106,6 +106,7 @@ type Turn struct {
 	// OpenerPlanned is the opener chosen when the answer was begun (so the
 	// model can be told to continue from it); said at the pause by sayOpener.
 	OpenerPlanned string
+	talkerOpener  *talkerOpener // loop-owned, attached before backend starts
 	// OpenedAt is when the opener was queued.
 	OpenedAt time.Time
 

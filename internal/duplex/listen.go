@@ -818,6 +818,7 @@ func (e *Engine) noteWords(run *asrRun, text string) {
 		run.activeAtChange = e.vad.ActiveMS()
 	}
 	run.lastText = text
+	e.prepareTalkerOpener(text)
 }
 
 // maybeSettle ends a turn the detector cannot.
@@ -1319,7 +1320,13 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if phrase == "" {
 		return
 	}
+	e.attachTalkerOpener(turn)
+	generated, prepared, generatedOK := e.takeTalkerOpener(turn, fragment)
 	cached, ok := Phrases().Get(e.phraseKey(phrase))
+	if generatedOK {
+		phrase, cached, ok = generated, prepared, true
+		turn.OpenerPlanned = generated
+	}
 	if !ok {
 		e.log.Debug("speak: no opener in the cache yet", "text", phrase)
 		return
@@ -1368,7 +1375,11 @@ func (e *Engine) sayOpener(turn *Turn) {
 	e.player.Enqueue(body)
 	e.player.Enqueue(mark)
 	turn.AppendResponse(phrase)
-	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "turn", turn.ID, "text", phrase,
+	source := "preset"
+	if generatedOK {
+		source = "talker"
+	}
+	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "source", source, "turn", turn.ID, "text", phrase,
 		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)), "lead_ms", leadMS)
 }
 

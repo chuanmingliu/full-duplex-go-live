@@ -111,9 +111,13 @@ type BackendOptions struct {
 
 // Engine is one session's duplex orchestrator.
 type Engine struct {
-	opts Options
-	deps Deps
-	log  *slog.Logger
+	opts                                    Options
+	talkerPending                           *talkerOpener
+	talkerStarted                           time.Time
+	talkerUtterance                         int64
+	talkerAttempts, talkerUtteranceAttempts int
+	deps                                    Deps
+	log                                     *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc

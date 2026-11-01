@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -358,6 +359,9 @@ type DuplexConfig struct {
 	// changes — every answer begins with an acknowledgement — so it is off
 	// unless the owner says otherwise.
 	Opener bool `json:"opener"`
+	// Empty keeps the original preset-only path. Optional work never delays playback.
+	TalkerOpenerURL       string `json:"talker_opener_url,omitempty"`
+	TalkerOpenerTimeoutMS int    `json:"talker_opener_timeout_ms,omitempty"`
 	// OpenerPhrases are the openers for a turn that reads as a statement
 	// (an answer, an objection, a yes); OpenerQuestionPhrases for one that
 	// reads as a question. One is chosen when the answer is begun, never
@@ -983,6 +987,16 @@ func (c *Config) applyEnv() {
 
 // Validate rejects combinations that would fail confusingly later.
 func (c *Config) Validate() error {
+	if c.Duplex.TalkerOpenerTimeoutMS < 0 || c.Duplex.TalkerOpenerTimeoutMS > 1500 {
+		return fmt.Errorf("config: talker_opener_timeout_ms must be within 0..1500")
+	}
+	if raw := c.Duplex.TalkerOpenerURL; raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("config: invalid talker_opener_url")
+		}
+	}
+
 	if c.Duplex.QuoteReadoutWarmMax < 0 || c.Duplex.QuoteReadoutWarmMax > 8 {
 		return fmt.Errorf("config: quote_readout_warm_max must be within 0..8")
 	}

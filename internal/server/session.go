@@ -910,7 +910,7 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		provider.TTSPool{AccountRPM: s.cfg.TTSAccountRPM, After: time.Duration(s.cfg.TTSPoolAfterMS) * time.Millisecond},
 		s.log)
 	var backgroundTTS *provider.BackgroundTTSFactory
-	if s.cfg.Duplex.QuoteReadoutWarmMax > 0 {
+	if s.cfg.Duplex.QuoteReadoutWarmMax > 0 || s.cfg.Duplex.TalkerOpenerURL != "" {
 		backgroundTTS, _ = provider.BackgroundTTSFor(tts)
 	}
 	if s.cfg.TTSFallback != "" && s.cfg.TTSFallback != ttsName {

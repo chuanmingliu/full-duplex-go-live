@@ -60,3 +60,19 @@ func TestQuoteAudioCallClaimDisabledAndBounded(t *testing.T) {
 		t.Fatal("capacity changed")
 	}
 }
+
+func TestTalkerAudioClaimIndependentOfQuoteWarming(t *testing.T) {
+	cfg := config.Default()
+	cfg.Duplex.Opener = true
+	cfg.Duplex.TalkerOpenerURL = "http://localhost:18081"
+	s := NewServer(cfg, nil)
+	if !s.claimQuoteAudio("talker-only") {
+		t.Fatal("Talker disabled by quote warming setting")
+	}
+	if s.claimQuoteAudio("talker-only") {
+		t.Fatal("reconnect reset optional audio budget")
+	}
+	if s.claimQuoteAudio("") {
+		t.Fatal("missing call identity accepted")
+	}
+}

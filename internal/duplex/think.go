@@ -189,6 +189,10 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 
 	if turn.Transcript != "" && !turn.Scripted {
 		e.planOpener(turn)
+		if turn.Opened == "" {
+			e.prepareTalkerOpener(turn.Transcript)
+			e.attachTalkerOpener(turn)
+		}
 	}
 	e.delegatedAt = time.Now()
 	e.delegatedTurn = turn
@@ -370,7 +374,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	if turn != nil && turn.OpenerPlanned != "" && !front {
 		// After the user's words, so everything before stays in the
 		// provider's prefix cache.
-		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: openerNote(turn.OpenerPlanned)})
+		note := openerNote(turn.OpenerPlanned)
+		if turn.talkerOpener != nil {
+			note = "系统会先播放一句简短的话题开场词或应答词。请直接回答用户，不要重复开场词，也不要依赖开场词才能构成完整句子。"
+		}
+		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
 	}
 	return msgs
 }

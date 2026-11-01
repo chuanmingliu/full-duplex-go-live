@@ -305,3 +305,20 @@ validated tool request or permission to execute it. The summaries contain no
 prompt, response text, arguments, function names or credentials. Use these
 phases to locate a delay before changing behavior; they do not measure spoken
 amounts, carrier transit or physical handset playout.
+
+## Optional Talker-generated openers
+
+The engine can prepare contextual Chinese topic openers with the local small
+LLM while recognition is in progress. `duplex.talker_opener_url` is empty by
+default; the original telephony profile remains preset-only. An enabled copy
+uses ready, validated audio at the existing opener boundary and otherwise
+falls back immediately to the saved preset pools. The worker never relaxes
+speaker, echo, backchannel or playback-generation checks. See the
+[configuration, fallback rules and simulation comparison](docs/telephony/2026-11-01-talker-openers.md).
+
+The Journal's Talker health indicator still proves only model availability.
+The opener enqueue log records `source=talker`; confirm the matching
+canonical first-output transcript before claiming it was emitted.
+Report fallback counts as well as first-audio and first-content latency;
+a quick preset fallback is not a successful generated-opener sample. Quotation
+calculation and deterministic readout remain separate measurements.

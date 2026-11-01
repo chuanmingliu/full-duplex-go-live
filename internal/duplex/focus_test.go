@@ -345,7 +345,15 @@ func TestAnotherVoiceOverTheAnswerDoesNotCutIt(t *testing.T) {
 // while the assistant is silent, is let go by with no turn made of it; the
 // caller's next one is answered as usual.
 func TestABackgroundVoicesUtteranceIsLetGoBy(t *testing.T) {
+	testBackgroundVoiceRejected(t, "")
+}
+
+func testBackgroundVoiceRejected(t *testing.T, talkerURL string) {
 	cfg := earlyFinalConfig(120)
+	if talkerURL != "" {
+		cfg.opts.Cfg.Duplex.Opener = true
+		cfg.opts.Cfg.Duplex.TalkerOpenerURL = talkerURL
+	}
 	cfg.opts.Cfg.Duplex.Focus = "veto"
 	rate := cfg.opts.Cfg.ClientRate
 	c := newCollector(rate)

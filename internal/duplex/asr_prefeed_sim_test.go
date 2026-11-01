@@ -1,7 +1,6 @@
 package duplex
 
 import (
-	"bytes"
 	"context"
 	"log/slog"
 	"os"
@@ -83,6 +82,10 @@ func TestInterruptionASRDeliverySimulation(t *testing.T) {
 	if os.Getenv("GOLIVE_INTERRUPT_SIM") != "1" {
 		t.Skip("opt-in paced comparison")
 	}
+	runInterruptionDeliverySimulation(t, "", live.DelegationClient)
+}
+
+func runInterruptionDeliverySimulation(t *testing.T, talkerURL, delegation string) {
 	for _, tc := range []struct {
 		name, text string
 		speaker    int
@@ -98,10 +101,11 @@ func TestInterruptionASRDeliverySimulation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			cfg.Duplex.TalkerOpenerURL = talkerURL
 			a := &prefeedSimASR{text: tc.text, streams: make(chan *prefeedSimStream, 10)}
-			var logs bytes.Buffer
+			var logs openerLogBuffer
 			c := newCollector(provider.PipelineRate)
-			e := New(Options{Cfg: cfg, ClientRate: provider.PipelineRate, Delegation: live.DelegationClient}, Deps{ASR: a, Emit: c.emit, Log: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+			e := New(Options{Cfg: cfg, ClientRate: provider.PipelineRate, Delegation: delegation}, Deps{ASR: a, Emit: c.emit, Log: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 			ctx, cancel := context.WithCancel(context.Background())
 			e.ctx = ctx
 			defer func() { cancel(); e.closeASR(true); e.closeStandby(); e.Close() }()
