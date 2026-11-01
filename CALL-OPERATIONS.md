@@ -197,6 +197,18 @@ Sources: `TELEPHONY.md:536,627`; `scripts/phone-brain.sh:88,251,472,881,1102`; `
 6. Repeat the same scenario, verify the complete archive as above, publish the sanitized per-call retro and issue status, and verify the journal reads the new notes. The desk work log may contain build/call IDs and numeric outcomes; never pipe raw logs into it.
 7. A first-audio pass is distinct from content latency. Report both; leave any unverified phone leg or unobserved performance effect explicit. Current content timestamps mark answer audio emitted by the player, not synthesis readiness or an inferred opener duration. Older content estimates are not directly comparable at interruptions or when audio waits behind an opener. The receiver still measures first audio, including openers; it does not establish when meaningful answer content reaches a handset.
 
+Archive preservation has two parts. `audio.wav`, `transcript.txt`, `session.json`
+and `golive.log` must retain their verified bytes during a release. `call.json`
+is a derived summary: `Archive.Put` refreshes it and its manifest when new
+measurement fields are added. Do not waive an archive mismatch generally. In
+the `45b5564` rollout, removing only `latency.conversational_first_content` and
+`latency.quote_only_responses` reconstructed every original `call.json` hash,
+proving an additive schema change across 143 calls. The failed deployment
+receipt was retained, and a separate reconciliation receipt verified matching
+running/on-disk binaries, complete warming and preserved original material.
+Any different delta requires its own review. Check both disk and running
+executables after a partial rollback before another call or restart.
+
 When a release changes CRM code, replace and restart the CRM explicitly:
 the ordinary phone-service restart retains an already-running CRM. Back up
 its actual running executable and preserve its exact arguments, environment

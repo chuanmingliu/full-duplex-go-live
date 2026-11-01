@@ -32,7 +32,9 @@ overrides, service-specific Compose files and extra SIP dependencies remain on
 their own branch. Original provider profiles, prompts, voices, recipients,
 Active Call launch scripts and quotation calculation settings are unchanged.
 The 365-day retention update is retained; permanent finished-call archives keep
-their existing policy. This integration does not restart or deploy any service.
+their existing policy. The integration commit itself does not deploy services. The subsequent
+[Active Call rollout](2026-11-01-active-call-rollout.md) deployed `45b5564` after CI
+and measured the original-config baseline and candidate.
 
 ## Controlled comparison
 
@@ -91,7 +93,7 @@ directory, copy the three `*_latency_sim_test.go` files listed in the evidence
 JSON into that tree, and run the final command there. No credentials or real
 phone connection are used by these fixtures.
 
-Use Active Call for the next deployment and simulator/real-call comparison.
+Continue with Active Call for further deployments and simulator/real-call comparisons.
 Inspect the live version and idle state first, preserve its rollback binary and
 configuration, and use the existing Mac runner. Measure normal first content,
 first audio and interruption detection-to-stop separately. Keep quotation

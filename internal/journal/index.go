@@ -592,7 +592,11 @@ func (ix *Indexer) Feed(l Line) {
 			ix.active = cb
 		}
 	case "speak: opening line":
-		cb.call.Greeting = l.Get("text")
+		// Later system utterances (for example a farewell) use the same
+		// playback event. Keep the call's initial greeting as its identity.
+		if cb.call.Greeting == "" {
+			cb.call.Greeting = l.Get("text")
+		}
 		cb.turn(l.Get("turn")).outputNonanswer = true
 	case "speak: greeting", "speak: the opener became a backchannel; the caller went on":
 		cb.turn(l.Get("turn")).outputNonanswer = true
