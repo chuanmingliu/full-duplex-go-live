@@ -48,6 +48,18 @@
       "sha256": "449dda8bfdadab1e6280c8b36a3d69a3f92c73275dc53795a11626210a32405d",
       "bytes": 2208,
       "source": "/tmp/activecall-interruption-readonly.py"
+    },
+    {
+      "file": "normal-content-tail.py",
+      "sha256": "4a6d61277e94a40ab5c48f9fd631b6a40cc4b045b19aeebaee0af430de03aa59",
+      "bytes": 1539,
+      "source": "/tmp/activecall-normal-tail.py"
+    },
+    {
+      "file": "publish-0c2ba18.sh",
+      "sha256": "54506a9fb54adf7d3604305dac13af9df47bd4d9e0628c50d851e566fd179034",
+      "bytes": 10053,
+      "source": "/tmp/activecall-publish-0c2ba18.sh"
     }
   ]
 }

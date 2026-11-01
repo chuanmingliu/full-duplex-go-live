@@ -37,3 +37,9 @@ recorded separately under `docs/telephony/evidence/2026-11-01-active-call-rollou
   timing for the pinned baseline. The same parser with only CALL changed was
   used for candidate coverage and scripted interruption calls. It does not
   measure audible playout stop.
+- `normal-content-tail.py`: read-only extraction of numeric timing for the six
+  longest normal responses in each coverage call, excluding quote-only rows.
+- `publish-0c2ba18.sh`: publishes the three sanitized retros, merges issue
+  updates while preserving unrelated entries, and appends one authorized Desk
+  work-log line. The receipt verifies the retros are visible and Desk control
+  state is unchanged. Never replay this publication job.

@@ -58,6 +58,13 @@ TTS warnings, so neither is a clean conversational-quality pass. These runs
 do not establish a causal improvement or regression. No quotation result was
 measured in either coverage run; configured calculation time is unchanged.
 
+The two longest candidate normal turns had content latency of 1300/1200 ms,
+including 380 ms endpoint silence and 678/424 ms to the first model token.
+The next investigation is model-to-content generation on this existing path.
+Zero segment/TTS stamps can belong to a cached opener, so they do not prove
+zero synthesis latency for the answer. See the
+[normal-content tail](evidence/2026-11-01-active-call-rollout/normal-content-tail.json).
+
 ## Interruptions
 
 For coverage runs, two paired server VAD-open to active-playback cut decisions
