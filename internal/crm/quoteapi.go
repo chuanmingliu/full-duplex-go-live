@@ -344,12 +344,20 @@ func (a *QuoteAPI) Quote(ctx context.Context, client *http.Client, req QuoteRequ
 	if err := a.submit(ctx, client, in); err != nil {
 		return nil, nil, err
 	}
+	// Check once immediately after submission: a synchronous/fast inquiry
+	// may already be complete. Subsequent query starts remain at least one
+	// configured interval apart; HTTP time counts toward that interval.
+	// Keep requests serialized and retain the old-quote identity checks.
+	nextQuery := time.Now()
 	for {
+		timer := time.NewTimer(max(time.Until(nextQuery), 0))
 		select {
-		case <-time.After(a.pollEvery()):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, nil, fmt.Errorf("the quotation service did not answer within %s", a.timeout())
 		}
+		nextQuery = time.Now().Add(a.pollEvery())
 		d, err := a.query(ctx, client, in)
 		if err != nil {
 			if ctx.Err() != nil {

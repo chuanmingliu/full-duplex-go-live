@@ -844,6 +844,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 	}
 	origin := ts.origins[p.scriptedTask]
 	followsOrigin := p.turn == e.tracker.Current() && e.completedOriginOpener(origin)
+	ackText := quoteAcknowledgment(p.scripted, followsOrigin)
 	turn := e.tracker.Begin("", false)
 	turn.DelegationID = p.delegationID
 	turn.Scripted = true
@@ -853,11 +854,11 @@ func (e *Engine) sayAck(p *pendingResponse) {
 	}
 	e.specTurn = nil
 	e.commitTurn(turn)
-	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(p.scripted)))
+	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(ackText)))
 	pipe := e.newSpeechPipe(turn, true)
-	pipe.Push(p.scripted)
+	pipe.Push(ackText)
 	pipe.Close()
-	turn.AppendResponse(p.scripted)
+	turn.AppendResponse(ackText)
 }
 
 // --- function calls: the conversational model delegating ---

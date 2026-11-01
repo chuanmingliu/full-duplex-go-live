@@ -1,0 +1,31 @@
+{
+  "recorded_on": "2026-11-01",
+  "purpose": "Isolated simulator comparisons; completed reservations must never be replayed",
+  "files": [
+    {
+      "file": "run-broad.py",
+      "bytes": 8754,
+      "sha256": "2a25c4f39ce98062f6f7106052f41bc547d1d89493420f96dfb4d3ba7df9bea9"
+    },
+    {
+      "file": "run-broad.sh",
+      "bytes": 284,
+      "sha256": "43ffb692741a5524f8b5e0210bfbc5a72e1e80640b10a8cb254d4b63bf66766d"
+    },
+    {
+      "file": "run-focused.py",
+      "bytes": 9942,
+      "sha256": "40b5fc7447a3e67e394f7ab785faa3c176c5df2c50b86a4550c053ba5df241c0"
+    },
+    {
+      "file": "run-focused.sh",
+      "bytes": 288,
+      "sha256": "38ccd063fd5b243afa0afac23e8141e0a70f8aba9148783745e4518b074fd2e5"
+    },
+    {
+      "file": "verify-archives.py",
+      "bytes": 2891,
+      "sha256": "07c31e0c3cc8170438812147f5c80b38d23b5f90775f1ea49abb654a2b9d2dd1"
+    }
+  ]
+}

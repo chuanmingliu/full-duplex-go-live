@@ -1479,9 +1479,9 @@
    "found_call": "out-native-sip-a93db0f8-ff19-4b9d-95f3-09aca39541be",
    "symptom": "One readout takes 7530 ms: tool execution 4162 ms, then ready-result gap wait 1773 ms while a 2381 ms scripted acknowledgment finishes.",
    "cause": "maybeDeliver intentionally protects an already-speaking scripted acknowledgment. Tool execution is separately slow; its internal queue/upstream breakdown is not established.",
-   "fix": "Candidate direction: bound acknowledgment duration or hand off at a natural phrase boundary, preserving caller priority, result freshness and spoken history. Measure matched tool cache-hit/miss cases. No runtime behavior changed in this review.",
-   "verified": "Canonical result/readout link t3 item_12 to item_14. Task done 04:03:06.323Z; acknowledgment complete 04:03:08.095Z; result/readout start 04:03:08.096Z. All seven archive files verified; no physical handset capture.",
-   "effect": "Eliminating the full measured acknowledgment wait would still leave approximately 5757 ms. SIP/RTP first-send queueing cannot explain or solve this tool delay."
+   "fix": "Candidate keeps only the first cached clause of the exact standard acknowledgment after a naturally completed caller opener; custom text and unrelated turns are unchanged. Quotation polling checks immediately and counts query time in the unchanged interval. Original configuration files and production services remain unchanged.",
+   "verified": "Both targeted regressions fail on baseline and pass on candidate. Controlled Player output falls from 2380 to 1540 ms (840 ms less); HTTP simulations save 0–502 ms for unchanged readiness/cadence. Six SIP simulations completed but live comparison is inconclusive: receiver TTS warnings, incomplete result-link evidence and neither focused call exercised the scripted acknowledgment.",
+   "effect": "Partial local-overhead improvement only. Remains open: upstream requests still take seconds and ready results may wait behind other speech; no demonstrated end-to-end handset gain or production deployment."
   }
  ]
 }
