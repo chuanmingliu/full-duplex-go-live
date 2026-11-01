@@ -15,3 +15,16 @@ Do not let a previous Speko call change what plain `call` means. A mode-selectio
 request does not itself authorize starting a call. Preserve any active call.
 For either real mode, retain its call ID, record chat and audio, and wait for the
 owner's `done` before deep analysis. `done` is not a command to redial.
+
+# Codex commit attribution
+
+For future commits containing work performed by Codex, keep the configured human
+author and add this trailer to the commit message:
+
+```text
+Co-authored-by: Codex <noreply@openai.com>
+```
+
+Apply it to Codex-assisted commits only. Do not rewrite published history or
+attribute unrelated contributors' work to Codex. This records assistance; it does
+not guarantee a separate entry on GitHub's Contributors graph.
