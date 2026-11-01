@@ -7,7 +7,7 @@ the same recorded audio, alternating between them run by run.
 ```bash
 make build
 ./bin/golivebench \
-    -a golive=ws://127.0.0.1:8080/v1/live \
+    -a golive=ws://127.0.0.1:8080/v1/live/sessions \
     -b cascade=ws://127.0.0.1:8765/v1/realtime \
     -clips clips/*.wav -runs 12 -md bench.md -json bench.json
 ```
@@ -146,16 +146,152 @@ running the backend instead of waiting — with the defaults, 200 ms of the 380,
 plus the ~100 ms the final transcript costs. The trigger is the pause the
 microphone hears, not a transcript that stopped changing: a recognizer running
 behind the speaker also stops changing, and a watch keyed on that fires
-mid-sentence on a prefix. When it did, nearly every speculative turn was
-immediately revised — `think: speculation missed` on almost every line — which
-is slower than not speculating at all, because the wasted generation still had
-to be cancelled. If you see that line often, raise `speculative_stable_ms`; if
-you see it almost never and TTFA is still high, lower it toward 120.
+mid-sentence on a prefix.
+
+A guess is cheap to get wrong, by construction. Everything it produces — the
+delegation, any function call, the audio — is held until the final transcript
+confirms the turn, and it is abandoned the moment the caller is heard carrying
+on (80 ms of voice) or the transcript changes under it; another is then made at
+the next pause. So a wrong guess costs backend tokens and nothing a caller or an
+application can observe. The session summary and `/metrics` report how often
+that happens:
+
+```
+session: response latency summary  turns=9 speculation_held=8 speculation_abandoned=3 p50_ms=910 …
+golive_speculations_total{outcome="held"} 8
+golive_speculations_total{outcome="abandoned"} 3
+```
+
+Mostly `abandoned` means your callers pause mid-sentence for longer than
+`speculative_stable_ms`: raise it. Almost never abandoned with TTFA still high
+means there is head start left on the table: lower it toward 120, or let
+`speculative_eager_ms` do it only for sentences that read as finished.
 
 `first_segment_ms` splits the third row: the gap from `llm_first_token_ms` to it
 is time spent waiting for a sentence boundary, and the gap from it to
 `tts_first_audio_ms` is the synthesis provider. A slow reply and a late comma
 look identical without that split, and they have opposite fixes.
+
+## Measuring the engine without the vendors
+
+A change to the engine is hard to measure against real providers: the backend's
+time to first token moves by hundreds of milliseconds from one request to the
+next, which is more than most engine changes are worth. `configs/sim.json` runs
+the mock providers with fixed stage latencies injected (`configs/sim.env`) — a
+recognizer handshake and lag, a backend TTFT, a synthesizer handshake and TTFB —
+so two builds can be compared on one machine, repeatably, with no credentials.
+
+```bash
+make run-sim          # one shell
+make bench-sim        # another: four utterance lengths, 12 runs
+```
+
+This is what the comparison looked like for the change that introduced it —
+the `prod-hardening` branch against the same branch with that change, same
+machine, same injected latencies (ASR dial 150 / lag 200 / final 100 ms, backend
+TTFT 700 ms then 25 ms a character, TTS dial 200 / TTFB 250 ms):
+
+| | p50 | p95 | 0.7 s utterance | 1.5 s | 2.4 s | 3.3 s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| before | 1755 ms | 1763 ms | 1756 | 1755 | 1755 | 1755 |
+| after | 1324 ms | 1444 ms | 1443 | 1305 | 1343 | 1304 |
+| | **−431** | −319 | −313 | −450 | −412 | −451 |
+
+Last frame of speech sent → first audio byte received, medians per clip.
+
+Read it for what it is. The stage latencies are stand-ins modelled on the table
+above, not measurements of Tencent, DeepSeek or MiniMax, and the absolute
+figures mean nothing outside this harness. What the comparison does show is
+where the engine itself was spending time it did not have to: before, no turn
+in this run speculated at all — every one waited for the final transcript — and
+after, every one did. The remaining 1.3 s is, almost to the millisecond, the
+speculation window plus the injected backend TTFT, first-segment wait and
+synthesizer TTFB; the engine's own share of it is the 200 ms speculation
+window. Against real providers the saving will be whatever
+fraction of the end-of-turn pause your callers leave available, and the way to
+find out is the A/B above with a real profile.
+
+Where the time went, in the order it was found:
+
+| change | what it removes |
+| --- | --- |
+| `vad.snapshot_ms` 200 → 40 | Up to 200 ms of audio the recognizer had not been sent yet, on every hypothesis and on the final. |
+| Speculate when the turn closes, without waiting for the final transcript | The recognizer's final-transcript delay, for every turn too short to have paused. |
+| Two-window stability watch | A guess no longer waits for the transcript to have been still for the whole window — only since it last changed, which is how long a recognizer's lag takes to drain. |
+| Re-arm after an abandoned guess | The pause that actually ends a turn gets a head start even if an earlier pause in the same sentence spent one. |
+| First segment cut at an early clause boundary | "好的，" no longer waits out the whole first-chunk deadline for a sixth character. |
+| Recognizer dialled on first voiced audio, off the loop goroutine | The handshake overlaps the detector's `min_speech_ms` instead of following it, and nothing else in the session stalls behind it. |
+| Phrase cache, warmed at boot | The greeting and fillers need no synthesizer round trip — or connection — at all. |
+| Synthesis at the session's own rate | A resample per chunk, and 16 kHz speech stretched to 24 kHz. |
+| History trimmed in steps | A byte-identical prompt prefix across turns, for providers that cache one. Shows up as `cached_prompt_tokens` in the log, and as TTFT on long prompts. |
+
+The VAD fix deserves its own line because it was not a tuning: the onset of
+every utterance was being sent to the recognizer twice, so transcripts ran
+~200 ms long and a recognizer could hear a stuttered first syllable.
+
+## Is the synthesis provider holding your first syllable?
+
+`ttsprobe` measures time-to-first-audio from the synthesizer alone, with the
+rest of the cascade removed:
+
+```bash
+go run ./cmd/ttsprobe -compare-endpoints -runs 12
+```
+
+It exists because of a specific, checkable suspicion. MiniMax buffers text
+server-side and decides for itself when to synthesize: a segment ending in
+`。！？.!?` goes immediately, one ending in a comma accumulates, and one ending
+in nothing waits for a length limit or a silence window. golive deliberately
+cuts a six-character first segment to get a syllable out early — and six
+characters usually end in nothing. So the segment that exists purely to be fast
+is exactly the shape the server sits on, and `stream_first_chunk_chars` could be
+buying nothing, or costing.
+
+The probe sends the shapes a real turn produces — a bare `好的`, a holding
+filler, a complete sentence, a comma-ended fragment — and reports first-audio
+latency for each, alternating between configurations so warm-up and drift land
+on both. Read the per-text table first: if the unpunctuated rows are much slower
+than the complete sentence, the buffer is the problem and `task_flush` is the
+fix. If they are the same, server-side buffering is not where your time goes,
+and lowering `stream_first_chunk_chars` further is the wrong lever.
+
+**The two endpoints are not interchangeable.** `/ws/v1/t2a_v2` and
+`/ws/v1/t2a_v2_bidi` share auth, `task_start` and audio frames, but only the
+bidirectional one accepts `task_flush` and `task_cancel`. On the standard
+endpoint those come back as `2202 illegal event`. golive detects the mismatch
+and declines to send them, so the settings are inert rather than destructive —
+but inert is not the same as working, and `-compare-endpoints` is how you find
+out whether switching is worth anything on your account.
+
+## The prompt is probably your biggest number
+
+Two logs from one machine, one model (`deepseek-chat`), one endpoint, a day
+apart:
+
+| system prompt | `history_turns` | time to first token |
+| --- | ---: | ---: |
+| 79 characters, generic assistant | 16 | **259–546 ms** |
+| a full call-centre persona | 16 | **2441–3385 ms** |
+
+Nothing else differed. That is five to seven times the latency, and at the top
+of that range the prompt alone costs more than the silence threshold, the
+recognizer and synthesis put together. Every lever elsewhere in this document is
+worth tens to low hundreds of milliseconds; this one is worth seconds.
+
+It also has a second-order cost that does not show up in any single turn's
+metrics. When time-to-first-token exceeds the caller's patience, they repeat
+themselves — which supersedes the answer that was about to arrive, and the next
+turn starts from scratch. A real call went three questions deep with no answer
+at any point. No stage was slow enough to blame on its own.
+
+`llm: stream open` logs `prompt_chars` next to the latency it bought, because
+the message count hides this: the count barely moves while the prompt behind it
+grows by an order of magnitude. `history_max_chars` bounds history by size as
+well as by `history_turns`, since sixteen exchanges can be four hundred
+characters or four thousand.
+
+If your `llm_first_token_ms` is in the seconds, stop tuning the cascade and
+shorten the prompt.
 
 ## The service's own numbers
 
@@ -178,3 +314,17 @@ At INFO level each turn logs one line, and the session logs a summary at close:
 turn: response latency  turn=item_1 first_audio_out_ms=1204 asr_final_ms=41 …
 session: response latency summary  turns=9 min_ms=780 p50_ms=910 p95_ms=1204 max_ms=1290
 ```
+
+## No recordings to hand
+
+Synthetic audio exercises the engine but a real recognizer transcribes it to
+nothing. `-speak` has the first stack say each sentence with its own
+synthesizer, trims the result to the words, and plays those back as the caller:
+
+```bash
+bin/golivebench -a golive=ws://127.0.0.1:8765/v1/live -rate 16000 \
+    -speak '你好，今天天气怎么样？|帮我查一下明天上午去上海的航班有哪些。' -runs 15 -v
+```
+
+`-keep-clips dir` writes them out as WAV, to listen to or to reuse with `-clips`.
+

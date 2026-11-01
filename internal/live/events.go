@@ -10,8 +10,10 @@
 package live
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Client event types (application -> service).
@@ -41,6 +43,8 @@ const (
 	ServerThinkingAppended      = "session.thinking.appended"
 	ServerCommentaryAppended    = "session.commentary.appended"
 	ServerInstructionsAppended  = "session.instructions.appended"
+	ServerInputAudioMuted       = "session.input_audio.muted"
+	ServerInputAudioUnmuted     = "session.input_audio.unmuted"
 	ServerUsageUpdated          = "session.usage.updated"
 	ServerResponseEvent         = "response.event"
 	ServerError                 = "error"
@@ -50,12 +54,27 @@ const (
 // the seams of the simulated duplex engine so you can see what a real
 // full-duplex model would be doing internally.
 const (
-	ExtSpeechStarted  = "golive.speech.started"
-	ExtSpeechStopped  = "golive.speech.stopped"
-	ExtAudioTruncated = "golive.output_audio.truncated"
-	ExtTurnMetrics    = "golive.turn.metrics"
-	ExtBackchannel    = "golive.backchannel"
-	ExtChannelState   = "golive.channel.state"
+	ExtSpeechStarted    = "golive.speech.started"
+	ExtSpeechStopped    = "golive.speech.stopped"
+	ExtAudioTruncated   = "golive.output_audio.truncated"
+	ExtTurnMetrics      = "golive.turn.metrics"
+	ExtBackchannel      = "golive.backchannel"
+	ExtInputBackchannel = "golive.input_backchannel"
+	// ExtMemory is golive.memory: the call's working memory was edited
+	// (Version after the edit, Patch what was merged). ExtTask is
+	// golive.task: a slow tool call was submitted, finished, or delivered.
+	ExtMemory = "golive.memory"
+	ExtTask   = "golive.task"
+	// ExtFocus says whose voice an answered utterance was, by the speaker-
+	// activity model, and whether its answer was dropped for it. See FocusEvent.
+	ExtFocus        = "golive.focus"
+	ExtChannelState = "golive.channel.state"
+	// ExtInputTranscript carries the recognizer's whole current hypothesis for
+	// an utterance, revisions included. See InputTranscriptEvent.
+	ExtInputTranscript = "golive.input_transcript.updated"
+	// ExtDelegationSpeculative is an early, retractable hint that a client
+	// delegation is probably coming. See SpeculativeDelegationEvent.
+	ExtDelegationSpeculative = "golive.delegation.speculative"
 )
 
 // Close reasons carried on session.closed.
@@ -66,6 +85,8 @@ const (
 	CloseRemoteHangup   = "remote_hangup"
 	CloseConnectionLost = "connection_lost"
 	CloseError          = "error"
+	CloseShutdown       = "server_shutdown"
+	CloseFlooded        = "rate_limited"
 )
 
 // Delegation targets.
@@ -81,13 +102,18 @@ type Envelope struct {
 	EventID string `json:"event_id,omitempty"`
 }
 
-// AudioFormat is the PCM description a WebSocket session negotiates at startup.
-// gpt-live-1 fixes this at session.start and refuses to change it mid-session,
-// because a rate change mid-stream would desynchronise every timestamp already
-// issued.
+// AudioFormat is the audio a WebSocket session negotiates at startup, for both
+// directions. gpt-live-1 fixes this at session.start and refuses to change it
+// mid-session, because a rate change mid-stream would desynchronise every
+// timestamp already issued.
+//
+// The types are the ones gpt-live-1 accepts: audio/pcm (signed 16-bit
+// little-endian, 24000 or 16000 Hz) and the two G.711 laws a phone line
+// speaks, audio/pcmu and audio/pcma, which are always 8000 Hz and one byte a
+// sample. golive additionally accepts audio/pcm at 8000 and 48000.
 type AudioFormat struct {
-	Type string `json:"type"` // "audio/pcm"
-	Rate int    `json:"rate"` // 8000, 16000 or 24000
+	Type string `json:"type"`
+	Rate int    `json:"rate,omitempty"`
 }
 
 // DefaultAudioFormat matches gpt-live-1's WebSocket default.
@@ -108,14 +134,59 @@ type AudioConfig struct {
 }
 
 // ResponsesDelegation configures the managed backend in "responses" mode.
+// Every field is optional on session.update, where an omitted setting keeps its
+// value — which is why the two that have a meaningful zero are pointers.
 type ResponsesDelegation struct {
-	Model             string            `json:"model,omitempty"`
-	Instructions      string            `json:"instructions,omitempty"`
+	Model        string `json:"model,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+	// Tools are in the Responses form, {"type":"function","name":…}. Only
+	// function tools can be honoured: a hosted tool such as web_search needs a
+	// backend that runs it, and an OpenAI-compatible chat endpoint does not.
 	Tools             []json.RawMessage `json:"tools,omitempty"`
 	ToolChoice        any               `json:"tool_choice,omitempty"`
-	ParallelToolCalls bool              `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   int               `json:"max_output_tokens,omitempty"`
+	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
 	ServiceTier       string            `json:"service_tier,omitempty"`
+	// Reasoning and Text are accepted and echoed so a gpt-live-1 session
+	// object round-trips; the chat-completions backends golive drives have no
+	// equivalent to map them onto.
+	Reasoning json.RawMessage `json:"reasoning,omitempty"`
+	Text      json.RawMessage `json:"text,omitempty"`
+}
+
+// Merge overlays the settings present in update onto r, the way session.update
+// is specified: what is omitted keeps its value.
+func (r *ResponsesDelegation) Merge(update *ResponsesDelegation) {
+	if update == nil {
+		return
+	}
+	if update.Model != "" {
+		r.Model = update.Model
+	}
+	if update.Instructions != "" {
+		r.Instructions = update.Instructions
+	}
+	if update.Tools != nil {
+		r.Tools = update.Tools
+	}
+	if update.ToolChoice != nil {
+		r.ToolChoice = update.ToolChoice
+	}
+	if update.ParallelToolCalls != nil {
+		r.ParallelToolCalls = update.ParallelToolCalls
+	}
+	if update.MaxOutputTokens != nil {
+		r.MaxOutputTokens = update.MaxOutputTokens
+	}
+	if update.ServiceTier != "" {
+		r.ServiceTier = update.ServiceTier
+	}
+	if update.Reasoning != nil {
+		r.Reasoning = update.Reasoning
+	}
+	if update.Text != nil {
+		r.Text = update.Text
+	}
 }
 
 // DelegationConfig selects who runs backend work.
@@ -126,9 +197,90 @@ type DelegationConfig struct {
 
 // InputMessage seeds conversation history at session.start.
 type InputMessage struct {
-	Type    string `json:"type,omitempty"` // "message"
-	Role    string `json:"role"`           // "user" | "assistant" | "system"
-	Content string `json:"content"`
+	Type string `json:"type,omitempty"` // "message"
+	// Role is "developer", "user" or "assistant". "system" is accepted as a
+	// synonym for developer.
+	Role    string         `json:"role"`
+	Content MessageContent `json:"content"`
+}
+
+// ContentPart is one piece of a message: input_text from a user or developer,
+// output_text (or text) from the assistant.
+type ContentPart struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+// MessageContent is a message body. gpt-live-1 writes it as a list of typed
+// parts; a bare string is accepted too, because that is what every earlier
+// golive client sent and what a person writes by hand.
+type MessageContent []ContentPart
+
+// TextContent builds a single-part body of the given part type.
+func TextContent(partType, text string) MessageContent {
+	return MessageContent{{Type: partType, Text: text}}
+}
+
+// UnmarshalJSON accepts either form.
+func (c *MessageContent) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*c = nil
+		return nil
+	}
+	if trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		*c = MessageContent{{Type: "input_text", Text: s}}
+		return nil
+	}
+	var parts []ContentPart
+	if err := json.Unmarshal(trimmed, &parts); err != nil {
+		return fmt.Errorf("content must be a string or a list of text parts: %w", err)
+	}
+	*c = parts
+	return nil
+}
+
+// Text joins the textual parts. Parts of any other kind — an image, say — are
+// skipped: the live layer is audio and text, and anything else belongs to a
+// backend that can read it.
+func (c MessageContent) Text() string {
+	var b strings.Builder
+	for _, p := range c {
+		switch p.Type {
+		case "input_text", "output_text", "text", "":
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
+// FlexString is a string field that also accepts any other JSON value, kept as
+// its literal text. A function result is specified as a JSON string, and
+// applications send the object itself often enough that refusing it would be
+// pedantry: the model reads either the same way.
+type FlexString string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (f *FlexString) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		*f = FlexString(s)
+		return nil
+	}
+	if bytes.Equal(trimmed, []byte("null")) {
+		*f = ""
+		return nil
+	}
+	*f = FlexString(trimmed)
+	return nil
 }
 
 // SessionConfig is the session object exchanged on session.start /
@@ -165,11 +317,29 @@ type GoliveConfig struct {
 	// OnNewQuery overrides what happens to an in-flight answer when the user
 	// speaks again: "cut", "finish_sentence" or "queue".
 	OnNewQuery string `json:"on_new_query,omitempty"`
+	// MinSilenceMS is how long the caller must be quiet before their turn is
+	// taken as over, for this session. Zero leaves the server's
+	// vad.min_silence_ms. It is the single largest term in how quickly an
+	// answer can start, and the right value belongs to the line: a phone
+	// caller pauses differently from someone at a desk.
+	MinSilenceMS int `json:"min_silence_ms,omitempty"`
 	// Greeting is spoken the moment the session opens, before the caller says
 	// anything. A pointer so the three cases stay distinct: absent uses the
 	// server default, an empty string explicitly suppresses it, and any other
 	// value replaces it.
 	Greeting *string `json:"greeting,omitempty"`
+	// UserBackchannelPhrases are the things the caller may say without taking
+	// the floor — "嗯", "对", "uh huh". Hearing one while the assistant is
+	// speaking keeps the answer running instead of cutting it off.
+	//
+	// A pointer for the same reason as Greeting: absent means the server's
+	// list, and an explicitly empty list means no list at all, which restores
+	// the plain behaviour where any speech interrupts. Those are different
+	// instructions and a slice alone cannot tell them apart.
+	UserBackchannelPhrases *[]string `json:"user_backchannel_phrases,omitempty"`
+	// ClientDelegation overrides duplex.client_delegation for this session:
+	// "always" or "auto".
+	ClientDelegation string `json:"client_delegation,omitempty"`
 }
 
 // --- Client events ---
@@ -194,20 +364,22 @@ type InputAudioAppendEvent struct {
 }
 
 // AppendEvent covers the three "append" client events, which share a shape.
-// DelegationID is set on thinking/commentary appends that answer a delegation.
+// DelegationID names the client delegation an append belongs to; null or
+// absent means it is session-wide.
 type AppendEvent struct {
 	Envelope
 	Content      string `json:"content"`
 	DelegationID string `json:"delegation_id,omitempty"`
 }
 
-// ResponseItem is an item queued for the Responses backend.
+// ResponseItem is an item queued for the backend: a function result, or a
+// message the user typed rather than spoke.
 type ResponseItem struct {
-	Type    string `json:"type"` // "function_call_output" | "message"
-	CallID  string `json:"call_id,omitempty"`
-	Output  string `json:"output,omitempty"`
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Type    string         `json:"type"` // "function_call_output" | "message"
+	CallID  string         `json:"call_id,omitempty"`
+	Output  FlexString     `json:"output,omitempty"`
+	Role    string         `json:"role,omitempty"`
+	Content MessageContent `json:"content,omitempty"`
 }
 
 // ResponseItemCreateEvent is response.item.create.
@@ -225,65 +397,137 @@ type ResponseCreateEvent struct {
 
 // --- Server events ---
 
-// SessionStartedEvent is session.started.
+// SessionStartedEvent is session.started, and session.updated, which has the
+// same shape. ClientEventID names the command it answers.
 type SessionStartedEvent struct {
 	Envelope
-	Session SessionConfig `json:"session"`
+	ClientEventID string        `json:"client_event_id,omitempty"`
+	Session       SessionConfig `json:"session"`
 }
 
 // TranscriptDelta is session.input_transcript.delta and
 // session.output_transcript.delta.
 //
-// Deltas are fragments, not a running total. Clients append them to a row keyed
-// by ItemID; a fragment whose Final is true supersedes the earlier fragments
-// covering the same span, which is how a streaming ASR correction reaches the
-// UI without rewriting the whole transcript.
+// Delta is a fragment and the stream is append-only, which is the whole of the
+// gpt-live-1 contract: a client concatenates what arrives and never has to
+// take anything back. That is a real constraint on a cascade, because a
+// streaming recognizer revises words it has already emitted. So the caller's
+// side only ever carries text the recognizer has stopped changing — a prefix
+// two consecutive hypotheses agree on, then the rest when the utterance is
+// final — and the live, revisable hypothesis travels separately on
+// golive.input_transcript.updated for a client that wants captions that keep
+// up. The assistant's side carries each sentence as its audio starts to play,
+// so what is in the transcript is what was said, not what was drafted.
+//
+// StartMS and EndMS are on the session clock. On the assistant's side EndMS is
+// the start again while a sentence is still being synthesized: its length is
+// not known until its audio has all arrived, and the text should not wait for
+// that.
 type TranscriptDelta struct {
 	Envelope
-	ItemID  string `json:"item_id,omitempty"`
-	Content string `json:"content"`
+	Delta   string `json:"delta"`
+	StartMS int64  `json:"start_ms"`
+	EndMS   int64  `json:"end_ms"`
+
+	// ItemID and Final are golive extensions. gpt-live-1 leaves grouping
+	// fragments into turns to the application; these do it for a client that
+	// would rather not. Final marks the last fragment of a caller utterance.
+	ItemID string `json:"item_id,omitempty"`
+	Final  bool   `json:"final,omitempty"`
+}
+
+// InputTranscriptEvent is golive.input_transcript.updated: the recognizer's
+// whole current hypothesis for one utterance.
+//
+// Unlike the standard delta it is not append-only. Text replaces whatever the
+// client showed for ItemID, so a correction three words back simply appears.
+// The last one for an utterance has Final set and equals the concatenation of
+// that utterance's standard deltas.
+type InputTranscriptEvent struct {
+	Envelope
+	ItemID  string `json:"item_id"`
+	Text    string `json:"text"`
 	StartMS int64  `json:"start_ms"`
 	EndMS   int64  `json:"end_ms"`
 	Final   bool   `json:"final,omitempty"`
-
-	// Replace is a golive extension. Streaming recognizers revise words they
-	// already emitted; when that happens Content is the whole corrected
-	// hypothesis for the row rather than a fragment to append. Clients that
-	// ignore the field still converge, because the final delta always carries
-	// the complete text with Replace set.
-	Replace bool `json:"replace,omitempty"`
 }
 
-// OutputAudioDelta is session.output_audio.delta: base64 PCM in the session
-// format. There is deliberately no "done" event — gpt-live-1 does not emit one,
-// because generation end and playback end are different moments and only the
-// client knows the latter.
+// OutputAudioDelta is session.output_audio.delta: base64 audio in the session
+// format, under "delta". There is deliberately no "done" event — gpt-live-1
+// does not emit one, because generation end and playback end are different
+// moments and only the client knows the latter.
 type OutputAudioDelta struct {
 	Envelope
-	Audio string `json:"audio"`
+	Delta string `json:"delta"`
+	// Audio repeats Delta under the key golive used before it matched
+	// gpt-live-1. Only sent when duplex.legacy_audio_field is on.
+	Audio string `json:"audio,omitempty"`
+	// StartMS and EndMS place the chunk on the session clock: when the listener
+	// hears it, not when it was sent, since the server runs a little ahead of
+	// the playhead.
+	StartMS int64 `json:"start_ms"`
+	EndMS   int64 `json:"end_ms"`
 	// ItemID ties audio back to the assistant turn that produced it, so a
 	// client can drop audio belonging to a turn it already truncated.
 	ItemID string `json:"item_id,omitempty"`
+
+	// PCM is the chunk as linear PCM16 at the session rate. It never reaches
+	// the wire: the engine fills it in, and the session encodes it into Delta
+	// in whatever format the client negotiated.
+	PCM []byte `json:"-"`
 }
 
 // Delegation describes a unit of backend work.
 type Delegation struct {
-	ID     string `json:"id"`
+	ID string `json:"id"`
+	// Type is always "delegation".
+	Type   string `json:"type"`
 	Target string `json:"target"` // "client" | "responses"
-	// Reason is a golive extension: a short machine-readable hint about why
-	// the live layer delegated.
+	// ResponseID names the backend response, in responses mode.
+	ResponseID string `json:"response_id,omitempty"`
+
+	// The rest are golive extensions.
+
+	// Reason is a short machine-readable hint about why the live layer
+	// delegated: final_transcript, speculative, revision, typed_input,
+	// tool_result or model.
 	Reason string `json:"reason,omitempty"`
 	// Transcript is the user text that triggered the delegation. gpt-live-1
 	// expects the client to reconstruct this from transcript events; golive
 	// includes it so a client does not have to.
-	Transcript  string `json:"transcript,omitempty"`
-	CreatedAtMS int64  `json:"created_at_ms,omitempty"`
+	Transcript string `json:"transcript,omitempty"`
+	// Request is what the conversational model asked the backend for, when the
+	// delegation was its own decision rather than a turn boundary.
+	Request string `json:"request,omitempty"`
 }
 
-// DelegationCreatedEvent is session.delegation.created.
+// DelegationCreatedEvent is session.delegation.created. OffsetMS is where on
+// the session clock the delegation was made.
 type DelegationCreatedEvent struct {
 	Envelope
+	OffsetMS   int64      `json:"offset_ms"`
 	Delegation Delegation `json:"delegation"`
+}
+
+// SpeculativeDelegationEvent is golive.delegation.speculative: notice that the
+// caller has paused on what looks like a finished request, work on it has
+// begun, and a session.delegation.created for it will probably follow.
+//
+// It exists because the standard event is a promise. A delegation, once
+// announced, is real — gpt-live-1 never takes one back — so golive does not
+// announce one until the caller's turn is certain. In client mode, an
+// application that can start reversible work early (a lookup, a cache warm)
+// may act on this hint and save the wait; one that books flights should ignore
+// it. If the caller carries on talking the hint is simply never confirmed, and
+// the delegation that eventually arrives may have a different id and different
+// words. In responses mode there is nothing to act on, and the event is there
+// to show the head start being taken.
+type SpeculativeDelegationEvent struct {
+	Envelope
+	OffsetMS     int64  `json:"offset_ms"`
+	DelegationID string `json:"delegation_id"`
+	Target       string `json:"target"`
+	Transcript   string `json:"transcript"`
 }
 
 // ResponseEventEnvelope is response.event: a Responses-backend event wrapped
@@ -294,48 +538,74 @@ type ResponseEventEnvelope struct {
 	Event        json.RawMessage `json:"event"`
 }
 
-// Usage is session.usage.updated.
+// Usage is session.usage.updated. Every one is a cumulative snapshot that
+// replaces the one before: do not sum them.
 type Usage struct {
 	Envelope
-	Usage UsageBody `json:"usage"`
+	Usage         UsageBody     `json:"usage"`
+	ContextWindow ContextWindow `json:"context_window"`
 }
 
-// UsageBody carries cumulative session cost drivers.
+// UsageBody carries cumulative session cost drivers. Seconds is the one
+// gpt-live-1 bills on; the rest are golive's own, because a cascade's cost is
+// its three vendors' and none of them bills by the session second.
 type UsageBody struct {
-	VoiceDurationSeconds float64 `json:"voice_duration_seconds"`
-	InputAudioSeconds    float64 `json:"input_audio_seconds"`
-	OutputAudioSeconds   float64 `json:"output_audio_seconds"`
-	BackendInputTokens   int     `json:"backend_input_tokens,omitempty"`
-	BackendOutputTokens  int     `json:"backend_output_tokens,omitempty"`
+	Seconds             float64 `json:"seconds"`
+	InputAudioSeconds   float64 `json:"input_audio_seconds"`
+	OutputAudioSeconds  float64 `json:"output_audio_seconds"`
+	BackendInputTokens  int     `json:"backend_input_tokens,omitempty"`
+	BackendOutputTokens int     `json:"backend_output_tokens,omitempty"`
+	// BackendCachedInputTokens is how many of the input tokens the provider
+	// served from its prefix cache, where it says.
+	BackendCachedInputTokens int `json:"backend_cached_input_tokens,omitempty"`
 }
 
-// SessionClosedEvent is session.closed.
+// ContextWindow reports how full the conversational context is, from 0 to 1.
+type ContextWindow struct {
+	UsageRatio float64 `json:"usage_ratio"`
+}
+
+// SessionClosedEvent is session.closed: the last event of a session, carrying
+// its final usage and the configuration it ran with.
 type SessionClosedEvent struct {
 	Envelope
-	Reason string `json:"reason"`
+	Reason  string         `json:"reason"`
+	Usage   *UsageBody     `json:"usage,omitempty"`
+	Session *SessionConfig `json:"session,omitempty"`
 }
 
-// ErrorBody is the error payload.
-type ErrorBody struct {
-	Type    string `json:"type"`
-	Code    string `json:"code,omitempty"`
-	Message string `json:"message"`
-	Param   string `json:"param,omitempty"`
-}
-
-// ErrorEvent is the error server event. ClientEventID, when set, names the
-// client event that was rejected — the discriminator between "your command was
+// ErrorBody is the error payload. ClientEventID, when set, names the client
+// event that was rejected — the discriminator between "your command was
 // refused" and "the session failed".
+type ErrorBody struct {
+	Type          string `json:"type"`
+	Code          string `json:"code,omitempty"`
+	Message       string `json:"message"`
+	Param         string `json:"param,omitempty"`
+	ClientEventID string `json:"client_event_id,omitempty"`
+}
+
+// ErrorEvent is the error server event.
+//
+// ClientEventID appears twice. gpt-live-1 puts it inside the error object;
+// golive originally put it beside it, and clients written against that are
+// still out there. Both are filled in.
 type ErrorEvent struct {
 	Envelope
 	Error         ErrorBody `json:"error"`
 	ClientEventID string    `json:"client_event_id,omitempty"`
 }
 
-// AckEvent is the shared shape of session.*.appended acknowledgements.
+// AckEvent is the shared shape of the acknowledgements: session.*.appended,
+// and session.input_audio.muted / unmuted. ClientEventID names the command.
+// StartMS and EndMS, on an append, say where on the session clock the content
+// entered the conversation — when it was taken in, not when anything was said.
 type AckEvent struct {
 	Envelope
-	DelegationID string `json:"delegation_id,omitempty"`
+	ClientEventID string `json:"client_event_id,omitempty"`
+	DelegationID  string `json:"delegation_id,omitempty"`
+	StartMS       *int64 `json:"start_ms,omitempty"`
+	EndMS         *int64 `json:"end_ms,omitempty"`
 }
 
 // --- Extension events ---
@@ -346,6 +616,9 @@ type SpeechEvent struct {
 	StartMS int64 `json:"start_ms"`
 	EndMS   int64 `json:"end_ms,omitempty"`
 	BargeIn bool  `json:"barge_in,omitempty"`
+	// SilenceMS, on a stop, is the pause the stop was judged on: the caller's
+	// last sound was this long before the event.
+	SilenceMS int64 `json:"silence_ms,omitempty"`
 }
 
 // AudioTruncatedEvent is golive.output_audio.truncated: the assistant was cut
@@ -377,6 +650,20 @@ type TurnMetricsEvent struct {
 	// other figure here is relative to.
 	SpeechEndMS int64 `json:"speech_end_ms"`
 
+	// EndSilenceMS is how long the caller had already been silent at that
+	// origin: the pause the turn's end was judged on. A caller's wait is from
+	// their last sound, so every figure below is that much short of what they
+	// experienced, and by a different amount when the pause is not the default
+	// — a client that asked for a shorter one, a turn held open for a caller
+	// mid-thought.
+	EndSilenceMS int64 `json:"end_silence_ms"`
+
+	// TurnStartMS is speech end to the moment the turn's answer was begun.
+	// Negative for a speculative turn: that is how much of the caller's pause
+	// the backend was already working through, and with LLMFirstTokenMS it
+	// gives the backend's own time to first token, which no other pair of
+	// figures here does.
+	TurnStartMS int64 `json:"turn_start_ms"`
 	// ASRFinalMS is speech end to the final transcript.
 	ASRFinalMS int64 `json:"asr_final_ms"`
 	// LLMFirstTokenMS is speech end to the backend's first token. Negative when
@@ -415,9 +702,93 @@ type ChannelStateEvent struct {
 	TurnID       string `json:"turn_id,omitempty"`
 }
 
-// BackchannelEvent is golive.backchannel: a short acknowledgement was spoken
-// while the user held the floor.
+// Backchannel kinds. Two quite different behaviours share one event, and a log
+// that does not distinguish them is misleading: "backchannel: 稍等一下" on every
+// turn reads as over-eager acknowledgement, when it is actually the assistant
+// covering a slow backend.
+const (
+	// BackchannelAck is a short acknowledgement spoken while the *user* is
+	// still talking — the audible half of full duplex.
+	BackchannelAck = "ack"
+	// BackchannelHoldingFiller is spoken while backend work runs, to keep a
+	// delegating agent from sounding like a dropped call.
+	BackchannelHoldingFiller = "holding_filler"
+)
+
+// BackchannelEvent is golive.backchannel: the assistant said something short
+// that is not part of an answer. Kind says which of the two it was.
 type BackchannelEvent struct {
+	Envelope
+	Kind string `json:"kind,omitempty"`
+	Text string `json:"text"`
+}
+
+// MemoryEvent is golive.memory.
+type MemoryEvent struct {
+	Envelope
+	Version int             `json:"version"`
+	Patch   json.RawMessage `json:"patch"`
+}
+
+// HangupEvent is the engine telling the session to end the call: the model
+// called end_call and its last words have played. It is not sent to the
+// client; the session closes the connection instead, which is the hangup.
+type HangupEvent struct {
+	Envelope
+	Reason string `json:"reason"`
+}
+
+// CloseAssistantHangup is the close reason when the assistant ended the call.
+const CloseAssistantHangup = "assistant_hangup"
+
+// TaskEvent is golive.task: Status is "running", "done" or "delivered".
+type TaskEvent struct {
+	Envelope
+	TaskID        string `json:"task_id"`
+	Tool          string `json:"tool"`
+	Status        string `json:"status"`
+	MemoryVersion int    `json:"memory_version"`
+	TookMS        int64  `json:"took_ms,omitempty"`
+	WaitedMS      int64  `json:"waited_ms,omitempty"`
+	Interrupting  bool   `json:"interrupting,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+// FocusEvent is golive.focus: the speaker-activity model's view of one
+// answered utterance. PrimaryShare and OthersShare are shares of its voiced
+// frames; Coverage how much of it was labelled when judged; AnotherVoice
+// whether it read as somebody else's; Vetoed whether the answer was dropped
+// for that before anyone heard it.
+type FocusEvent struct {
+	Envelope
+	TurnID       string  `json:"turn_id"`
+	PrimaryShare float64 `json:"primary_share"`
+	OthersShare  float64 `json:"others_share"`
+	VoicedMS     int64   `json:"voiced_ms"`
+	Coverage     float64 `json:"coverage"`
+	Primary      int     `json:"primary_speaker"`
+	AnotherVoice bool    `json:"another_voice"`
+	Vetoed       bool    `json:"vetoed,omitempty"`
+	// BargeIn says this judged a sound over the answer rather than a turn:
+	// AnotherVoice then means the answer was not the caller's to stop, and
+	// Vetoed that it was indeed kept going (veto mode).
+	BargeIn bool `json:"barge_in,omitempty"`
+	// Utterance says this judged an open utterance as it was being said:
+	// AnotherVoice that it was not the caller's, Vetoed that it was let go
+	// by with no turn made of it (veto mode).
+	Utterance bool `json:"utterance,omitempty"`
+}
+
+// InputBackchannelEvent is golive.input_backchannel: the caller said something
+// that was heard, recognised as an acknowledgement, and deliberately not
+// treated as an interruption.
+//
+// It is emitted instead of the transcript delta and turn the utterance would
+// otherwise have produced, so a client that draws conversation history has one
+// event telling it that speech happened and was intentionally dropped. Without
+// it the caller appears to have said nothing at all, which is indistinguishable
+// from the recognizer having failed.
+type InputBackchannelEvent struct {
 	Envelope
 	Text string `json:"text"`
 }
@@ -437,8 +808,42 @@ func DecodeType(raw []byte) (string, string, error) {
 // NewError builds an error event, optionally naming the rejected client event.
 func NewError(kind, code, message, clientEventID string) ErrorEvent {
 	return ErrorEvent{
-		Envelope:      Envelope{Type: ServerError},
-		Error:         ErrorBody{Type: kind, Code: code, Message: message},
+		Envelope: Envelope{Type: ServerError},
+		Error: ErrorBody{
+			Type:          kind,
+			Code:          code,
+			Message:       message,
+			ClientEventID: clientEventID,
+		},
 		ClientEventID: clientEventID,
 	}
+}
+
+// StampEventID inserts an event_id into an already-encoded server event.
+//
+// Every gpt-live-1 server event has one, and stamping at the socket is the one
+// place that can number them in the order they actually went out. Doing it on
+// the encoded bytes avoids a second encode of every audio chunk. It relies on
+// "type" being the first key, which holds for every event here because they
+// all embed Envelope first; anything else is returned untouched.
+func StampEventID(data []byte, id string) []byte {
+	const prefix = `{"type":"`
+	if id == "" || !bytes.HasPrefix(data, []byte(prefix)) {
+		return data
+	}
+	end := bytes.IndexByte(data[len(prefix):], '"')
+	if end < 0 {
+		return data
+	}
+	at := len(prefix) + end + 1
+	if bytes.HasPrefix(data[at:], []byte(`,"event_id"`)) {
+		return data
+	}
+	out := make([]byte, 0, len(data)+len(id)+16)
+	out = append(out, data[:at]...)
+	out = append(out, `,"event_id":"`...)
+	out = append(out, id...)
+	out = append(out, '"')
+	out = append(out, data[at:]...)
+	return out
 }

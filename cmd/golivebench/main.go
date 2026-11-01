@@ -29,10 +29,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/chuanmingliu/golive/internal/benchrec"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,9 +54,10 @@ func main() {
 
 // stack is one service under test.
 type stack struct {
-	name string
-	url  string
-	kind string // "golive" | "realtime"
+	name  string
+	url   string
+	kind  string // "golive" | "realtime"
+	token string
 }
 
 func parseStack(spec, kind string) (stack, error) {
@@ -72,32 +76,53 @@ func run() error {
 		aSpec     = flag.String("a", "golive=ws://127.0.0.1:8080/v1/live", "first stack, as name=url (gpt-live protocol)")
 		bSpec     = flag.String("b", "", "second stack, as name=url (OpenAI Realtime protocol); empty benchmarks only -a")
 		clipGlob  = flag.String("clips", "", "glob of 16-bit PCM WAV files to speak; empty uses synthetic audio")
+		speak     = flag.String("speak", "", "sentences for the first stack to say aloud, separated by '|', then played back to every stack as the caller; real speech for a real recognizer, with no recordings needed")
+		keepClips = flag.String("keep-clips", "", "with -speak, also write the spoken clips into this directory as WAV")
+		minSil    = flag.Int("min-silence-ms", 0, "ask each stack for this end-of-turn silence (golive.min_silence_ms / turn_detection.silence_duration_ms); 0 leaves the service's own")
 		runs      = flag.Int("runs", 10, "measured runs per stack")
 		warmup    = flag.Int("warmup", 1, "unmeasured runs per stack first, to pay connection setup")
 		rate      = flag.Int("rate", 24000, "session PCM rate")
 		silenceMS = flag.Int("silence-ms", 1200, "trailing silence after each clip, so the engine's VAD closes the turn")
-		synthMS   = flag.Int("synth-ms", 1800, "length of synthetic speech when -clips is empty")
+		synthMS   = flag.String("synth-ms", "1800", "length of synthetic speech when -clips is empty; a comma-separated list makes one clip per length")
 		timeout   = flag.Int("timeout-s", 30, "give up on a run after this long")
 		outJSON   = flag.String("json", "", "write raw per-run results here")
 		outMD     = flag.String("md", "", "write the report here as markdown")
+		recordDir = flag.String("record", "", "write the L3 scorecard record (benchrec) into this directory")
+		build     = flag.String("build", "", "the build under test, for the record (default: asked of the first stack's /healthz)")
+		source    = flag.String("source", "mocks", "what spoke, for the record: mocks, box")
 		verbose   = flag.Bool("v", false, "print every run as it completes")
+		token     = flag.String("token", "", "bearer token for golive; also read from GOLIVE_AUTH_TOKEN")
 	)
 	flag.Parse()
+
+	if *token == "" {
+		*token = os.Getenv("GOLIVE_AUTH_TOKEN")
+	}
 
 	a, err := parseStack(*aSpec, "golive")
 	if err != nil {
 		return err
 	}
+	a.token = *token
 	stacks := []stack{a}
 	if *bSpec != "" {
 		b, err := parseStack(*bSpec, "realtime")
 		if err != nil {
 			return err
 		}
+		b.token = *token
 		stacks = append(stacks, b)
 	}
 
-	clips, err := loadClips(*clipGlob, *rate, *synthMS)
+	var clips []clip
+	if *speak != "" {
+		clips, err = speakClips(context.Background(), a, strings.Split(*speak, "|"), *rate)
+		if err == nil && *keepClips != "" {
+			err = writeClips(*keepClips, clips, *rate)
+		}
+	} else {
+		clips, err = loadClips(*clipGlob, *rate, *synthMS)
+	}
 	if err != nil {
 		return err
 	}
@@ -118,7 +143,7 @@ func run() error {
 		clip := clips[i%len(clips)]
 		measured := i >= *warmup
 		for _, s := range stacks {
-			r := drive(ctx, s, clip, *rate, *silenceMS, time.Duration(*timeout)*time.Second)
+			r := drive(ctx, s, clip, *rate, *silenceMS, *minSil, time.Duration(*timeout)*time.Second)
 			r.Index = i - *warmup
 			r.Measured = measured
 			results = append(results, r)
@@ -162,7 +187,55 @@ func run() error {
 		}
 		fmt.Printf("· wrote %s\n", *outMD)
 	}
+	if *recordDir != "" {
+		// The first stack is the one under test.
+		var vals []int64
+		failures := 0
+		for _, r := range results {
+			if r.Stack != stacks[0].name || !r.Measured {
+				continue
+			}
+			if r.Err != "" {
+				failures++
+				continue
+			}
+			vals = append(vals, r.FirstAudioMS)
+		}
+		d := describe(vals, failures)
+		b := *build
+		if b == "" {
+			b = buildOf(stacks[0].url)
+		}
+		rec := benchrec.Record{Layer: "L3", Build: b, Source: *source,
+			Metrics:    map[string]float64{"p50_ms": float64(d.p50), "p95_ms": float64(d.p95), "max_ms": float64(d.max), "iqr_ms": float64(d.iqr)},
+			Counts:     map[string]int{"n_turns": d.n, "n_failed": d.failures},
+			Thresholds: map[string]string{"p95_ms": "<=1200"},
+			Report:     *outMD}
+		path, err := benchrec.Write(*recordDir, rec)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("· recorded %s\n", path)
+	}
 	return nil
+}
+
+// buildOf asks a stack's /healthz for its version; "" when it will not say.
+func buildOf(wsURL string) string {
+	u := strings.Replace(strings.Replace(wsURL, "wss://", "https://", 1), "ws://", "http://", 1)
+	if i := strings.Index(u, "/v1/"); i > 0 {
+		u = u[:i]
+	}
+	resp, err := http.Get(u + "/healthz")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var h struct {
+		Version string `json:"version"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&h)
+	return h.Version
 }
 
 // incoming is one normalized event from either dialect. Both protocols are
@@ -207,9 +280,27 @@ type clip struct {
 	pcm  []byte
 }
 
-func loadClips(glob string, rate, synthMS int) ([]clip, error) {
+func loadClips(glob string, rate int, synthMS string) ([]clip, error) {
 	if glob == "" {
-		return []clip{{name: "synthetic", pcm: syntheticSpeech(rate, synthMS)}}, nil
+		// Several lengths, because a turn's length decides which path through
+		// the engine it takes: a one-word reply never pauses long enough to
+		// speculate on, and a long question does more than once.
+		var out []clip
+		for _, field := range strings.Split(synthMS, ",") {
+			field = strings.TrimSpace(field)
+			if field == "" {
+				continue
+			}
+			ms, err := strconv.Atoi(field)
+			if err != nil || ms < 100 {
+				return nil, fmt.Errorf("-synth-ms %q: want a length in ms, at least 100", field)
+			}
+			out = append(out, clip{name: fmt.Sprintf("synthetic_%04dms", ms), pcm: syntheticSpeech(rate, ms)})
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("-synth-ms is empty")
+		}
+		return out, nil
 	}
 	paths, err := filepath.Glob(glob)
 	if err != nil {
@@ -234,12 +325,175 @@ func loadClips(glob string, rate, synthMS int) ([]clip, error) {
 	return out, nil
 }
 
+// speakClips has a golive stack say each sentence, and keeps what it said as a
+// clip to play back as the caller.
+//
+// A benchmark of real providers needs real speech: a recognizer transcribes
+// synthetic noise to nothing, and then no turn is ever answered. Recordings are
+// the proper source, but a machine that has just been set up has none — and it
+// does have a synthesizer, on the other side of the socket being measured. The
+// sentence is passed as a session's greeting, which the server speaks as it is,
+// and the audio is trimmed to the words so that "the caller stopped talking" is
+// the last sound and not the end of the synthesizer's tail.
+func speakClips(ctx context.Context, s stack, sentences []string, rate int) ([]clip, error) {
+	var out []clip
+	for _, sentence := range sentences {
+		sentence = strings.TrimSpace(sentence)
+		if sentence == "" {
+			continue
+		}
+		// One sentence the synthesizer would not say is a clip fewer, not a
+		// benchmark not run: the others are still real speech.
+		pcm, err := speakOne(ctx, s, sentence, rate)
+		if err != nil {
+			fmt.Printf("· could not speak %q, leaving it out: %v\n", sentence, err)
+			continue
+		}
+		pcm = trimSilence(pcm, rate)
+		ms := audio.PCM16(rate).DurationMS(pcm)
+		if ms < 200 {
+			fmt.Printf("· could not speak %q, leaving it out: only %.0f ms of audio came back\n", sentence, ms)
+			continue
+		}
+		fmt.Printf("· spoke %q: %.0f ms\n", sentence, ms)
+		out = append(out, clip{name: fmt.Sprintf("spoken_%02d %s", len(out)+1, trim(sentence, 24)), pcm: pcm})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("-speak: nothing could be spoken")
+	}
+	return out, nil
+}
+
+func speakOne(ctx context.Context, s stack, sentence string, rate int) ([]byte, error) {
+	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	header := http.Header{}
+	if s.token != "" {
+		header.Set("Authorization", "Bearer "+s.token)
+	}
+	conn, _, err := dialer.DialContext(ctx, s.url, header)
+	if err != nil {
+		return nil, fmt.Errorf("dial: %w", err)
+	}
+	defer conn.Close()
+
+	start, err := json.Marshal(live.SessionStartEvent{
+		Envelope: live.Envelope{Type: live.ClientSessionStart, EventID: "speak"},
+		Session: live.SessionConfig{
+			Audio:      &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: rate}},
+			Delegation: &live.DelegationConfig{Type: live.DelegationResponses},
+			Golive:     &live.GoliveConfig{Greeting: &sentence},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, start); err != nil {
+		return nil, err
+	}
+
+	// Long enough for a cold synthesizer to connect; after the first audio, a
+	// beat with none means the sentence is over.
+	var pcm []byte
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
+	for {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			if len(pcm) > 0 {
+				return pcm, nil
+			}
+			return nil, fmt.Errorf("no audio: %w", err)
+		}
+		var ev struct {
+			Type  string          `json:"type"`
+			Audio string          `json:"audio"`
+			Delta string          `json:"delta"`
+			Error json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal(data, &ev) != nil {
+			continue
+		}
+		switch ev.Type {
+		case "session.output_audio.delta", "response.output_audio.delta", "response.audio.delta":
+			b64 := ev.Audio
+			if b64 == "" {
+				b64 = ev.Delta
+			}
+			chunk, err := base64.StdEncoding.DecodeString(b64)
+			if err != nil {
+				continue
+			}
+			pcm = append(pcm, chunk...)
+			_ = conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+		case "error":
+			if len(pcm) == 0 {
+				return nil, fmt.Errorf("the service refused: %s", trim(string(data), 200))
+			}
+		}
+	}
+}
+
+// trimSilence cuts a clip down to its words, leaving a few frames either side.
+func trimSilence(pcm []byte, rate int) []byte {
+	const floor = 350 // peak amplitude of a 10 ms frame that counts as sound
+	frame := audio.PCM16(rate).BytesForMS(10)
+	if frame <= 0 || len(pcm) < frame {
+		return pcm
+	}
+	loud := func(off int) bool {
+		for i := off; i+1 < off+frame && i+1 < len(pcm); i += 2 {
+			v := int(int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8))
+			if v > floor || v < -floor {
+				return true
+			}
+		}
+		return false
+	}
+	first, last := -1, -1
+	for off := 0; off+frame <= len(pcm); off += frame {
+		if loud(off) {
+			if first < 0 {
+				first = off
+			}
+			last = off
+		}
+	}
+	if first < 0 {
+		return nil
+	}
+	start := first - 4*frame
+	if start < 0 {
+		start = 0
+	}
+	// One frame of tail: the measurement starts where this clip ends.
+	end := last + 2*frame
+	if end > len(pcm) {
+		end = len(pcm)
+	}
+	return pcm[start:end]
+}
+
+func writeClips(dir string, clips []clip, rate int) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for i, c := range clips {
+		if err := audio.WriteWAV(filepath.Join(dir, fmt.Sprintf("spoken_%02d.wav", i+1)), c.pcm, rate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // drive runs one turn against one stack and returns what the client observed.
-func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout time.Duration) result {
+func drive(ctx context.Context, s stack, c clip, rate, silenceMS, minSilenceMS int, timeout time.Duration) result {
 	r := result{Stack: s.name, Clip: c.name}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, s.url, nil)
+	header := http.Header{}
+	if s.token != "" {
+		header.Set("Authorization", "Bearer "+s.token)
+	}
+	conn, _, err := dialer.DialContext(ctx, s.url, header)
 	if err != nil {
 		r.Err = "dial: " + err.Error()
 		return r
@@ -250,6 +504,9 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 
 	go func() {
 		defer close(events)
+		// The caller's transcript arrives as fragments; the row is rebuilt here
+		// so both dialects reduce to "the final text, and when it was known".
+		var heard strings.Builder
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
@@ -296,9 +553,26 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 				_ = json.Unmarshal(data, &ev)
 				events <- incoming{kind: "transcript", text: ev.Transcript, at: at}
 			case live.ServerInputTranscriptDelta:
-				var ev live.TranscriptDelta
-				if json.Unmarshal(data, &ev) == nil && ev.Final {
-					events <- incoming{kind: "transcript", text: ev.Content, at: at}
+				// "delta" is the gpt-live-1 field. "content" and "replace" are
+				// what golive sent before it matched, kept so this harness can
+				// still be pointed at an older build for a before-and-after.
+				var ev struct {
+					Delta   string `json:"delta"`
+					Content string `json:"content"`
+					Final   bool   `json:"final"`
+					Replace bool   `json:"replace"`
+				}
+				if json.Unmarshal(data, &ev) != nil {
+					continue
+				}
+				if ev.Replace {
+					heard.Reset()
+				}
+				heard.WriteString(ev.Delta)
+				heard.WriteString(ev.Content)
+				if ev.Final {
+					events <- incoming{kind: "transcript", text: heard.String(), at: at}
+					heard.Reset()
 				}
 
 			// --- assistant text, both dialects ---
@@ -329,7 +603,7 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 		return conn.WriteMessage(websocket.TextMessage, data)
 	}
 
-	if err := sendSessionConfig(send, s.kind, rate); err != nil {
+	if err := sendSessionConfig(send, s.kind, rate, minSilenceMS); err != nil {
 		r.Err = "session config: " + err.Error()
 		return r
 	}
@@ -404,6 +678,12 @@ func drive(ctx context.Context, s stack, c clip, rate, silenceMS int, timeout ti
 			}
 			switch ev.kind {
 			case "audio":
+				// Audio that arrived before the caller finished is not an
+				// answer to them — a greeting, the tail of something earlier —
+				// and counting it would report a negative latency.
+				if ev.at.Before(speechEnd) {
+					continue
+				}
 				if firstAudio.IsZero() {
 					firstAudio = ev.at
 				}
@@ -444,24 +724,32 @@ done:
 	return r
 }
 
-func sendSessionConfig(send func(any) error, kind string, rate int) error {
+func sendSessionConfig(send func(any) error, kind string, rate, minSilenceMS int) error {
 	if kind == "golive" {
+		// No greeting: it would still be playing when the clip starts, and the
+		// first thing measured would be the caller interrupting it.
+		quiet := ""
 		return send(live.SessionStartEvent{
 			Envelope: live.Envelope{Type: live.ClientSessionStart, EventID: "bench"},
 			Session: live.SessionConfig{
 				Audio:      &live.AudioConfig{Format: &live.AudioFormat{Type: "audio/pcm", Rate: rate}},
 				Delegation: &live.DelegationConfig{Type: live.DelegationResponses},
+				Golive:     &live.GoliveConfig{Greeting: &quiet, MinSilenceMS: minSilenceMS},
 			},
 		})
 	}
 	// OpenAI Realtime (GA shape), which is what the Python cascade speaks.
+	input := map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": rate}}
+	if minSilenceMS > 0 {
+		input["turn_detection"] = map[string]any{"type": "server_vad", "silence_duration_ms": minSilenceMS}
+	}
 	return send(map[string]any{
 		"type":     "session.update",
 		"event_id": "bench",
 		"session": map[string]any{
 			"type": "realtime",
 			"audio": map[string]any{
-				"input":  map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": rate}},
+				"input":  input,
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": rate}},
 			},
 		},

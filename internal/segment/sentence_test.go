@@ -114,3 +114,84 @@ func TestResetClearsPendingText(t *testing.T) {
 		t.Error("text from the abandoned turn leaked into the next one")
 	}
 }
+
+// A full-width terminator is released as it arrives, without waiting for the
+// rune after it. The first segment sets time-to-first-audio, and the token
+// after "好的，" can be tens of milliseconds away.
+func TestFullWidthTerminatorsNeedNoLookahead(t *testing.T) {
+	s := New(Config{FirstChunkChars: 3, MinChunkChars: 6, MaxChunkChars: 60})
+
+	if got := s.Push("好的"); len(got) != 0 {
+		t.Fatalf("flushed %q before any boundary", got)
+	}
+	got := s.Push("，")
+	if len(got) != 1 || got[0] != "好的，" {
+		t.Fatalf("a full-width comma should release the first segment at once; got %q", got)
+	}
+
+	// Later segments still wait for a strong terminator, and get it at once.
+	if got := s.Push("我帮你查一下明天的天气"); len(got) != 0 {
+		t.Fatalf("flushed %q mid-sentence", got)
+	}
+	got = s.Push("。")
+	if len(got) != 1 || got[0] != "我帮你查一下明天的天气。" {
+		t.Fatalf("a full stop should release the sentence at once; got %q", got)
+	}
+
+	// The ASCII period is still judged with lookahead, so a decimal survives.
+	s.Reset()
+	if got := s.Push("The total is 3."); len(got) != 0 {
+		t.Fatalf("cut at a period that may be a decimal point: %q", got)
+	}
+	if got := s.Push("5 kg in all. "); len(got) != 1 || got[0] != "The total is 3.5 kg in all." {
+		t.Fatalf("decimal handling regressed: %q", got)
+	}
+}
+
+// A boundary that arrives before the first segment is long enough is not taken
+// at once, but it is where the segment is cut if nothing better follows.
+func TestFirstSegmentRemembersAnEarlyBoundary(t *testing.T) {
+	s := New(Config{FirstChunkChars: 6, MinChunkChars: 24, MaxChunkChars: 120})
+
+	if got := s.Push("好的，"); len(got) != 0 {
+		t.Fatalf("a three-character opening was released against a six-character minimum: %q", got)
+	}
+	if !s.HasEarlyBoundary() {
+		t.Fatal("the comma was not remembered as a place to cut")
+	}
+	s.Push("我听到你说")
+	if got := s.FlushFirstAtBoundary(); got != "好的，" {
+		t.Fatalf("cut at %q, want the clause that ended at the comma", got)
+	}
+	if got := s.Pending(); got != "我听到你说" {
+		t.Errorf("the rest of the text was not kept for the next segment: %q", got)
+	}
+	if s.HasEarlyBoundary() {
+		t.Error("the boundary is still offered after it has been used")
+	}
+
+	// A lone interjection is not worth a segment of its own.
+	s.Reset()
+	s.Push("嗯，")
+	if s.HasEarlyBoundary() {
+		t.Error(`"嗯，" by itself should not be offered as a first segment`)
+	}
+
+	// When the minimum is reached at a boundary the ordinary rule fires, and
+	// the remembered boundary goes with it.
+	s.Reset()
+	s.Push("好的，")
+	if got := s.Push("没问题。"); len(got) != 1 || got[0] != "好的，没问题。" {
+		t.Fatalf("a boundary past the minimum should release everything up to it; got %q", got)
+	}
+	if s.HasEarlyBoundary() || s.FlushFirstAtBoundary() != "" {
+		t.Error("an early boundary survived the segment it belonged to")
+	}
+
+	// Nothing to cut at: the caller falls back to FlushFirst.
+	s.Reset()
+	s.Push("明天上海")
+	if got := s.FlushFirstAtBoundary(); got != "" {
+		t.Errorf("cut %q out of text with no boundary in it", got)
+	}
+}

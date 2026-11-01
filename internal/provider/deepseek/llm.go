@@ -16,7 +16,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/config"
@@ -25,48 +28,132 @@ import (
 
 func init() {
 	provider.RegisterLLM("deepseek", func() (provider.LLM, error) {
-		return New("DEEPSEEK_API_KEY", "https://api.deepseek.com", "deepseek-chat")
+		return NewNamed("deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com", "deepseek-chat")
 	})
 	provider.RegisterLLM("openai-compatible", func() (provider.LLM, error) {
-		return New("OPENAI_API_KEY", "https://api.openai.com", "gpt-4o-mini")
+		return NewNamed("openai", "OPENAI_API_KEY", "https://api.openai.com", "gpt-4o-mini")
+	})
+
+	// Cerebras. Wafer-scale inference, and the reason to care here is the one
+	// number this project keeps failing to move: time to first token. The
+	// backend is 2.4–3.4 s of a ~3.8 s answer under a long persona prompt, and
+	// nothing else in the cascade is within an order of magnitude of that.
+	//
+	// The default model is qwen-3.8-27b because it is the Qwen their own model
+	// catalogue, rate-limit page and quickstart all agree is on the shared
+	// endpoint. Gemma is real there — Cerebras have blogged about serving Gemma
+	// 4 31B — but the only exact id their docs give is google/gemma-4-31b-it,
+	// and that is on the *dedicated* endpoints, which use HuggingFace-style ids
+	// and which the docs do not say share this base URL. So it is a setting,
+	// not a default: GOLIVE_CEREBRAS_MODEL=google/gemma-4-31b-it with
+	// GOLIVE_CEREBRAS_BASE_URL pointed at whatever your dedicated instance
+	// gives you. Guessing an id here would fail at request time with something
+	// that reads like a bug in golive.
+	provider.RegisterLLM("cerebras", func() (provider.LLM, error) {
+		return NewNamed("cerebras", "CEREBRAS_API_KEY", "https://api.cerebras.ai", "qwen-3.8-27b")
+	})
+
+	// Inception Mercury: a diffusion language model rather than an
+	// autoregressive one, which is interesting here for the same reason —
+	// they publish ~1,100 tokens/s and quote a voice-agent turn at about
+	// 170 ms. Their API is OpenAI-shaped, so nothing below changes.
+	//
+	// One thing deliberately not exposed: the `diffusing: true` request flag.
+	// With it on, each chunk carries the *whole* answer as it is refined rather
+	// than the next piece of it, and every consumer in this engine appends —
+	// conversation history, the transcript, and the segmenter that cuts text
+	// into TTS segments. A replace-semantics stream cannot be spoken
+	// incrementally at all, since a sentence can change after it has been said.
+	// Supporting it means a Replace flag on LLMDelta and a segmenter that can
+	// retract, which is a real piece of work and not a flag.
+	provider.RegisterLLM("inception", func() (provider.LLM, error) {
+		return NewNamed("inception", "INCEPTION_API_KEY", "https://api.inceptionlabs.ai", "mercury-2.5")
 	})
 }
 
 // LLM is a streaming chat-completions client.
 type LLM struct {
+	name         string
 	BaseURL      string
 	APIKey       string
 	DefaultModel string
 	HTTP         *http.Client
+
+	// Extra is sent as further top-level fields of every request: what one
+	// vendor needs and another refuses, such as "enable_thinking": false for a
+	// model that reasons before it answers unless told not to. It never
+	// replaces a field the request already has.
+	Extra map[string]any
+
+	// lanes is the pool: see lane. Built on first use, so that a client put
+	// together by hand — a test, a probe — has one without asking.
+	lanesOnce sync.Once
+	lanes     []*lane
+	keys      []string
+	next      atomic.Uint64
 }
 
-// New builds a client, reading the key from keyEnv and allowing
-// GOLIVE_BACKEND_BASE_URL / GOLIVE_BACKEND_MODEL to override the defaults.
+// New builds a client under the shared GOLIVE_BACKEND_* overrides.
 func New(keyEnv, defaultBase, defaultModel string) (*LLM, error) {
-	key, err := config.EnvRequired(keyEnv)
+	return NewNamed("", keyEnv, defaultBase, defaultModel)
+}
+
+// NewNamed builds a client whose base URL and model can be set per provider.
+//
+// The package comment has always said registering this twice is how you run two
+// backends side by side, and with only GOLIVE_BACKEND_BASE_URL and
+// GOLIVE_BACKEND_MODEL that was not true: the second registration would inherit
+// the first one's overrides and quietly send Qwen's model id to DeepSeek. So
+// each provider gets its own pair — GOLIVE_CEREBRAS_MODEL, GOLIVE_INCEPTION_BASE_URL
+// — and the shared pair remains as the fallback, which keeps every existing
+// .env working unchanged.
+func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
+	keys, err := config.EnvKeys(keyEnv)
 	if err != nil {
 		return nil, err
 	}
+	// Most specific wins: this provider's own variable, then the shared one,
+	// then the built-in default. The other order would make the per-provider
+	// setting useless the moment GOLIVE_BACKEND_MODEL is set at all, which is
+	// the state most existing .env files are already in.
+	base := config.Env("GOLIVE_BACKEND_BASE_URL", defaultBase)
+	model := config.Env("GOLIVE_BACKEND_MODEL", defaultModel)
+	if name != "" {
+		prefix := "GOLIVE_" + strings.ToUpper(name) + "_"
+		base = config.Env(prefix+"BASE_URL", base)
+		model = config.Env(prefix+"MODEL", model)
+	}
 	return &LLM{
-		BaseURL:      strings.TrimRight(config.Env("GOLIVE_BACKEND_BASE_URL", defaultBase), "/"),
-		APIKey:       key,
-		DefaultModel: config.Env("GOLIVE_BACKEND_MODEL", defaultModel),
-		HTTP: &http.Client{
-			// No overall timeout: a streaming completion is long-lived by
-			// design and the engine cancels through the context instead. The
-			// transport timeouts below still bound a hung connection.
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost:   4,
-				IdleConnTimeout:       300 * time.Second,
-				ResponseHeaderTimeout: 20 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-			},
-		},
+		name:         name,
+		BaseURL:      strings.TrimRight(base, "/"),
+		APIKey:       keys[0],
+		DefaultModel: model,
+		HTTP:         newHTTPClient(),
+		keys:         keys,
 	}, nil
 }
 
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		// No overall timeout: a streaming completion is long-lived by
+		// design and the engine cancels through the context instead. The
+		// transport timeouts below still bound a hung connection.
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       300 * time.Second,
+			ResponseHeaderTimeout: 20 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+		},
+	}
+}
+
 // Name implements provider.LLM.
-func (l *LLM) Name() string { return "deepseek" }
+func (l *LLM) Name() string {
+	if l.name != "" {
+		return l.name
+	}
+	return "deepseek"
+}
 
 // Prewarm implements provider.Prewarmer: it opens a connection to the backend
 // and returns it to the idle pool, so the first completion of a session does
@@ -82,7 +169,7 @@ func (l *LLM) Prewarm(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp, err := l.HTTP.Do(req)
+	resp, err := l.pick(ctx).client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -98,7 +185,11 @@ type chatRequest struct {
 	Temperature float64           `json:"temperature,omitempty"`
 	MaxTokens   int               `json:"max_tokens,omitempty"`
 	Tools       []json.RawMessage `json:"tools,omitempty"`
-	StreamOpts  *streamOptions    `json:"stream_options,omitempty"`
+	ToolChoice  any               `json:"tool_choice,omitempty"`
+	// A pointer so "false" is sent and "unset" is not: the two mean different
+	// things, and a backend that does not know the field rejects it.
+	ParallelToolCalls *bool          `json:"parallel_tool_calls,omitempty"`
+	StreamOpts        *streamOptions `json:"stream_options,omitempty"`
 }
 
 type streamOptions struct {
@@ -106,10 +197,88 @@ type streamOptions struct {
 }
 
 type chatMessage struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	Name       string `json:"name,omitempty"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Name       string         `json:"name,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+}
+
+// chatToolCall is an assistant message's function call, as chat completions
+// wants it echoed back.
+type chatToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// toChatMessages converts the engine's messages to the wire form.
+func toChatMessages(in []provider.Message) []chatMessage {
+	msgs := make([]chatMessage, 0, len(in))
+	for _, m := range in {
+		cm := chatMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+		}
+		// Name on a tool message is an older convention some compatible
+		// servers reject; the call id is what ties a result to its call.
+		if m.Role != provider.RoleTool {
+			cm.Name = m.Name
+		}
+		for _, tc := range m.ToolCalls {
+			var c chatToolCall
+			c.ID = tc.ID
+			c.Type = "function"
+			c.Function.Name = tc.Name
+			c.Function.Arguments = tc.Arguments
+			if c.Function.Arguments == "" {
+				c.Function.Arguments = "{}"
+			}
+			cm.ToolCalls = append(cm.ToolCalls, c)
+		}
+		msgs = append(msgs, cm)
+	}
+	return msgs
+}
+
+// promptChars totals the characters sent, which is the thing that predicts
+// time-to-first-token. Runes rather than bytes, because a Chinese prompt is
+// three bytes a character and the byte count would read as three times the
+// prompt it is.
+func promptChars(msgs []chatMessage) int {
+	n := 0
+	for _, m := range msgs {
+		n += len([]rune(m.Content))
+	}
+	return n
+}
+
+// completionsURL is where a base URL's chat completions live.
+//
+// Most vendors serve them at <base>/v1/chat/completions and document the base
+// without the version, which is what a bare base gets. Some document it with
+// the version already on — and not always v1: Volcengine's is /api/v3, Zhipu's
+// /api/paas/v4 — and appending /v1 to those asks for a path that does not
+// exist. A base that already ends in a version segment, or in the full path,
+// is taken at its word — and so is a full path of a vendor's own naming, such
+// as MiniMax's /v1/text/chatcompletion_v2, which speaks the same protocol.
+func completionsURL(base string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/chat/completions") {
+		return base
+	}
+	last := base[strings.LastIndex(base, "/")+1:]
+	if strings.Contains(last, "completion") {
+		return base
+	}
+	if len(last) >= 2 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
+		return base + "/chat/completions"
+	}
+	return base + "/v1/chat/completions"
 }
 
 type chatChunk struct {
@@ -131,7 +300,60 @@ type chatChunk struct {
 	Usage *struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
+		// DeepSeek reports its prefix cache at the top level; OpenAI and most
+		// compatible servers nest it. Whichever is present is used.
+		PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+		PromptTokensDetails  *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
+}
+
+// withExtra adds a vendor's own fields to a request already written. A field
+// the request has is left as it is: Extra is for what the request lacks, not a
+// second way to set the model or the messages.
+func withExtra(body []byte, extra map[string]any) ([]byte, error) {
+	if len(extra) == 0 {
+		return body, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, err
+	}
+	for k, v := range extra {
+		if _, has := fields[k]; has {
+			continue
+		}
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("llm: extra field %q: %w", k, err)
+		}
+		fields[k] = raw
+	}
+	return json.Marshal(fields)
+}
+
+// ParseExtra reads "name=value,name=value" into fields for Extra. A value that
+// is JSON (false, 20, 0.5, "text") is sent as that; anything else as a string.
+func ParseExtra(spec string) (map[string]any, error) {
+	out := map[string]any{}
+	for _, pair := range strings.Split(spec, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("extra field %q: want name=value", pair)
+		}
+		var parsed any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(v)), &parsed); err != nil {
+			parsed = strings.TrimSpace(v)
+		}
+		out[k] = parsed
+	}
+	return out, nil
 }
 
 // Stream implements provider.LLM.
@@ -141,17 +363,9 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		model = l.DefaultModel
 	}
 
-	msgs := make([]chatMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		msgs = append(msgs, chatMessage{
-			Role:       m.Role,
-			Content:    m.Content,
-			Name:       m.Name,
-			ToolCallID: m.ToolCallID,
-		})
-	}
+	msgs := toChatMessages(req.Messages)
 
-	body, err := json.Marshal(chatRequest{
+	creq := chatRequest{
 		Model:       model,
 		Messages:    msgs,
 		Stream:      true,
@@ -159,22 +373,33 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
 		StreamOpts:  &streamOptions{IncludeUsage: true},
-	})
+	}
+	// Tool settings only mean something next to tools, and a server that is
+	// strict about unknown or inapplicable fields refuses the whole request.
+	if len(req.Tools) > 0 {
+		creq.ToolChoice = req.ToolChoice
+		creq.ParallelToolCalls = req.ParallelToolCalls
+	}
+	body, err := json.Marshal(creq)
 	if err != nil {
+		return nil, err
+	}
+	if body, err = withExtra(body, l.Extra); err != nil {
 		return nil, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		l.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+		completionsURL(l.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
+	ln := l.pick(ctx)
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+l.APIKey)
+	httpReq.Header.Set("Authorization", "Bearer "+ln.key)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	started := time.Now()
-	resp, err := l.HTTP.Do(httpReq)
+	resp, err := ln.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("llm: request failed: %w", err)
 	}
@@ -184,14 +409,30 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		// message is surfaced to operators, so it must never carry the request
 		// text back out.
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("llm: %s returned HTTP %d: %s",
-			l.BaseURL, resp.StatusCode, summarizeError(snippet))
+		l.rest(ln, resp.StatusCode)
+		return nil, fmt.Errorf("llm: %s returned HTTP %d on key %d of %d: %s",
+			l.BaseURL, resp.StatusCode, ln.keyN+1, len(l.keys), summarizeError(snippet))
 	}
 
+	// prompt_chars, not just the message count, because size is what costs.
+	//
+	// Two logs from the same machine, model and endpoint, a day apart: a
+	// seventy-nine character system prompt gave a time-to-first-token of
+	// 259–546 ms, and a long persona prompt with the same history_turns gave
+	// 2441–3385 ms. Nothing else differed. That is five to seven times the
+	// latency, and it is the single largest term in the whole cascade — larger
+	// than the silence threshold, the recognizer and synthesis together.
+	//
+	// The message count alone hid it, because the count barely moved while the
+	// prompt behind it grew by an order of magnitude. Logging the size next to
+	// the latency it buys makes the trade visible on every turn.
 	slog.Debug("llm: stream open",
 		"base_url", l.BaseURL,
+		"lane", ln.n,
+		"key", ln.keyN+1,
 		"model", model,
 		"messages", len(msgs),
+		"prompt_chars", promptChars(msgs),
 		"ms", time.Since(started).Milliseconds())
 
 	out := make(chan provider.LLMDelta, 64)
@@ -225,6 +466,51 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 		}
 	}
 
+	// flushCalls emits the accumulated calls in the order the model made them.
+	// Ranging over the map directly did not: with two calls in one response the
+	// order was random from run to run, and an application that executes them
+	// in arrival order got a different sequence each time.
+	//
+	// whole says the model declared itself finished. Without that — a stream
+	// that simply stopped — a call is only passed on if its arguments parse:
+	// the application is about to run it, and half a JSON object is not what
+	// the model asked for.
+	flushCalls := func(whole bool) bool {
+		if len(calls) == 0 {
+			return true
+		}
+		idx := make([]int, 0, len(calls))
+		for i := range calls {
+			idx = append(idx, i)
+		}
+		sort.Ints(idx)
+		for n, i := range idx {
+			pc := calls[i]
+			if pc.name == "" {
+				continue
+			}
+			if args := strings.TrimSpace(pc.args.String()); !whole && args != "" && !json.Valid([]byte(args)) {
+				slog.Warn("llm: dropping a function call cut off mid-arguments", "name", pc.name)
+				continue
+			}
+			id := pc.id
+			if id == "" {
+				// Some compatible servers omit the id. The engine needs one to
+				// match a result to its call.
+				id = fmt.Sprintf("call_%d_%d", time.Now().UnixNano(), n)
+			}
+			if !send(provider.LLMDelta{ToolCall: &provider.ToolCall{
+				ID:        id,
+				Name:      pc.name,
+				Arguments: pc.args.String(),
+			}}) {
+				return false
+			}
+		}
+		calls = map[int]*partialCall{}
+		return true
+	}
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -241,9 +527,22 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 			continue
 		}
 		if chunk.Usage != nil {
+			cached := chunk.Usage.PromptCacheHitTokens
+			if d := chunk.Usage.PromptTokensDetails; d != nil && d.CachedTokens > cached {
+				cached = d.CachedTokens
+			}
+			// The cache is the one thing a caller controls about time to first
+			// token without changing the prompt: a prefix the provider has seen
+			// is not processed again. Whether it was hit is otherwise invisible,
+			// so it is logged next to the size it applies to.
+			slog.Debug("llm: usage",
+				"prompt_tokens", chunk.Usage.PromptTokens,
+				"cached_prompt_tokens", cached,
+				"completion_tokens", chunk.Usage.CompletionTokens)
 			if !send(provider.LLMDelta{Usage: &provider.TokenUsage{
-				InputTokens:  chunk.Usage.PromptTokens,
-				OutputTokens: chunk.Usage.CompletionTokens,
+				InputTokens:       chunk.Usage.PromptTokens,
+				OutputTokens:      chunk.Usage.CompletionTokens,
+				CachedInputTokens: cached,
 			}}) {
 				return
 			}
@@ -276,24 +575,21 @@ func (l *LLM) consume(ctx context.Context, body io.Reader, dropThinking bool, ou
 				}
 			}
 			if choice.FinishReason != "" {
-				for _, pc := range calls {
-					if pc.name == "" {
-						continue
-					}
-					if !send(provider.LLMDelta{ToolCall: &provider.ToolCall{
-						ID:        pc.id,
-						Name:      pc.name,
-						Arguments: pc.args.String(),
-					}}) {
-						return
-					}
+				if !flushCalls(true) {
+					return
 				}
-				calls = map[int]*partialCall{}
 			}
 		}
 	}
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		send(provider.LLMDelta{Err: fmt.Errorf("llm: stream read: %w", err)})
+	if err := scanner.Err(); err != nil {
+		if ctx.Err() == nil {
+			send(provider.LLMDelta{Err: fmt.Errorf("llm: stream read: %w", err)})
+		}
+		return
+	}
+	// A stream that ended without a finish_reason still made its calls.
+	if !flushCalls(false) {
+		return
 	}
 }
 

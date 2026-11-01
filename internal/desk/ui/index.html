@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>The desk</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/">
+    <svg class="brand-mark" viewBox="0 0 22 14" width="22" height="14" aria-hidden="true">
+      <circle cx="4" cy="7" r="3.5"/><circle cx="18" cy="7" r="3.5"/><rect x="7" y="5.6" width="8" height="2.8" rx="1.4"/>
+    </svg>
+    <span>The desk</span>
+  </a>
+  <nav class="nav" id="nav" aria-label="Pages">
+    <a href="#/" id="nav-notes">Notes</a>
+    <a href="#/calls" id="nav-calls">Simulated calls</a>
+    <a href="#/scenarios" id="nav-scenarios">Scenarios</a>
+    <a href="#/logs" id="nav-logs">Work log</a>
+    <a href="#/talker" id="nav-talker">Talker</a>
+  </nav>
+  <div class="who" id="who"></div>
+  <div class="seen" id="seen"></div>
+  <div class="top-status">
+    <span id="control" class="control"></span>
+    <button type="button" class="btn btn-quiet" id="token-btn" title="Your token: owner.token, claude.token or codex.token on the box">Token</button>
+  </div>
+</header>
+<main id="main" class="main"></main>
+<div id="tip" class="tip" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
