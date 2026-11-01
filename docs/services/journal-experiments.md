@@ -1,8 +1,10 @@
 # SIP/RTP test journals on RobotGo
 
 Open [SIP/RTP tests](https://robotgo.liuchuanming.ai/#/experiments) in the existing
-Call Journal. The tab selects a separate journal with its full audio player,
-conversation, timing evidence, filler events and retrospective. Original calls
+Call Journal. The tab selects a separate journal and lists its calls with audio controls and
+download links. Each call opens its full conversation, timing evidence, filler
+events and retrospective. Calls are rendered directly rather than embedded in
+frames, which can fail to load through the protected public route. Original calls
 remain in Overview and are not pooled with these experiments.
 
 | Selection | Source on the box | Initial calls | Type |

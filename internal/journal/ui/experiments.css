@@ -1,6 +1,12 @@
 .experiment-panel { padding: 24px 0; }
 .experiment-choices { display: flex; gap: 12px; flex-wrap: wrap; margin: 24px 0 12px; }
 .experiment-choices [aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
-.experiment-frame { display: block; width: 100%; height: 78vh; min-height: 580px; border: 1px solid #8886; border-radius: 8px; margin-top: 18px; background: Canvas; }
-[hidden] { display: none !important; }
+.experiment-calls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 20px; margin-top: 20px; }
+.experiment-call { padding: 22px; border: 1px solid #8886; border-radius: 8px; }
+.experiment-call h2 { margin-top: 0; font-size: 20px; }
+.experiment-call audio { width: 100%; margin: 10px 0; }
+.experiment-id { overflow-wrap: anywhere; font-family: monospace; font-size: 12px; opacity: .7; }
+.experiment-meta { font-weight: 600; }
+.experiment-links { display: flex; flex-wrap: wrap; gap: 12px 18px; }
 .experiment-context { padding: 14px 24px; border-bottom: 1px solid #8886; font-size: 14px; line-height: 1.6; }
+[hidden] { display: none !important; }
