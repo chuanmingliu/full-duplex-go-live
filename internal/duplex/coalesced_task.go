@@ -55,7 +55,7 @@ func (e *Engine) noteCoalescedTask(id string, caller *Turn) *coalescedTask {
 			return state
 		}
 	}
-	state.origins = append(state.origins, taskOrigin{turnID: caller.ID, speechEndAt: speechEnd})
+	state.origins = append(state.origins, taskOriginFromTurn(caller))
 	return state
 }
 
@@ -77,10 +77,9 @@ func (e *Engine) deliverCoalescedTask(delivery taskDelivery, turn *Turn) {
 	}
 	state.delivered = true
 	for _, origin := range state.origins {
-		e.log.Info("tools: delivering a coalesced task result",
-			"tool", delivery.task.Tool.Name, "task", delivery.task.ID, "turn", turn.ID,
-			"origin_turn", origin.turnID, "primary_origin_turn", delivery.origin.turnID,
-			"origin_to_result_start_ms", turn.Timings().StartedAt.Sub(origin.speechEndAt).Milliseconds())
+		attrs := []any{"tool", delivery.task.Tool.Name, "task", delivery.task.ID, "turn", turn.ID,
+			"primary_origin_turn", delivery.origin.turnID}
+		e.log.Info("tools: delivering a coalesced task result", origin.appendTiming(attrs, turn)...)
 	}
 	state.origins = nil // continuations need delivery proof, not caller timings
 }

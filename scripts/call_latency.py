@@ -118,6 +118,8 @@ def quote_readout(child, link, result, counts):
                                         "end_silence_ms", "origin_to_result_start_ms")}
     if result.get("coalesced"):
         row.update(coalesced=True, primary_origin_turn=result["primary_origin_turn"])
+    if "origin_evidence" in result:
+        row["origin_evidence"] = result["origin_evidence"]
     row.update(status="unverified", child_first_readout_ms=None, total_ms=None)
     if quoted is not True or expected is not True or present is None:
         counts["quote_readouts_unverified"] += 1
@@ -170,28 +172,42 @@ def join_tool_results(records, links, counts):
         session, task = link["session"], link["task"]
         origin_key, result_key = (session, link["origin_turn"]), (session, link["turn"])
         origins, children = by_turn.get(origin_key, []), by_turn.get(result_key, [])
-        if len(origins) != 1 or origin_key == result_key:
+        if len(origins) > 1 or origin_key == result_key:
             return None
-        origin = origins[0]
+        origin = origins[0] if origins else {}
+        timing_keys = ("origin_timing_version", "origin_speech_end_ms", "origin_end_silence_ms")
+        input_timing = any(key in link for key in timing_keys)
+        input_pause = canonical_integer(link, "origin_end_silence_ms")
+        input_end = canonical_integer(link, "origin_speech_end_ms")
+        if input_timing and (canonical_integer(link, "origin_timing_version") != 1 or
+                             input_pause is None or input_pause < 0 or input_end is None or input_end < 0):
+            return None
+        if not origin and not input_timing:
+            return None
         offset = canonical_integer(link, "origin_to_result_start_ms")
         if offset is None or offset < 0 or len(children) != 1:
             return None
         child = children[0]
         origin_audio = canonical_integer(origin, "first_audio_out_ms")
-        pause = canonical_integer(origin, "end_silence_ms")
+        pause = input_pause if input_timing else canonical_integer(origin, "end_silence_ms")
         child_audio = canonical_integer(child, "first_audio_out_ms")
         child_content = canonical_integer(child, "first_content_ms")
         original_content = boolean(origin, "first_content_present")
-        # An opener canceled before content remains a backchannel. A later
-        # result must not silently turn it back into an answered caller turn.
+        # Caller-input provenance can time a result without proving that its
+        # calling turn ever played. Existing playback evidence must not conflict.
+        if origin and (boolean(origin, "response_to_speech") is not True or
+                       original_content is None or boolean(origin, "first_audio_present") is None or
+                       boolean(origin, "opened") is None or boolean(origin, "truncated") is None or
+                       canonical_integer(origin, "end_silence_ms") != pause):
+            return None
+        has_origin_audio = boolean(origin, "first_audio_present") is True
+        if has_origin_audio and (origin_audio is None or pause is None or
+                                 latency_sum(origin_audio, pause) is None or origin_audio + pause < 0):
+            return None
         cancelled_origin = original_content is False and boolean(origin, "truncated") is True
-        if (boolean(origin, "response_to_speech") is not True or
-                original_content is None or cancelled_origin or
-                boolean(origin, "first_audio_present") is not True or
-                boolean(origin, "opened") is None or
-                boolean(origin, "truncated") is None or
-                origin_audio is None or pause is None or pause < 0 or
-                latency_sum(origin_audio, pause) is None or origin_audio + pause < 0 or
+        if not input_timing and (not has_origin_audio or cancelled_origin):
+            return None
+        if (pause is None or pause < 0 or
                 boolean(child, "response_to_speech") is not False or
                 boolean(child, "first_audio_present") is not True or
                 boolean(child, "first_content_present") is not True or
@@ -200,7 +216,7 @@ def join_tool_results(records, links, counts):
                 child_audio is None or child_content is None or
                 child_audio < 0 or child_content < child_audio or
                 latency_sum(pause, offset, child_content) is None or
-                offset + child_content < origin_audio):
+                (has_origin_audio and offset + child_content < origin_audio)):
             return None
         # This is the result turn's first content, which may be a posthook.
         # Actual quote readout requires separate output provenance below.
@@ -214,6 +230,8 @@ def join_tool_results(records, links, counts):
                             total_ms=pause + offset + child_content,
                             quotation=boolean(child, "quote_result") is True,
                             interrupted=boolean(child, "truncated"))
+        if input_timing:
+            result["origin_evidence"] = "caller_input_v1"
         return origin, child, result
 
     def add(link, validated):
@@ -222,8 +240,11 @@ def join_tool_results(records, links, counts):
         readout = quote_readout(child, link, result, counts)
         if readout is not None:
             readouts.append(readout)
-        # A caller that already received content needs no replacement timestamp.
-        if boolean(origin, "first_content_present") is True:
+        # Input-only origins never become conversational samples or playback
+        # receipts. Cancelled openers remain cancelled even if a result follows.
+        if (not origin or boolean(origin, "first_audio_present") is not True or
+                boolean(origin, "truncated") is True or
+                boolean(origin, "first_content_present") is True):
             return
         origin["first_content_ms"] = result["origin_to_result_start_ms"] + result["child_first_content_ms"]
         origin["first_content_present"] = True

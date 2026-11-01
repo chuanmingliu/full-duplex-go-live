@@ -1503,6 +1503,20 @@
     "f12b6f5"
    ],
    "verified_call": "sim-coveredack-8d3132ed-a69c-4e8c-bbc4-3a10ce5e8fbe"
+  },
+  {
+   "id": "ISS-093",
+   "title": "Silent calling turns lose result timing provenance",
+   "area": "measurement",
+   "status": "open",
+   "found": "2026-11-01",
+   "found_on": "Recorded original GoLive SIP simulator",
+   "found_call": "sim-coveredack-8d3132ed-a69c-4e8c-bbc4-3a10ce5e8fbe",
+   "symptom": "Six explicit result links have output records on the result turn but no playback metric on their originating calling turn. Strict analyzer cannot verify those intervals.",
+   "cause": "Caller clock and endpoint silence are previously recovered only from calling-turn playback metrics; speculative calling turns may submit a task without ever emitting audio.",
+   "fix": "Capture caller-input timing at task submission/coalescing and include versioned numeric provenance on delivery. Analyzer and Journal validate it independently of calling playback, retain evidence failures and do not create conversational samples.",
+   "verified": "Public analyzer regression fails on baseline; 62 analyzer checks pass, full Journal race suite passes, focused engine/Journal tests pass. Recorded SIP validation pending.",
+   "effect": "Measurement repair only. No latency improvement or handset qualification claimed; old archives and their unverified links remain unchanged."
   }
  ]
 }

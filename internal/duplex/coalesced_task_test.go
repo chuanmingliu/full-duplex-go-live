@@ -83,6 +83,9 @@ func TestCoalescedQuoteRetainsBothOriginsAndSkipsOnlyRedundantPosthook(t *testin
 					continue
 				}
 				counts[origin.ID]++
+				if origin == followup && (row["origin_timing_version"] != float64(1) || row["origin_speech_end_ms"] != float64(0) || row["origin_end_silence_ms"] != float64(380)) {
+					t.Fatalf("coalesced input provenance lost or borrowed a newer clock: %v", row)
+				}
 				want := result.Timings().StartedAt.Sub(origin.Timings().SpeechEndAt).Milliseconds()
 				if row["origin_turn"] != origin.ID || row["turn"] != result.ID || row["origin_to_result_start_ms"] != float64(want) || row["task"] != task.ID || row["tool"] != task.Tool.Name {
 					t.Errorf("wrong origin relationship: %v, expected offset %d", row, want)

@@ -3,18 +3,18 @@
   window.JournalLatency = function (call, h, target) {
     var e = call.latency;
     if (!e) return h('p', { class: 'standing-note' }, 'Answer-content timing is unavailable for this saved call.');
-    var d = e.first_content;
+    var d = e.conversational_first_content || e.first_content;
     var result = e.tool_result;
     var quote = e.quote_readout;
     function ms(value) { return value == null ? 'unavailable' : value.toLocaleString() + ' ms'; }
-    var incomplete = e.missing || e.unverified || e.duplicates;
+    var incomplete = e.missing || e.unverified || e.duplicates || e.quote_readouts_missing || e.quote_readouts_unverified;
     return h('div', { class: 'def' },
-      h('h3', null, 'Caller’s last sound → first non-opener content'),
+      h('h3', null, 'Caller’s last sound → conversational content'),
       e.recomputed ? h('p', { class: 'standing-note' }, 'Recomputed from this call’s archived log. Older overview figures may retain their historical grouping.') : null,
       h('p', { class: 'num' }, 'p50 ' + ms(d.p50_ms) + ' · p95 ' + ms(d.p95_ms) + ' · worst ' + ms(d.max_ms)),
       h('p', { class: 'standing-note' }, d.n + ' observed responses; ' + d.at_or_above_target + ' at or above ' + target.toLocaleString() + ' ms. ' +
-        e.tool_results_joined + ' missing first-content timings filled from linked results.'),
-      h('p', { class: 'standing-note' }, 'Excludes opening fillers, but may include an explanatory lead-in. For a quotation request, use the quotation-readout timing below. ' +
+        (e.conversational_first_content ? (e.quote_only_responses || 0) + ' quote-only responses excluded.' : 'Legacy grouping may include quote-only responses.')),
+      h('p', { class: 'standing-note' }, 'Excludes opening fillers; quotation completion is reported below. ' +
         (incomplete ? e.missing + ' responses missing timing; ' + e.unverified + ' unverified records or links; ' + e.duplicates + ' duplicate records. This sample cannot pass the latency gate. ' : '') +
         (d.n < 20 ? 'Fewer than 20 responses: insufficient samples for the strict gate. ' : '') +
         'These measurements stop at server output; handset latency remains unmeasured.'),
@@ -26,7 +26,7 @@
         (e.tool_result_rows || []).map(function (row) {
           return h('p', { class: 'standing-note' }, row.origin_turn + ' → ' + row.result_turn + ': ' +
             ms(row.total_ms) + ' = pause ' + ms(row.end_silence_ms) + ' + result start ' + ms(row.origin_to_result_start_ms) +
-            ' + result content ' + ms(row.child_first_content_ms) + (row.interrupted ? ' (interrupted after content began)' : ''));
+            ' + result content ' + ms(row.child_first_content_ms) + (row.interrupted ? ' (interrupted after content began)' : '') + (row.origin_evidence === 'caller_input_v1' ? ' · measured caller input; calling-turn playback not implied' : ''));
         })) : h('p', { class: 'standing-note' }, 'No verified linked result-content timing in this call.'),
       h('h3', null, 'Caller’s last sound → quotation readout'),
       !quote ? h('p', { class: 'standing-note' }, 'This saved evidence does not identify quotation readout. It cannot establish the quoted-figure latency target.') : null,
@@ -35,7 +35,7 @@
       h('p', { class: 'standing-note' }, (quote ? quote.n : 0) + ' observed readouts; ' +
         (e.quote_readouts_missing || 0) + ' not output; ' + (e.quote_readouts_unverified || 0) + ' unverified. ' +
         'Measured when the deterministic quotation audio starts leaving the server, not when synthesis is ready. ' +
-        'Content gates also check this p95 and reject missing or unverified readouts.'),
+        'The conversational SLA reports quotation duration separately; missing or unverified readouts still prevent qualification.'),
       (e.quote_readout_rows || []).map(function (row) {
         return h('p', { class: 'standing-note' }, row.origin_turn + ' → ' + row.result_turn + ': ' +
           (row.status === 'observed' ? ms(row.total_ms) + ' = pause ' + ms(row.end_silence_ms) +
