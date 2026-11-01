@@ -107,6 +107,25 @@ test('capture starts before call ID, exports exact tail and hash, and binds ID a
   URL.revokeObjectURL(p.element('metadata').href); URL.revokeObjectURL(p.element('wav').href);
 });
 
+test('UUID call IDs bind both downloads without changing the capture', async () => {
+  const p = await page({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  await p.element('start').listeners.click();
+  p.element('stop').listeners.click();
+  await completed(p.element);
+  const id = '3af753f8-d623-43ff-a619-6c4a6557cccb';
+  p.element('call').value = id; p.element('call').listeners.input();
+  assert.equal(p.element('metadata').hidden, false);
+  const metadata = await (await fetch(p.element('metadata').href)).json();
+  assert.equal(metadata.call_id, id);
+  assert.equal(p.element('wav').download, id + '-handset.wav');
+  assert.equal(p.element('metadata').download, id + '-handset.json');
+  for (const invalid of [id.slice(0, -1), '../' + id, 'sim-example']) {
+    p.element('call').value = invalid; p.element('call').listeners.input();
+    assert.equal(p.element('metadata').hidden, true);
+    assert.equal(p.element('wav').hidden, true);
+  }
+});
+
 test('missing actual processing flags remain unknown and cannot create complete evidence', async () => {
   const p = await page({ sampleRate: 48000 });
   await p.element('start').listeners.click();

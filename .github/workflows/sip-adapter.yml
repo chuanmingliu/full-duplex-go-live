@@ -47,6 +47,8 @@ jobs:
         run: go test -race -timeout 25m ./...
       - name: Latency qualification regression tests
         run: python3 -B scripts/test_call_latency.py
+      - name: Handset recording and qualification regression tests
+        run: make handset-test
       - name: Build Linux adapter
         run: CGO_ENABLED=0 go build -trimpath -o /tmp/golive-telephony ./cmd/golive-telephony
       - name: Upload adapter

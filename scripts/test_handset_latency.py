@@ -92,6 +92,61 @@ class HandsetLatencyTests(unittest.TestCase):
         self.assertEqual(report["first_audio"]["n"], 19)
         self.assertEqual(report["first_content"]["n"], 19)
 
+    def test_uuid_call_ids_are_preserved_and_malformed_ids_rejected(self):
+        call_id = "3af753f8-d623-43ff-a619-6c4a6557cccb"
+        self.meta["call_id"] = self.annotation["call_id"] = call_id
+        code, report = self.run_report()
+        self.assertEqual(code, 0, report)
+        self.assertEqual(report["call_id"], call_id)
+        for bad in (call_id[:-1], "../" + call_id, "sim-example", "not-a-uuid", ""):
+            with self.subTest(bad=bad):
+                self.meta["call_id"] = self.annotation["call_id"] = bad
+                self.assert_invalid("call ID")
+
+    def test_separate_quote_sla_requires_twenty_normal_responses(self):
+        turn = self.annotation["turns"][3]
+        turn.update(quote_requested=True, quote_result_sample=turn["caller_end_sample"] + 24000,
+                    first_content_sample=turn["caller_end_sample"] + 24000)
+        code, report = self.run_report("--quote-sla", "separate")
+        self.assertEqual(code, 1, report)
+        self.assertEqual(report["conversational_first_content"]["n"], 19)
+        self.assertIn("insufficient", " ".join(report["gate"]["reasons"]))
+        extra = copy.deepcopy(self.annotation["turns"][-1])
+        extra["turn_id"] = "turn_21"
+        for key in ("caller_start_sample", "caller_end_sample", "first_audio_sample", "first_content_sample"):
+            extra[key] += 32000
+        self.annotation["turns"].append(extra)
+        code, report = self.run_report("--quote-sla", "separate")
+        self.assertEqual(code, 0, report)
+        self.assertEqual(report["gate"]["quote_sla"], "separate")
+        self.assertEqual(report["conversational_first_content"]["n"], 20)
+        self.assertEqual(report["conversational_first_content"]["p95_ms"], 900)
+        self.assertEqual(report["quote_result"]["p95_ms"], 3000)
+        self.assertEqual(len(report["turns"]), 21)
+        code, report = self.run_report()
+        self.assertEqual(code, 1, report)
+        self.assertIn("quote_result", " ".join(report["gate"]["reasons"]))
+
+    def test_separate_sla_still_rejects_unverified_quote_result(self):
+        self.annotation["turns"][3].update(quote_requested=True, quote_result_sample=None)
+        code, report = self.run_report("--quote-sla", "separate")
+        self.assertEqual(code, 2, report)
+        self.assertIn("Quotation result", " ".join(report["gate"]["reasons"]))
+
+    def test_separate_sla_keeps_normal_content_and_first_audio_gates(self):
+        for field in ("first_content_sample", "first_audio_sample"):
+            with self.subTest(field=field):
+                ann = copy.deepcopy(self.annotation)
+                for turn in ann["turns"]:
+                    turn["first_content_sample"] = turn["caller_end_sample"] + 9600
+                    if field == "first_audio_sample":
+                        turn[field] = turn["first_content_sample"]
+                code, report = self.run_report("--quote-sla", "separate", annotations=ann)
+                self.assertEqual(code, 1, report)
+                self.assertEqual(report["conversational_first_content"]["p95_ms"], 1200)
+                if field == "first_audio_sample":
+                    self.assertIn("first_audio", " ".join(report["gate"]["reasons"]))
+
     def test_exact_1200_boundary_fails_and_one_sample_below_passes(self):
         for turn in self.annotation["turns"]:
             turn["first_content_sample"] = turn["caller_end_sample"] + 9600

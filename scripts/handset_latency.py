@@ -25,6 +25,9 @@ response, in chronological order. Include every caller turn; interrupted,
 unanswered, omitted, unresolved or unreviewed turns cannot pass this gate.
 For a quotation request, set quote_requested=true and mark the first audible
 quotation result separately from a generic lead-in in quote_result_sample.
+Use --quote-sla separate to report quotation calculation separately while
+requiring at least twenty non-quotation content responses. All quotation
+boundaries and capture-integrity checks remain mandatory.
 
 The tool verifies file/provenance consistency and arithmetic. It cannot
 independently verify speaker identity, placement, completeness attestations,
@@ -119,7 +122,8 @@ def timestamp(value):
 def verify_capture(meta, wav):
     require(meta.get("schema") == "handset-acoustic-capture/v1", "Unknown capture schema")
     call_id = meta.get("call_id")
-    require(isinstance(call_id, str) and re.fullmatch(r"out-[A-Za-z0-9-]{1,80}", call_id),
+    require(isinstance(call_id, str) and re.fullmatch(
+            r"(?:out-[A-Za-z0-9-]{1,80}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})", call_id),
             "Capture call ID is invalid")
     require(meta.get("source") == "acoustic_speakerphone_microphone",
             "Capture is not identified as acoustic handset evidence")
@@ -195,7 +199,8 @@ def verify_annotations(annotation, meta, wav):
             last_response = previous["quote_result_sample"] or previous["first_content_sample"]
             require(last_response < start,
                     "A response boundary crosses into the next caller turn")
-        row = {"turn_id": identifier, **dict(zip(names, values)), "quote_result_sample": result}
+        row = {"turn_id": identifier, **dict(zip(names, values)),
+               "quote_requested": quote, "quote_result_sample": result}
         rows.append(row)
         previous = row
     return rows
@@ -217,9 +222,10 @@ def distribution(samples, rate, target):
             "at_or_above_target": sum(value * 1000 >= target * rate for value in values)}
 
 
-def analyse(wav_path, meta, annotation, target=1200, minimum=20):
+def analyse(wav_path, meta, annotation, target=1200, minimum=20, quote_sla="all"):
     require(exact_int(target) and 0 < target <= 1200, "Target must be an integer from 1 through 1200 ms")
     require(exact_int(minimum) and minimum >= 20, "Minimum caller sample count must be at least 20")
+    require(quote_sla in ("all", "separate"), "Unknown quotation SLA mode")
     wav = inspect_wav(wav_path)
     call_id = verify_capture(meta, wav)
     rows = verify_annotations(annotation, meta, wav)
@@ -234,25 +240,36 @@ def analyse(wav_path, meta, annotation, target=1200, minimum=20):
         samples = [row[field] - row["caller_end_sample"] for row in rows if row[field] is not None]
         stats = distribution(samples, rate, target)
         report[name] = stats
-        if name != "quote_result" and stats["n"] < minimum:
+        gated = quote_sla == "all" or name == "first_audio"
+        if gated and name != "quote_result" and stats["n"] < minimum:
             reasons.append(name + ": insufficient reviewed caller samples")
-        if stats["p95_samples"] is not None and stats["p95_samples"] * 1000 >= target * rate:
+        if gated and stats["p95_samples"] is not None and stats["p95_samples"] * 1000 >= target * rate:
             reasons.append(name + ": p95 is not strictly below target")
+    conversation = distribution([row["first_content_sample"] - row["caller_end_sample"]
+                                 for row in rows if not row["quote_requested"]], rate, target)
+    report["conversational_first_content"] = conversation
+    if quote_sla == "separate":
+        if conversation["n"] < minimum:
+            reasons.append("conversational_first_content: insufficient reviewed caller samples")
+        if conversation["p95_samples"] is not None and conversation["p95_samples"] * 1000 >= target * rate:
+            reasons.append("conversational_first_content: p95 is not strictly below target")
     report["turns"] = [{**row, **{name + "_ms": None if row[field] is None else
                          milliseconds(row[field] - row["caller_end_sample"], rate)
                          for name, field in fields}} for row in rows]
-    report["gate"] = {"passed": not reasons, "min_turns": minimum, "reasons": reasons}
+    report["gate"] = {"passed": not reasons, "min_turns": minimum,
+                      "quote_sla": quote_sla, "reasons": reasons}
     return report
 
 
 def print_report(report):
     print("Scope: reviewed handset acoustic boundaries on the WAV sample clock")
     print("This verifies supplied annotations and arithmetic, not their independent acoustic accuracy.")
-    for name in ("first_audio", "first_content", "quote_result"):
+    for name in ("first_audio", "first_content", "conversational_first_content", "quote_result"):
         stats = report[name]
         print(f"{name}: n={stats['n']} p50={stats['p50_ms']} p95={stats['p95_ms']} "
               f"max={stats['max_ms']} ms; at/above target={stats['at_or_above_target']}")
     print("First content can be a lead-in; quote_result separately marks the audible quotation result.")
+    print("Quotation SLA: " + report["gate"]["quote_sla"])
     print("Gate: " + ("PASS for supplied reviewed boundaries" if report["gate"]["passed"] else "FAIL"))
     for reason in report["gate"]["reasons"]:
         print("- " + reason)
@@ -265,11 +282,13 @@ def main():
     parser.add_argument("annotations", type=Path)
     parser.add_argument("--target-ms", type=int, default=1200, help="strict target; may tighten below 1200")
     parser.add_argument("--min-turns", type=int, default=20, help="minimum; may increase above 20")
+    parser.add_argument("--quote-sla", choices=("all", "separate"), default="all",
+                        help="separate excludes quotation requests from the normal-content SLA, not evidence checks")
     parser.add_argument("--json", action="store_true", help="numeric results and bounded record IDs only")
     args = parser.parse_args()
     try:
         report = analyse(args.wav, read_json(args.capture), read_json(args.annotations),
-                         args.target_ms, args.min_turns)
+                         args.target_ms, args.min_turns, args.quote_sla)
     except EvidenceError as exc:
         report = {"scope": SCOPE, "gate": {"passed": False, "reasons": [str(exc)]}}
         if args.json:
