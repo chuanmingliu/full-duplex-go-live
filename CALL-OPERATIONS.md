@@ -8,6 +8,13 @@ simulator workflow. Keep existing deployments available for rollback and verify
 the running version before an idle-only update. A Git push does not deploy the
 box. See the [selective integration record](docs/telephony/2026-11-01-active-call-integration.md).
 
+Aria's selected phone backend is `local` at `ws://127.0.0.1:8765/v1/realtime`.
+The owner's 2026-11-01 restore anchor is engine `45b5564`, saved with its private
+launch material under `codex-latency/aria-binding-20261101/` on the box. Keep
+that snapshot across subsequent optimizations. Restore it only on an explicit
+owner request, after checking idle state and preserving later settings. See
+the [binding and interruption record](docs/telephony/2026-11-01-interruption-prefeed.md).
+
 Optimize normal responses and interruptions against the 1200 ms target. Keep
 quotation calculation time and result completion separate, using
 `--quote-sla separate` in the latency tools. Do not shorten the configured

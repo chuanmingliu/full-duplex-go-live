@@ -1,0 +1,104 @@
+{
+  "call": "out-mvxpmcug-bpqi",
+  "scope": "Server VAD utterance-open to cut decision while playback was active; excludes pre-detection voice time, transport and audible playout stop. One cut per latest open; unpaired events retained separately.",
+  "barge_in_opens": 4,
+  "paired_playback_cuts": 3,
+  "unpaired_playback_cuts": 0,
+  "p50_ms": 157.0,
+  "p95_ms": 353.0,
+  "max_ms": 353.0,
+  "rows": [
+    {
+      "detection_to_cut_ms": 353.0,
+      "vad_active_ms": "320"
+    },
+    {
+      "detection_to_cut_ms": 157.0,
+      "vad_active_ms": "320"
+    },
+    {
+      "detection_to_cut_ms": 126.0,
+      "vad_active_ms": "320"
+    }
+  ],
+  "focus_decisions": [
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.92",
+      "waited_ms": "353"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.94",
+      "waited_ms": "156"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.89",
+      "waited_ms": "125"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.86",
+      "waited_ms": "0"
+    }
+  ],
+  "recognizer_openings": [
+    {
+      "predialled": "true",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    },
+    {
+      "predialled": "true",
+      "connected": "true",
+      "prefed_ms": "0",
+      "connect_ms": "163"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    },
+    {
+      "predialled": "true",
+      "connected": "true",
+      "prefed_ms": "540",
+      "connect_ms": "157"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    },
+    {
+      "predialled": "true",
+      "connected": "true",
+      "prefed_ms": "660",
+      "connect_ms": "175"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    }
+  ]
+}

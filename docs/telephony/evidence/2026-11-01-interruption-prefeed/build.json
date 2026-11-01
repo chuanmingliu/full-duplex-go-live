@@ -1,0 +1,6 @@
+{
+  "commit": "f1fd9a648544c131600958323961bebad563c6b8",
+  "source": "clean git archive of commit",
+  "sha256": "30978356547cce422e0af04363828af9ee7cf2397406d5efc278811c86b32c22",
+  "command": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags '-s -w -X main.version=f1fd9a6 -X main.commit=f1fd9a6' -o golive-f1fd9a6-linux-amd64 ./cmd/golive"
+}
