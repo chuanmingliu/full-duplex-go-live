@@ -56,7 +56,7 @@ func New(ctx context.Context, url string, log *slog.Logger) *Client {
 		log = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	c := &Client{Updates: make(chan struct{}, 1), queue: make(chan packet, 4), cancel: cancel, done: make(chan struct{}), log: log, onset: -5000, stop: -5000, pause: -5000, pauseMarked: true}
+	c := &Client{Updates: make(chan struct{}, 1), queue: make(chan packet, 32), cancel: cancel, done: make(chan struct{}), log: log, onset: -5000, stop: -5000, pause: -5000, pauseMarked: true}
 	go c.run(ctx, url)
 	return c
 }
@@ -84,6 +84,8 @@ func (c *Client) notify() {
 	}
 }
 
+// The queue absorbs batched WebSocket input (at most 40 KiB of PCM). Its
+// capacity is not a latency allowance: queued chunks still expire at 120 ms.
 // Push never waits for a socket or model. Backpressure invalidates the entire
 // prediction stream instead of silently continuing with broken model history.
 func (c *Client) Push(pcm []byte, startMS int64, gen uint64, speaking, filler bool) {

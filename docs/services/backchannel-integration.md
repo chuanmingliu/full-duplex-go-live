@@ -43,7 +43,8 @@ pause and stop ages use that input-frame clock. This is sampled player state,
 not acoustic echo cancellation; the connection declares `aec: false` and
 `language: zh`.
 
-The queue holds four chunks. Input gaps, input-queue drops, muting after audio begins, timeout,
+The queue holds at most 32 chunks (40 KiB of PCM) to absorb batched input.
+This does not extend the 120 ms queued-work freshness deadline. Input gaps, input-queue drops, muting after audio begins, timeout,
 invalid responses and overload disable the optional helper for that session,
 clear its evidence, and retain the legacy controller. Active Call’s initial
 pre-answer mute does not invalidate a stream that has consumed no audio. No automatic reconnect

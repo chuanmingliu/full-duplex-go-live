@@ -101,7 +101,7 @@ func TestGapAndOverloadFallBackWithoutBlocking(t *testing.T) {
 			if kind == "gap" {
 				c.Push(make([]byte, 1280), 100, 1, true, false)
 			} else {
-				for n := 1; n < 12; n++ {
+				for n := 1; n < 64; n++ {
 					c.Push(make([]byte, 1280), int64(n*40), 1, true, false)
 				}
 			}
@@ -140,7 +140,33 @@ func TestDeployedModelStream(t *testing.T) {
 		end := int64((i + 1) * 40)
 		await(t, func() bool { return c.Snapshot() != nil && c.Snapshot().EndMS == end })
 	}
+	c.Push(make([]byte, 640*32), 800, 1, false, false)
+	await(t, func() bool { return c.Snapshot() != nil && c.Snapshot().EndMS == 1440 })
 	if !c.Ready() {
 		t.Fatal("model stream unavailable")
+	}
+}
+
+func TestBatchedInputCatchesUpWithoutAcceptingOldEvidence(t *testing.T) {
+	c := client(t, false)
+	// WebSocket delivery can coalesce audio. Preserve every model frame even
+	// though none of the early catch-up predictions is current enough to act.
+	c.Push(make([]byte, 320*32), 0, 1, true, false)
+	await(t, func() bool { return c.Snapshot() != nil && c.Snapshot().EndMS == 320 })
+	if !c.Ready() {
+		t.Fatal("bounded input burst disabled healthy model")
+	}
+	p := c.Snapshot()
+	if !p.Eligible(time.Now(), 320, 0, 1) || p.Eligible(time.Now(), 480, 0, 1) {
+		t.Fatal("catch-up changed input freshness rules")
+	}
+}
+
+func TestQueuedBurstStillExpires(t *testing.T) {
+	c := &Client{Updates: make(chan struct{}, 1), queue: make(chan packet, 32), done: make(chan struct{}), cancel: func() {}, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	c.queue <- packet{At: time.Now().Add(-time.Second)}
+	c.run(context.Background(), server(t, false))
+	if c.Ready() || c.Snapshot() != nil || !c.failed.Load() {
+		t.Fatal("stale queued burst retained evidence")
 	}
 }
