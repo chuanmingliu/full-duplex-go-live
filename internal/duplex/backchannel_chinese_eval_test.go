@@ -20,7 +20,11 @@ func TestChineseBackchannelFixtureBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile("../../services/backchannel-detector/chinese_cases.json")
+	caseFile := os.Getenv("GOLIVE_CHINESE_BC_CASES")
+	if caseFile == "" {
+		caseFile = "../../services/backchannel-detector/chinese_cases.json"
+	}
+	raw, err := os.ReadFile(caseFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +34,15 @@ func TestChineseBackchannelFixtureBaseline(t *testing.T) {
 		Expected string `json:"expected"`
 	}
 	if err := json.Unmarshal(raw, &cases); err != nil {
-		t.Fatal(err)
+		var matrix struct {
+			Cases json.RawMessage `json:"cases"`
+		}
+		if err := json.Unmarshal(raw, &matrix); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(matrix.Cases, &cases); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(cases) == 0 {
 		t.Fatal("no fixtures")

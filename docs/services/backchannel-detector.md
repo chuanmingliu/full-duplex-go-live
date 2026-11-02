@@ -142,3 +142,24 @@ deadline/error/disconnect. Existing identity and echo checks remain authoritativ
 Only labeled Chinese/codec/echo/background/backchannel/interruption replay and
 real-call evidence can justify a separately enabled assist policy. No such
 control-policy switch is enabled by this deployment.
+
+
+## Expanded Chinese test suite
+
+The [expanded matrix](../../services/backchannel-detector/chinese_matrix.json)
+keeps the original 12 regression cases and adds 40 new utterances. Four fixed
+conditions cover clean PCM, G.711 A-law, deterministic noise and delayed residual
+echo. Separate sequence cases vary the gap between an acknowledgment and a
+real interruption. Prosody-only probes remain ambiguous until their audio is
+independently labeled; punctuation is not ground truth for vocal intent.
+
+The suite preserves misses and original-controller disagreements, including
+pre-onset false floor signals. It replays the most recent eligible completed
+`f1fd9a6` archives selected before inspecting model predictions, including calls
+with no interruption events. No result authorizes a live playback cut. See the
+[service README](../../services/backchannel-detector/README.md#expanded-chinese-experiment)
+for commands and baseline generation.
+
+The [expanded results](../telephony/2026-11-02-backchannel-expanded.md) report
+232 synthetic trials and all six eligible recorded-call replays, retaining
+false triggers and missing signals alongside earlier interruption evidence.

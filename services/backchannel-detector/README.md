@@ -52,3 +52,37 @@ is separate from runtime; raw audio, transcripts and model weights are not
 committed. The upstream card links `pipecat-ai/pipecat-vap`, but that repository
 returned HTTP 404 during this integration; the wrapper follows the published
 ONNX contract and validates actual tensor names/shapes at runtime.
+
+## Expanded Chinese experiment
+
+`chinese_matrix.json` fixes the case population, threshold and audio variants
+before evaluation. It keeps the original 12 cases and adds 40 new cases: listed
+and unlisted acknowledgments, short corrections, acknowledgment-to-question
+transitions and ambiguous prosody probes. Ambiguous probes are never included
+in accuracy denominators.
+
+`chinese_matrix_eval.py` runs 208 case/condition combinations, eight delayed
+transitions, four controls and 12 real-time paced repeats. Noise before the
+caller starts cannot be credited as a successful early interruption signal.
+`chinese_archive_eval.py` correlates the predictions with all selected original
+GoLive archive events, including missing signals and kept acknowledgments.
+`summarize_chinese_matrix.py` joins the actual Go phrase-controller baseline
+with those results; final scripted text is not an ASR latency measurement.
+
+From this directory, with private fixture WAVs in the manifest order:
+
+```sh
+python chinese_matrix_eval.py --clips /PRIVATE/clips \
+  --archive /PRIVATE/completed-call --output /PRIVATE/results.json
+python summarize_chinese_matrix.py /PRIVATE/results.json /PRIVATE/legacy.json \
+  --output /PRIVATE/summary.json
+```
+
+Generate `legacy.json` from the repository root with
+`GOLIVE_CHINESE_BC_CASES=../../services/backchannel-detector/chinese_matrix.json`
+and `GOLIVE_CHINESE_BC_EVAL_OUT=/PRIVATE/legacy.json`, running
+`go test ./internal/duplex -run TestChineseBackchannelFixtureBaseline -count=1`.
+The explicit case-file path is relative to the Go test package directory.
+
+See the [expanded results](../../docs/telephony/2026-11-02-backchannel-expanded.md)
+for measured opportunities, negative cases and limitations.
