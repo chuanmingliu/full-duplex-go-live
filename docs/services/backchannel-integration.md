@@ -43,9 +43,10 @@ pause and stop ages use that input-frame clock. This is sampled player state,
 not acoustic echo cancellation; the connection declares `aec: false` and
 `language: zh`.
 
-The queue holds four chunks. Input gaps, input-queue drops, muting, timeout,
+The queue holds four chunks. Input gaps, input-queue drops, muting after audio begins, timeout,
 invalid responses and overload disable the optional helper for that session,
-clear its evidence, and retain the legacy controller. No automatic reconnect
+clear its evidence, and retain the legacy controller. Active Call’s initial
+pre-answer mute does not invalidate a stream that has consumed no audio. No automatic reconnect
 or network wait occurs on the engine audio loop. Connect is bounded to one
 second; each model exchange has a 120 ms read/write deadline and queued work
 older than 120 ms is discarded by disabling the stream. Close cancels the

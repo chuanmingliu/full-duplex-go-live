@@ -669,7 +669,9 @@ func (e *Engine) SetMuted(muted bool, clientEventID string) {
 	e.post(func() {
 		e.muted = muted
 		if muted {
-			if e.detector != nil {
+			// Active Call starts muted before answer. With no consumed audio
+			// there is no model history to invalidate; a later mute is a gap.
+			if e.detector != nil && e.inputMS.Load() > 0 {
 				e.detector.Disable("input_muted")
 			}
 			// A guess made on an utterance that will now never finish can

@@ -17,7 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func assistFixture(t *testing.T) *Engine {
+func detectorFixture(t *testing.T) *Engine {
 	t.Helper()
 	up := websocket.Upgrader{}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +51,12 @@ func assistFixture(t *testing.T) *Engine {
 	e.detector = backchannel.New(context.Background(), "ws"+strings.TrimPrefix(s.URL, "http"), e.log)
 	t.Cleanup(e.detector.Close)
 	waitFor(t, "detector ready", time.Second, e.detector.Ready)
+	return e
+}
+
+func assistFixture(t *testing.T) *Engine {
+	t.Helper()
+	e := detectorFixture(t)
 	for i := 0; i < 3; i++ {
 		e.detector.Push(make([]byte, 1280), int64(280+i*40), e.gen.Current(), true, false)
 		want := int64(320 + i*40)
@@ -154,5 +160,38 @@ func TestBackchannelASRFinalSchedulingSimulation(t *testing.T) {
 			}
 			t.Logf("pause_to_final_request_ms=%d mode=%s", requested, tc.mode)
 		})
+	}
+}
+
+// Active Call's pre-answer mute must not disable a fresh model stream. Once
+// audio has been consumed, a mute still invalidates history for this session.
+func TestDetectorPreAnswerMuteAndLaterGap(t *testing.T) {
+	e := detectorFixture(t)
+	e.ctx = context.Background()
+	for i := 0; i < 2; i++ {
+		e.SetMuted(true, "pre-answer")
+		e.runPosted()
+		e.onAudio(make([]byte, 1280))
+		if e.inputMS.Load() != 0 || !e.detector.Ready() || e.detector.Snapshot() != nil {
+			t.Fatal("pre-answer mute consumed audio or disabled detector")
+		}
+	}
+	e.SetMuted(false, "answered")
+	e.runPosted()
+	e.onAudio(make([]byte, 1280))
+	waitFor(t, "first post-answer prediction", time.Second, func() bool {
+		p := e.detector.Snapshot()
+		return p != nil && p.EndMS == 40
+	})
+	e.SetMuted(true, "mid-call")
+	e.runPosted()
+	if e.detector.Ready() || e.detector.Snapshot() != nil {
+		t.Fatal("mid-call mute retained potentially stale evidence")
+	}
+	e.SetMuted(false, "resumed")
+	e.runPosted()
+	e.onAudio(make([]byte, 1280))
+	if e.detector.Ready() {
+		t.Fatal("mid-call audio gap silently re-enabled detector")
 	}
 }
