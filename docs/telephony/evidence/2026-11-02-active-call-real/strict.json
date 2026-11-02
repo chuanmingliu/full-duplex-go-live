@@ -1,0 +1,150 @@
+{
+  "scope": "last_sound_to_golive_output",
+  "target_ms": 1200,
+  "percentile": "nearest_rank",
+  "counts": {
+    "records": 13,
+    "answered": 10,
+    "non_speech": 3,
+    "cancelled": 0,
+    "interrupted_answers": 2,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 2,
+    "tool_results_joined": 2,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 2
+  },
+  "first_audio": {
+    "n": 10,
+    "p50_ms": 380.0,
+    "p90_ms": 380,
+    "p95_ms": 383,
+    "max_ms": 383,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 10,
+    "p50_ms": 1722.5,
+    "p90_ms": 2149,
+    "p95_ms": 2787,
+    "max_ms": 2787,
+    "at_or_above_target": 8
+  },
+  "conversational_first_content": {
+    "n": 8,
+    "p50_ms": 1641.5,
+    "p90_ms": 2149,
+    "p95_ms": 2149,
+    "max_ms": 2149,
+    "at_or_above_target": 6
+  },
+  "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+  "reply": {
+    "n": 10,
+    "p50_ms": 0.0,
+    "p90_ms": 0,
+    "p95_ms": 3,
+    "max_ms": 3,
+    "at_or_above_target": 0
+  },
+  "tool_result": {
+    "n": 2,
+    "p50_ms": 2328.5,
+    "p90_ms": 2787,
+    "p95_ms": 2787,
+    "max_ms": 2787,
+    "at_or_above_target": 2
+  },
+  "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+  "tool_result_rows": [
+    {
+      "session": "sess_749754e3759ab2f59f2c1816",
+      "task": "t1",
+      "origin_turn": "item_3",
+      "result_turn": "item_4",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 2406,
+      "child_first_content_ms": 1,
+      "total_ms": 2787,
+      "quotation": true,
+      "interrupted": false,
+      "origin_evidence": "caller_input_v1"
+    },
+    {
+      "session": "sess_749754e3759ab2f59f2c1816",
+      "task": "t2",
+      "origin_turn": "item_11",
+      "result_turn": "item_12",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 1285,
+      "child_first_content_ms": 205,
+      "total_ms": 1870,
+      "quotation": true,
+      "interrupted": false,
+      "origin_evidence": "caller_input_v1"
+    }
+  ],
+  "non_quote_tool_result": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 2,
+    "p50_ms": 2328.5,
+    "p90_ms": 2787,
+    "p95_ms": 2787,
+    "max_ms": 2787,
+    "at_or_above_target": 2
+  },
+  "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+  "quote_readout_rows": [
+    {
+      "session": "sess_749754e3759ab2f59f2c1816",
+      "task": "t1",
+      "origin_turn": "item_3",
+      "result_turn": "item_4",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 2406,
+      "origin_evidence": "caller_input_v1",
+      "status": "observed",
+      "child_first_readout_ms": 1,
+      "total_ms": 2787
+    },
+    {
+      "session": "sess_749754e3759ab2f59f2c1816",
+      "task": "t2",
+      "origin_turn": "item_11",
+      "result_turn": "item_12",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 1285,
+      "origin_evidence": "caller_input_v1",
+      "status": "observed",
+      "child_first_readout_ms": 205,
+      "total_ms": 1870
+    }
+  ],
+  "gate": {
+    "enabled": true,
+    "passed": false,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "reasons": [
+      "first_audio: 10 samples, need 20",
+      "conversational_first_content: 8 samples, need 20",
+      "conversational_first_content: p95 2149 ms is not below 1200 ms"
+    ]
+  }
+}
