@@ -115,3 +115,6 @@ directions, original ASR/turn/cut timings and the session log. Review after the
 owner says **done**, separating normal response, interruption and quotation
 calculation. Do not infer an assisted turn from service health alone: it needs
 the explicit earlier-final log followed by the original decision evidence.
+
+The [Active Call rollout record](../telephony/2026-11-02-backchannel-integration.md)
+records both initial integration failures and the final verified simulator.
