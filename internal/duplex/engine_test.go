@@ -1271,6 +1271,11 @@ func TestSpokenFillersReachTheTranscript(t *testing.T) {
 	filler := &Turn{ID: "bc_1", Generation: e.gen.Current(), State: TurnCommitted}
 	e.speakBackchannel(filler, "稍等一下")
 
+	// Synthesis only enqueues audio. The player emits the transcript when
+	// that audio starts, asynchronously (including on a phrase-cache hit).
+	waitFor(t, "the filler to reach the output transcript", 2*time.Second, func() bool {
+		return c.outputTranscript("bc_1") != ""
+	})
 	said := c.outputTranscript("bc_1")
 	if said != "稍等一下" {
 		t.Errorf("transcript for the filler = %q, want %q; the caller heard it, so the record must show it",
