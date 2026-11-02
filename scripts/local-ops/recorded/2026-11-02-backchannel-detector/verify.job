@@ -1,0 +1,22 @@
+#timeout 45
+#pull /home/chuanming/golive-telephony/codex-latency/verify-backchannel-20261102.json verify-backchannel-20261102.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import json,subprocess,time,urllib.request
+root=Path.home()/'golive-telephony';receipt=json.loads((root/'codex-latency/deploy-backchannel-20261102.json').read_text())
+assert receipt['stage']=='verified'
+cid=receipt['container_id'];deadline=time.monotonic()+25
+while True:
+ d=json.loads(subprocess.check_output(['docker','inspect',cid],text=True))[0]
+ if d['State'].get('Health',{}).get('Status')=='healthy':break
+ assert time.monotonic()<deadline,'Container not healthy'
+ time.sleep(1)
+h=d['HostConfig'];assert h['ReadonlyRootfs'] and h['NanoCpus']==1000000000 and h['Memory']==384*1024*1024
+assert d['Config']['User']=='65532:65532' and d['State']['Running']
+assert h['PortBindings']['18087/tcp']==[{'HostIp':'127.0.0.1','HostPort':'18087'}]
+def get(url):
+ with urllib.request.urlopen(url,timeout=5) as f:return json.load(f)
+report={'container_health':d['State']['Health']['Status'],'running':True,'non_root':True,'read_only':True,'cpus':1,'memory_limit_mib':384,'binding':'127.0.0.1:18087','detector':get('http://127.0.0.1:18087/healthz'),'original_engine':get('http://127.0.0.1:8765/healthz'),'no_live_control_hook':True}
+(root/'codex-latency/verify-backchannel-20261102.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
+PY

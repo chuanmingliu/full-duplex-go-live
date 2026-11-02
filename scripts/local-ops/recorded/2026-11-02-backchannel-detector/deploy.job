@@ -1,0 +1,11 @@
+#timeout 1100
+#push deploy-backchannel-20261102.py /home/chuanming/golive/deploy-backchannel-20261102.py
+#push golive-backchannel-20261102.tar.gz /home/chuanming/golive/golive-backchannel-20261102.tar.gz
+#pull /home/chuanming/golive-telephony/codex-latency/deploy-backchannel-20261102.json deploy-backchannel-20261102.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/deploy-backchannel-20261102.py').read_bytes()).hexdigest()=='3c993dd54021a12ad54d884f279b56fd434b5f7922fb475dd4d2cc74fff02030'
+PY
+python3 -B /home/chuanming/golive/deploy-backchannel-20261102.py
