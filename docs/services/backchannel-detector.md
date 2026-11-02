@@ -12,10 +12,16 @@ The model answers an audio question: is the caller listening/responding briefly,
 or trying to take the floor? It is not a small decision LLM, an opener generator,
 or a replacement ASR. No outbound model API receives the call audio.
 
-Upstream declares English-only training/evaluation and no validation with real
-phone codecs. It expects echo-cancelled caller audio. Our Chinese telephony
-recordings do not establish those conditions. Therefore the service exposes
-raw observations only. `control_allowed` is always false, including for English.
+The owner explicitly requested Chinese telephony testing. Chinese is accepted
+with `language: "zh"`; `language_supported: false` describes upstream validation,
+not a request rejection. The service has now been tested with Chinese synthetic
+speech and real Active Call recordings; see the
+[results and comparison](../telephony/2026-11-02-backchannel-chinese.md).
+
+The current integration stage exposes raw observations only. Upstream training
+and evaluation are English-only; that is a measurement caveat, not a test gate.
+The model expects echo-cancelled input; existing caller identity and echo gates
+remain authoritative. `control_allowed` is always false, including for English.
 Its `fallback: legacy` describes the required integration policy; it does not
 claim that an unimplemented live engine hook is already running.
 
@@ -93,12 +99,12 @@ It leaves all existing phone services and original backchannel behavior intact.
 Restart only this optional service with `docker compose up -d detector`.
 Do not restart the production GoLive engine merely to run this observer.
 
-## Verification and future integration
+## Verification and Chinese testing
 
 ```sh
 python3 -m venv /tmp/bcd-test
 /tmp/bcd-test/bin/pip install -r requirements.txt
-BCD_MODEL_DIR=models /tmp/bcd-test/bin/python -m unittest -v test_service
+BCD_MODEL_DIR=models /tmp/bcd-test/bin/python -m unittest -v test_service test_chinese_eval
 /tmp/bcd-test/bin/python probe.py --seconds 4
 # Private box-local replay; never upload the WAV or output raw transcripts:
 /tmp/bcd-test/bin/python probe.py --wav /PRIVATE/archive/audio.wav --seconds 180
@@ -111,6 +117,23 @@ It measures service cost and exercises state continuity. It cannot establish
 Chinese classification accuracy, echo rejection, end-to-end latency savings
 or equivalence to live playback timing. Raw threshold-frame counts are not
 interruptions and must not be compared to the number of server cut events.
+
+The Chinese evaluator consumes 12 WAV clips in the exact order of
+`chinese_cases.json`, generated independently to prevent failed synthesis from
+shifting labels. It runs 24 speech cases (PCM and G.711 A-law round trip), plus
+three controls. With `--paced`, input arrives in 40 ms chunks in real time.
+Its raw 0.7 floor threshold and three-frame diagnostic are fixed before the
+run. It does not reproduce the upstream unavailable VAD/backstop policy.
+
+```sh
+python chinese_eval.py --clips /PRIVATE/chinese-clips --paced \
+  --archive /PRIVATE/completed-call --output /PRIVATE/results.json
+```
+
+All speech and per-frame traces stay private on the box. The public evidence
+contains numeric summaries and synthetic case IDs only. Test tools are mounted
+into a disposable container using the existing detector image; they do not
+restart the detector or change GoLive's configuration.
 
 A future live integration should be an asynchronous, bounded shadow tap first:
 16 kHz input plus actual playback state, no wait on the foreground audio loop,

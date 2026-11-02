@@ -8,9 +8,12 @@ It does not synthesize fillers, select openers, call an LLM or hang up calls.
 **The original GoLive backchannel system remains the default controller.**
 This service is not in the live call path. Every response states
 `control_allowed: false` and `fallback: legacy`. Failure or stopping this
-container has no effect on existing call handling. The upstream model is
-English-only and unvalidated on real phone codecs; Chinese results are
-experimental observations, not permission to bypass caller/echo checks.
+container has no effect on existing call handling. Chinese audio is accepted
+with `language: "zh"`; the upstream English-only
+training label does not block requests. Chinese experiments run directly on
+the ThinkPad with the original GoLive voice and recorded Active Call audio.
+Caller/echo checks remain authoritative. See the
+[Chinese results](../../docs/telephony/2026-11-02-backchannel-chinese.md).
 
 ## Run
 
@@ -37,6 +40,11 @@ stream protocol, test commands, ThinkPad layout, limitations and rollback.
 - `compose.yaml` / `Dockerfile` / `requirements.txt`: isolated deployment.
 - `test_service.py`: state isolation, validation, overload and timeout tests.
 - `probe.py`: synthetic smoke or local private stereo replay; numeric output only.
+- `chinese_cases.json` / `chinese_eval.py`: labeled Chinese fixture experiment,
+  paced PCM/G.711 tests and private telephony replay. Test-only Python 3.12
+  `audioop` performs the codec round trip; it is not a runtime dependency.
+- `test_chinese_eval.py`: chunk-availability timing, sustained crossings, codec
+  length and silence checks. Evaluation tools run outside the service image.
 
 Model metadata declares BSD-2-Clause. Model authorship remains Pipecat's.
 No upstream implementation or training data is vendored here. Artifact download
