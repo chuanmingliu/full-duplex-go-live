@@ -142,3 +142,21 @@ func TestTalkerOpenerConfigIsOptInAndBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBackchannelDetectorIsOptInAndLoopbackOnly(t *testing.T) {
+	c := Default()
+	if c.Duplex.BackchannelDetectorMode != "" || c.Duplex.BackchannelDetectorURL != "" {
+		t.Fatal("must default off")
+	}
+	c.Duplex.BackchannelDetectorMode = "asr_assist"
+	for _, raw := range []string{"", "ws://remote:18087/v1/stream", "http://127.0.0.1:18087/v1/stream", "ws://user:pass@127.0.0.1:18087/v1/stream", "ws://127.0.0.1:18087/v1/stream?key=x"} {
+		c.Duplex.BackchannelDetectorURL = raw
+		if c.Validate() == nil {
+			t.Fatalf("accepted %q", raw)
+		}
+	}
+	c.Duplex.BackchannelDetectorURL = "ws://127.0.0.1:18087/v1/stream"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -131,6 +131,7 @@ func (e *Engine) startFocus(ctx context.Context) {
 // awaited evidence arrives. This does not guess the caller's identity, shorten
 // a hold, or bypass transcript/backchannel checks. All state remains loop-owned.
 func (e *Engine) onFocusEvidence() {
+	e.maybeEarlyFinal()
 	e.expireHold()
 	e.judgeUtteranceFocus()
 	e.judgeFocus()

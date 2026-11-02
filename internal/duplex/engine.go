@@ -38,6 +38,7 @@ import (
 	"unicode"
 
 	"github.com/chuanmingliu/golive/internal/audio"
+	"github.com/chuanmingliu/golive/internal/backchannel"
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/endpoint"
 	"github.com/chuanmingliu/golive/internal/focus"
@@ -119,7 +120,13 @@ type Engine struct {
 	deps                                    Deps
 	log                                     *slog.Logger
 	// Coalesced notification: speaker labels changed, but decisions stay on the loop.
-	focusReady chan struct{}
+	focusReady            chan struct{}
+	detector              *backchannel.Client
+	detectorReady         <-chan struct{}
+	detectorAssistedStart int64
+	detectorAssisted      bool
+	detectorObservedStart int64
+	detectorObserved      bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -465,6 +472,11 @@ func New(opts Options, deps Deps) *Engine {
 func (e *Engine) Start(ctx context.Context) {
 	e.startOutputTranscript()
 	e.ctx, e.cancel = context.WithCancel(ctx)
+	if d := e.opts.Cfg.Duplex; d.BackchannelDetectorMode != "" {
+		e.detector = backchannel.New(e.ctx, d.BackchannelDetectorURL, e.log)
+		e.detectorReady = e.detector.Updates
+		e.log.Info("backchannel: policy enabled", "mode", d.BackchannelDetectorMode)
+	}
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
@@ -534,6 +546,9 @@ func (e *Engine) Close() {
 		lastPlayback := e.player.closeWithReport()
 		e.quoteAudio.close()
 		e.wg.Wait()
+		if e.detector != nil {
+			e.detector.Close()
+		}
 		e.finishPlaybackAtClose(lastPlayback)
 		// The loop and final playback accounting have finished; no producer
 		// writes the summary state after this point.
@@ -638,6 +653,9 @@ func (e *Engine) PushAudio(pcm []byte) {
 		case e.audioCh <- buf:
 		default:
 		}
+		if e.detector != nil {
+			e.detector.Disable("input_queue_gap")
+		}
 		e.log.Warn("input audio queue full; dropped a frame")
 		metrics.Default().AudioDropped()
 	}
@@ -651,6 +669,9 @@ func (e *Engine) SetMuted(muted bool, clientEventID string) {
 	e.post(func() {
 		e.muted = muted
 		if muted {
+			if e.detector != nil {
+				e.detector.Disable("input_muted")
+			}
 			// A guess made on an utterance that will now never finish can
 			// never be confirmed either.
 			if e.liveSpeculation() != nil {
@@ -726,6 +747,8 @@ func (e *Engine) loop() {
 			e.onASREvent(ev)
 		case <-e.focusReady:
 			e.onFocusEvidence()
+		case <-e.detectorReady:
+			e.maybeEarlyFinal()
 		case <-e.ctrlSig:
 			e.runPosted()
 		case <-tick.C:
@@ -747,6 +770,10 @@ func (e *Engine) onAudio(pcm []byte) {
 		return
 	}
 	e.focusPush(converted, atMS)
+	if e.detector != nil {
+		speaking, filler := e.player.detectorState()
+		e.detector.Push(converted, atMS, e.gen.Current(), speaking, filler)
+	}
 	for _, frame := range e.framer.Push(converted) {
 		samples, err := audio.DecodePCM16(frame)
 		if err != nil {

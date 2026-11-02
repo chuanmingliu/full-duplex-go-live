@@ -885,3 +885,10 @@ func (p *Player) setSpeakingLocked(state bool) {
 		p.onSpeaking(state)
 	}
 }
+
+// detectorState samples actual player activity, never queued TTS readiness.
+func (p *Player) detectorState() (bool, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.speaking, p.speaking && IsBackchannel(p.activeTurn)
+}

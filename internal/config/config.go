@@ -346,6 +346,9 @@ type DuplexConfig struct {
 	// candidate starts with settles it. Talking over someone is worse than
 	// stopping for nothing, so the timeout fails toward yielding.
 	UserBackchannelHoldMS int `json:"user_backchannel_hold_ms"`
+	// Optional local audio classifier. Empty mode leaves the legacy policy alone.
+	BackchannelDetectorURL  string `json:"backchannel_detector_url,omitempty"`
+	BackchannelDetectorMode string `json:"backchannel_detector_mode,omitempty"`
 
 	// Opener, when on, has the engine open every answer with one of
 	// OpenerPhrases from the phrase cache the moment the caller's turn is
@@ -975,6 +978,8 @@ func (c *Config) applyEnv() {
 	setFloat(&c.Temperature, "GOLIVE_TEMPERATURE")
 	setFloat(&c.Speed, "GOLIVE_SPEED")
 	setBool(&c.Duplex.Backchannel, "GOLIVE_BACKCHANNEL")
+	setString(&c.Duplex.BackchannelDetectorURL, "GOLIVE_BACKCHANNEL_DETECTOR_URL")
+	setString(&c.Duplex.BackchannelDetectorMode, "GOLIVE_BACKCHANNEL_DETECTOR_MODE")
 	setBool(&c.Duplex.Speculative, "GOLIVE_SPECULATIVE")
 	setBool(&c.Duplex.AllowBargeIn, "GOLIVE_ALLOW_BARGE_IN")
 	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
@@ -987,6 +992,21 @@ func (c *Config) applyEnv() {
 
 // Validate rejects combinations that would fail confusingly later.
 func (c *Config) Validate() error {
+	switch c.Duplex.BackchannelDetectorMode {
+	case "", "shadow", "asr_assist":
+	default:
+		return fmt.Errorf("config: invalid backchannel_detector_mode")
+	}
+	if c.Duplex.BackchannelDetectorMode != "" && c.Duplex.BackchannelDetectorURL == "" {
+		return fmt.Errorf("config: backchannel detector URL required")
+	}
+	if raw := c.Duplex.BackchannelDetectorURL; raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.Path != "/v1/stream" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("config: backchannel detector must be a loopback ws endpoint")
+		}
+	}
+
 	if c.Duplex.TalkerOpenerTimeoutMS < 0 || c.Duplex.TalkerOpenerTimeoutMS > 1500 {
 		return fmt.Errorf("config: talker_opener_timeout_ms must be within 0..1500")
 	}

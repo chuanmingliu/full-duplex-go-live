@@ -4,8 +4,9 @@
 
 GoLive's original transcript phrase matching, acknowledgment hold, caller
 identity, echo and background-voice rejection remain the default call policy.
-The new service runs independently on the ThinkPad and is **not connected to
-live call control**. No GoLive profile, prompt, voice, opener or quotation-delay
+The service runs independently on the ThinkPad. The engine now has an
+[optional ASR assist integration](backchannel-integration.md), disabled by
+default; rollout status is recorded separately from service health. No GoLive profile, prompt, voice, opener or quotation-delay
 setting changes. Aria and Active Call routing remain unchanged.
 
 The model answers an audio question: is the caller listening/responding briefly,
@@ -22,8 +23,8 @@ The current integration stage exposes raw observations only. Upstream training
 and evaluation are English-only; that is a measurement caveat, not a test gate.
 The model expects echo-cancelled input; existing caller identity and echo gates
 remain authoritative. `control_allowed` is always false, including for English.
-Its `fallback: legacy` describes the required integration policy; it does not
-claim that an unimplemented live engine hook is already running.
+Its `fallback: legacy` describes the engine policy. A configured client uses
+observations only through the guarded ASR-final scheduling integration.
 
 Source: [pinned model card](https://huggingface.co/pipecat-ai/backchannel-detector/blob/4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854/README.md).
 
@@ -135,13 +136,13 @@ contains numeric summaries and synthetic case IDs only. Test tools are mounted
 into a disposable container using the existing detector image; they do not
 restart the detector or change GoLive's configuration.
 
-A future live integration should be an asynchronous, bounded shadow tap first:
+The optional integration uses an asynchronous, bounded audio tap:
 16 kHz input plus actual playback state, no wait on the foreground audio loop,
 per-call sequence IDs, fresh decisions only, and legacy fallback on every
 deadline/error/disconnect. Existing identity and echo checks remain authoritative.
 Only labeled Chinese/codec/echo/background/backchannel/interruption replay and
-real-call evidence can justify a separately enabled assist policy. No such
-control-policy switch is enabled by this deployment.
+real-call evidence can justify a separately enabled assist policy. The standalone service deployment does not enable the engine policy; see the
+[integration runbook](backchannel-integration.md) for the opt-in configuration.
 
 
 ## Expanded Chinese test suite

@@ -6,9 +6,11 @@ It estimates caller backchannel versus floor-taking probabilities from audio.
 It does not synthesize fillers, select openers, call an LLM or hang up calls.
 
 **The original GoLive backchannel system remains the default controller.**
-This service is not in the live call path. Every response states
+An [optional engine integration](../../docs/services/backchannel-integration.md)
+now consumes observations to accelerate ASR finals under the original gates.
+It is disabled by default; rollout status is separate. Every response states
 `control_allowed: false` and `fallback: legacy`. Failure or stopping this
-container has no effect on existing call handling. Chinese audio is accepted
+container leaves the original controller available. Chinese audio is accepted
 with `language: "zh"`; the upstream English-only
 training label does not block requests. Chinese experiments run directly on
 the ThinkPad with the original GoLive voice and recorded Active Call audio.

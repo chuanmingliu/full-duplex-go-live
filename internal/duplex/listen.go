@@ -436,7 +436,13 @@ func (e *Engine) maybeEarlyFinal() {
 	if run == nil || run.sendDone || run.ended {
 		return
 	}
-	if e.vad.TrailingSilenceMS() < float64(d.EarlyFinalMS) {
+	pauseMS := d.EarlyFinalMS
+	assisted := false
+	if pauseMS > 40 && e.detectorMayAssist(run) {
+		pauseMS = 40
+		assisted = true
+	}
+	if e.vad.TrailingSilenceMS() < float64(pauseMS) {
 		return
 	}
 	// Only a recognition that has heard speech is worth a final. The one that
@@ -446,6 +452,11 @@ func (e *Engine) maybeEarlyFinal() {
 		return
 	}
 
+	if assisted {
+		e.detectorAssisted = true
+		e.detectorAssistedStart = e.utterStartMS
+		e.log.Info("backchannel: earlier ASR final requested", "utterance_start_ms", e.utterStartMS, "pause_ms", int(e.vad.TrailingSilenceMS()), "original_pause_ms", d.EarlyFinalMS)
+	}
 	run.sendDone = true
 	run.sendDoneAt = time.Now()
 	if err := run.stream.CloseSend(); err != nil {
