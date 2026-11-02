@@ -95,3 +95,8 @@ and the same guarded assist mode. Analysis waits for the owner's **done**.
 Evidence: [final CI](evidence/2026-11-02-backchannel-integration/burst-ci.json),
 [final deployment](evidence/2026-11-02-backchannel-integration/burst-deployment.json),
 [successful simulator](evidence/2026-11-02-backchannel-integration/successful-simulator.json).
+
+The subsequent [real-call review](2026-11-02-backchannel-real.md) confirms
+3,883 chunks without fallback and three earlier ASR requests: two interruption
+cuts and one retained acknowledgment. Normal-response p95 remained 1,302 ms;
+no acoustic handset target or causal 80 ms cut saving is claimed.

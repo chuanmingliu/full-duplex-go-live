@@ -1,0 +1,20 @@
+#timeout 120
+#push analyze-backchannel-real.py /home/chuanming/golive/analyze-backchannel-real.py
+#push call-latency-review-20261102.py /home/chuanming/golive/call-latency-review-20261102.py
+#push analyze-interruptions-review-20261102.py /home/chuanming/golive/analyze-interruptions-review-20261102.py
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/summary.json backchannel-real-summary.json
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/strict.json backchannel-real-strict.json
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/normal-rows.json backchannel-real-normal-rows.json
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/quotation-acknowledgments.json backchannel-real-quotation-acknowledgments.json
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/interruptions.json backchannel-real-interruptions.json
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/tool-events.json backchannel-real-tool-events.json
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/detector.json backchannel-real-detector.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/analyze-backchannel-real.py').read_bytes()).hexdigest()=='d5156d4c6c19d12a7488d0a6f11bfe04aed2f1623ece127b286133def23610d2'
+assert hashlib.sha256((Path.home()/'golive/call-latency-review-20261102.py').read_bytes()).hexdigest()=='c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50'
+assert hashlib.sha256((Path.home()/'golive/analyze-interruptions-review-20261102.py').read_bytes()).hexdigest()=='90e400643377fc9195ba324b6d1f986e414ae8e71a1cd99221a133cdfa2a06e3'
+PY
+python3 -B /home/chuanming/golive/analyze-backchannel-real.py
