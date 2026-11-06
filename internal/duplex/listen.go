@@ -1238,6 +1238,8 @@ func (e *Engine) commitTurn(turn *Turn) {
 	}
 	if e.tools != nil {
 		e.tools.callerTurns++
+		e.tools.silence.attempts = 0
+		e.tools.silence.due = time.Time{}
 	}
 	// Something the caller said earlier and was never answered — they carried
 	// on after a pause that closed the turn, or asked again before the answer

@@ -149,3 +149,11 @@ Source: [rule parsing and model tool description](../../internal/tools/hangup.go
 [guards, timers and farewell completion](../../internal/duplex/tools.go),
 [session-to-gateway hangup](../../internal/server/session.go),
 [gateway integration regression](../../internal/server/realtime_test.go).
+
+## Caller silence reminders
+
+The optional Leads `silence-reaction` config adds bounded reminders after a
+randomized quiet interval, using literal templates and the normal guarded speech
+pipeline. Existing hangup rules take priority. See the
+[silence reaction guide](../services/silence-reaction.md) for configuration,
+quotation-work exclusion, timing and rollback.

@@ -63,8 +63,9 @@ type toolState struct {
 	endCall *endCallRequest
 	// rules are the hangup rules in force (see tools.HangupRules); engine
 	// is the subset the engine judges itself, checked on the tick.
-	rules  tools.HangupRules
-	engine []tools.HangupRule
+	silence silenceReactionState
+	rules   tools.HangupRules
+	engine  []tools.HangupRule
 	// lastCallerAt is when the caller last finished saying something, and
 	// lastQuietAt when the assistant last finished speaking: the silence
 	// rule's clock runs from the later of the two, so a long answer is not
@@ -149,6 +150,7 @@ func (e *Engine) setupTools() {
 	}
 	if cfg.ToolsEndCall {
 		ts.rules = e.loadHangupRules()
+		ts.silence.config = e.loadSilenceReaction()
 		ts.engine = ts.rules.EngineRules()
 		ts.defs = append(ts.defs, ts.rules.EndCallTool())
 	}
@@ -619,6 +621,7 @@ func (e *Engine) checkAssistantHangupRules(said string) {
 func (e *Engine) noteAssistantQuiet() {
 	if e.tools != nil {
 		e.tools.lastQuietAt = time.Now()
+		e.tools.silence.due = time.Time{}
 	}
 }
 
@@ -626,6 +629,7 @@ func (e *Engine) noteAssistantQuiet() {
 func (e *Engine) noteCallerSpoke() {
 	if e.tools != nil {
 		e.tools.lastCallerAt = time.Now()
+		e.tools.silence.due = time.Time{}
 	}
 }
 

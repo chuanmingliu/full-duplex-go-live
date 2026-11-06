@@ -514,8 +514,8 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	// Six configs are seeded, listed by name: hangup-rules, openers, quote-api, quote-plans, quote-rules, quote-speech.
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
+	// Seven configs are seeded in name order, including silence-reaction.
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
@@ -761,7 +761,7 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	// As golive's tool call: the plan in memory, no vehicle price, no seats.

@@ -609,17 +609,20 @@ func (e *Engine) Say(text string) {
 	if text == "" {
 		return
 	}
-	e.post(func() {
-		turn := e.tracker.Begin("", false)
-		e.specTurn = nil
-		e.commitTurn(turn)
-		e.log.Debug("speak: opening line", "turn", turn.ID, "text", text)
-		pipe := e.newSpeechPipe(turn, true)
-		pipe.Push(text)
-		pipe.Close()
-		turn.AppendResponse(text)
-		e.warmAtOpening("opening line")
-	})
+	e.post(func() { e.sayOnLoop(text) })
+}
+
+// sayOnLoop starts preset speech with the caller holding the engine loop.
+func (e *Engine) sayOnLoop(text string) {
+	turn := e.tracker.Begin("", false)
+	e.specTurn = nil
+	e.commitTurn(turn)
+	e.log.Debug("speak: opening line", "turn", turn.ID, "text", text)
+	pipe := e.newSpeechPipe(turn, true)
+	pipe.Push(text)
+	pipe.Close()
+	turn.AppendResponse(text)
+	e.warmAtOpening("opening line")
 }
 
 // Interrupt stops whatever the assistant is saying or about to say, as a
@@ -927,6 +930,7 @@ func (e *Engine) onTick() {
 	e.checkHangupRules("")
 	e.maybeDeliver()
 	e.drainDeferred()
+	e.maybeSilenceReaction(time.Now())
 	// The session's lifetime is the session's business: the server bounds it
 	// with a deadline on the context it hands this engine, and says so in
 	// session.closed. The engine used to announce the expiry itself and then
