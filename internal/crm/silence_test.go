@@ -23,13 +23,20 @@ func TestSilenceReactionConfigIsSeededValidatedAndVersioned(t *testing.T) {
 		t.Fatalf("invalid config accepted: %d %s", code, body)
 	}
 	c := got.Config.Body
-	c.Templates = []string{"您还在吗？"}
-	c.MinWaitMS, c.MaxWaitMS = 4000, 6000
+	c.Rounds[0].Templates = []string{"您还在吗？"}
+	c.Rounds[0].MinWaitMS, c.Rounds[0].MaxWaitMS = 4000, 6000
 	if code, body := fx.do("PUT", url, c, &got); code != 200 || got.Config.Version != 2 {
 		t.Fatalf("save: %d %s", code, body)
 	}
-	if code, body := fx.do("GET", url, nil, &got); code != 200 || got.Config.Body.Templates[0] != c.Templates[0] {
+	if code, body := fx.do("GET", url, nil, &got); code != 200 || got.Config.Body.Rounds[0].Templates[0] != c.Rounds[0].Templates[0] {
 		t.Fatalf("read saved template: %d %s", code, body)
+	}
+	c.Rounds[1].Templates = c.Rounds[0].Templates
+	if code, _ := fx.do("PUT", url, c, nil); code != 400 {
+		t.Fatal("duplicate rounds saved")
+	}
+	if code, _ := fx.do("GET", url, nil, &got); code != 200 || got.Config.Version != 2 {
+		t.Fatal("rejected config modified saved version")
 	}
 	if code, body := fx.do("PUT", url, map[string]bool{"enabled": false}, &got); code != 200 || got.Config.Version != 3 {
 		t.Fatalf("disable: %d %s", code, body)

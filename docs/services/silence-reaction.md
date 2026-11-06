@@ -13,33 +13,50 @@ controls both the timing and the wording:
 ```json
 {
   "enabled": true,
-  "min_wait_ms": 8000,
-  "max_wait_ms": 12000,
-  "max_attempts": 2,
-  "templates": [
-    "您好，您还在听吗？",
-    "您在吗？如果有什么问题，可以直接告诉我。"
+  "rounds": [
+    {
+      "min_wait_ms": 8000,
+      "max_wait_ms": 12000,
+      "templates": ["您好，您还在听吗？"]
+    },
+    {
+      "min_wait_ms": 8000,
+      "max_wait_ms": 12000,
+      "templates": ["您在吗？如果有什么问题，可以直接告诉我。"]
+    }
   ]
 }
 ```
 
-The engine samples a uniform integer delay between the two bounds, once per
-quiet interval. At expiry it randomly picks a template. These are complete
-spoken lines, not Jinja templates or instructions to the model. The allowed
-interval is 1–120 seconds; a config may contain 1–10 nonempty templates of up to
-120 characters and allow 1–3 reminders per unanswered sequence. Equal interval
-bounds give a fixed delay, useful for testing.
+`rounds` is an ordered sequence of 1–3 reminders. Each round has its own uniform
+integer waiting range (1–120 seconds) and pool of 1–10 literal spoken lines
+(up to 120 characters). Templates must be distinct within and across rounds,
+so continued silence cannot repeat the same configured line. Selection within
+a round is random. Equal wait bounds make the interval fixed.
 
-Settings are fetched with the existing tools bearer token at call setup and
-pinned for that call. Save a new version to affect subsequent calls. The feature
-uses the original profile's `tools_end_call` / `hangup_rules` integration
-and tools base URL; no new transport or profile override is needed. A missing,
-invalid or unavailable config disables reminders for that call. This permits an
-engine upgrade before the Leads service upgrade without changing old behavior.
+After each reminder finishes, the next round starts its own full waiting interval.
+The final round exhausts the sequence; it never loops. An accepted caller turn
+resets it to round one. Noise, echo, rejected background speech and the assistant's
+own speech do not reset the sequence. Existing hangup rules still have priority,
+so a configured round can be preempted by a shorter silence/duration limit.
 
-New Leads installations, and existing stores missing this config, seed the
-example above. An existing version is never overwritten. To roll back for new
-calls, save `{"enabled": false}`. Existing calls keep their snapshot.
+Legacy configs with top-level `min_wait_ms`, `max_wait_ms`, `max_attempts` and
+`templates` remain supported. Their random selection now avoids the immediately
+previous line when another distinct line exists; a one-line legacy pool still
+repeats. Do not mix these fields with `rounds`. An invalid save is rejected without
+changing the stored config/version. To upgrade an existing pool, create an ordered
+round for each attempt, preserving the owner's timing and assigning distinct lines.
+Do not silently overwrite an existing Leads config with the new default.
+
+Settings are authenticated through the existing tools bearer token and fetched
+at call startup. They remain pinned for that call; saves affect subsequent calls.
+The original `tools_end_call` / `hangup_rules` integration and tools base URL are
+unchanged. Missing, invalid or unavailable config disables reminders.
+
+New stores missing this config seed the two-round example above. Existing stores
+keep their current version. `{"enabled": false}` disables reminders for new calls.
+Before rolling the engine back to a build that predates `rounds`, restore the saved
+legacy config while idle; that older parser cannot execute the round schema.
 
 ## Timing and priority
 
@@ -57,14 +74,14 @@ calls, save `{"enabled": false}`. Existing calls keep their snapshot.
    assistant transcript and output audio, is included in conversation history,
    and can be interrupted through the existing echo/background-aware controller.
 6. After each reminder finishes, wait another random interval, up to
-   `max_attempts`. Accepted caller turns reset this budget. Raw noise and the
+   the configured number of rounds (or legacy `max_attempts`). Accepted caller turns reset this budget. Raw noise and the
    assistant's own reminders do not replenish it.
 
 The scheduler runs on the existing 120 ms engine tick; TTS startup and transport
 playout add time after the selected interval. A reminder is not a normal response
 to caller speech and must not be counted as an improved normal-response latency
 sample. Its log records attempt, chosen interval, template index and config
-version without copying customer data into a new diagnostic event.
+version and round number without copying customer data into a new diagnostic event.
 
 The existing silence-hangup clock restarts after assistant playback, including
 reminders. With the standard 25-second silence rule, that means up to two
@@ -104,3 +121,7 @@ RustPBX or an active session merely to enable this feature.
 Implementation: `internal/tools/silence.go` (schema and authenticated fetch),
 `internal/crm/service.go` (seed/validation), `internal/crm/ui/app.js` (editor help),
 and `internal/duplex/silence.go` (per-call scheduler).
+
+Deployment and subsequent testing: [2026-11-06 box release and simulator results](../telephony/2026-11-06-silence-reaction.md). The reminder probe passed behavior checks after a separate settings postcheck; the normal-response latency gate remains unmet.
+
+The multi-round follow-up adds validation for duplicate/mixed schemas, legacy compatibility, round-specific deadlines, caller reset, and an engine/player simulation that emits two distinct recorded reminders in order.

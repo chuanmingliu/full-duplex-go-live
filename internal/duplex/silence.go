@@ -10,10 +10,11 @@ import (
 // Only the engine loop advances this state. A deadline is sampled once per
 // quiet interval, never on every tick. Caller speech resets the attempt budget.
 type silenceReactionState struct {
-	config   tools.SilenceReaction
-	due      time.Time
-	attempts int
-	waitMS   int
+	config       tools.SilenceReaction
+	due          time.Time
+	attempts     int
+	waitMS       int
+	lastTemplate string
 }
 
 func (e *Engine) loadSilenceReaction() tools.SilenceReaction {
@@ -49,7 +50,8 @@ func (e *Engine) maybeSilenceReaction(now time.Time) {
 	}
 	s := &ts.silence
 	c := s.config
-	if !c.Enabled || s.attempts >= c.MaxAttempts || e.ctx.Err() != nil || e.hangingUp() {
+	round, available := c.Round(s.attempts)
+	if !c.Enabled || !available || e.ctx.Err() != nil || e.hangingUp() {
 		return
 	}
 	// Do not speak before an answered call has had its greeting or caller.
@@ -58,19 +60,35 @@ func (e *Engine) maybeSilenceReaction(now time.Time) {
 		return
 	}
 	if s.due.IsZero() {
-		s.waitMS = c.MinWaitMS + rand.IntN(c.MaxWaitMS-c.MinWaitMS+1)
+		s.waitMS = round.MinWaitMS + rand.IntN(round.MaxWaitMS-round.MinWaitMS+1)
 		s.due = now.Add(time.Duration(s.waitMS) * time.Millisecond)
 		return
 	}
 	if now.Before(s.due) {
 		return
 	}
-	index := rand.IntN(len(c.Templates))
+	index := chooseSilenceTemplate(round.Templates, s.lastTemplate)
+	s.lastTemplate = round.Templates[index]
 	s.attempts++
 	s.due = time.Time{}
 	e.log.Info("silence: re-engagement", "attempt", s.attempts, "wait_ms", s.waitMS,
-		"template_index", index, "config_version", c.Version)
+		"template_index", index, "config_version", c.Version, "round", s.attempts)
 	// Already on the loop: do not post an unchecked Say that could run after
 	// new caller input or a task delivery has acquired the floor.
-	e.sayOnLoop(c.Templates[index])
+	e.sayOnLoop(round.Templates[index])
+}
+
+// Ordered rounds have disjoint pools. Legacy pools avoid immediate repetition
+// whenever another distinct line exists, without breaking one-template configs.
+func chooseSilenceTemplate(lines []string, previous string) int {
+	candidates := make([]int, 0, len(lines))
+	for i, line := range lines {
+		if line != previous {
+			candidates = append(candidates, i)
+		}
+	}
+	if len(candidates) == 0 {
+		return rand.IntN(len(lines))
+	}
+	return candidates[rand.IntN(len(candidates))]
 }

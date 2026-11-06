@@ -193,3 +193,72 @@ func TestSilenceReminderSimulationCallerCanInterrupt(t *testing.T) {
 		t.Fatal("reminder was treated as a farewell")
 	}
 }
+
+func TestSilenceReminderLegacyAvoidsImmediateRepetition(t *testing.T) {
+	for i := 0; i < 30; i++ {
+		lines := []string{"您好", "您好", "您在吗"}
+		if got := chooseSilenceTemplate(lines, "您好"); got != 2 {
+			t.Fatal("repeated a legacy line despite an alternative")
+		}
+		if got := chooseSilenceTemplate([]string{"您好"}, "您好"); got != 0 {
+			t.Fatal("single-template compatibility lost")
+		}
+	}
+}
+
+func TestSilenceReminderOrderedRoundTimingAndCallerReset(t *testing.T) {
+	e := newSilenceRuleEngine(t)
+	enableTestSilence(e)
+	e.tools.silence.config.Rounds[1].MinWaitMS = 4000
+	e.tools.silence.config.Rounds[1].MaxWaitMS = 4000
+	e.tools.silence.attempts = 1
+	e.tools.silence.lastTemplate = "您好，您还在听吗？"
+	now := time.Now()
+	e.maybeSilenceReaction(now)
+	if got := e.tools.silence.due.Sub(now); got != 4*time.Second {
+		t.Fatalf("later round wait: %v", got)
+	}
+	e.tools.tasks = map[string]*tools.Task{"q": {}}
+	e.maybeSilenceReaction(now.Add(5 * time.Second))
+	if e.tools.silence.attempts != 1 || !e.tools.silence.due.IsZero() {
+		t.Fatal("tool work advanced round")
+	}
+	delete(e.tools.tasks, "q")
+	e.commitTurn(e.tracker.Begin("我在听", false))
+	if e.tools.silence.attempts != 0 || e.tools.silence.lastTemplate != "" {
+		t.Fatal("caller did not reset sequence")
+	}
+	e.maybeSilenceReaction(now)
+	if gap := e.tools.silence.due.Sub(now); gap < 8*time.Second || gap > 12*time.Second {
+		t.Fatalf("did not restart first round: %v", gap)
+	}
+}
+
+func TestSilenceReminderSimulationOrderedDifferentRounds(t *testing.T) {
+	opts := quoteConfig()
+	opts.Cfg.Tools = nil
+	opts.Cfg.ToolsEndCall = true
+	opts.Cfg.HangupRules = false
+	c := newCollector(opts.Cfg.ClientRate)
+	e := startQuoteEngine(t, opts, Deps{ASR: newTrailingASR("我在"), LLM: shortLLM{}, TTS: mock.NewTTS(), Emit: c.emit}, &slowQuote{})
+	ready := make(chan struct{})
+	e.post(func() {
+		e.tools.engine = nil
+		e.tools.silence.config = tools.SilenceReaction{Enabled: true, Rounds: []tools.SilenceRound{
+			{MinWaitMS: 1000, MaxWaitMS: 1000, Templates: []string{"您在听吗？"}},
+			{MinWaitMS: 1200, MaxWaitMS: 1200, Templates: []string{"我再等您一会儿。"}},
+		}}
+		close(ready)
+	})
+	<-ready
+	e.Say("您好。")
+	waitFor(t, "second reminder", 12*time.Second, func() bool { return strings.Contains(c.saidAll(), "我再等您一会儿") })
+	pause(e, opts.Cfg.ClientRate, 3000)
+	said := c.saidAll()
+	if strings.Count(said, "您在听吗") != 1 || strings.Count(said, "我再等您一会儿") != 1 || strings.Index(said, "您在听吗") > strings.Index(said, "我再等您一会儿") {
+		t.Fatalf("round order or limit failed: %s", said)
+	}
+	if c.audioMS() == 0 {
+		t.Fatal("no audio")
+	}
+}

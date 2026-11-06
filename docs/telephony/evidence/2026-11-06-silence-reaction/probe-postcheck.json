@@ -1,0 +1,13 @@
+{
+  "original_probe_passed": false,
+  "harness_assertion": "whole saved-call file hash includes expected call ID and saved_at changes on opening",
+  "postcheck_context_and_profile_preserved": true,
+  "reminder_behavior_passed": true,
+  "engine_idle_after": true,
+  "transport": "direct deployed-engine WebSocket, not SIP or handset",
+  "actual_previous_response_done_to_next_response_created_ms": [
+    8796,
+    9705
+  ],
+  "last_reminder_done_to_farewell_created_ms": 25282
+}
