@@ -1,0 +1,96 @@
+{
+  "kind": "simulated",
+  "build": "f1fd9a6",
+  "scenario": "set-a-01-barge-in",
+  "scenario_sha256": "3d2f3fbffb27759bf84e551944b99bef19b4489d83035ff734940ef1dd496c1a",
+  "context_sha256": {
+    "instructions": "639dcecf24dddc73274a7412c017e36258b51679c2fd3ad4e72a595453aa8d25",
+    "voice": "65d9d6c5c7c2d5c29e38b777edf8da1dbd764f67deeeaa230724967cafe4e684",
+    "greeting": "fa7c33a6b9c732413d932a7453c5c85d4936fcdd8515822bf92e3fc07e2f4df8"
+  },
+  "stage": "verified",
+  "run_id": "sim-aa0a28ed4738af274d5b41a6",
+  "call_id": "out-mvxuom0e-mp6l",
+  "session": "sess_4e0d659b292e261b8abc1c48",
+  "seconds": 19.009,
+  "archive_files_verified": 5,
+  "channels_with_signal": 2,
+  "caller_lines": 2,
+  "assistant_lines": 4,
+  "counts": {
+    "records": 4,
+    "answered": 1,
+    "non_speech": 3,
+    "cancelled": 0,
+    "interrupted_answers": 1,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 1,
+    "tool_results_joined": 1,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 1
+  },
+  "gate": {
+    "enabled": true,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "passed": false,
+    "reasons": [
+      "first_audio: 1 samples, need 20",
+      "conversational_first_content: 0 samples, need 20"
+    ]
+  },
+  "handset_target_proven": false,
+  "receiver_gap_n": 1,
+  "receiver_gap_p95_ms": 579,
+  "receiver_failure_count": 0,
+  "receiver_warning_count": 0,
+  "first_audio": {
+    "n": 1,
+    "p50_ms": 380,
+    "p90_ms": 380,
+    "p95_ms": 380,
+    "max_ms": 380,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 1,
+    "p50_ms": 721,
+    "p90_ms": 721,
+    "p95_ms": 721,
+    "max_ms": 721,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "tool_result": {
+    "n": 1,
+    "p50_ms": 721,
+    "p90_ms": 721,
+    "p95_ms": 721,
+    "max_ms": 721,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 1,
+    "p50_ms": 721,
+    "p90_ms": 721,
+    "p95_ms": 721,
+    "max_ms": 721,
+    "at_or_above_target": 0
+  }
+}

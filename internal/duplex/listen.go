@@ -71,10 +71,12 @@ func (e *Engine) asrOptions() provider.ASROptions {
 // utterance was over, and the turn closed, before a single hypothesis came
 // back. Dialling on suspicion lets the two waits overlap.
 //
-// The cost of a false alarm is one connection that never carries audio and is
-// closed a few seconds later, at most once per standbyMaxAge.
+// During playback the candidate audio can also be sent ahead of confirmation;
+// its results remain buffered until adoption. A rejected audio candidate is
+// closed, and further audio prefeeding is suppressed for standbyMaxAge. Plain
+// handshake pre-dialling remains available during that cooldown.
 func (e *Engine) maybePredialASR() {
-	if !e.opts.Cfg.Duplex.ASRPredial || e.deps.ASR == nil || e.muted || e.asrStandby != nil {
+	if !e.opts.Cfg.Duplex.ASRPredial || e.deps.ASR == nil || e.muted {
 		return
 	}
 	// A run still waiting on its final transcript does not stop the next
@@ -83,6 +85,12 @@ func (e *Engine) maybePredialASR() {
 		return
 	}
 	if e.vad.CandidateMS() <= 0 {
+		if e.asrStandbySamples > 0 {
+			e.closeStandby()
+			// A rejected audio candidate must not be recycled into a later
+			// utterance or cause speculative connection churn on noise.
+			e.asrPrefeedRetryAt = time.Now().Add(standbyMaxAge)
+		}
 		return
 	}
 	// A recognizer that refused the last dial of this kind is not asked again
@@ -91,7 +99,10 @@ func (e *Engine) maybePredialASR() {
 	if time.Now().Before(e.standbyRetryAt) {
 		return
 	}
-	e.asrStandby = dialLazyASR(e.ctx, e.deps.ASR, e.asrOptions())
+	if e.asrStandby == nil {
+		e.asrStandby = dialLazyASR(e.ctx, e.deps.ASR, e.asrOptions())
+	}
+	e.prefeedBargeInASR()
 }
 
 func (e *Engine) closeStandby() {
@@ -99,6 +110,8 @@ func (e *Engine) closeStandby() {
 		_ = e.asrStandby.Close()
 		e.asrStandby = nil
 	}
+	e.asrStandbySamples = 0
+	e.asrStandbyStartMS = 0
 }
 
 // expireStandby drops a connection dialled for something that turned out not
@@ -187,13 +200,18 @@ func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 	// the loop goroutine no longer waits on a vendor's handshake — and the
 	// audio written in the meantime is delivered, in order, when it completes.
 	stream := e.asrStandby
+	prefed := e.asrStandbySamples
+	compatible := prefed == 0 || (itemID == "" && e.asrStandbyStartMS == startMS)
 	e.asrStandby = nil
-	predialled := stream != nil && stream.usable(standbyMaxAge)
+	e.asrStandbySamples = 0
+	e.asrStandbyStartMS = 0
+	predialled := stream != nil && compatible && stream.usable(standbyMaxAge)
 	if !predialled {
 		if stream != nil {
 			_ = stream.Close()
 		}
 		stream = dialLazyASR(e.ctx, e.deps.ASR, e.asrOptions())
+		prefed = 0
 	}
 
 	e.asrSeq++
@@ -201,12 +219,13 @@ func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 		itemID = fmt.Sprintf("user_%d", e.asrSeq)
 	}
 	run := &asrRun{
-		id:       e.asrSeq,
-		stream:   stream,
-		itemID:   itemID,
-		startMS:  startMS,
-		endMS:    startMS,
-		openedAt: time.Now(),
+		id:            e.asrSeq,
+		stream:        stream,
+		itemID:        itemID,
+		startMS:       startMS,
+		endMS:         startMS,
+		openedAt:      time.Now(),
+		prefedSamples: prefed,
 	}
 	e.asrRun = run
 	up, took := stream.ready()
@@ -217,9 +236,21 @@ func (e *Engine) startRun(startMS int64, itemID string) *asrRun {
 		"start_ms", startMS,
 		"predialled", predialled,
 		"connected", up,
+		"prefed_ms", prefed*1000/provider.PipelineRate,
 		"connect_ms", took.Milliseconds())
 
+	var buffered []provider.ASRResult
+	if prefed > 0 {
+		buffered = stream.bufferedResults()
+	}
 	go func(id uint64, s provider.ASRStream) {
+		for _, res := range buffered {
+			select {
+			case e.asrCh <- asrEvent{run: id, res: res}:
+			case <-e.ctx.Done():
+				return
+			}
+		}
 		for res := range s.Results() {
 			select {
 			case e.asrCh <- asrEvent{run: id, res: res}:
@@ -405,7 +436,13 @@ func (e *Engine) maybeEarlyFinal() {
 	if run == nil || run.sendDone || run.ended {
 		return
 	}
-	if e.vad.TrailingSilenceMS() < float64(d.EarlyFinalMS) {
+	pauseMS := d.EarlyFinalMS
+	assisted := false
+	if pauseMS > 40 && e.detectorMayAssist(run) {
+		pauseMS = 40
+		assisted = true
+	}
+	if e.vad.TrailingSilenceMS() < float64(pauseMS) {
 		return
 	}
 	// Only a recognition that has heard speech is worth a final. The one that
@@ -415,6 +452,11 @@ func (e *Engine) maybeEarlyFinal() {
 		return
 	}
 
+	if assisted {
+		e.detectorAssisted = true
+		e.detectorAssistedStart = e.utterStartMS
+		e.log.Info("backchannel: earlier ASR final requested", "utterance_start_ms", e.utterStartMS, "pause_ms", int(e.vad.TrailingSilenceMS()), "original_pause_ms", d.EarlyFinalMS)
+	}
 	run.sendDone = true
 	run.sendDoneAt = time.Now()
 	if err := run.stream.CloseSend(); err != nil {
@@ -787,6 +829,7 @@ func (e *Engine) noteWords(run *asrRun, text string) {
 		run.activeAtChange = e.vad.ActiveMS()
 	}
 	run.lastText = text
+	e.prepareTalkerOpener(text)
 }
 
 // maybeSettle ends a turn the detector cannot.
@@ -1062,7 +1105,7 @@ func (e *Engine) abandonSpeculation(reason string) {
 	e.forgetDelegation(delegationIDOf(spec))
 	e.cancelBackend()
 	if e.tracker.IsCurrent(spec) {
-		if spec.Opened != "" {
+		if spec.Opened != "" && e.player.FinishOpenerAsBackchannel(spec.ID, spec.Generation) {
 			// The opener was said at the base pause and the caller went on:
 			// it finishes as an 嗯 of listening (one word), the rest of the
 			// guess is dropped without a sound, and the fragment that follows
@@ -1070,7 +1113,6 @@ func (e *Engine) abandonSpeculation(reason string) {
 			if pipe := e.speech.Load(); pipe != nil {
 				pipe.Abort()
 			}
-			e.player.FinishOpenerAsBackchannel(spec.ID)
 			e.skipOpenerUntil = time.Now().Add(openerSkipAfterBackchannel)
 			e.log.Info("speak: the opener became a backchannel; the caller went on", "turn", spec.ID, "opener_ms", spec.OpenedMS, "reason", reason)
 		} else {
@@ -1144,6 +1186,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		} else {
 			e.abortSpeech()
 		}
+		e.player.mu.Lock()
 		revised := e.tracker.Revise(spec.ID, text, true)
 		e.specTurn = nil
 		e.specAbandoned++
@@ -1153,12 +1196,15 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 				// Said already, at the pause; the revised answer follows it,
 				// and the opener's audio stamps come with it.
 				revised.InheritOpener(spec)
+				e.player.adoptOpenerLocked(spec, revised)
 			}
+			e.player.mu.Unlock()
 			e.sayOpener(revised)
 			e.commitTurn(revised)
 			e.beginGeneration(revised, "revision", true)
 			return
 		}
+		e.player.mu.Unlock()
 	}
 
 	e.specTurn = nil
@@ -1192,6 +1238,9 @@ func (e *Engine) commitTurn(turn *Turn) {
 	}
 	if e.tools != nil {
 		e.tools.callerTurns++
+		e.tools.silence.attempts = 0
+		e.tools.silence.lastTemplate = ""
+		e.tools.silence.due = time.Time{}
 	}
 	// Something the caller said earlier and was never answered — they carried
 	// on after a pause that closed the turn, or asked again before the answer
@@ -1285,7 +1334,13 @@ func (e *Engine) sayOpener(turn *Turn) {
 	if phrase == "" {
 		return
 	}
+	e.attachTalkerOpener(turn)
+	generated, prepared, generatedOK := e.takeTalkerOpener(turn, fragment)
 	cached, ok := Phrases().Get(e.phraseKey(phrase))
+	if generatedOK {
+		phrase, cached, ok = generated, prepared, true
+		turn.OpenerPlanned = generated
+	}
 	if !ok {
 		e.log.Debug("speak: no opener in the cache yet", "text", phrase)
 		return
@@ -1324,7 +1379,7 @@ func (e *Engine) sayOpener(turn *Turn) {
 	turn.OpenedMS = int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm))
 	e.lastSaidOpener = phrase
 	turn.MarkFirstSegment()
-	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, Revision: turn.Revision}
+	seg := Segment{Gen: turn.Generation, TurnID: turn.ID, owner: turn, Revision: turn.Revision}
 	begin, body, mark := seg, seg, seg
 	begin.Kind, begin.Text = SegBegin, phrase
 	body.Kind, body.PCM = SegAudio, pcm
@@ -1334,7 +1389,11 @@ func (e *Engine) sayOpener(turn *Turn) {
 	e.player.Enqueue(body)
 	e.player.Enqueue(mark)
 	turn.AppendResponse(phrase)
-	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "turn", turn.ID, "text", phrase,
+	source := "preset"
+	if generatedOK {
+		source = "talker"
+	}
+	e.log.Debug("speak: opened the answer from the phrase cache at the pause", "source", source, "turn", turn.ID, "text", phrase,
 		"audio_ms", int(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)), "lead_ms", leadMS)
 }
 
@@ -1398,8 +1457,10 @@ func (e *Engine) planFragmentOpener(turn *Turn) string {
 
 // planOpener chooses the opener for a turn's answer from the pool that fits
 // how the caller's words read — a question gets 嗯，/这个呀，/我看一下，…, a
-// statement 好的，/明白，/行，… — never one said in the last three turns, and
-// records it on the turn so the model is told to continue from it.
+// statement 好的，/明白，/行，…. It prefers the least recently selected phrase,
+// avoids an immediate repeat when possible, and records the choice so the
+// model is told to continue from it. The recent-three window expands a small
+// pool with generic candidates; it is not a strict three-turn exclusion.
 func (e *Engine) planOpener(turn *Turn) string {
 	d := e.opts.Cfg.Duplex
 	if !d.Opener || turn == nil || turn.OpenerPlanned != "" {
@@ -1418,8 +1479,9 @@ func (e *Engine) planOpener(turn *Turn) string {
 	if sc := e.openers.Match(turn.Transcript, question); sc != nil {
 		pool, scenario = sc.Phrases, sc.ID
 	}
-	// The least recently said phrase of the pool, never the one said last;
-	// when every phrase of a small scenario pool has been said this call,
+	// The least recently selected phrase of the pool, never the one selected
+	// last when alternatives exist; when every phrase of a small scenario
+	// pool appears in the recent-three selection history,
 	// the profile's generic pool joins the candidates. Random choice among
 	// "not in the last three" let 保费呢， come twice in five price questions
 	// (the owner, 10:07 on 10-28: "I hear 保费呢 more than once").

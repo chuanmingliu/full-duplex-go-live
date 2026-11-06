@@ -1,0 +1,703 @@
+[
+  {
+    "time": "2026-11-02T23:49:48.631+08:00",
+    "msg": "hangup: rules from the lead service"
+  },
+  {
+    "time": "2026-11-02T23:49:48.632+08:00",
+    "msg": "tools: the quote plan's fields are in the tool description"
+  },
+  {
+    "time": "2026-11-02T23:49:48.632+08:00",
+    "msg": "tools: what is said around the quotation comes from the panel"
+  },
+  {
+    "time": "2026-11-02T23:49:48.632+08:00",
+    "msg": "tools: on"
+  },
+  {
+    "time": "2026-11-02T23:49:48.633+08:00",
+    "msg": "tools: default quotation prefetch asked for",
+    "status": 202
+  },
+  {
+    "time": "2026-11-02T23:50:01.509+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_1",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 0,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 0,
+    "end_silence_ms": 0,
+    "asr_final_ms": 0,
+    "turn_start_ms": 0,
+    "llm_first_token_ms": 0,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:04.107+08:00",
+    "msg": "tools: task submitted",
+    "turn": "item_2",
+    "task": "t1"
+  },
+  {
+    "time": "2026-11-02T23:50:04.107+08:00",
+    "msg": "tools: the model's words in the calling turn end at the clause in flight; the script follows",
+    "turn": "item_2",
+    "task": "t1"
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "tools: task done",
+    "task": "t1",
+    "took_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "tools: task result",
+    "task": "t1"
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "tools: ready result replaced the unplayed calling body",
+    "turn": "item_2",
+    "task": "t1"
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_2",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 0,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 520,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -210,
+    "llm_first_token_ms": 409,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "tools: ready result no longer waits for its completed calling turn's ack",
+    "turn": "item_2",
+    "task": "t1"
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "tools: the working memory's plan is the one priced"
+  },
+  {
+    "time": "2026-11-02T23:50:04.108+08:00",
+    "msg": "tools: delivering a task's result",
+    "turn": "item_3",
+    "task": "t1",
+    "origin_turn": "item_2",
+    "waited_for_gap_ms": 0,
+    "interrupting": "false",
+    "memory_changed": "false",
+    "origin_to_result_start_ms": 606,
+    "origin_speech_end_ms": 8720,
+    "origin_end_silence_ms": 380
+  },
+  {
+    "time": "2026-11-02T23:50:07.608+08:00",
+    "msg": "tools: the readout was cut short; the figures stay beside the memory",
+    "task": "t1"
+  },
+  {
+    "time": "2026-11-02T23:50:07.608+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_3",
+    "first_audio_out_ms": 3,
+    "first_content_ms": 3,
+    "quote_result": "true",
+    "readout_expected": "true",
+    "first_readout_present": "true",
+    "first_readout_ms": 3,
+    "opener_ms": 0,
+    "end_silence_ms": 0,
+    "asr_final_ms": 0,
+    "turn_start_ms": 0,
+    "llm_first_token_ms": 480,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:12.153+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_4",
+    "first_audio_out_ms": -325,
+    "first_content_ms": 203,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 240,
+    "end_silence_ms": 700,
+    "asr_final_ms": 0,
+    "turn_start_ms": -534,
+    "llm_first_token_ms": -20,
+    "first_segment_ms": -325,
+    "tts_first_audio_ms": -325
+  },
+  {
+    "time": "2026-11-02T23:50:18.879+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_5",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 922,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 260,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -154,
+    "llm_first_token_ms": 635,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:20.859+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_6",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 468,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 450,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -166,
+    "llm_first_token_ms": 226,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:27.068+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_7",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 263,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 490,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -182,
+    "llm_first_token_ms": 233,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:30.308+08:00",
+    "msg": "tools: task submitted",
+    "turn": "item_8",
+    "task": "t2"
+  },
+  {
+    "time": "2026-11-02T23:50:30.308+08:00",
+    "msg": "tools: the model's words in the calling turn end at the clause in flight; the script follows",
+    "turn": "item_8",
+    "task": "t2"
+  },
+  {
+    "time": "2026-11-02T23:50:30.308+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_8",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 0,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 310,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -178,
+    "llm_first_token_ms": 0,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:50:30.311+08:00",
+    "msg": "tools: the task finished within the ack's grace; not saying the ack",
+    "task": "t2"
+  },
+  {
+    "time": "2026-11-02T23:50:30.311+08:00",
+    "msg": "tools: task done",
+    "task": "t2",
+    "took_ms": 2
+  },
+  {
+    "time": "2026-11-02T23:50:30.311+08:00",
+    "msg": "tools: task result",
+    "task": "t2"
+  },
+  {
+    "time": "2026-11-02T23:50:30.311+08:00",
+    "msg": "tools: delivering a task's result",
+    "turn": "item_9",
+    "task": "t2",
+    "origin_turn": "item_8",
+    "waited_for_gap_ms": 0,
+    "interrupting": "false",
+    "memory_changed": "false",
+    "origin_to_result_start_ms": 536,
+    "origin_speech_end_ms": 35000,
+    "origin_end_silence_ms": 380
+  },
+  {
+    "time": "2026-11-02T23:50:44.987+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_9",
+    "first_audio_out_ms": 195,
+    "first_content_ms": 195,
+    "quote_result": "true",
+    "readout_expected": "true",
+    "first_readout_present": "true",
+    "first_readout_ms": 195,
+    "opener_ms": 0,
+    "end_silence_ms": 0,
+    "asr_final_ms": 0,
+    "turn_start_ms": 0,
+    "llm_first_token_ms": 586,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 195
+  },
+  {
+    "time": "2026-11-02T23:50:51.953+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_10",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 663,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 540,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -203,
+    "llm_first_token_ms": 413,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:07.308+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_11",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 457,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 530,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -225,
+    "llm_first_token_ms": 196,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:15.071+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_12",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 230,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 530,
+    "end_silence_ms": 620,
+    "asr_final_ms": 0,
+    "turn_start_ms": -613,
+    "llm_first_token_ms": -98,
+    "first_segment_ms": -5,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:27.868+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_13",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 500,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 310,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -180,
+    "llm_first_token_ms": 280,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:46.169+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_14",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 749,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 540,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -176,
+    "llm_first_token_ms": 478,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:47.880+08:00",
+    "msg": "tools: task submitted",
+    "turn": "item_15",
+    "task": "t3"
+  },
+  {
+    "time": "2026-11-02T23:51:47.880+08:00",
+    "msg": "tools: the model's words in the calling turn end at the clause in flight; the script follows",
+    "turn": "item_15",
+    "task": "t3"
+  },
+  {
+    "time": "2026-11-02T23:51:47.884+08:00",
+    "msg": "tools: task done",
+    "task": "t3",
+    "took_ms": 4
+  },
+  {
+    "time": "2026-11-02T23:51:47.884+08:00",
+    "msg": "tools: task result",
+    "task": "t3"
+  },
+  {
+    "time": "2026-11-02T23:51:48.090+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_15",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 423,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 430,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -148,
+    "llm_first_token_ms": 204,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:48.391+08:00",
+    "msg": "tools: ready result no longer waits for its completed calling turn's ack",
+    "turn": "item_15",
+    "task": "t3"
+  },
+  {
+    "time": "2026-11-02T23:51:48.391+08:00",
+    "msg": "tools: ready result yields to a newer caller answer",
+    "turn": "item_16",
+    "task": "t3",
+    "grace_ms": 1500
+  },
+  {
+    "time": "2026-11-02T23:51:48.644+08:00",
+    "msg": "tools: task submitted",
+    "turn": "item_16",
+    "task": "t4"
+  },
+  {
+    "time": "2026-11-02T23:51:48.644+08:00",
+    "msg": "tools: the model's words in the calling turn end at the clause in flight; the script follows",
+    "turn": "item_16",
+    "task": "t4"
+  },
+  {
+    "time": "2026-11-02T23:51:48.644+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_16",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 0,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 240,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -244,
+    "llm_first_token_ms": 0,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:51:48.644+08:00",
+    "msg": "tools: the working memory's plan is the one priced"
+  },
+  {
+    "time": "2026-11-02T23:51:48.644+08:00",
+    "msg": "tools: delivering a task's result",
+    "turn": "item_17",
+    "task": "t3",
+    "origin_turn": "item_15",
+    "waited_for_gap_ms": 759,
+    "interrupting": "false",
+    "memory_changed": "false",
+    "origin_to_result_start_ms": 1227,
+    "origin_speech_end_ms": 112660,
+    "origin_end_silence_ms": 380
+  },
+  {
+    "time": "2026-11-02T23:51:48.646+08:00",
+    "msg": "tools: task done",
+    "task": "t4",
+    "took_ms": 1
+  },
+  {
+    "time": "2026-11-02T23:51:48.646+08:00",
+    "msg": "tools: task result",
+    "task": "t4"
+  },
+  {
+    "time": "2026-11-02T23:51:48.646+08:00",
+    "msg": "tools: ready result no longer waits for its completed calling turn's ack",
+    "turn": "item_16",
+    "task": "t4"
+  },
+  {
+    "time": "2026-11-02T23:51:50.191+08:00",
+    "msg": "tools: delivering a task's result",
+    "turn": "item_18",
+    "task": "t4",
+    "origin_turn": "item_16",
+    "waited_for_gap_ms": 1545,
+    "interrupting": "true",
+    "memory_changed": "true",
+    "origin_to_result_start_ms": 1856,
+    "origin_speech_end_ms": 113580,
+    "origin_end_silence_ms": 380
+  },
+  {
+    "time": "2026-11-02T23:51:50.191+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_17",
+    "first_audio_out_ms": 1,
+    "first_content_ms": 1,
+    "quote_result": "true",
+    "readout_expected": "true",
+    "first_readout_present": "true",
+    "first_readout_ms": 966,
+    "opener_ms": 0,
+    "end_silence_ms": 0,
+    "asr_final_ms": 0,
+    "turn_start_ms": 0,
+    "llm_first_token_ms": 643,
+    "first_segment_ms": 1,
+    "tts_first_audio_ms": 1
+  },
+  {
+    "time": "2026-11-02T23:51:50.812+08:00",
+    "msg": "tools: task submitted",
+    "turn": "item_18",
+    "task": "t5"
+  },
+  {
+    "time": "2026-11-02T23:51:50.812+08:00",
+    "msg": "tools: the model's words in the calling turn end at the clause in flight; the script follows",
+    "turn": "item_18",
+    "task": "t5"
+  },
+  {
+    "time": "2026-11-02T23:51:50.817+08:00",
+    "msg": "tools: task done",
+    "task": "t5",
+    "took_ms": 4
+  },
+  {
+    "time": "2026-11-02T23:51:50.817+08:00",
+    "msg": "tools: task result",
+    "task": "t5"
+  },
+  {
+    "time": "2026-11-02T23:51:53.140+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_18",
+    "first_audio_out_ms": 583,
+    "first_content_ms": 583,
+    "quote_result": "true",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 0,
+    "end_silence_ms": 0,
+    "asr_final_ms": 0,
+    "turn_start_ms": 0,
+    "llm_first_token_ms": 357,
+    "first_segment_ms": 403,
+    "tts_first_audio_ms": 583
+  },
+  {
+    "time": "2026-11-02T23:51:53.140+08:00",
+    "msg": "tools: ready result no longer waits for its completed calling turn's ack",
+    "turn": "item_18",
+    "task": "t5"
+  },
+  {
+    "time": "2026-11-02T23:51:53.140+08:00",
+    "msg": "tools: delivering a task's result",
+    "turn": "item_19",
+    "task": "t5",
+    "waited_for_gap_ms": 2322,
+    "interrupting": "false",
+    "memory_changed": "false"
+  },
+  {
+    "time": "2026-11-02T23:51:57.799+08:00",
+    "msg": "tools: the readout was cut short; the figures stay beside the memory",
+    "task": "t5"
+  },
+  {
+    "time": "2026-11-02T23:51:57.799+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_19",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 0,
+    "quote_result": "true",
+    "readout_expected": "true",
+    "first_readout_present": "true",
+    "first_readout_ms": 965,
+    "opener_ms": 0,
+    "end_silence_ms": 0,
+    "asr_final_ms": 0,
+    "turn_start_ms": 0,
+    "llm_first_token_ms": 451,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:52:05.908+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_20",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 556,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 390,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -160,
+    "llm_first_token_ms": 274,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:52:15.002+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_22",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 883,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 430,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -123,
+    "llm_first_token_ms": 607,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:52:18.658+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_23",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 557,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 260,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -154,
+    "llm_first_token_ms": 300,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:52:21.497+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_24",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 726,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 310,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -154,
+    "llm_first_token_ms": 466,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:52:28.803+08:00",
+    "msg": "turn: response latency",
+    "turn": "item_25",
+    "first_audio_out_ms": 0,
+    "first_content_ms": 502,
+    "quote_result": "false",
+    "readout_expected": "false",
+    "first_readout_present": "false",
+    "first_readout_ms": 0,
+    "opener_ms": 540,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -191,
+    "llm_first_token_ms": 300,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0
+  },
+  {
+    "time": "2026-11-02T23:52:28.803+08:00",
+    "msg": "hangup: the assistant said goodbye; ending the call"
+  },
+  {
+    "time": "2026-11-02T23:52:30.104+08:00",
+    "msg": "tools: end_call: hanging up"
+  },
+  {
+    "time": "2026-11-02T23:52:30.105+08:00",
+    "msg": "tools: this call"
+  }
+]

@@ -33,12 +33,13 @@ type Server struct {
 
 	upgrader websocket.Upgrader
 
-	mu       sync.Mutex
-	sessions map[string]*Session
-	ipCounts map[string]int
-	held     int // reservations, including sessions not yet in the map
-	draining atomic.Bool
-	authGate *failGate
+	mu              sync.Mutex
+	sessions        map[string]*Session
+	quoteAudioCalls map[string]struct{}
+	ipCounts        map[string]int
+	held            int // reservations, including sessions not yet in the map
+	draining        atomic.Bool
+	authGate        *failGate
 
 	// store keeps sessions started with store:true. Nil when store_dir is
 	// unset, in which case nothing is kept and nothing can be forked.
@@ -421,15 +422,16 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request, seed *stor
 	id := "sess_" + randomID()
 	s.sweepStore()
 	session := NewSession(SessionOptions{
-		Conn:      conn,
-		Cfg:       s.cfg,
-		Log:       s.log,
-		ID:        id,
-		Factory:   s.Factory,
-		Store:     s.store,
-		Seed:      seed,
-		Realtime:  rt,
-		Telemetry: s.tel,
+		Conn:            conn,
+		Cfg:             s.cfg,
+		Log:             s.log,
+		ID:              id,
+		Factory:         s.Factory,
+		Store:           s.store,
+		Seed:            seed,
+		Realtime:        rt,
+		Telemetry:       s.tel,
+		QuoteAudioClaim: s.claimQuoteAudio,
 	})
 	if rt != nil {
 		// A Realtime server speaks first.

@@ -26,7 +26,7 @@
 #                                     sim [run id]` dials the simulated customer
 #                                     (scripts/sim-brain.sh) with the same prompt.
 #   scripts/phone-brain.sh record on|off   keep each call's audio — caller and assistant,
-#                                     two tracks — under CALLS_DIR for a day, or stop.
+#                                     two tracks — under CALLS_DIR for CALLS_TTL_HOURS, or stop.
 #                                     Takes effect at the next `restart`. Off unless
 #                                     turned on; `record` alone says which.
 #   scripts/phone-brain.sh echo       time the phone leg from the last recorded call:
@@ -101,7 +101,7 @@ lan_ip() {
   [ -n "$dev" ] && ip -o -4 addr show dev "$dev" 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}'
 }
 JOURNAL_PORT="${JOURNAL_PORT:-8790}"
-JOURNAL_TARGET_MS="${JOURNAL_TARGET_MS:-1000}"   # the latency goal the journal counts against (1000 since 10-25: the owner's /goal)
+JOURNAL_TARGET_MS="${JOURNAL_TARGET_MS:-1200}"   # current target, reaffirmed 2026-10-29; earlier 1000 ms trials remain in the journal
 if [ -z "${JOURNAL_ADDR:-}" ]; then _ip="$(lan_ip)"; JOURNAL_ADDR="${_ip:-127.0.0.1}:$JOURNAL_PORT"; fi
 JOURNAL_DATA="${JOURNAL_DATA:-$HOME/golive-journal}"
 # Where finished calls are kept for good: recording, conversation, measurements
@@ -264,8 +264,10 @@ jstart() {
   jstop
   mkdir -p "$JOURNAL_DATA" "$ARCHIVE_DIR" && chmod 700 "$JOURNAL_DATA" "$ARCHIVE_DIR"
   local store=""; [ -d "$CALLS_DIR" ] && store="$CALLS_DIR"
+  local playground="${TALKER_PLAYGROUND_URL-http://${DESK_ADDR##*,}/#/talker}"
   setsid nohup "$JBIN" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
     -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" \
+    -talker "$TALKER_URL" -talker-playground "$playground" \
     -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" -target "$JOURNAL_TARGET_MS" >> "$JLOG" 2>&1 < /dev/null &
   echo $! > "$JPID"
   sleep 1
@@ -880,7 +882,7 @@ PY
 
 record)
   case "${2:-}" in
-    on)  : > "$STATE.record"; say "calls will be recorded to $CALLS_DIR from the next restart, and kept a day" ;;
+    on)  : > "$STATE.record"; say "calls will be recorded to $CALLS_DIR from the next restart, and kept $CALLS_TTL_HOURS hours in the working store; the archive keeps finished calls" ;;
     off) rm -f "$STATE.record"; say "calls will not be recorded from the next restart; what is in $CALLS_DIR stays until it expires or is removed" ;;
     "")  ;;
     *)   say "record on | record off"; exit 2 ;;

@@ -514,8 +514,8 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	// Six configs are seeded, listed by name: hangup-rules, openers, quote-api, quote-plans, quote-rules, quote-speech.
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
+	// Seven configs are seeded in name order, including silence-reaction.
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
@@ -606,11 +606,12 @@ func TestAQuoteFromTheAssistantsWorkingMemory(t *testing.T) {
 // describes it: the inquiry answers "ok" at once; the query returns the
 // quote that was there before until, a few polls later, the new one.
 type fakeIntranet struct {
-	mu        sync.Mutex
-	inquiries []map[string]any
-	queries   int
-	readyAt   int // the query number at which the new quote appears
-	fail      bool
+	mu           sync.Mutex
+	inquiries    []map[string]any
+	queries      int
+	readyAt      int           // the query number at which the new quote appears
+	inquiryDelay time.Duration // simulated upstream work, independent of polling
+	fail         bool
 }
 
 func (f *fakeIntranet) handler() http.Handler {
@@ -621,6 +622,7 @@ func (f *fakeIntranet) handler() http.Handler {
 		f.mu.Lock()
 		f.inquiries = append(f.inquiries, body)
 		f.mu.Unlock()
+		time.Sleep(f.inquiryDelay)
 		w.Write([]byte(`{"code":0,"msg":"ok","data":"ok"}`))
 	})
 	mux.HandleFunc("POST /intranet/vehicle/simpleProcess/queryLastQuoteDetailByPhone", func(w http.ResponseWriter, r *http.Request) {
@@ -759,7 +761,7 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	// As golive's tool call: the plan in memory, no vehicle price, no seats.
@@ -1020,11 +1022,11 @@ func TestInquiriesAreOneAtATimeAndCallersGoFirst(t *testing.T) {
 // on 10-26: the background work must not stop).
 func TestACallersMissGoesNextAndTheNeighboursStillFinish(t *testing.T) {
 	fx := newFixture(t)
-	fake := &fakeIntranet{}
+	fake := &fakeIntranet{inquiryDelay: 120 * time.Millisecond}
 	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
 	api := strings.Replace(DefaultQuoteAPI, `"base_url": ""`, `"base_url": "`+srv.URL+`/intranet"`, 1)
-	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 120`, 1) // each inquiry ~120 ms
+	api = strings.Replace(api, `"poll_every_ms": 1500`, `"poll_every_ms": 120`, 1) // polling policy is independent of simulated upstream work
 	api = strings.Replace(api, `"timeout_ms": 90000`, `"timeout_ms": 5000, "default_phone": "13800000000"`, 1)
 	if code, body := fx.do("PUT", "/api/configs/"+QuoteAPIName+"?note=test", api, nil); code != 200 {
 		t.Fatalf("config: %d %s", code, body)

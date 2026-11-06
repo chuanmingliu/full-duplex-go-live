@@ -1,0 +1,29 @@
+{
+  "baseline_commit": "e89438b",
+  "runtime_source_sha256": {
+    "cmd/golivebench/main.go": "8526994f6fc80f7a7c31e155cf55d5297e9b87384aaccec80a635c54cac63336",
+    "internal/config/config.go": "77b77e2c2f19f7799c24b2e1e4e173cdf5c03ee24e25f1f0eaf24d50fe10f735",
+    "internal/duplex/engine.go": "3340eb7f64e50c9c75452ca75b39268055afa558beaa3cf770e54541bbcf21a9",
+    "internal/duplex/listen.go": "6d6744b3a69e54ecc88ce70ee32a7a9f8377a9ca923f6d1367dc9260cf528ccd",
+    "internal/duplex/think.go": "51a53e8751be886baf7e2fa62081c2239beeef497c7226e30817b93381de7e80",
+    "internal/duplex/turn.go": "b2d6802fddb2627a531d630e0d6f74b0543f9a5c98ba595c7a32a13b9d93844d",
+    "internal/server/quote_audio.go": "0abfdef2850c12b7dd4057dacb7f571fe8627fd637152cc87548c46e71ff3438",
+    "internal/server/session.go": "4a3bffa29a00c769e4dd5ce76c765ea4fe0178e055d11e5fd0295bcca66f7b64",
+    "internal/duplex/talker_opener.go": "0f31b20b803f20ffd8feb1dae61ecc967627ab8c977c5d426d9671c9b97053a6"
+  },
+  "checks": {
+    "focused_race": "passed on final sources: config, duplex, server admission and benchmark protocol tests",
+    "full_race": "passed before final refinements; final changes covered by focused race tests",
+    "full_normal": "passed before final server admission edge-case and benchmark call-ID changes",
+    "vet": "passed on final sources",
+    "latency_parser_regressions": 62,
+    "simulation_report_regressions": 10,
+    "handset_evidence_regressions": "passed",
+    "format_and_diff": "passed"
+  },
+  "private_outputs_committed": false,
+  "notes": [
+    "An initial normal run used the default 10-minute Go timeout and expired during the paced duplex suite; the complete run passed with the repository CI timeout of 25 minutes.",
+    "Controlled simulations are engine output measurements; the isolated provider comparison excludes Active Call SIP/PSTN transport and acoustic handset playback."
+  ]
+}

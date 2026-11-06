@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -345,6 +346,9 @@ type DuplexConfig struct {
 	// candidate starts with settles it. Talking over someone is worse than
 	// stopping for nothing, so the timeout fails toward yielding.
 	UserBackchannelHoldMS int `json:"user_backchannel_hold_ms"`
+	// Optional local audio classifier. Empty mode leaves the legacy policy alone.
+	BackchannelDetectorURL  string `json:"backchannel_detector_url,omitempty"`
+	BackchannelDetectorMode string `json:"backchannel_detector_mode,omitempty"`
 
 	// Opener, when on, has the engine open every answer with one of
 	// OpenerPhrases from the phrase cache the moment the caller's turn is
@@ -358,6 +362,9 @@ type DuplexConfig struct {
 	// changes — every answer begins with an acknowledgement — so it is off
 	// unless the owner says otherwise.
 	Opener bool `json:"opener"`
+	// Empty keeps the original preset-only path. Optional work never delays playback.
+	TalkerOpenerURL       string `json:"talker_opener_url,omitempty"`
+	TalkerOpenerTimeoutMS int    `json:"talker_opener_timeout_ms,omitempty"`
 	// OpenerPhrases are the openers for a turn that reads as a statement
 	// (an answer, an objection, a yes); OpenerQuestionPhrases for one that
 	// reads as a question. One is chosen when the answer is begun, never
@@ -518,6 +525,10 @@ type DuplexConfig struct {
 	// two calls one answer in eight opened with words already said on them.
 	// Needs phrase_cache. 0 keeps only the fixed phrases.
 	PhraseCacheLearnChars int `json:"phrase_cache_learn_chars"`
+	// QuoteReadoutWarmMax bounds optional first-segment synthesis attempts per
+	// telephone call. Zero disables it. Prepared quote audio is private to the
+	// call; unchanged validated results still govern what may be spoken.
+	QuoteReadoutWarmMax int `json:"quote_readout_warm_max"`
 	// BackendPrefixWarm sends the backend a one-token request carrying the
 	// conversation so far when the caller starts speaking, so a provider with a
 	// prefix cache has it loaded by the time the real request follows. It
@@ -967,6 +978,8 @@ func (c *Config) applyEnv() {
 	setFloat(&c.Temperature, "GOLIVE_TEMPERATURE")
 	setFloat(&c.Speed, "GOLIVE_SPEED")
 	setBool(&c.Duplex.Backchannel, "GOLIVE_BACKCHANNEL")
+	setString(&c.Duplex.BackchannelDetectorURL, "GOLIVE_BACKCHANNEL_DETECTOR_URL")
+	setString(&c.Duplex.BackchannelDetectorMode, "GOLIVE_BACKCHANNEL_DETECTOR_MODE")
 	setBool(&c.Duplex.Speculative, "GOLIVE_SPECULATIVE")
 	setBool(&c.Duplex.AllowBargeIn, "GOLIVE_ALLOW_BARGE_IN")
 	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
@@ -979,6 +992,34 @@ func (c *Config) applyEnv() {
 
 // Validate rejects combinations that would fail confusingly later.
 func (c *Config) Validate() error {
+	switch c.Duplex.BackchannelDetectorMode {
+	case "", "shadow", "asr_assist":
+	default:
+		return fmt.Errorf("config: invalid backchannel_detector_mode")
+	}
+	if c.Duplex.BackchannelDetectorMode != "" && c.Duplex.BackchannelDetectorURL == "" {
+		return fmt.Errorf("config: backchannel detector URL required")
+	}
+	if raw := c.Duplex.BackchannelDetectorURL; raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.Path != "/v1/stream" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("config: backchannel detector must be a loopback ws endpoint")
+		}
+	}
+
+	if c.Duplex.TalkerOpenerTimeoutMS < 0 || c.Duplex.TalkerOpenerTimeoutMS > 1500 {
+		return fmt.Errorf("config: talker_opener_timeout_ms must be within 0..1500")
+	}
+	if raw := c.Duplex.TalkerOpenerURL; raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("config: invalid talker_opener_url")
+		}
+	}
+
+	if c.Duplex.QuoteReadoutWarmMax < 0 || c.Duplex.QuoteReadoutWarmMax > 8 {
+		return fmt.Errorf("config: quote_readout_warm_max must be within 0..8")
+	}
 	switch c.LogFormat {
 	case "", "text", "json":
 		if c.LogFormat == "" {

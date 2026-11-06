@@ -1,0 +1,390 @@
+{
+  "version": 1,
+  "language": "zh",
+  "threshold": 0.7,
+  "persistence_frames": 3,
+  "onset_rms": 300,
+  "variants": [
+    "pcm16",
+    "g711_alaw",
+    "noise_snr10",
+    "g711_echo_minus18db"
+  ],
+  "noise_seed": 20261102,
+  "sequence_gaps_ms": [
+    0,
+    160,
+    400,
+    800
+  ],
+  "pace": "matrix unpaced; first 12 cases repeated paced as sentinel",
+  "archive_selection": "up to 8 most recent completed audio archives with build f1fd9a6, selected by archive directory before inspecting predictions; skip none on model outcome",
+  "live_actions": false,
+  "threshold_tuning": false,
+  "cases": [
+    {
+      "id": "ack_mm",
+      "text": "嗯嗯。",
+      "expected": "backchannel",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "ack_right",
+      "text": "对对。",
+      "expected": "backchannel",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "ack_ok",
+      "text": "好的。",
+      "expected": "backchannel",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "ack_understood",
+      "text": "明白了。",
+      "expected": "backchannel",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "ack_continue",
+      "text": "你继续说。",
+      "expected": "backchannel",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_wait",
+      "text": "等一下，我想问个问题。",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_correction",
+      "text": "不对，我说的是三百万。",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_stop",
+      "text": "先停一下，不用继续介绍了。",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_mm_then_question",
+      "text": "嗯，但是车损险包含什么？",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_ok_then_change",
+      "text": "好的，不过我想改一下保额。",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_question",
+      "text": "理赔需要哪些手续？",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "floor_repeat",
+      "text": "我没听清，请再说一遍。",
+      "expected": "floor",
+      "group": "regression",
+      "split": "regression"
+    },
+    {
+      "id": "ack_yes",
+      "text": "是的。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_oh",
+      "text": "哦哦。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_keep_going",
+      "text": "你接着说。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_i_see",
+      "text": "原来如此。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_exactly",
+      "text": "没错。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_fine",
+      "text": "没问题。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_true",
+      "text": "确实。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_combined",
+      "text": "嗯，对。",
+      "expected": "backchannel",
+      "group": "listed_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_listening",
+      "text": "我在听，你说。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_got_it",
+      "text": "了解了。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_clear",
+      "text": "清楚了。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_understand",
+      "text": "我明白你的意思。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_go_on",
+      "text": "请继续介绍。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_heard",
+      "text": "听到了。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_okay",
+      "text": "可以的。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "ack_understood_now",
+      "text": "这样我就懂了。",
+      "expected": "backchannel",
+      "group": "unlisted_ack",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_not_that",
+      "text": "不是这个。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_no",
+      "text": "不行。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_wrong",
+      "text": "错了。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_wait_short",
+      "text": "等会儿。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_stop_short",
+      "text": "别说了。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_repeat_short",
+      "text": "再说一遍。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_amount",
+      "text": "是两百万。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_different",
+      "text": "换一个方案。",
+      "expected": "floor",
+      "group": "short_correction",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_yes_but",
+      "text": "是的，但是我还有一个问题。",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_right_change",
+      "text": "对，不过保障期限要改一下。",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_oh_repeat",
+      "text": "哦，我没听清刚才的金额。",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_understood_question",
+      "text": "明白了，那免赔额是多少？",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_ok_stop",
+      "text": "好，先别算，我要确认一下。",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_mm_correction",
+      "text": "嗯，不是我刚才说的那种。",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_fine_question",
+      "text": "没问题，那什么时候生效？",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "floor_clear_change",
+      "text": "清楚了，但是我只要交强险。",
+      "expected": "floor",
+      "group": "ack_transition",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_mm_flat",
+      "text": "嗯嗯。",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_mm_question",
+      "text": "嗯嗯？",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_right_flat",
+      "text": "对对。",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_right_question",
+      "text": "对对？",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_yes_flat",
+      "text": "是的。",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_yes_question",
+      "text": "是的？",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_oh_flat",
+      "text": "哦哦。",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    },
+    {
+      "id": "prosody_oh_question",
+      "text": "哦哦？",
+      "expected": "ambiguous",
+      "group": "prosody_probe",
+      "split": "new_cases"
+    }
+  ]
+}

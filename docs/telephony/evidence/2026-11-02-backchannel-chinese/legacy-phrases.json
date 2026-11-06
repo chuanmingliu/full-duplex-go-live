@@ -1,0 +1,65 @@
+{
+  "scope": "scripted final text only; excludes ASR, identity gates and latency",
+  "rows": [
+    {
+      "id": "ack_mm",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_right",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_ok",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_understood",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_continue",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_wait",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_correction",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_stop",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_mm_then_question",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_ok_then_change",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_question",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_repeat",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    }
+  ]
+}

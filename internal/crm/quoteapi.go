@@ -324,7 +324,13 @@ func valueOr(vars map[string]any, key, fallback string) any {
 
 // Quote runs the whole thing: what was there before, the inquiry, the poll.
 func (a *QuoteAPI) Quote(ctx context.Context, client *http.Client, req QuoteRequest) (*APIQuote, json.RawMessage, error) {
+	return a.quoteTimed(ctx, client, req, &quoteAPITiming{})
+}
+
+func (a *QuoteAPI) quoteTimed(ctx context.Context, client *http.Client, req QuoteRequest, timing *quoteAPITiming) (*APIQuote, json.RawMessage, error) {
 	began := time.Now()
+	defer func() { timing.Total = time.Since(began) }()
+	timing.Phase = "validate"
 	in, skipped, err := a.inquiry(req)
 	if err != nil {
 		return nil, nil, err
@@ -335,47 +341,77 @@ func (a *QuoteAPI) Quote(ctx context.Context, client *http.Client, req QuoteRequ
 	ctx, cancel := context.WithTimeout(ctx, a.timeout())
 	defer cancel()
 	// The quote that is there now, so a stale one is not mistaken for ours.
-	before, _ := a.query(ctx, client, in)
+	timing.Phase = "before"
+	phaseStart := time.Now()
+	before, beforeErr := a.query(ctx, client, in)
+	timing.Before = time.Since(phaseStart)
+	timing.BeforeFailed = beforeErr != nil
 	var beforeID int64 = -1
 	beforeFlow := ""
 	if before != nil && len(before.QuotePriceInfos) > 0 {
 		beforeID, beforeFlow = before.QuotePriceInfos[0].QuotePriceID, before.QuotePriceInfos[0].InsureFlowCode
 	}
-	if err := a.submit(ctx, client, in); err != nil {
+	timing.Phase = "submit"
+	phaseStart = time.Now()
+	err = a.submit(ctx, client, in)
+	timing.Submit = time.Since(phaseStart)
+	if err != nil {
 		return nil, nil, err
 	}
+	// Check once immediately after submission: a synchronous/fast inquiry
+	// may already be complete. Subsequent query starts remain at least one
+	// configured interval apart; HTTP time counts toward that interval.
+	// Keep requests serialized and retain the old-quote identity checks.
+	nextQuery := time.Now()
 	for {
+		timing.Phase = "poll_wait"
+		phaseStart = time.Now()
+		timer := time.NewTimer(max(time.Until(nextQuery), 0))
 		select {
-		case <-time.After(a.pollEvery()):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
+			timing.PollWait += time.Since(phaseStart)
 			return nil, nil, fmt.Errorf("the quotation service did not answer within %s", a.timeout())
 		}
+		timing.PollWait += time.Since(phaseStart)
+		nextQuery = time.Now().Add(a.pollEvery())
+		timing.Phase = "poll_http"
+		phaseStart = time.Now()
 		d, err := a.query(ctx, client, in)
+		timing.PollHTTP += time.Since(phaseStart)
+		timing.Polls++
 		if err != nil {
+			timing.PollErrors++
 			if ctx.Err() != nil {
 				return nil, nil, fmt.Errorf("the quotation service did not answer within %s", a.timeout())
 			}
 			continue
 		}
 		if len(d.QuotePriceInfos) == 0 {
+			timing.Unpriced++
 			continue
 		}
 		info := d.QuotePriceInfos[0]
 		if info.QuotePriceID == beforeID && info.InsureFlowCode == beforeFlow && beforeID != -1 {
+			timing.Stale++
 			continue // still the old one
 		}
 		if info.Result == "" && info.SumPremium == "" {
+			timing.Unpriced++
 			continue // a record, nothing priced yet
 		}
 		q := a.normalize(d, info, skipped)
 		q.MemoryVersion, q.ComputedAt, q.ComputeMS = req.MemoryVersion, began, time.Since(began).Milliseconds()
 		if info.Result != "0" {
+			timing.Phase = "quote_failed"
 			msg := info.ResultMessage
 			if msg == "" {
 				msg = d.ResultMessage
 			}
 			return q, d.raw, fmt.Errorf("the quotation failed: %s", msg)
 		}
+		timing.Phase = "complete"
 		return q, d.raw, nil
 	}
 }

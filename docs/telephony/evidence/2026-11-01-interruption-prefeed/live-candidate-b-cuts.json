@@ -1,0 +1,85 @@
+{
+  "call": "out-mvxpoc4i-ta7z",
+  "scope": "Server VAD utterance-open to cut decision while playback was active; excludes pre-detection voice time, transport and audible playout stop. One cut per latest open; unpaired events retained separately.",
+  "barge_in_opens": 3,
+  "paired_playback_cuts": 3,
+  "unpaired_playback_cuts": 0,
+  "p50_ms": 100.0,
+  "p95_ms": 178.0,
+  "max_ms": 178.0,
+  "rows": [
+    {
+      "detection_to_cut_ms": 100.0,
+      "vad_active_ms": "320"
+    },
+    {
+      "detection_to_cut_ms": 178.0,
+      "vad_active_ms": "320"
+    },
+    {
+      "detection_to_cut_ms": 24.0,
+      "vad_active_ms": "320"
+    }
+  ],
+  "focus_decisions": [
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.97",
+      "waited_ms": "100"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "1",
+      "waited_ms": "177"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.89",
+      "waited_ms": "24"
+    }
+  ],
+  "recognizer_openings": [
+    {
+      "predialled": "true",
+      "connected": "true",
+      "prefed_ms": "0",
+      "connect_ms": "156"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    },
+    {
+      "predialled": "true",
+      "connected": "true",
+      "prefed_ms": "0",
+      "connect_ms": "163"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    },
+    {
+      "predialled": "true",
+      "connected": "true",
+      "prefed_ms": "620",
+      "connect_ms": "171"
+    },
+    {
+      "predialled": "false",
+      "connected": "false",
+      "prefed_ms": "0",
+      "connect_ms": "0"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+[
+  {
+    "task": "t1",
+    "origin_turn": "item_2",
+    "result_turn": "item_3",
+    "tool_execution_ms": 0,
+    "ready_to_delivery_wait_ms": 0,
+    "last_sound_to_result_content_ms": 990,
+    "last_sound_to_readout_ms": 990,
+    "readout_status": "observed",
+    "interrupted": true
+  },
+  {
+    "task": "t2",
+    "origin_turn": "item_5",
+    "result_turn": "item_6",
+    "tool_execution_ms": 1,
+    "ready_to_delivery_wait_ms": 0,
+    "last_sound_to_result_content_ms": 869,
+    "last_sound_to_readout_ms": 869,
+    "readout_status": "observed",
+    "interrupted": true
+  },
+  {
+    "task": "t3",
+    "origin_turn": "item_8",
+    "result_turn": "item_12",
+    "tool_execution_ms": 1,
+    "ready_to_delivery_wait_ms": 4418,
+    "last_sound_to_result_content_ms": 5347,
+    "last_sound_to_readout_ms": 6148,
+    "readout_status": "observed",
+    "interrupted": true
+  },
+  {
+    "task": "t4",
+    "origin_turn": "item_11",
+    "result_turn": "item_13",
+    "tool_execution_ms": 1,
+    "ready_to_delivery_wait_ms": 1587,
+    "last_sound_to_result_content_ms": 3722,
+    "last_sound_to_readout_ms": null,
+    "readout_status": "unverified",
+    "interrupted": false
+  },
+  {
+    "task": "t5",
+    "origin_turn": "item_25",
+    "result_turn": "item_27",
+    "tool_execution_ms": 3523,
+    "ready_to_delivery_wait_ms": 0,
+    "last_sound_to_result_content_ms": 4424,
+    "last_sound_to_readout_ms": 4424,
+    "readout_status": "observed",
+    "interrupted": true
+  }
+]

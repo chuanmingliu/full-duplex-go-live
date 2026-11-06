@@ -1,0 +1,42 @@
+{
+  "protocol_sha256": "3ad7bac88e0eac4e9d2e13f2272a69a48ab0db64e8c4d0cf1b95c3321dd7eb10",
+  "stage": "completed",
+  "production_build": "f1fd9a6",
+  "production_config_sha256": "072ab8dbda962eff682fa56fcd049f70cd3717530e64a06bec97e66618878e7d",
+  "mode": "chinese_synthetic_and_recorded_telephony_replay",
+  "real_dials": 0,
+  "live_control_actions": 0,
+  "fixtures": 52,
+  "selected_archives": [
+    "out-mvykfqfn-wibn",
+    "out-mvykct0y-gklg",
+    "out-mvxuom0e-mp6l",
+    "out-mvxr0ein-wwqh",
+    "out-mvxpoc4i-ta7z",
+    "out-mvxpmcug-bpqi"
+  ],
+  "production_preserved": true,
+  "aria_preserved": true,
+  "engine_after": {
+    "model": "golive-1",
+    "sessions": 0,
+    "status": "ok",
+    "version": "f1fd9a6"
+  },
+  "detector_after": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 47270,
+    "errors": 0
+  },
+  "isolated_engine_stopped": true
+}

@@ -1,0 +1,171 @@
+{
+  "scope": "last_sound_to_golive_output",
+  "target_ms": 1200,
+  "percentile": "nearest_rank",
+  "counts": {
+    "records": 39,
+    "answered": 35,
+    "non_speech": 4,
+    "cancelled": 0,
+    "interrupted_answers": 14,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 3,
+    "tool_results_joined": 3,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 3
+  },
+  "first_audio": {
+    "n": 35,
+    "p50_ms": 380,
+    "p90_ms": 380,
+    "p95_ms": 381,
+    "max_ms": 393,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 35,
+    "p50_ms": 968,
+    "p90_ms": 1076,
+    "p95_ms": 1081,
+    "max_ms": 1084,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 32,
+    "p50_ms": 963.5,
+    "p90_ms": 1066,
+    "p95_ms": 1078,
+    "max_ms": 1081,
+    "at_or_above_target": 0
+  },
+  "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+  "reply": {
+    "n": 35,
+    "p50_ms": 0,
+    "p90_ms": 0,
+    "p95_ms": 0,
+    "max_ms": 1,
+    "at_or_above_target": 0
+  },
+  "tool_result": {
+    "n": 3,
+    "p50_ms": 1017,
+    "p90_ms": 1084,
+    "p95_ms": 1084,
+    "max_ms": 1084,
+    "at_or_above_target": 0
+  },
+  "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+  "tool_result_rows": [
+    {
+      "session": "sess_a52c7ffea23fb1cce1b7d80e",
+      "task": "t1",
+      "origin_turn": "item_2",
+      "result_turn": "item_3",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 522,
+      "child_first_content_ms": 1,
+      "total_ms": 903,
+      "quotation": true,
+      "interrupted": true,
+      "origin_evidence": "caller_input_v1"
+    },
+    {
+      "session": "sess_a52c7ffea23fb1cce1b7d80e",
+      "task": "t2",
+      "origin_turn": "item_8",
+      "result_turn": "item_9",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 532,
+      "child_first_content_ms": 172,
+      "total_ms": 1084,
+      "quotation": true,
+      "interrupted": false,
+      "origin_evidence": "caller_input_v1"
+    },
+    {
+      "session": "sess_a52c7ffea23fb1cce1b7d80e",
+      "task": "t3",
+      "origin_turn": "item_21",
+      "result_turn": "item_22",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 633,
+      "child_first_content_ms": 4,
+      "total_ms": 1017,
+      "quotation": true,
+      "interrupted": true,
+      "origin_evidence": "caller_input_v1"
+    }
+  ],
+  "non_quote_tool_result": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 3,
+    "p50_ms": 1017,
+    "p90_ms": 1084,
+    "p95_ms": 1084,
+    "max_ms": 1084,
+    "at_or_above_target": 0
+  },
+  "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+  "quote_readout_rows": [
+    {
+      "session": "sess_a52c7ffea23fb1cce1b7d80e",
+      "task": "t1",
+      "origin_turn": "item_2",
+      "result_turn": "item_3",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 522,
+      "origin_evidence": "caller_input_v1",
+      "status": "observed",
+      "child_first_readout_ms": 1,
+      "total_ms": 903
+    },
+    {
+      "session": "sess_a52c7ffea23fb1cce1b7d80e",
+      "task": "t2",
+      "origin_turn": "item_8",
+      "result_turn": "item_9",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 532,
+      "origin_evidence": "caller_input_v1",
+      "status": "observed",
+      "child_first_readout_ms": 172,
+      "total_ms": 1084
+    },
+    {
+      "session": "sess_a52c7ffea23fb1cce1b7d80e",
+      "task": "t3",
+      "origin_turn": "item_21",
+      "result_turn": "item_22",
+      "end_silence_ms": 380,
+      "origin_to_result_start_ms": 633,
+      "origin_evidence": "caller_input_v1",
+      "status": "observed",
+      "child_first_readout_ms": 4,
+      "total_ms": 1017
+    }
+  ],
+  "gate": {
+    "enabled": true,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "passed": true,
+    "reasons": []
+  }
+}

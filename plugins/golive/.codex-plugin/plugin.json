@@ -1,0 +1,15 @@
+{
+  "name": "golive",
+  "version": "0.1.0",
+  "description": "GoLive telephony operations, simulation, and latency review.",
+  "author": {"name": "Chuanming Liu"},
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.codex.json",
+  "interface": {
+    "displayName": "GoLive",
+    "shortDescription": "Operate Active Call and review normal response and interruption latency.",
+    "developerName": "Chuanming Liu",
+    "category": "Developer tools",
+    "defaultPrompt": ["Check GoLive service status.", "Run a GoLive simulator call.", "Review a completed call's normal responses and interruptions."]
+  }
+}

@@ -138,6 +138,9 @@ func ParseQuotePlans(raw []byte) (QuotePlans, error) {
 		return p, fmt.Errorf("the default plan %q does not exist", p.Default)
 	}
 	for name, plan := range p.Plans {
+		if plan.Prequote.FollowSelectionMax < 0 || plan.Prequote.FollowSelectionMax > 32 {
+			return p, fmt.Errorf("plan %q: follow_selection_max must be between 0 and 32", name)
+		}
 		if len(plan.Coverages) == 0 {
 			return p, fmt.Errorf("plan %q has no coverages", name)
 		}

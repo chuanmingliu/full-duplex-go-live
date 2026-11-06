@@ -442,8 +442,16 @@ func TestTheFullStopOnAnEarlyFinalDoesNotEndTheSentence(t *testing.T) {
 // anything said the caller had spoken. The final asked for early is those
 // words, in time to give the floor up and begin the answer inside the pause.
 func TestAnInterruptionIsJudgedOnAFinalAskedForEarly(t *testing.T) {
+	testInterruptionEarlyFinal(t, "")
+}
+
+func testInterruptionEarlyFinal(t *testing.T, talkerURL string) {
 	const phrase = "你先停一停"
 	cfg := earlyFinalConfig(120)
+	if talkerURL != "" {
+		cfg.opts.Cfg.Duplex.Opener = true
+		cfg.opts.Cfg.Duplex.TalkerOpenerURL = talkerURL
+	}
 	cfg.opts.Cfg.Duplex.UserBackchannelHoldMS = 900
 	cfg.opts.Greeting = "您好，我是车险管家小翠儿，看到您的爱车快到报价期了给您来电，想跟您确认几件事情"
 	rate := cfg.opts.Cfg.ClientRate

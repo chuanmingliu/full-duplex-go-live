@@ -1,0 +1,9 @@
+{
+  "python_tests": 20,
+  "python_model_smoke": "actual pinned ONNX model",
+  "remote_evaluator_tests": 10,
+  "go_phrase_baseline_cases": 52,
+  "go_original_profile_regression": "passed",
+  "live_engine_changed": false,
+  "real_dials": 0
+}

@@ -53,6 +53,14 @@ type pendingResponse struct {
 	// scriptedTask is the task the ack is for: finished already when the
 	// ack is due, it is not said.
 	scriptedTask string
+	// server: the engine's own tools made the calls (onServerCalls), and
+	// the continuation is the engine's to retire when the caller has gone
+	// on. A client's function result (ContinueResponse) is the point of
+	// the delegation and is read back however late it comes.
+	server bool
+	// Only exact folds into a still-owned task qualify. They need function
+	// history, but the task result itself answers the follow-up.
+	coalescedCalls map[string]*coalescedTask
 }
 
 func (p *pendingResponse) complete() bool {
@@ -186,6 +194,10 @@ func (e *Engine) beginGeneration(turn *Turn, reason string, spoken bool) {
 
 	if turn.Transcript != "" && !turn.Scripted {
 		e.planOpener(turn)
+		if turn.Opened == "" {
+			e.prepareTalkerOpener(turn.Transcript)
+			e.attachTalkerOpener(turn)
+		}
 	}
 	e.delegatedAt = time.Now()
 	e.delegatedTurn = turn
@@ -367,7 +379,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	if turn != nil && turn.OpenerPlanned != "" && !front {
 		// After the user's words, so everything before stays in the
 		// provider's prefix cache.
-		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: openerNote(turn.OpenerPlanned)})
+		note := openerNote(turn.OpenerPlanned)
+		if turn.talkerOpener != nil {
+			note = "系统会先播放一句简短的话题开场词或应答词。请直接回答用户，不要重复开场词，也不要依赖开场词才能构成完整句子。"
+		}
+		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
 	}
 	return msgs
 }
@@ -437,9 +453,30 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	if turn.Opening != "" {
 		// A result's fixed opening goes out before the model's first token,
 		// from the phrase cache: the caller hears "保费给您计算好了，" at once.
-		pipe.Push(turn.Opening)
+		pipe.PushFixed(turn.Opening, false)
 		full.WriteString(turn.Opening)
 		turn.AppendResponse(turn.Opening)
+	}
+	if turn.Readout != "" {
+		pipe.PushFixed(turn.Readout, true)
+		full.WriteString(turn.Readout)
+		turn.AppendResponse(turn.Readout)
+	}
+	// Fixed prefixes are already in Turn.Response; append only the model's
+	// continuation when this backend completes.
+	fixedBytes := full.Len()
+	repeatedReadout := newReadoutRepeatFilter(turn.Readout)
+	pushText := func(text string) {
+		if text == "" {
+			return
+		}
+		full.WriteString(text)
+		report(map[string]any{
+			"type":        "response.output_text.delta",
+			"response_id": job.responseID,
+			"delta":       text,
+		})
+		pipe.Push(text)
 	}
 	var calls []provider.ToolCall
 	var usage provider.TokenUsage
@@ -480,13 +517,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				"model", req.Model,
 				"ms", time.Since(started).Milliseconds())
 		}
-		full.WriteString(d.Text)
-		report(map[string]any{
-			"type":        "response.output_text.delta",
-			"response_id": job.responseID,
-			"delta":       d.Text,
-		})
-		pipe.Push(d.Text)
+		pushText(repeatedReadout.Push(d.Text))
 	}
 
 	// A stream that ended because it was cancelled did not complete, and what
@@ -496,8 +527,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		return
 	}
 
+	pushText(repeatedReadout.Flush())
 	text := full.String()
-	turn.AppendResponse(text)
+	turn.AppendResponse(text[fixedBytes:])
 	e.log.Debug("think: backend complete",
 		"turn", turn.ID,
 		"chars", len([]rune(text)),
@@ -528,7 +560,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				// when all are in.
 				e.post(func() { e.onServerCallsAmong(job, mine, theirs) })
 			} else {
-				e.post(func() { e.onToolCalls(job, calls) })
+				// Capture the settled application batch; calls is reassigned
+				// below while this callback may already be running.
+				e.post(func() { e.onToolCalls(job, theirs) })
 			}
 			calls = theirs
 			for i, call := range calls {
@@ -731,26 +765,31 @@ func (e *Engine) startTypedTurn() {
 
 // startContinuation resumes a backend response with its function results.
 func (e *Engine) startContinuation(p *pendingResponse) {
-	// The calls and their results enter history together, in the order the
-	// model made them.
-	e.history = append(e.history, provider.Message{Role: provider.RoleAssistant, ToolCalls: p.calls})
-	for _, c := range p.calls {
-		e.history = append(e.history, provider.Message{
-			Role:       provider.RoleTool,
-			Name:       c.Name,
-			ToolCallID: c.ID,
-			Content:    p.outputs[c.ID],
-		})
-	}
-	e.trimHistory()
+	e.recordContinuation(p)
 
 	if p.scripted != "" {
 		// The owner's words for the wait, in place of resuming the model —
 		// but only if there is a wait: a task that is done within the grace
 		// (a `need` from the rules takes 15 ms) gets no "请您稍等" (the owner,
 		// 22:31 on 10-23); its result is delivered as usual.
+		ts := e.tools
+		if ts == nil {
+			return
+		}
+		if ts.tasks[p.scriptedTask] == nil {
+			e.sayAck(p) // already ready: release the result without a timer
+			return
+		}
+		if ts.ackGraceStarted == nil {
+			ts.ackGraceStarted = map[string]bool{}
+		}
+		ts.ackGraceStarted[p.scriptedTask] = true
 		grace := ackGrace
 		time.AfterFunc(grace, func() { e.post(func() { e.sayAck(p) }) })
+		return
+	}
+	if task := e.coveringCoalescedTask(p); task != nil {
+		e.log.Info("tools: a coalesced follow-up is answered by its task result", "turn", p.turn.ID, "task", task.ID, "calls", len(p.calls))
 		return
 	}
 	turn := e.tracker.Begin("", false)
@@ -771,10 +810,11 @@ var ackGrace = 400 * time.Millisecond
 // floor is free. Loop goroutine.
 func (e *Engine) sayAck(p *pendingResponse) {
 	ts := e.tools
-	if ts == nil {
+	if ts == nil || !ts.ackPending[p.scriptedTask] {
 		return
 	}
 	delete(ts.ackPending, p.scriptedTask)
+	delete(ts.ackGraceStarted, p.scriptedTask)
 	if ts.tasks[p.scriptedTask] == nil {
 		// Done within the grace: no "请您稍等" for a wait that did not happen.
 		// The owner's rule of 23:15 on 10-23 had a quick real result still
@@ -785,6 +825,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		// premium was worked out; the ack only delayed it by 3–4 s. Revised
 		// by the owner, 11:31 on 10-28.
 		e.log.Info("tools: the task finished within the ack's grace; not saying the ack", "task", p.scriptedTask)
+		e.maybeDeliver()
 		return
 	}
 	if e.hangingUp() {
@@ -796,22 +837,30 @@ func (e *Engine) sayAck(p *pendingResponse) {
 		// dropped). The ack waits for the floor, as long as the task runs.
 		if ts.tasks[p.scriptedTask] != nil {
 			ts.ackPending[p.scriptedTask] = true
+			ts.ackGraceStarted[p.scriptedTask] = true
 			time.AfterFunc(150*time.Millisecond, func() { e.post(func() { e.sayAck(p) }) })
 			return
 		}
 		e.log.Info("tools: the task finished while its ack waited for the floor; not saying it", "task", p.scriptedTask)
 		return
 	}
+	origin := ts.origins[p.scriptedTask]
+	followsOrigin := p.turn == e.tracker.Current() && e.completedOriginOpener(origin)
+	ackText := quoteAcknowledgment(p.scripted, followsOrigin)
 	turn := e.tracker.Begin("", false)
 	turn.DelegationID = p.delegationID
 	turn.Scripted = true
+	if followsOrigin {
+		origin.ackTurnID = turn.ID
+		ts.origins[p.scriptedTask] = origin
+	}
 	e.specTurn = nil
 	e.commitTurn(turn)
-	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(p.scripted)))
+	e.log.Info("tools: saying the ack in place of the model", "turn", turn.ID, "task", p.scriptedTask, "chars", len([]rune(ackText)))
 	pipe := e.newSpeechPipe(turn, true)
-	pipe.Push(p.scripted)
+	pipe.Push(ackText)
 	pipe.Close()
-	turn.AppendResponse(p.scripted)
+	turn.AppendResponse(ackText)
 }
 
 // --- function calls: the conversational model delegating ---
@@ -1004,7 +1053,14 @@ func (e *Engine) AppendCommentary(delegationID, content, clientEventID string) {
 
 // wake asks the loop to look again at whatever is waiting for the floor. It
 // never blocks: the tick is the fallback.
-func (e *Engine) wake() { e.post(e.drainDeferred) }
+func (e *Engine) wake() {
+	e.post(func() {
+		// Match the periodic check's ordering. If the deferred ack is what
+		// releases a result, sayAck performs that delivery itself.
+		e.maybeDeliver()
+		e.drainDeferred()
+	})
+}
 
 // drainDeferred starts the next thing that has been waiting for a quiet caller
 // and a free floor: a function result to read back, then something an
@@ -1018,6 +1074,28 @@ func (e *Engine) drainDeferred() {
 	}
 	if len(e.continuations) > 0 {
 		p := e.continuations[0]
+		if p.scripted == "" {
+			// A quick tool's continuation arrives off the loop, whenever
+			// the tool returns; by then the caller may have gone on. The
+			// result delivery has had these guards since ISS-094; the
+			// continuation had none, and a late one took the floor over a
+			// newer question — and threw away the head start begun on it
+			// (startContinuation clears specTurn), a whole backend round
+			// on top of the stale answer.
+			if p.server && e.continuationSuperseded(p) {
+				e.continuations[0] = nil
+				e.continuations = e.continuations[1:]
+				e.recordContinuation(p)
+				e.log.Info("tools: a late continuation is not resumed; the caller has gone on",
+					"turn", p.turn.ID, "calls", len(p.calls), "waited_ms", time.Since(p.createdAt).Milliseconds())
+				e.drainDeferred()
+				return
+			}
+			if e.hold != nil || e.liveSpeculation() != nil {
+				return
+			}
+		}
+		e.continuations[0] = nil
 		e.continuations = e.continuations[1:]
 		e.startContinuation(p)
 		return
@@ -1037,6 +1115,25 @@ func (e *Engine) drainDeferred() {
 	pipe.Push(text)
 	pipe.Close()
 	turn.AppendResponse(text)
+}
+
+// continuationSuperseded says the caller has moved on from the turn whose
+// function results this continuation carries: that turn was killed, or a
+// newer turn of the caller's own words has been committed since. The
+// results still go into the history, where the newer answer can use them;
+// the model is not resumed to answer a question the caller has left.
+// Judged only for the engine's own tools' continuations (pendingResponse.
+// server): an application's late function result is still read back
+// (TestConversationContinuesWhileAFunctionIsPending).
+func (e *Engine) continuationSuperseded(p *pendingResponse) bool {
+	if p.turn == nil {
+		return false
+	}
+	if p.turn.Dead() {
+		return true
+	}
+	cur := e.tracker.Current()
+	return cur != nil && cur != p.turn && cur.Transcript != "" && !cur.Scripted && cur.Committed()
 }
 
 // SetBackend replaces the session's delegation.responses settings for

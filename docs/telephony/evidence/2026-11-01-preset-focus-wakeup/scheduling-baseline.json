@@ -1,0 +1,622 @@
+[
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 556
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 109
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 557
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 77
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 556
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 70,
+    "delay_ms": 49
+  },
+  {
+    "kind": "background",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 556
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 108
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 553
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 79
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 555
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 70,
+    "delay_ms": 49
+  },
+  {
+    "kind": "background",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 554
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 109
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 554
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 79
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 554
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 70,
+    "delay_ms": 49
+  },
+  {
+    "kind": "background",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 554
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 108
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 555
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 77
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 556
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 70,
+    "delay_ms": 48
+  },
+  {
+    "kind": "background",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 559
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 109
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 556
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 78
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 555
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 70,
+    "delay_ms": 49
+  },
+  {
+    "kind": "background",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 554
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 108
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 553
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 79
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 556
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 70,
+    "delay_ms": 49
+  },
+  {
+    "kind": "background",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 70,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 554
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 10,
+    "delay_ms": 109
+  },
+  {
+    "kind": "background",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 10,
+    "delay_ms": -1
+  },
+  {
+    "kind": "short_reply",
+    "delay_ms": 0,
+    "first_audio_ms": 380,
+    "first_content_ms": 555
+  },
+  {
+    "kind": "caller",
+    "offset_ms": 40,
+    "delay_ms": 80
+  },
+  {
+    "kind": "background",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "echo",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "below_threshold",
+    "offset_ms": 40,
+    "delay_ms": -1
+  },
+  {
+    "kind": "acknowledgment",
+    "offset_ms": 40,
+    "delay_ms": -1
+  }
+]

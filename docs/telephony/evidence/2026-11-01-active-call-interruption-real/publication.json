@@ -1,0 +1,18 @@
+{
+  "call": "out-mvxr0ein-wwqh",
+  "stage": "verified",
+  "build": "f1fd9a6",
+  "previous_call": "out-mvxo348d-w5pb",
+  "comparable_interruptions": 15,
+  "interruption_p50_ms": 207,
+  "interruption_p95_ms": 694,
+  "ordinary_n": 28,
+  "ordinary_p95_ms": 1135,
+  "canonical_conversational_n": 29,
+  "canonical_conversational_p95_ms": 1260,
+  "canonical_gate": "fail",
+  "acoustic_handset_verified": false,
+  "issue_id": "ISS-095",
+  "issues_sha256": "7fda007923f03fed1850915178d12a0381d87b065d4ae6b6550495d693cedc25",
+  "retro_sha256": "cfbcf45e42880cb52c874621fac5b7a2aed7b16b05cf7ba2f24148ab8dcd13d5"
+}

@@ -57,6 +57,54 @@ ENVFILE=~/golive/.env.local ./start.sh telephony
 curl -s http://127.0.0.1:8765/v1/pool         # "service":"golive"
 ```
 
+## Checking the 1200 ms target
+
+`scripts/call-latency.sh` accepts the existing `LOG [PAUSE_MS]` invocation and
+requires Python 3. It reads both slog text and JSON logs, prints the stage table,
+and reports **last caller sound → first audio** and **last caller sound → first
+content** side by side. Both add the individual turn's `end_silence_ms`; the
+optional pause argument (380 by default) is only an estimate for older logs.
+The first audio may be a cached opener. The content figure measures the answer
+following it, including turns that used no opener.
+
+Use a log slice from the same build and test condition, containing complete
+`turn: response latency` records. Keep real calls, simulated calls and provider
+benchmarks separate when reporting the result. The optional acceptance command
+checks the established first-audio headline; it does not change the behavior of
+a report-only invocation:
+
+```bash
+scripts/call-latency.sh call.log
+scripts/call-latency.sh call.log --gate --target-ms 1200 --min-turns 20
+scripts/call-latency.sh call.log --gate --metric content --target-ms 1200 --min-turns 20
+scripts/call-latency.sh call.log --json
+```
+
+`--metric first-audio` is the default; `content` or `both` makes the additional
+content requirement explicit. The gate requires p95 **strictly below** the
+target and at least 20 samples by default. p90/p95 use nearest rank
+(`ceil(p × n)`, one-based); p50 is the ordinary median. This is an observed
+sample gate, not a confidence claim about the population. Use more calls and
+the journal's confidence interval before claiming a sustained p95 result.
+
+New records carry `response_to_speech`, `first_audio_present`,
+`first_content_present` and `opened` booleans. They distinguish a genuine
+zero-millisecond cached opener from absent audio and exclude greetings and
+tool-result turns without a caller speech origin. Interrupted answers that
+produced content remain in the distribution; cancelled turns that produced
+only an opener, or no audio, are counted separately. Missing measurements,
+duplicate records, malformed records, insufficient samples or ambiguous old
+records fail the gate. Old logs remain reportable as labelled estimates;
+only non-opener turns can use first audio as the content fallback, and an old
+truncated opener cannot establish that any answer followed it. The numeric
+summary contains no transcripts.
+
+Exit status is 0 for a readable report or a passing gate, 1 for a failed gate,
+and 2 for invalid arguments or an unreadable input. These measurements stop at
+**audio leaving golive**. The PBX, GSM gateway, carrier and handset transport
+remain outside this measurement, so a pass alone does not prove handset-to-handset
+end-to-end latency below 1200 ms.
+
 ## How long a pause ends a turn
 
 golive's own figure is `vad.min_silence_ms` (380 in the telephony profile). A
