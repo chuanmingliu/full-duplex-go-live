@@ -6,6 +6,8 @@
 GoLive service through **Active Call**. Shared improvements from the SIP/RTP
 exploration are documented in the [integration notes](docs/telephony/2026-11-01-active-call-integration.md).
 Use [CALL-OPERATIONS.md](CALL-OPERATIONS.md) for calls, recording and analysis.
+The [GoLive plugin](plugins/golive/README.md) packages the existing service as
+an MCP server with Codex/Claude plugin manifests and call, review and optimization skills.
 
 A full-duplex realtime audio service in Go.
 
