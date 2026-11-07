@@ -1,4 +1,4 @@
-# golive
+# [Xiaocui: a full duplex realtime voice agent](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=0U_89V4AAAAJ&citation_for_view=0U_89V4AAAAJ:WF5omc3nYNoC)
 
 [![Built with Codex](https://img.shields.io/badge/Built_with-Codex-000000?style=flat)](https://openai.com/codex/)
 [![Built with Cursor](https://img.shields.io/badge/Built_with-Cursor-000000?style=flat)](https://cursor.com/)
