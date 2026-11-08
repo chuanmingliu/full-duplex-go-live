@@ -192,3 +192,7 @@ The production-facing API contract that the CRM quotation adapter can call.
 **Boundary and limitations:** An integration seam is implemented; a live production connection is not asserted by this architecture snapshot. The local quotation service exercises the same contract.
 
 **Implementation and detailed runbooks:** [internal/crm/quoteapi.go](../../internal/crm/quoteapi.go), [TELEPHONY.md](../../TELEPHONY.md).
+
+## Outbound skills over MCP
+
+The ThinkPad [skills service and operator panel](../../services/skills-mcp/README.md) publish event routing, WeChat guidance and a typed MCP adapter for the existing quotation calculator. Its turn preview composes the original prompt with versioned business state, selected guidance and permitted tools. The live Active Call engine still uses its existing prompt path.
