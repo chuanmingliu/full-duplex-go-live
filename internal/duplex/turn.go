@@ -67,6 +67,11 @@ type Turn struct {
 	Revision int
 	State    TurnState
 
+	// skillScope is inherited only by continuations of the same user request.
+	skillScope string
+	// skillPending is owned by the engine loop, like pending tool responses.
+	skillPending int
+
 	// Transcript is the user text this revision was generated from.
 	Transcript string
 	// Generation is the cancel scope the turn's work runs in.

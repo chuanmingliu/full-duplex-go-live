@@ -132,6 +132,7 @@ type fileInfo struct {
 	Size   int    `json:"size"`
 }
 type entry struct {
+	Meta        map[string]any    `json:"_meta,omitempty"`
 	URI         string            `json:"uri"`
 	Frontmatter map[string]string `json:"frontmatter"`
 	Resources   []fileInfo        `json:"resources"`
@@ -139,7 +140,20 @@ type entry struct {
 
 func (s Skill) entry() entry {
 	data := s.markdown()
-	return entry{s.uri(), map[string]string{"name": s.Name, "description": s.Description}, []fileInfo{{s.uri(), fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(data))), len(data)}}}
+	return entry{
+		Meta: map[string]any{
+			"ai.liuchuanming.golive/routing": map[string]any{
+				"events": s.Events,
+				"state":  s.State,
+				"tool":   s.Tool,
+			},
+		},
+		URI:         s.uri(),
+		Frontmatter: map[string]string{"name": s.Name, "description": s.Description},
+		Resources: []fileInfo{{
+			URI: s.uri(), Digest: fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(data))), Size: len(data),
+		}},
+	}
 }
 
 type store struct {

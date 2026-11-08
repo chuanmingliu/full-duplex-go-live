@@ -13,6 +13,7 @@ import (
 
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/skillsmcp"
 	"github.com/chuanmingliu/golive/internal/tools"
 )
 
@@ -388,6 +389,9 @@ func (e *Engine) isServerTool(name string) bool {
 	if e.tools == nil {
 		return false
 	}
+	if name == skillsmcp.ToolName && e.skills != nil {
+		return true
+	}
 	_, ok := e.tools.byName[name]
 	return ok
 }
@@ -432,6 +436,9 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 				ts.ackPending[taskID] = true
 			}
 		default:
+			if c.Name == skillsmcp.ToolName {
+				job.turn.skillPending++
+			}
 			wait = append(wait, c)
 		}
 	}
@@ -462,6 +469,16 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 	snap, ver := e.memorySnapshot()
 	go func() {
 		for _, c := range wait {
+			if c.Name == skillsmcp.ToolName {
+				output := e.loadSkill(job.turn, c.Arguments, snap, ver)
+				e.post(func() {
+					job.turn.skillPending--
+					if e.gen.Valid(job.turn.Generation) {
+						p.outputs[c.ID] = output
+					}
+				})
+				continue
+			}
 			t := ts.byName[c.Name]
 			began := time.Now()
 			res := ts.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
@@ -1093,11 +1110,15 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 	if p == nil {
 		return
 	}
+	var skillCalls []provider.ToolCall
 	snap, ver := e.memorySnapshot()
 	for _, c := range mine {
 		e.tools.calls++
 		t := e.tools.byName[c.Name]
 		switch {
+		case c.Name == skillsmcp.ToolName:
+			job.turn.skillPending++
+			skillCalls = append(skillCalls, c)
 		case t.Builtin == "update_memory":
 			p.outputs[c.ID] = e.applyMemoryCall(c)
 		case t.Builtin == "end_call":
@@ -1126,6 +1147,22 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 				})
 			}()
 		}
+	}
+	skillMemory, skillVersion := e.memorySnapshot()
+	for _, call := range skillCalls {
+		go func(call provider.ToolCall) {
+			output := e.loadSkill(job.turn, call.Arguments, skillMemory, skillVersion)
+			e.post(func() {
+				job.turn.skillPending--
+				if current := e.pending[job.delegationID]; current == p {
+					if !e.gen.Valid(job.turn.Generation) {
+						e.dropPending(job.delegationID)
+						return
+					}
+					p.outputs[call.ID] = output
+				}
+			})
+		}(call)
 	}
 }
 

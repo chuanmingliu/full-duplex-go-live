@@ -195,4 +195,4 @@ The production-facing API contract that the CRM quotation adapter can call.
 
 ## Outbound skills over MCP
 
-The ThinkPad [skills service and operator panel](../../services/skills-mcp/README.md) publish event routing, WeChat guidance and a typed MCP adapter for the existing quotation calculator. Its turn preview composes the original prompt with versioned business state, selected guidance and permitted tools. The live Active Call engine still uses its existing prompt path.
+The ThinkPad [skills service and operator panel](../../services/skills-mcp/README.md) publish event routing, WeChat guidance and a typed MCP adapter for the existing quotation calculator. Its turn preview composes the original prompt with versioned business state, selected guidance and permitted tools. The [optional Active Call integration](09-skills-prompt-rendering.md) loads workflow guidance into scoped model tool results while retaining the original prompt and native quotation executor. Its controlled engine comparison is complete; live engine activation awaits real-provider acceptance.

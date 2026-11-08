@@ -46,6 +46,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/segment"
+	"github.com/chuanmingliu/golive/internal/skillsmcp"
 	"github.com/chuanmingliu/golive/internal/tools"
 )
 
@@ -112,6 +113,7 @@ type BackendOptions struct {
 
 // Engine is one session's duplex orchestrator.
 type Engine struct {
+	skills                                  *skillsmcp.Client
 	opts                                    Options
 	talkerPending                           *talkerOpener
 	talkerStarted                           time.Time
@@ -465,6 +467,14 @@ func New(opts Options, deps Deps) *Engine {
 	e.player.OnTurnDone(e.onTurnDone)
 	e.player.OnSegment(e.onSegmentHeard)
 	e.noteContext()
+	if opts.Cfg.SkillsMCP.URL != "" {
+		client, err := skillsmcp.New(opts.Cfg.SkillsMCP)
+		if err != nil {
+			e.log.Warn("skills: configuration unavailable; using original prompt")
+		} else {
+			e.skills = client
+		}
+	}
 	return e
 }
 
@@ -1770,6 +1780,9 @@ func (e *Engine) policy() string {
 // arrived on top of their second; and it meant something waiting for a free
 // floor took it, only to be cut off mid-word when that answer turned up.
 func (e *Engine) assistantHasFloor() bool {
+	if turn := e.tracker.Current(); turn != nil && turn.skillPending > 0 && e.tracker.IsCurrent(turn) {
+		return true
+	}
 	if e.tools != nil && e.tools.handoff != nil && e.tracker.IsCurrent(e.tools.handoff) && e.tools.handoff.Timings().CompletedAt.IsZero() {
 		return true
 	}

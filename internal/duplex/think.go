@@ -372,7 +372,8 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	if system := e.systemPrompt(front); system != "" {
 		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: system})
 	}
-	msgs = append(msgs, e.history...)
+	_, memoryVersion := e.memorySnapshot()
+	msgs = append(msgs, expiredSkillHistory(e.history, skillScope(turn), memoryVersion)...)
 	if turn != nil && turn.Transcript != "" && !e.recordedUser[turn.ID] {
 		msgs = appendUserMessage(msgs, turn.Transcript)
 	}
@@ -422,6 +423,12 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		}, e.deps.Emit)
 	}
 
+	if !job.front {
+		req = e.prepareSkills(ctx, req)
+	}
+	if ctx.Err() != nil {
+		return
+	}
 	deltas, err := e.deps.LLM.Stream(ctx, req)
 	if err != nil && ctx.Err() == nil && retryable(err) {
 		metrics.Default().Retry("llm")
@@ -793,6 +800,7 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		return
 	}
 	turn := e.tracker.Begin("", false)
+	turn.skillScope = skillScope(p.turn)
 	turn.DelegationID = p.delegationID
 	e.specTurn = nil
 	e.commitTurn(turn)

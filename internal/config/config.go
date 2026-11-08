@@ -14,10 +14,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/chuanmingliu/golive/internal/skillsmcp"
 )
 
 // Config is the fully resolved service configuration.
 type Config struct {
+	// SkillsMCP adds turn-scoped business guidance. An empty URL disables it.
+	SkillsMCP skillsmcp.Config `json:"skills_mcp"`
+
 	// Server
 	Addr     string `json:"addr"`
 	LogLevel string `json:"log_level"`
@@ -911,6 +916,8 @@ func Load(profilePath string) (Config, error) {
 // credentials are read by the adapters themselves, not here, so this package
 // never holds a secret.
 func (c *Config) applyEnv() {
+	setString(&c.SkillsMCP.URL, "GOLIVE_SKILLS_MCP_URL")
+	setString(&c.SkillsMCP.TokenFile, "GOLIVE_SKILLS_MCP_TOKEN_FILE")
 	setString(&c.Addr, "GOLIVE_ADDR")
 	setString(&c.LogLevel, "GOLIVE_LOG_LEVEL")
 	setString(&c.LogFormat, "GOLIVE_LOG_FORMAT")
@@ -992,6 +999,24 @@ func (c *Config) applyEnv() {
 
 // Validate rejects combinations that would fail confusingly later.
 func (c *Config) Validate() error {
+	if c.SkillsMCP.URL != "" {
+		u, err := url.Parse(c.SkillsMCP.URL)
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost"))) {
+			return fmt.Errorf("config: skills MCP requires HTTPS or loopback HTTP")
+		}
+		if c.SkillsMCP.TokenFile == "" || !c.ToolsMemory {
+			return fmt.Errorf("config: skills MCP requires a token file and tools_memory")
+		}
+		if c.SkillsMCP.TimeoutMS < 0 || c.SkillsMCP.TimeoutMS > 1000 {
+			return fmt.Errorf("config: skills MCP timeout must be 0–1000 ms")
+		}
+		for _, tool := range c.Tools {
+			if tool.Name == skillsmcp.ToolName {
+				return fmt.Errorf("config: reserved skills tool name")
+			}
+		}
+	}
+
 	switch c.Duplex.BackchannelDetectorMode {
 	case "", "shadow", "asr_assist":
 	default:

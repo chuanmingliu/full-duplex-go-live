@@ -11,7 +11,7 @@ The ThinkPad serves outbound workflow instructions and their associated tools fr
 | Business tool | `tools/call` with `name: quote_total` posts the existing working-memory envelope to the box CRM at `/api/tools/quote`. The CRM owns intake, plan merging, pricing, configured delays and comparison results. |
 | Operator panel | The panel at `/` uses a separate admin token. Publish skill instructions, descriptions and availability together with the tool description, availability and timeout. |
 | Persistence | One Compose replica owns `~/golive-skills-mcp/data/catalog.json`. Each publication compares the displayed revision with the current revision and atomically replaces the file. Prior to editing, an operator can copy that file for backup. |
-| Deployment boundary | Active Call continues to use its existing quote integration. This deployment adds the catalog and adapter for future host integration. |
+| Deployment boundary | Active Call continues to use its existing quote integration. The optional Active Call host integration loads guidance through MCP. Its existing native quotation executor owns call-time execution. |
 
 ## Open the panel on the Mac
 
@@ -75,11 +75,13 @@ A routing rule matches one of its exact event names and **all** its state condit
 
 The renderer reselects on a publication race and falls back to the original components when the service or verification fails. An operator publication changes the next selection, including subsequent turns of an ongoing session. In-flight speech and completed actions retain their original turn. The host's `accept_skill` policy owns approval for a specific origin, URI and digest. Production enrollment should tie that decision to the authenticated business publishing workflow, independently of the caller.
 
-### Connecting Active Call in the next phase
+### Active Call integration
 
-The current call engine assembles messages in [think.go](../../internal/duplex/think.go) and updates versioned working memory in [tools.go](../../internal/duplex/tools.go). At turn start, take a coherent snapshot of confirmed user intent, CRM state and operation acknowledgments. The host must produce events such as `wechat.add_requested`; a caller asking “什么是微信？” is insufficient evidence of consent. Service callbacks own delivery and completion state. Ignore late callbacks for older operations. A later opt-out wins over an earlier pending add.
+The optional engine integration reads `skills/list` on backend generation workers and exposes `load_business_skill` with current event metadata. The conversation model selects an event by meaning. The service checks that event and a projection of versioned working memory, then supplies resource links. The host verifies each resource, adds the guidance as a scoped tool result and resumes the existing model/tool flow. Empty configuration and retrieval failures use the original prompt.
 
-Keep the original prompt and host safety policy in their existing slots. Render the selected skill context separately as attributed business guidance and hand actual tool definitions to the provider. Run remote discovery and reads outside the media loop with a measured deadline. Before using any asynchronous result, compare the turn and state version with the current session. Benchmark normal-response and interruption latency with simulator fallback cases before enabling this in the live call engine.
+The implemented Go client falls back on a publication race. The Python reference renderer supports a bounded reselect. Both read fresh catalog state on subsequent requests. The engine trusts its explicitly configured, authenticated publishing service for business guidance and retains its own executable tool definitions.
+
+The [prompt integration guide and roadmap](../../docs/architecture/09-skills-prompt-rendering.md) document configuration, components, state expiry, failure handling, measured simulation overhead and remaining real-provider acceptance. The catalog is deployed. Enabling the optional integration in the live phone engine requires a separate idle-only deployment. Business-content edits become visible without an engine restart after that activation.
 
 The implementation follows the current [extension specification](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/beta/skills.mdx). The additional index follows the [feature-branch resource convention](https://github.com/modelcontextprotocol/ext-skills/blob/feature/python-sdk/docs/sep-draft-skills-extension.md). The [AAIF overview](https://aaif.io/blog/skills-over-mcp) explains the original progressive-discovery design.
 
