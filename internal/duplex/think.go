@@ -372,8 +372,12 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	if system := e.systemPrompt(front); system != "" {
 		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: system})
 	}
-	_, memoryVersion := e.memorySnapshot()
-	msgs = append(msgs, expiredSkillHistory(e.history, skillScope(turn), memoryVersion)...)
+	history := e.history
+	if e.skills != nil {
+		_, memoryVersion := e.memorySnapshot()
+		history = expiredSkillHistory(history, skillScope(turn), memoryVersion)
+	}
+	msgs = append(msgs, history...)
 	if turn != nil && turn.Transcript != "" && !e.recordedUser[turn.ID] {
 		msgs = appendUserMessage(msgs, turn.Transcript)
 	}

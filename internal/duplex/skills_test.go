@@ -256,6 +256,19 @@ func TestSkillsExpireAtTurnAndMemoryBoundary(t *testing.T) {
 		t.Fatal("mutated canonical history")
 	}
 }
+
+func TestSkillsDisabledPreservesExistingToolHistory(t *testing.T) {
+	legacy := provider.Message{Role: provider.RoleTool, Name: skillsmcp.ToolName, ToolCallID: "legacy", Content: `{"existing":"application tool"}`}
+	e := New(Options{Cfg: testConfig(), History: []provider.Message{legacy}}, Deps{})
+	defer e.Close()
+	messages := e.snapshotMessages(nil, false)
+	for _, message := range messages {
+		if message.ToolCallID == legacy.ToolCallID && message.Content == legacy.Content {
+			return
+		}
+	}
+	t.Fatal("disabled integration changed existing application history")
+}
 func TestSkillsNoMatchAndDeadlineFallback(t *testing.T) {
 	cfg := skillFixture(t)
 	client, err := skillsmcp.New(cfg)
