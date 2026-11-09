@@ -12,13 +12,19 @@ func TestEventResponsePublication(t *testing.T) {
 		Revision int
 		Event    string
 		EventResponse
-	} { result := f.result("resources/read", obj{"uri": "golive://event-responses/addV"}); text := result["contents"].([]any)[0].(obj)["text"].(string); var response struct {
-		Revision int
-		Event    string
-		EventResponse
-	}; if err := json.Unmarshal([]byte(text), &response); err != nil {
-		t.Fatal(err)
-	}; return response }
+	} {
+		result := f.result("resources/read", obj{"uri": "golive://event-responses/addV"})
+		text := result["contents"].([]any)[0].(obj)["text"].(string)
+		var response struct {
+			Revision int
+			Event    string
+			EventResponse
+		}
+		if err := json.Unmarshal([]byte(text), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
 	if read().Enabled {
 		t.Fatal("legacy catalog enabled callback speech")
 	}
