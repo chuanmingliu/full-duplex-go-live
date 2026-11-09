@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/live/sessions/{id}/attach", s.handleAttach)
 	mux.HandleFunc("/v1/live/sessions/{id}/fork", s.handleFork)
 	mux.HandleFunc("/v1/live/sessions/{id}/content", s.handleContent)
+	mux.HandleFunc("POST /v1/calls/{call}/events", s.handleBusinessCallback)
 	if s.cfg.Realtime.Enabled {
 		// The same service in the OpenAI Realtime protocol, for clients that
 		// cannot speak gpt-live-1 — and the two endpoints a phone call needs

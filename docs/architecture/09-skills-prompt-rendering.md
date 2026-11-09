@@ -89,7 +89,7 @@ Both the GoLive session protocol and Realtime input adapter accept this extensio
 
 Only trusted backend events or trusted initial memory establish completed state. A model `update_memory` call cannot manufacture `added` or reverse an established completion, including by deleting or replacing the WeChat object. The model can still record confirmed consent.
 
-A completion arriving during retrieval invalidates the old state snapshot. A completion arriving during an active WeChat answer cancels that generation and replans using completed state. The prompt explicitly acknowledges success and closes the add-account instructions. An idle session records the completion for the next answer. When completion arrives during native `quote_total` calculation, quote validity compares memory snapshots while ignoring only `wechat.status`. Changes to coverage, customer fields or other WeChat fields still invalidate the old result. This avoids requesting another calculation solely because the account was added. The external business producer's forwarding connection remains an integration step; the simulation injects a synthetic event through the same engine method, and a WebSocket regression covers the session adapter.
+A completion arriving during retrieval invalidates the old state snapshot. A completion arriving during an active WeChat answer cancels that generation and replans using completed state. The prompt explicitly acknowledges success and closes the add-account instructions. An idle session records the completion for the next answer. When completion arrives during native `quote_total` calculation, quote validity compares memory snapshots while ignoring only `wechat.status`. Changes to coverage, customer fields or other WeChat fields still invalidate the old result. This avoids requesting another calculation solely because the account was added. A tracking service can send the same event through the [dedicated authenticated HTTP callback](../services/tracking-events.md). The external tracking producer has not been built yet; the simulation injects a synthetic event through the same engine method, and a WebSocket regression covers the session adapter.
 
 ## Quotation execution
 
@@ -128,7 +128,7 @@ Timeout, unsupported auto-selection, malformed content, digest mismatch and publ
 | Session consistency | Latest-intent recovery, state-version expiry and idempotent `addV` adapter implemented |
 | Real-model synthetic comparison | 20-pair benchmark and final-code scenario/state/edge confirmation completed; see the follow-up report |
 | Full media simulation | Exercise actual ASR/TTS and Active Call transport, including echo and background voice cases |
-| Backend forwarding | Correlate actual `addV` traces to authenticated session connections and verify delivery |
+| Backend forwarding | Call-ID-scoped HTTP callback implemented; real tracking producer still needs customer/action verification and call correlation |
 | Live activation | Deploy the paired catalog/engine candidate when idle, retain original profile and verify Journal chat and both audio directions |
 | Real-call acceptance | Compare normal responses and interruptions, with quotation time and handset measurements reported separately |
 | Additional workflows | Add server-maintained patterns, state conditions and skills, with reviewed host bindings for new executable tools |

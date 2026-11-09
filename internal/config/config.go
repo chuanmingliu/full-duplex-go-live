@@ -34,6 +34,9 @@ type Config struct {
 	// AuthToken is read only from GOLIVE_AUTH_TOKEN. It is never a profile
 	// field, which is what keeps a profile committable.
 	AuthToken string `json:"-"`
+	// BusinessEventToken authorizes tracking callbacks independently of callers.
+	// Empty disables the callback endpoint. Read only from the environment.
+	BusinessEventToken string `json:"-"`
 	// AuthRequired refuses to boot without AuthToken. Set it in a production
 	// profile so a missing env var is a start-up failure rather than an open
 	// socket.
@@ -923,6 +926,7 @@ func (c *Config) applyEnv() {
 	setString(&c.LogFormat, "GOLIVE_LOG_FORMAT")
 	setString(&c.WebRoot, "GOLIVE_WEB_ROOT")
 	setString(&c.AuthToken, "GOLIVE_AUTH_TOKEN")
+	setString(&c.BusinessEventToken, "GOLIVE_BUSINESS_EVENT_TOKEN")
 	setBool(&c.AuthRequired, "GOLIVE_AUTH_REQUIRED")
 	setCSV(&c.AllowedOrigins, "GOLIVE_ALLOWED_ORIGINS")
 	setBool(&c.TrustProxy, "GOLIVE_TRUST_PROXY")
@@ -1055,6 +1059,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AuthRequired && c.AuthToken == "" {
 		return fmt.Errorf("config: auth_required is set but GOLIVE_AUTH_TOKEN is empty")
+	}
+	if c.BusinessEventToken != "" && len(c.BusinessEventToken) < 16 {
+		return fmt.Errorf("config: GOLIVE_BUSINESS_EVENT_TOKEN must contain at least 16 bytes")
 	}
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
 		return fmt.Errorf("config: tls_cert_file and tls_key_file must be set together")
