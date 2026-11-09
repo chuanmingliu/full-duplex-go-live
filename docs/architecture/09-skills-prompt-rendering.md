@@ -12,7 +12,7 @@ Active Call supplies its configured instructions to GoLive. Existing CRM/Jinja r
 | Backend instructions | Session backend configuration | Existing delegation and business instructions |
 | Tool policy and executable tools | Host | Existing quotation, memory and hangup handlers |
 | Working memory | Engine | Versioned confirmed facts and tool results |
-| Conversation | Engine | Spoken history, current user request and interruption boundaries |
+| Conversation | Engine | Spoken history and explicit latest intent after interruption |
 | Business-state constraints | Engine | Completed or declined WeChat state applies during fallback too |
 | Selected skill guidance | MCP service | Verified Markdown for the current request and state snapshot |
 | Retrieval fallback | Engine | Use steps present in the original prompt and ask for missing information |
@@ -73,7 +73,7 @@ Selection sends the current utterance and allowlisted state fields to the config
 
 ## Interruption recovery
 
-The engine records the interrupted request before adding the interruption boundary. This prevents the history helper from merging that unanswered request into the next user message. The boundary tells the model to answer the latest request and resume an earlier workflow when the caller asks for it. Automatic selection uses the current turn's transcript when available.
+The engine preserves unanswered caller fragments in stored history. After an interruption, prompt rendering gives the latest request its own user message, with prior unfinished context before a system boundary. The boundary allows clarifications and references to use that context while pausing independent old tasks. This preserves a caller's “下一步呢？” continuation and prevents a changed question from reviving the old workflow. Automatic selection uses the newest input. Cancellation and generation checks prevent an interrupted retrieval from restarting output.
 
 Generation cancellation stops pending retrieval through its context. Old generation output remains subject to the existing playback checks. Tool-call/result pairing and already submitted native tasks retain their normal lifecycle. Echo, background-speaker rejection, backchannel decisions and preset opener selection retain their existing implementation.
 
@@ -89,7 +89,7 @@ Both the GoLive session protocol and Realtime input adapter accept this extensio
 
 Only trusted backend events or trusted initial memory establish completed state. A model `update_memory` call cannot manufacture `added` or reverse an established completion, including by deleting or replacing the WeChat object. The model can still record confirmed consent.
 
-A completion arriving during retrieval invalidates the old state snapshot. A completion arriving during an active WeChat answer cancels that generation and replans using completed state. The prompt explicitly acknowledges success and closes the add-account instructions. An idle session records the completion for the next answer. The external business producer's forwarding connection remains an integration step; the simulation injects a synthetic event through the same engine method, and a WebSocket regression covers the session adapter.
+A completion arriving during retrieval invalidates the old state snapshot. A completion arriving during an active WeChat answer cancels that generation and replans using completed state. The prompt explicitly acknowledges success and closes the add-account instructions. An idle session records the completion for the next answer. When completion arrives during native `quote_total` calculation, quote validity compares memory snapshots while ignoring only `wechat.status`. Changes to coverage, customer fields or other WeChat fields still invalidate the old result. This avoids requesting another calculation solely because the account was added. The external business producer's forwarding connection remains an integration step; the simulation injects a synthetic event through the same engine method, and a WebSocket regression covers the session adapter.
 
 ## Quotation execution
 
@@ -125,7 +125,7 @@ Timeout, unsupported auto-selection, malformed content, digest mismatch and publ
 | --- | --- |
 | Catalog and panel | Authenticated discovery, verified reads, atomic publishing, routing editor and schema migration implemented |
 | Prompt composition | Original component, pre-completion guidance, current state and bounded fallback implemented |
-| Session consistency | Interruption history boundary, state-version expiry and idempotent `addV` adapter implemented |
+| Session consistency | Latest-intent recovery, state-version expiry and idempotent `addV` adapter implemented |
 | Real-model synthetic comparison | 20-pair benchmark and final-code scenario/state/edge confirmation completed; see the follow-up report |
 | Full media simulation | Exercise actual ASR/TTS and Active Call transport, including echo and background voice cases |
 | Backend forwarding | Correlate actual `addV` traces to authenticated session connections and verify delivery |

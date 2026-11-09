@@ -235,3 +235,25 @@ func TestQuoteReadoutPresenceRequiresItsOwnAudioOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestQuoteIgnoresOnlyWechatCompletionStatus(t *testing.T) {
+	task := &tools.Task{Tool: tools.Tool{Name: "quote_total"}, Request: tools.Request{Memory: json.RawMessage(`{"quote":{"三者险":"200万"},"age":30,"wechat":{"status":"consented"}}`)}}
+	for _, tc := range []struct {
+		memory string
+		want   bool
+	}{
+		{`{"quote":{"三者险":"200万"},"age":30,"wechat":{"status":"added"}}`, true},
+		{`{"quote":{"三者险":"300万"},"age":30,"wechat":{"status":"added"}}`, false},
+		{`{"quote":{"三者险":"200万"},"age":40,"wechat":{"status":"added"}}`, false},
+		{`{"quote":{"三者险":"200万"},"age":30,"wechat":{"status":"added","discount":true}}`, false},
+		{`null`, false},
+	} {
+		if got := quoteInputsUnchanged(task, json.RawMessage(tc.memory)); got != tc.want {
+			t.Fatalf("snapshot comparison=%v, want %v", got, tc.want)
+		}
+	}
+	task.Tool.Name = "another_tool"
+	if quoteInputsUnchanged(task, task.Request.Memory) {
+		t.Fatal("other tool lost version guard")
+	}
+}

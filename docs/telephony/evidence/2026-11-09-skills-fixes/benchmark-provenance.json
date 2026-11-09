@@ -1,40 +1,16 @@
 {
-  "base_commit": "6a32731",
-  "job": "skills-fixed-final-4",
+  "base_commit": "9e1b85e",
+  "job": "skills-final-context-8",
   "prompts": "synthetic",
-  "model": "deepseek-chat",
   "provider": "deepseek",
+  "model": "deepseek-chat",
   "tts": "mock",
   "catalog": "isolated seed catalog on ThinkPad loopback 18795",
-  "source_sha256": {
-    "internal/duplex/skills.go": "a56d165146040f4741768e1c750eebbdd713e0aa87fa3ab9f0529bcde2f4d39a",
-    "internal/duplex/skills_real_edges_test.go": "05a650aee73cf2f4685141203e08f8eec1f2c35d347e3d5078b02aea5ba01d35",
-    "internal/duplex/skills_test.go": "e50fa774b3a2912e5a6b4f89d6c024eb28a857b3e9fb89f3cea0769a82bb7b19",
-    "internal/duplex/skills_real_model_test.go": "5ea5ba1afff7f7897c3e885b5115b606907c4374430d0f1739e5ce345af58ef7",
-    "internal/duplex/business_events.go": "8e481308ace2dbb823ec4cad0616aee40c794529c3d162f894a4e79dfc782806",
-    "internal/duplex/engine.go": "8ceda9aa723e94a7833019efa3081bdd5c818b0aecc969b07510aa0f05612973",
-    "internal/duplex/think.go": "0af904c3d4186cd88b8f1a724ccb14d4786a8e7e86e96ba00b15fe8d813eb8f1",
-    "internal/duplex/tools.go": "fb8e6c69a0aea6d538917a418103bd63eff6d934b0e6dfee4ea0978b917bdc22",
-    "internal/skillsmcp/client.go": "faebcacc11091e1022a11e5158dfe086d05b9dae46eaef79c6488c2914741060",
-    "services/skills-mcp/catalog.go": "d7eb7a7f5fe6360da832143267af5d9dc9d32d7ba5d842e12074984e7974eca5",
-    "services/skills-mcp/service_test.go": "27c2c1901f965a9b1e606fb8c7a778a25df930d89819027dac6971f88032b4eb",
-    "services/skills-mcp/simulation_test.go": "e02a27547f2817697d3d8073ba0f2b1d74bf6062d8a02845e814a68ed0406b2d",
-    "services/skills-mcp/protocol.go": "b4d75c02c5cd12be0d6425c6d62cd6c0320b9eceb95c11baf273a277d3db3e02",
-    "services/skills-mcp/routing_test.go": "08e846c593b27e6213d7e4c1a36d28aad77097a5bb9a40cf910d535e12b8d439",
-    "services/skills-mcp/quote.go": "3e2c4c2e85cd073f40698ee245ff145077ec440f01bdbd469cb34a4df87e05e7",
-    "services/skills-mcp/routing.go": "716115e1e1f5d81c86e2906897085ec773043c4385d3c573b90d64913533db7a",
-    "services/skills-mcp/main.go": "138e609f982fffa5601fbef47542d70677aeab78a411a75199a7ae4f6338d379",
-    "internal/server/business_events.go": "e1eaf9d6d2805caf2d1511b3dc381488b2948c7c9bb8b938edf42fb111f38e27",
-    "internal/server/business_events_test.go": "8e21bf5466d0c825c8afa345f0a2013f22e42c89a81b60eb3913d90e07c57838",
-    "internal/server/session.go": "1cb20a12d5473cb8515b6505e71e36f92be3cbdcbddb48336422665e5a32c35c",
-    "internal/server/realtime.go": "37df95e70bd6261799a029c718dbb1066f0ec6a447f5e0f75559afc661b510fe",
-    "internal/live/events.go": "679b3e563dc177225086c511dfdd1049f334320dc2b75a63c5997f7b89da0804",
-    "internal/duplex/business_events_test.go": "3c266cca2e61e23a6f433df9aff00ef97aaa4c95551b6b72116101be0a3adce7"
-  },
   "payload_sha256": {
-    "duplex.test": "4002898eb99a0b1fabb0dc288c052498d1f53fc2103fdf70bcb19632a7937fcc",
+    "duplex.test": "5ea71f66c473a98ed58113e876190f3d4e6868c9e7d9a7369f988255643b1ad5",
     "catalog.test": "65b9ec586621ee42586d893b9ce44b8af5df8938c9d70fc13c7e87acae347c00",
     "simulate.py": "7db7b6b09a9556a0ff50bce69f6cc4f28418cd8f0f1ba9e6d426385a7abbc2c4",
-    "bundle": "ef6355a01183c0ded9705e0f8ed846f2026868d316cda0a255892322320ba050"
-  }
+    "bundle": "607fb16105f98be0ced8a2855be655f11402f390a695f2112ab4b5a5b977abf4"
+  },
+  "note": "Intermediate JSON interruption rendering failed recovery. Core benchmark scenarios do not interrupt. Final separated-message rendering is validated by confirmation job 10."
 }

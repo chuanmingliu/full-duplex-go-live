@@ -57,7 +57,7 @@ func TestModelCannotInventAddV(t *testing.T) {
 	}
 }
 
-func TestInterruptedRequestKeepsSeparateHistory(t *testing.T) {
+func TestInterruptedRequestPreservesContextAndIdentifiesLatestIntent(t *testing.T) {
 	cfg := testConfig()
 	c := newCollector(cfg.ClientRate)
 	e := New(Options{Cfg: cfg}, Deps{ASR: mock.NewASR(""), LLM: &skillScenarioLLM{}, TTS: mock.NewTTS(), Emit: c.emit, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
@@ -67,11 +67,16 @@ func TestInterruptedRequestKeepsSeparateHistory(t *testing.T) {
 	e.post(func() {
 		e.lastCommitted = &Turn{ID: "old", Transcript: "怎么找微信服务通知？"}
 		e.interrupt()
-		messages = e.snapshotMessages(&Turn{ID: "new", Transcript: "保险从什么时候开始生效？"}, false)
+		turn := &Turn{ID: "new", Transcript: "保险从什么时候开始生效？"}
+		e.commitTurn(turn)
+		messages = e.snapshotMessages(turn, false)
 	})
 	probeBarrier(e)
 	if got := latestUserText(messages); got != "保险从什么时候开始生效？" {
-		t.Fatalf("interrupted question merged into new request: %s", got)
+		t.Fatalf("caller context lost: %s", got)
+	}
+	if !strings.Contains(dump(messages), "怎么找微信服务通知？") || !strings.Contains(dump(messages), "上一轮回答被来电人打断") {
+		t.Fatal("latest request missing from recovery policy")
 	}
 }
 

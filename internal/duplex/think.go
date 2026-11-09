@@ -84,6 +84,7 @@ func (p *pendingResponse) missing() []string {
 
 // backendJob is one streaming completion and where its results belong.
 type backendJob struct {
+	request      string // newest caller input, captured on the loop for skill selection
 	turn         *Turn
 	delegationID string
 	responseID   string
@@ -278,6 +279,7 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 	e.respSeq++
 	job := backendJob{
 		turn:         turn,
+		request:      e.currentRequest(turn),
 		delegationID: delegationIDOf(turn),
 		responseID:   fmt.Sprintf("resp_%s_%d", e.opts.SessionID, e.respSeq),
 		front:        front,
@@ -304,7 +306,7 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 	e.backendPending.Add(1)
 	request := e.backendRequest(e.snapshotMessages(turn, front), front)
 	e.wechatTurn = nil
-	latest := latestUserText(request.Messages)
+	latest := job.request
 	if !front && !e.wechatAdded && (strings.Contains(latest, "微信") || strings.Contains(latest, "服务通知")) {
 		e.wechatTurn = turn
 	}
@@ -371,6 +373,16 @@ func (e *Engine) systemPrompt(front bool) string {
 	return strings.Join(kept, "\n\n")
 }
 
+func (e *Engine) currentRequest(turn *Turn) string {
+	if turn != nil && turn.Transcript != "" {
+		return turn.Transcript
+	}
+	if e.lastCommitted != nil {
+		return e.lastCommitted.Transcript
+	}
+	return ""
+}
+
 // snapshotMessages builds the backend request on the loop goroutine so the
 // generation goroutine never touches mutable history.
 func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
@@ -386,6 +398,9 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	msgs = append(msgs, history...)
 	if turn != nil && turn.Transcript != "" && !e.recordedUser[turn.ID] {
 		msgs = appendUserMessage(msgs, turn.Transcript)
+	}
+	if e.hasInterrupted {
+		msgs = scopeInterruptedRequest(msgs, e.currentRequest(turn))
 	}
 	if turn != nil && turn.OpenerPlanned != "" && !front {
 		// After the user's words, so everything before stays in the

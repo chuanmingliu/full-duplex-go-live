@@ -113,6 +113,7 @@ type BackendOptions struct {
 
 // Engine is one session's duplex orchestrator.
 type Engine struct {
+	hasInterrupted                          bool  // loop-owned; later prompts identify the newest request explicitly
 	wechatTurn                              *Turn // current generation giving WeChat guidance
 	wechatAdded                             bool  // authoritative completion, owned by the loop
 	skills                                  *skillsmcp.Client
@@ -2162,8 +2163,7 @@ func (e *Engine) softInterrupt() {
 // interrupt is barge-in: stop generating, stop speaking, and let the
 // truncation callback fix history.
 func (e *Engine) interrupt() {
-	e.ensureUserRecorded(e.lastCommitted)
-	e.history = append(e.history, provider.Message{Role: provider.RoleSystem, Content: "用户刚刚打断了上一个回答。先前未说完的解释或操作指导已暂停。接下来只回答用户最新的问题，不要附带继续旧流程。只有用户明确要求继续时才恢复。已提交工具的结果仍然按原有规则处理。"})
+	e.hasInterrupted = true
 	e.cancelBackend()
 	gen := e.gen.Bump()
 	e.abortSpeech()

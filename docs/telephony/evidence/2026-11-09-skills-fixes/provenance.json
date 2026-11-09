@@ -1,20 +1,26 @@
 {
-  "base_commit": "6a32731",
-  "job": "skills-fixed-confirm-5",
+  "base_commit": "9e1b85e",
+  "job": "skills-boundary-confirm-10",
   "prompts": "synthetic",
-  "model": "deepseek-chat",
   "provider": "deepseek",
+  "model": "deepseek-chat",
   "tts": "mock",
   "catalog": "isolated seed catalog on ThinkPad loopback 18795",
+  "payload_sha256": {
+    "duplex.test": "b458b9b8a8cff09e1734a9a8eb253676a2cdd166ad09bf0971f5c89dbb8b9abd",
+    "catalog.test": "65b9ec586621ee42586d893b9ce44b8af5df8938c9d70fc13c7e87acae347c00",
+    "simulate.py": "7db7b6b09a9556a0ff50bce69f6cc4f28418cd8f0f1ba9e6d426385a7abbc2c4",
+    "bundle": "b6bfc22240b3f78f18385194007f6476c8d5b5a8145656710a0a8b96ba53f3cd"
+  },
   "source_sha256": {
-    "internal/duplex/skills.go": "83aa580a7f3a672939dfed07e7438f19ad5d042b6293c7879f3cf401f2a849e7",
-    "internal/duplex/skills_real_edges_test.go": "05a650aee73cf2f4685141203e08f8eec1f2c35d347e3d5078b02aea5ba01d35",
-    "internal/duplex/skills_test.go": "e50fa774b3a2912e5a6b4f89d6c024eb28a857b3e9fb89f3cea0769a82bb7b19",
-    "internal/duplex/skills_real_model_test.go": "9f6bc350f5de0b7687d52bb7d5fca107361d8de2782b91027b6f61e2d067e18c",
+    "internal/duplex/skills.go": "3a7dbf28ca74b15da1adbc29c59d992a9c0afcc7b642c7d9b8c91342ddeb60e7",
+    "internal/duplex/skills_real_edges_test.go": "0526e3132e495b7325528d6c1db6c4334fa598ad12aba5ad4be03926f82ff41b",
+    "internal/duplex/skills_test.go": "75b04a43070a82b47c64acd2724cf3fbb4cc298bcd93119fd10e18c742dca864",
+    "internal/duplex/skills_real_model_test.go": "c62d2171dd812a284075bc0860db303d044752a8793e21b51b91b9d1e1846018",
     "internal/duplex/business_events.go": "8e481308ace2dbb823ec4cad0616aee40c794529c3d162f894a4e79dfc782806",
-    "internal/duplex/engine.go": "8ceda9aa723e94a7833019efa3081bdd5c818b0aecc969b07510aa0f05612973",
-    "internal/duplex/think.go": "0af904c3d4186cd88b8f1a724ccb14d4786a8e7e86e96ba00b15fe8d813eb8f1",
-    "internal/duplex/tools.go": "fb8e6c69a0aea6d538917a418103bd63eff6d934b0e6dfee4ea0978b917bdc22",
+    "internal/duplex/engine.go": "9008be9cd187e5fe862228b176b175e8c49abb4851e2bc21602a249ba7ae060a",
+    "internal/duplex/think.go": "7039977a5bbfa2fd78cccef8f551fffbeb0a04604327945924e7feb6ddcba392",
+    "internal/duplex/tools.go": "e508d2f944d315413fa2b4c5e041aaaef11aa94e9d244d286a0a5c0d0c10c3b4",
     "internal/skillsmcp/client.go": "faebcacc11091e1022a11e5158dfe086d05b9dae46eaef79c6488c2914741060",
     "services/skills-mcp/catalog.go": "d7eb7a7f5fe6360da832143267af5d9dc9d32d7ba5d842e12074984e7974eca5",
     "services/skills-mcp/service_test.go": "27c2c1901f965a9b1e606fb8c7a778a25df930d89819027dac6971f88032b4eb",
@@ -29,13 +35,11 @@
     "internal/server/session.go": "1cb20a12d5473cb8515b6505e71e36f92be3cbdcbddb48336422665e5a32c35c",
     "internal/server/realtime.go": "37df95e70bd6261799a029c718dbb1066f0ec6a447f5e0f75559afc661b510fe",
     "internal/live/events.go": "679b3e563dc177225086c511dfdd1049f334320dc2b75a63c5997f7b89da0804",
-    "internal/duplex/business_events_test.go": "3c266cca2e61e23a6f433df9aff00ef97aaa4c95551b6b72116101be0a3adce7"
-  },
-  "payload_sha256": {
-    "duplex.test": "ce172186e588855ea69b1cfac792bf9a3dfee1b91a83c3159c964bbfc4c79630",
-    "catalog.test": "65b9ec586621ee42586d893b9ce44b8af5df8938c9d70fc13c7e87acae347c00",
-    "simulate.py": "7db7b6b09a9556a0ff50bce69f6cc4f28418cd8f0f1ba9e6d426385a7abbc2c4",
-    "bundle": "0302c716efaf70d24b02f81bfed7a1f768f819bcc6c1a508c884a88d8d4cfc6c"
-  },
-  "note": "The benchmark uses final-4. Confirmation changes only the unknown-consent prompt and the concept-answer assertion; benchmark scenarios retain consented state."
+    "internal/duplex/business_events_test.go": "3541dc8d7a9bf25fda195271be16940c0b1edfc7d44ee0e1343a7bc28afbc2d4",
+    "internal/duplex/history.go": "02eae341da39fe3bab3b32f5de34acb729b0301e37964723ce15a19f7df78ee5",
+    "internal/duplex/quote_readout.go": "0f7d46d6467779da9464a2347d92da40652576b0bd91f951e52675d994121394",
+    "internal/duplex/quote_readout_test.go": "f137372616b8895155bc123ad3384f6c1a0b5f2e43402e6789cd41f6547a30e1",
+    "internal/duplex/parity_test.go": "40f9835c85e96129b5a45db0fe7cb6493a506ad96c4e106fcab1ae86eac5a910",
+    "internal/duplex/review_test.go": "52d1f643cc939efe56fd43a513b1ac4c6e480a095b7930ddc8b516c5a4324502"
+  }
 }

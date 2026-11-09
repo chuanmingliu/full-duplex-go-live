@@ -1,6 +1,11 @@
 package duplex
 
-import "github.com/chuanmingliu/golive/internal/tools"
+import (
+	"encoding/json"
+	"reflect"
+
+	"github.com/chuanmingliu/golive/internal/tools"
+)
 
 type speechInput struct {
 	text    string
@@ -82,4 +87,25 @@ func (e *Engine) completedOriginOpener(origin taskOrigin) bool {
 	timing := caller.Timings()
 	return !origin.speechEndAt.IsZero() && timing.SpeechEndAt.Equal(origin.speechEndAt) &&
 		!timing.FirstAudioOut.IsZero() && !timing.CompletedAt.IsZero() && timing.CompletedNaturally
+}
+
+// WeChat status does not enter the native motor quotation calculation. Keep
+// every other input in the comparison, including customer and coverage fields.
+func quoteInputsUnchanged(task *tools.Task, memory json.RawMessage) bool {
+	if task.Tool.Name != "quote_total" {
+		return false
+	}
+	var previous, current map[string]any
+	if json.Unmarshal(task.Request.Memory, &previous) != nil || previous == nil || json.Unmarshal(memory, &current) != nil || current == nil {
+		return false
+	}
+	for _, snapshot := range []map[string]any{previous, current} {
+		if wechat, ok := snapshot["wechat"].(map[string]any); ok {
+			delete(wechat, "status")
+			if len(wechat) == 0 {
+				delete(snapshot, "wechat")
+			}
+		}
+	}
+	return reflect.DeepEqual(previous, current)
 }

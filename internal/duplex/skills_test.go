@@ -132,6 +132,7 @@ func (s *skillScenarioLLM) Stream(ctx context.Context, req provider.LLMRequest) 
 }
 
 type observedQuote struct {
+	onStart   func()
 	req       chan tools.Request
 	delay     time.Duration
 	completed chan time.Duration
@@ -140,6 +141,9 @@ type observedQuote struct {
 
 func (q observedQuote) Execute(ctx context.Context, _ tools.Tool, r tools.Request) tools.Result {
 	began := time.Now()
+	if q.onStart != nil {
+		q.onStart()
+	}
 	if q.started != nil {
 		q.started <- began
 	}

@@ -38,8 +38,8 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 	began := time.Now()
 	memory, version := e.MemorySnapshot()
 	text := latestUserText(req.Messages)
-	if job.turn != nil && job.turn.Transcript != "" {
-		text = job.turn.Transcript
+	if job.request != "" {
+		text = job.request
 	}
 	out := skillOutput{Status: "no_match", Scope: skillScope(job.turn), MemoryVersion: version}
 	docs, err := e.skills.LoadForTurn(ctx, text, memory)

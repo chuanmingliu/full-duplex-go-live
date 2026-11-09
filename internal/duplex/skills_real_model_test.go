@@ -33,6 +33,8 @@ const skillsSyntheticPrompt = `你是小翠，正在进行纯模拟的中文车�
 客户咨询保险生效时间时，回答以保单载明的时间为准。`
 
 type modelProbeCall struct {
+	Request   string              `json:"rendered_user_request,omitempty"`
+	Recovery  bool                `json:"recovery_policy,omitempty"`
 	Calls     []provider.ToolCall `json:"calls,omitempty"`
 	Guides    []skillOutput       `json:"guidance,omitempty"`
 	Text      string              `json:"text,omitempty"`
@@ -52,6 +54,12 @@ func (p *modelProbe) Name() string { return p.inner.Name() }
 func (p *modelProbe) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
 	entry := &modelProbeCall{}
 	for _, m := range req.Messages {
+		if m.Role == provider.RoleUser {
+			entry.Request = m.Content
+		}
+		if m.Role == provider.RoleSystem && strings.Contains(m.Content, "上一轮回答被来电人打断") {
+			entry.Recovery = true
+		}
 		if m.Name == skillsmcp.ToolName {
 			var guide skillOutput
 			if json.Unmarshal([]byte(m.Content), &guide) == nil {
@@ -124,7 +132,7 @@ type realSkillSession struct {
 	quote observedQuote
 }
 
-func newRealSkillSession(t *testing.T, llm provider.LLM, cfg skillsmcp.Config) *realSkillSession {
+func newRealSkillSession(t *testing.T, llm provider.LLM, cfg skillsmcp.Config, onQuoteStart ...func(*Engine)) *realSkillSession {
 	t.Helper()
 	opts := testConfig()
 	opts.ToolsMemory = true
@@ -138,6 +146,9 @@ func newRealSkillSession(t *testing.T, llm provider.LLM, cfg skillsmcp.Config) *
 	opts.Tools = []config.ToolConfig{{Name: "quote_total", Description: "Calculate a synthetic motor premium using confirmed memory.quote plus the config changes. Preserve all unspecified items. The asynchronous result is authoritative.", Parameters: json.RawMessage(`{"type":"object","properties":{"config":{"type":"object","properties":{"三者险":{"type":"string"},"交强险":{"type":"boolean"},"车损险":{"type":"boolean"}}}},"required":["config"]}`), URL: "http://synthetic.invalid", Async: true, ETASeconds: 3}}
 	s := &realSkillSession{p: &modelProbe{inner: llm}, c: newCollector(opts.ClientRate), quote: observedQuote{req: make(chan tools.Request, 16), started: make(chan time.Time, 16), completed: make(chan time.Duration, 16), delay: 3 * time.Second}}
 	s.e = New(Options{Cfg: opts, Instructions: skillsSyntheticPrompt, SessionID: "synthetic-skills", CallID: "synthetic-skills"}, Deps{ASR: mock.NewASR("合成输入"), LLM: s.p, TTS: mock.NewTTS(), Emit: s.c.emit, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if len(onQuoteStart) > 0 {
+		s.quote.onStart = func() { onQuoteStart[0](s.e) }
+	}
 	s.e.toolExec = s.quote
 	s.e.Start(context.Background())
 	t.Cleanup(s.e.Close)
@@ -351,7 +362,7 @@ func rowText(row realSkillRow) string {
 }
 func acknowledgesAdded(row realSkillRow) bool {
 	text := rowText(row)
-	ack := strings.Contains(text, "成功") || strings.Contains(text, "已添加") || strings.Contains(text, "已经添加") || strings.Contains(text, "加好了")
+	ack := strings.Contains(text, "成功") || strings.Contains(text, "已添加") || strings.Contains(text, "已经添加") || strings.Contains(text, "加好了") || strings.Contains(text, "已经加上")
 	for _, clause := range strings.FieldsFunc(text, func(r rune) bool { return strings.ContainsRune("，。！？；\n", r) }) {
 		negated := false
 		for _, word := range []string{"不用", "无需", "不必", "不要", "不需要", "不再", "停止"} {

@@ -283,3 +283,33 @@ func (e *Engine) historySnapshot() []provider.Message {
 	}
 	return out
 }
+
+// scopeInterruptedRequest keeps unfinished context available while giving the
+// new request its own message. A rendering-only boundary preserves stored
+// history and prevents two independent requests being presented as one task.
+func scopeInterruptedRequest(messages []provider.Message, current string) []provider.Message {
+	if current == "" {
+		return messages
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != provider.RoleUser {
+			continue
+		}
+		if !strings.HasSuffix(messages[i].Content, current) {
+			return messages
+		}
+		context := strings.TrimSpace(strings.TrimSuffix(messages[i].Content, current))
+		if context == "" {
+			return messages
+		}
+		prior := messages[i]
+		prior.Content = context
+		out := make([]provider.Message, 0, len(messages)+2)
+		out = append(out, messages[:i]...)
+		out = append(out, prior,
+			provider.Message{Role: provider.RoleSystem, Content: "上一轮回答被来电人打断。先前未完成的任务已暂停。下面的用户消息是当前唯一待回答的请求。若是补充、指代或继续请求，可结合先前上下文；若换了话题，只回答新问题，不附带旧任务或主动恢复旧流程。已提交工具结果仍按原规则处理。"},
+			provider.Message{Role: provider.RoleUser, Content: current})
+		return append(out, messages[i+1:]...)
+	}
+	return messages
+}

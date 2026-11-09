@@ -141,7 +141,10 @@ func TestSkillsRealModelEdges(t *testing.T) {
 	s.e.Close()
 	release()
 
-	for _, test := range []struct{ phase, mode string }{{"retrieval", "skills"}, {"playback", "original"}, {"playback", "skills"}} {
+	for _, test := range []struct {
+		phase, mode   string
+		clarification bool
+	}{{"retrieval", "skills", false}, {"playback", "original", false}, {"playback", "skills", false}, {"retrieval", "skills", true}} {
 		phase, mode := test.phase, test.mode
 		selected := cfg
 		if mode == "original" {
@@ -183,15 +186,24 @@ func TestSkillsRealModelEdges(t *testing.T) {
 		time.Sleep(400 * time.Millisecond)
 		late := audioAfter(s.c, interrupted.Add(100*time.Millisecond))
 		cutoff := lastAudioDelay(s.c, interrupted)
-		r = s.turn(t, "interrupt_"+phase+"_recovery", mode, "保险从什么时候开始生效？")
+		next, scenario := "保险从什么时候开始生效？", "interrupt_"+phase+"_recovery"
+		if test.clarification {
+			next, scenario = "我打开聊天列表了，下一步呢？", "interrupt_clarification"
+		}
+		r = s.turn(t, scenario, mode, next)
 		r.InterruptCutoffMS = cutoff
 		r.Checks["interruption_phase_reached"] = observed
 		r.Checks["no_old_audio_after_100ms"] = late == 0
 		r.Checks["recovered_response"] = r.AudioMS > 0
-		r.Checks["recovery_has_no_old_skill"] = !skillLoaded(r)
 		text := rowText(r)
-		r.Checks["recovery_answers_latest_question"] = strings.Contains(text, "生效") || strings.Contains(text, "保单")
-		r.Checks["recovery_does_not_resume_old_task"] = !strings.Contains(text, "服务通知") && !strings.Contains(text, "打开微信") && !strings.Contains(text, "理赔")
+		r.Checks["latest_request_separated"] = len(r.Trace) > 0 && r.Trace[0].Request == next && r.Trace[0].Recovery
+		if test.clarification {
+			r.Checks["clarification_context_preserved"] = strings.Contains(text, "服务通知")
+		} else {
+			r.Checks["recovery_has_no_old_skill"] = !skillLoaded(r)
+			r.Checks["recovery_answers_latest_question"] = strings.Contains(text, "生效") || strings.Contains(text, "保单")
+			r.Checks["recovery_does_not_resume_old_task"] = !strings.Contains(text, "服务通知") && !strings.Contains(text, "打开微信") && !strings.Contains(text, "理赔")
+		}
 		rows = append(rows, r)
 		s.e.Close()
 	}
@@ -212,8 +224,12 @@ func TestSkillsRealModelEdges(t *testing.T) {
 		if mode == "skills" {
 			selected = cfg
 		}
-		s = newRealSkillSession(t, llm, selected)
+		s = newRealSkillSession(t, llm, selected, func(e *Engine) { e.ApplyBusinessEvent("addV") })
 		r = s.turn(t, "quotation_completion", mode, "请按现有的方案给我报个价。")
+		probeBarrier(s.e)
+		memory, _ := s.e.MemorySnapshot()
+		r.Checks["addV_during_calculation_retained"] = strings.Contains(string(memory), `"status":"added"`)
+		r.Checks["quote_started_before_addV"] = len(r.Quotes) > 0 && strings.Contains(string(r.Quotes[0].Memory), `"status":"consented"`)
 		select {
 		case duration := <-s.quote.completed:
 			r.Checks["three_second_calculation_preserved"] = duration >= 3*time.Second
@@ -229,6 +245,17 @@ func TestSkillsRealModelEdges(t *testing.T) {
 			}
 			return false
 		})
+		probeBarrier(s.e)
+		historyOK := true
+		s.e.post(func() {
+			for _, m := range s.e.history {
+				if strings.Contains(m.Content, "方案在计算期间有改动") {
+					historyOK = false
+				}
+			}
+		})
+		probeBarrier(s.e)
+		r.Checks["addV_does_not_invalidate_quote"] = historyOK
 		rows = append(rows, r)
 		s.e.Interrupt()
 		r = s.turn(t, "quotation_revision_same_session", mode, "把刚才方案里的三者险改成三百万，其他不变，再算一下。")

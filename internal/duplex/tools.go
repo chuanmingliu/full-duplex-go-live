@@ -954,8 +954,13 @@ func (e *Engine) maybeDeliver() {
 		// The gap never came: the result interrupts, as a person would.
 		e.yieldFloor(false)
 	}
-	_, ver := e.memorySnapshot()
-	opening, readout, posthookSkipped := e.quoteResultPrefix(delivery, ver, busy)
+	memory, ver := e.memorySnapshot()
+	current := task.Request.MemoryVersion == ver || quoteInputsUnchanged(task, memory)
+	speechVersion := ver
+	if current {
+		speechVersion = task.Request.MemoryVersion
+	}
+	opening, readout, posthookSkipped := e.quoteResultPrefix(delivery, speechVersion, busy)
 	var note strings.Builder
 	fmt.Fprintf(&note, "【后台任务结果】%s（%s）已完成", task.ID, task.Tool.Name)
 	if task.Result.Err != nil {
@@ -967,7 +972,7 @@ func (e *Engine) maybeDeliver() {
 		} else if opening != "" {
 			fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 		}
-		if task.Request.MemoryVersion != ver {
+		if !current {
 			fmt.Fprintf(&note, "\n注意：该结果基于工作记忆 v%d 计算，而当前工作记忆已是 v%d（方案在计算期间有改动）。请先告知结果对应的是之前的方案，并询问是否按最新方案重新计算。", task.Request.MemoryVersion, ver)
 		} else if readout == "" {
 			note.WriteString("\n请现在自然地把结果告诉用户，简洁，报总价和关键构成即可。")
@@ -976,7 +981,7 @@ func (e *Engine) maybeDeliver() {
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: task.Tool.Name, Status: "delivered",
 		MemoryVersion: task.Request.MemoryVersion, WaitedMS: waited.Milliseconds(), Interrupting: busy})
 	e.history = append(e.history, provider.Message{Role: provider.RoleSystem, Content: note.String()})
-	if task.Result.Err == nil && task.Request.MemoryVersion == ver {
+	if task.Result.Err == nil && current {
 		e.recordSelection(task.Result.Output)
 	}
 	turn := e.tracker.Begin("", false)
