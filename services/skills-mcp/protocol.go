@@ -42,6 +42,7 @@ func buildServer(c Catalog, b backend) *mcp.Server {
 		mcp.AddTool(s, &mcp.Tool{Name: "quote_total", Description: c.Quote.Description}, b.quote(c.Quote))
 	}
 	registerOutboundPrompt(s, c)
+	registerEventResponses(s, c)
 	for _, sk := range c.Skills {
 		if !c.available(sk) {
 			continue

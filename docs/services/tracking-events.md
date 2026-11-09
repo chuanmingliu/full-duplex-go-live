@@ -20,6 +20,35 @@ This is an authenticated HTTP JSON callback. Internally it invokes the same engi
 
 A 202 response reports that the event was queued to the live session. The resulting `golive.memory` event carries `wechat.status=added` on the session/sideband stream. Repeated `addV` delivery is idempotent for that session, including retries with a different event ID. The event ID is echoed for correlation; it is not a durable deduplication ledger.
 
+## Configurable callback speech
+
+The Skills & tools panel has a **Callback responses** section. Enable **Speak a confirmation after addV**, enter one or more lines, then publish. The catalog stores the binding in `event_responses.addV`.
+
+```json
+{
+  "event_responses": {
+    "addV": {
+      "enabled": true,
+      "templates": [
+        "微信已经添加成功了，我们继续刚才的话题。"
+      ]
+    }
+  }
+}
+```
+
+Each binding accepts up to 12 distinct single-line templates, each at most 300 Unicode characters. Text is spoken verbatim. An enabled binding requires at least one template. The editor publishes atomically using its catalog revision, rejecting concurrent stale edits. Existing catalogs without this field retain their prior behavior.
+
+After applying the trusted state update, Active Call fetches `golive://event-responses/addV` using a standard MCP `resources/read` request. This single request shares the configured skills timeout, 150 ms by default, and runs off the audio loop. A published edit takes effect on the next callback without restarting either service. A callback already being handled retains the fetched revision.
+
+One template is chosen randomly. The response waits for the caller, ASR finalization, interruption/echo decision, active model/audio output, playback receipts, tool acknowledgments, quotation tasks and pending result deliveries. A currently recognized WeChat guidance turn is canceled when completion makes it stale. Quotation calculations and unrelated answers retain their normal scheduling. Silence reminders yield to the queued callback response.
+
+Speech follows the normal player and canonical transcript path, including guarded interruptions and output accounting. The binding is consumed when speech starts, so duplicate events and interruptions cannot cause repeated announcements. A disabled, missing, invalid or unavailable resource preserves the state update and the previous conversational fallback. Call closure cancels lookup and discards pending speech.
+
+`business: response prepared` records lookup status, revision and elapsed time. `business: response started` records the selected template index, turn and time waiting since the callback. This marks speech scheduling. The corresponding player output and transcript establish when audio actually starts. Keep quotation calculation timing separate.
+
+The tracking ingress remains HTTP JSON. MCP transports the maintained response configuration. The actual tracking producer must still be connected when available.
+
 | HTTP status | Meaning |
 | --- | --- |
 | 202 | Queued to the matching initialized session |

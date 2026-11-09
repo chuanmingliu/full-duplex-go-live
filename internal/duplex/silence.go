@@ -55,7 +55,7 @@ func (e *Engine) maybeSilenceReaction(now time.Time) {
 		return
 	}
 	// Do not speak before an answered call has had its greeting or caller.
-	if e.muted || (ts.lastCallerAt.IsZero() && ts.lastQuietAt.IsZero()) || e.silenceReactionBusy() {
+	if e.muted || e.eventResponse != nil || (ts.lastCallerAt.IsZero() && ts.lastQuietAt.IsZero()) || e.silenceReactionBusy() {
 		s.due = time.Time{}
 		return
 	}

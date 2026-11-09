@@ -41,10 +41,11 @@ type ToolConfig struct {
 }
 
 type Catalog struct {
-	Schema   int        `json:"schema"`
-	Revision int        `json:"revision"`
-	Skills   []Skill    `json:"skills"`
-	Quote    ToolConfig `json:"quote_total"`
+	Schema         int                      `json:"schema"`
+	Revision       int                      `json:"revision"`
+	Skills         []Skill                  `json:"skills"`
+	Quote          ToolConfig               `json:"quote_total"`
+	EventResponses map[string]EventResponse `json:"event_responses,omitempty"`
 }
 
 func seedSkill(markdown string) Skill {
@@ -94,6 +95,9 @@ func (c *Catalog) migrate() {
 var skillName = regexp.MustCompile("^[a-z0-9]+(-[a-z0-9]+)*$")
 
 func (c Catalog) validate() error {
+	if err := validateEventResponses(c.EventResponses); err != nil {
+		return err
+	}
 	if c.Schema != 3 {
 		return errors.New("unsupported catalog schema")
 	}

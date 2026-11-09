@@ -113,9 +113,10 @@ type BackendOptions struct {
 
 // Engine is one session's duplex orchestrator.
 type Engine struct {
-	hasInterrupted                          bool  // loop-owned; later prompts identify the newest request explicitly
-	wechatTurn                              *Turn // current generation giving WeChat guidance
-	wechatAdded                             bool  // authoritative completion, owned by the loop
+	hasInterrupted                          bool                  // loop-owned; later prompts identify the newest request explicitly
+	wechatTurn                              *Turn                 // current generation giving WeChat guidance
+	wechatAdded                             bool                  // authoritative completion, owned by the loop
+	eventResponse                           *pendingEventResponse // loop-owned callback speech
 	skills                                  *skillsmcp.Client
 	opts                                    Options
 	talkerPending                           *talkerOpener
@@ -943,6 +944,7 @@ func (e *Engine) onTick() {
 	e.checkHangupRules("")
 	e.maybeDeliver()
 	e.drainDeferred()
+	e.maybeEventResponse()
 	e.maybeSilenceReaction(time.Now())
 	// The session's lifetime is the session's business: the server bounds it
 	// with a deadline on the context it hands this engine, and says so in

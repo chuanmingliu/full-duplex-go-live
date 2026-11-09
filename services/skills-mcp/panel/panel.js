@@ -31,6 +31,9 @@ function renderSkills() {
   }
 }
 function render() {
+  const response = (catalog.event_responses || {}).addV || {enabled:false, templates:[]};
+  el('addVOn').checked = response.enabled;
+  el('addVTemplates').value = (response.templates || []).join('\n');
   el('toolOn').checked = catalog.quote_total.enabled;
   el('toolDesc').value = catalog.quote_total.description;
   el('timeout').value = catalog.quote_total.timeout_seconds;
@@ -58,6 +61,11 @@ el('remove').onclick = () => { catalog.skills.splice(selected,1); selected = 0; 
 el('reload').onclick = () => load().catch(e => status(e.message));
 el('save').onclick = async () => {
   if (!updateSkill()) return;
+  const templates = el('addVTemplates').value.split('\n').map(text => text.trim()).filter(Boolean);
+  if ((el('addVOn').checked && !templates.length) || templates.length > 12 || templates.some(text => [...text].length > 300) || new Set(templates).size !== templates.length) {
+    status('Provide 1–12 distinct response lines when enabled, each at most 300 characters.'); return;
+  }
+  catalog.event_responses = {...catalog.event_responses, addV:{enabled:el('addVOn').checked, templates}};
   catalog.quote_total = {description:el('toolDesc').value, enabled:el('toolOn').checked, timeout_seconds:Number(el('timeout').value)};
   el('editor').inert = true;
   try { catalog = await api('PUT',catalog); dirty = false; render(); status('Published. The next MCP request uses this revision.'); }

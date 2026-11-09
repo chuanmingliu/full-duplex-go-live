@@ -1,0 +1,112 @@
+{
+  "call_id": "out-mw92i4vn-q487",
+  "build": "0ac7966",
+  "archive": {
+    "files_verified": 5,
+    "channels_with_signal": 2,
+    "seconds": 145.64,
+    "caller_lines": 15,
+    "assistant_lines": 17
+  },
+  "boundary": "server output",
+  "acoustic_handset_verified": false,
+  "analyzer_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50",
+  "normal_first_content": {
+    "n": 8,
+    "p50_ms": 1032,
+    "p95_ms": 2205,
+    "max_ms": 2205
+  },
+  "quotation_acknowledgment": {
+    "n": 0,
+    "p50_ms": null,
+    "p95_ms": null,
+    "max_ms": null
+  },
+  "quotation_result": {
+    "n": 3,
+    "p50_ms": 1049,
+    "p95_ms": 1279,
+    "max_ms": 1279
+  },
+  "quotation_readout": {
+    "n": 3,
+    "p50_ms": 1049,
+    "p90_ms": 1279,
+    "p95_ms": 1279,
+    "max_ms": 1279,
+    "at_or_above_target": 1
+  },
+  "first_audio_including_openers": {
+    "n": 11,
+    "p50_ms": 380,
+    "p90_ms": 380,
+    "p95_ms": 380,
+    "max_ms": 380,
+    "at_or_above_target": 0
+  },
+  "counts": {
+    "records": 17,
+    "answered": 11,
+    "non_speech": 6,
+    "cancelled": 0,
+    "interrupted_answers": 2,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 3,
+    "tool_results_joined": 3,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 3
+  },
+  "canonical_conversational_content": {
+    "n": 8,
+    "p50_ms": 1032,
+    "p90_ms": 2205,
+    "p95_ms": 2205,
+    "max_ms": 2205,
+    "at_or_above_target": 1
+  },
+  "gate": {
+    "passed": false,
+    "failure_count": 3,
+    "target_ms": 1200,
+    "minimum_caller_turns": 20,
+    "quote_sla": "separate",
+    "metric": "both"
+  },
+  "normal_gate": {
+    "passed": false,
+    "minimum_normal_turns": 20,
+    "target_ms": 1200
+  },
+  "interruptions": {
+    "boundary": "VAD utterance open to server playback cut",
+    "summary": {
+      "n": 1,
+      "p50_ms": 208,
+      "p95_ms": 208,
+      "max_ms": 208
+    },
+    "samples_ms": [
+      208
+    ],
+    "unpaired": 0,
+    "opened_during_playback": {
+      "n": 1,
+      "p50_ms": 208,
+      "p95_ms": 208,
+      "max_ms": 208
+    },
+    "non_barge_cancellations": 1,
+    "kept_acknowledgments": 1,
+    "detector_assists": 1,
+    "detector_fallbacks": 0
+  }
+}

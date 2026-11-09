@@ -23,6 +23,7 @@ func (e *Engine) ApplyBusinessEvent(name string) bool {
 			return
 		}
 		e.wechatAdded = true
+		var resume *Turn
 		// An authoritative completion can arrive after retrieval or during speech.
 		// Replan only the active WeChat answer; native tool tasks keep their state.
 		if turn := e.wechatTurn; turn != nil && e.tracker.IsCurrent(turn) && e.assistantHasFloor() {
@@ -34,9 +35,10 @@ func (e *Engine) ApplyBusinessEvent(name string) bool {
 			next.skillScope = skillScope(turn)
 			e.specTurn = nil
 			e.commitTurn(next)
-			e.startBackend(next, "business_event")
+			resume = next
 		}
 		e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: version, Patch: patch})
+		e.prepareEventResponse(name, resume)
 	})
 	return true
 }
