@@ -48,9 +48,10 @@ type Entry struct {
 	Meta        map[string]Binding `json:"_meta"`
 }
 type Guidance struct {
-	URI    string `json:"uri"`
-	Digest string `json:"digest"`
-	Text   string `json:"text"`
+	State  map[string][]string `json:"required_state,omitempty"`
+	URI    string              `json:"uri"`
+	Digest string              `json:"digest"`
+	Text   string              `json:"text"`
 }
 
 func New(cfg Config) (*Client, error) {
@@ -148,7 +149,8 @@ func (c *Client) projection(memory json.RawMessage) map[string]string {
 
 type selection struct {
 	Meta map[string]struct {
-		Revision int `json:"revision"`
+		Revision      int  `json:"revision"`
+		AutoSelection bool `json:"auto_selection"`
 	} `json:"_meta"`
 	Messages []struct {
 		Content struct {
@@ -159,18 +161,29 @@ type selection struct {
 	} `json:"messages"`
 }
 
-func (c *Client) selectSkills(ctx context.Context, event string, memory json.RawMessage) (selection, error) {
+func (c *Client) selectSkills(ctx context.Context, event string, utterance string, memory json.RawMessage) (selection, error) {
 	state, _ := json.Marshal(c.projection(memory))
 	var out selection
-	err := c.rpc(ctx, "prompts/get", map[string]any{"name": "outbound-turn", "arguments": map[string]string{"event": event, "state": string(state)}}, &out)
+	err := c.rpc(ctx, "prompts/get", map[string]any{"name": "outbound-turn", "arguments": map[string]string{"event": event, "utterance": utterance, "state": string(state)}}, &out)
 	return out, err
 }
 func (c *Client) Load(ctx context.Context, event string, memory json.RawMessage) ([]Guidance, error) {
+	return c.load(ctx, event, "", memory)
+}
+
+func (c *Client) LoadForTurn(ctx context.Context, utterance string, memory json.RawMessage) ([]Guidance, error) {
+	return c.load(ctx, "auto", utterance, memory)
+}
+
+func (c *Client) load(ctx context.Context, event, utterance string, memory json.RawMessage) ([]Guidance, error) {
 	ctx, cancel := c.deadline(ctx)
 	defer cancel()
-	selected, err := c.selectSkills(ctx, event, memory)
+	selected, err := c.selectSkills(ctx, event, utterance, memory)
 	if err != nil {
 		return nil, err
+	}
+	if event == "auto" && !selected.Meta[routeKey].AutoSelection {
+		return nil, errors.New("skills service lacks automatic selection")
 	}
 	if selected.Meta[routeKey].Revision < 1 {
 		return nil, errors.New("missing skill catalog revision")
@@ -232,9 +245,12 @@ func (c *Client) Load(ctx context.Context, event string, memory json.RawMessage)
 		if len(front) != 2 || front["name"] != result.Skill.Frontmatter["name"] || front["description"] != result.Skill.Frontmatter["description"] {
 			return nil, errors.New("skill frontmatter mismatch")
 		}
-		out = append(out, Guidance{URI: link.URI, Digest: expected.Digest, Text: strings.TrimSpace(body)})
+		out = append(out, Guidance{URI: link.URI, Digest: expected.Digest, Text: strings.TrimSpace(body), State: result.Skill.Meta[bindingKey].State})
 	}
-	latest, err := c.selectSkills(ctx, event, memory)
+	if len(out) == 0 {
+		return out, nil
+	}
+	latest, err := c.selectSkills(ctx, event, utterance, memory)
 	if err != nil || latest.Meta[routeKey].Revision != selected.Meta[routeKey].Revision {
 		return nil, errors.New("skill catalog changed during retrieval")
 	}

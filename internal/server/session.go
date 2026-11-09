@@ -777,6 +777,8 @@ func (s *Session) handleEvent(ctx context.Context, p *peer, data []byte) error {
 	switch eventType {
 	case live.ClientSessionStart:
 		return s.onSessionStart(ctx, p, data, eventID)
+	case live.ClientBusinessEvent:
+		return s.onBusinessEvent(p, data, eventID)
 	case live.ClientSessionUpdate:
 		return s.onSessionUpdate(p, data, eventID)
 	case live.ClientInputAudioAppend:

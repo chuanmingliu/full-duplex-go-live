@@ -7,7 +7,7 @@ The ThinkPad serves outbound workflow instructions and their associated tools fr
 | MCP endpoint | Streamable HTTP at `http://127.0.0.1:8794/mcp` on the ThinkPad. Use the runtime bearer credential. |
 | Skill discovery | `server/discover` advertises `io.modelcontextprotocol/skills`. `skills/list` and `skills/get` return frontmatter, byte length and SHA-256 for each SKILL.md. `resources/read` returns the Markdown. |
 | Earlier clients | Use the SDK's legacy initialization and read `skill://index.json`, then `skill://motor-quotation/SKILL.md`. |
-| Turn selection | The standard MCP prompt `outbound-turn` takes a normalized event and a small projection of confirmed state. Matching skills arrive as resource links. |
+| Turn selection | The standard MCP prompt `outbound-turn` takes a normalized event, or `auto` with the current utterance, plus a small projection of confirmed state. Matching skills arrive as resource links. |
 | Business tool | `tools/call` with `name: quote_total` posts the existing working-memory envelope to the box CRM at `/api/tools/quote`. The CRM owns intake, plan merging, pricing, configured delays and comparison results. |
 | Operator panel | The panel at `/` uses a separate admin token. Publish skill instructions, descriptions and availability together with the tool description, availability and timeout. |
 | Persistence | One Compose replica owns `~/golive-skills-mcp/data/catalog.json`. Each publication compares the displayed revision with the current revision and atomically replaces the file. Prior to editing, an operator can copy that file for backup. |
@@ -28,7 +28,7 @@ Copy the admin token to the Mac clipboard and paste it into the panel. This comm
 ssh chuanming@192.168.71.9 'cat ~/golive-skills-mcp/secrets/admin' | pbcopy
 ```
 
-Select or add a skill, edit its events, state conditions, tool binding and Markdown instructions, then publish. Disabling the quotation tool withdraws dependent skills. Guidance-only workflows remain available. The next MCP request sees the new catalog. If a second editor published first, the panel reports a conflict. Copy any draft text you want to retain before reloading. New executable tools and backend bindings are reviewed code additions. To add a tool, register a typed handler in `buildServer`, extend the catalog and panel for its operator settings, and include an integration test.
+Select or add a skill, edit its events, automatic-selection patterns and exclusions, state conditions, tool binding and Markdown instructions, then publish. Disabling the quotation tool withdraws dependent skills. Guidance-only workflows remain available. The next MCP request sees the new catalog. If a second editor published first, the panel reports a conflict. Copy any draft text you want to retain before reloading. New executable tools and backend bindings are reviewed code additions. To add a tool, register a typed handler in `buildServer`, extend the catalog and panel for its operator settings, and include an integration test.
 
 ## Quotation example
 
@@ -59,7 +59,7 @@ In the panel, use **Preview a published turn** to try the original prompt, an ev
 | Same WeChat event | Missing, `declined` or `added` | None | None |
 | `quote.requested`, `quote.revised` or `quote.compare` | Any | Collect missing information, price a plan or compare alternatives | `quote_total` |
 
-A routing rule matches one of its exact event names and **all** its state conditions. Each condition accepts one of its configured values. Skills without event names remain available for manual discovery. Multiple matches retain catalog order. The sample WeChat workflow checks consent and walks through the caller's actual screen. It makes no assumption that a notification was delivered.
+Explicit routing matches one exact event name and **all** state conditions. Automatic routing uses `event=auto` and `utterance`, requires a `match` regular expression and suppresses any `exclude` match, then applies the same state conditions. Schema 3 adds editable patterns to the known seed skills while preserving operator content. Set event `auto` in the panel preview to test these rules. Each condition accepts one of its configured values. Skills without event names remain available for manual discovery. Multiple matches retain catalog order. The sample WeChat workflow checks consent and walks through the caller's actual screen. It makes no assumption that a notification was delivered.
 
 ### Prompt components and authority
 
@@ -77,7 +77,7 @@ The renderer reselects on a publication race and falls back to the original comp
 
 ### Active Call integration
 
-The optional engine integration reads `skills/list` on backend generation workers and exposes `load_business_skill` with current event metadata. The conversation model selects an event by meaning. The service checks that event and a projection of versioned working memory, then supplies resource links. The host verifies each resource, adds the guidance as a scoped tool result and resumes the existing model/tool flow. Empty configuration and retrieval failures use the original prompt.
+The optional engine integration calls `prompts/get` before the first model completion. The service matches the current utterance against operator patterns and a projection of versioned working memory, then supplies resource links. The host verifies each resource and refreshes the memory snapshot before adding current guidance to the original prompt. This avoids a separate model completion for skill selection. Empty configuration and retrieval failures use the original prompt. The client checks the service’s `auto_selection` capability marker to detect older deployments.
 
 The implemented Go client falls back on a publication race. The Python reference renderer supports a bounded reselect. Both read fresh catalog state on subsequent requests. The engine trusts its explicitly configured, authenticated publishing service for business guidance and retains its own executable tool definitions.
 
@@ -95,4 +95,4 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /tm
 
 Bundle the executable as `skills-mcp` alongside `Dockerfile`, `.dockerignore`, `compose.yaml`, `install.sh` and the two Python files `smoke.py` and `turn_renderer.py`. Use the [Mac runner](../../scripts/local-ops/README.md) to transfer the archive, verify its SHA-256 on the box and extract it into `~/golive-skills-mcp/releases/<release>`. Run `RELEASE=<release> ./install.sh` there. Installation creates private token files on first use, builds a scratch image, starts the one catalog container and runs the smoke test. The service listens on loopback and uses the existing CRM credential through a read-only mount.
 
-For a later check, run `python3 smoke.py` in the installed release directory. It verifies the runtime/admin boundary, catalog discovery, file integrity, tool listing and one synthetic CRM intake request. It also renders synthetic normal, WeChat and quotation turns. It prints synthetic routing outcomes and counts. To roll back the service image, run the installer in the previous release directory using its original tag. To take the catalog offline, stop only its container with `docker stop xiaocui-skills-catalog-1`. The persisted catalog and credentials live outside the release directory.
+For a later check, run `python3 smoke.py` in the installed release directory. It verifies the runtime/admin boundary, catalog discovery, file integrity, tool listing and one synthetic CRM intake request. It also renders synthetic normal, WeChat and quotation turns. It prints synthetic routing outcomes and counts. Save a private copy of `data/catalog.json` before deploying a schema upgrade. Schema 3 adds automatic-selection rules. A rollback to a schema-2 release requires restoring its compatible catalog snapshot as well as running the previous installer with its original tag. Preserve the newer catalog separately so later operator edits remain recoverable. To take the catalog offline, stop only its container with `docker stop xiaocui-skills-catalog-1`. The persisted catalog and credentials live outside the release directory.

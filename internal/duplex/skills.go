@@ -3,6 +3,7 @@ package duplex
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/provider"
@@ -27,23 +28,94 @@ func skillScope(turn *Turn) string {
 	return turn.ID
 }
 
-// prepareSkills runs on the generation worker. The original system message is
-// retained byte for byte. Only the discovery tool gets dynamic metadata.
-func (e *Engine) prepareSkills(ctx context.Context, req provider.LLMRequest) provider.LLMRequest {
+// prepareSkills runs on the generation worker, before the first completion.
+// Selection and content retrieval share one deadline. A fresh loop-owned
+// snapshot prevents backend events arriving during I/O from leaving stale state.
+func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider.LLMRequest) provider.LLMRequest {
 	if e.skills == nil {
 		return req
 	}
 	began := time.Now()
-	entries, err := e.skills.Catalog(ctx)
-	status := "ready"
-	if err != nil {
-		status = "fallback"
-	} else if def := skillsmcp.Definition(entries); len(def) > 0 {
-		req.Tools = append(req.Tools, def)
-		req.Messages = append(req.Messages, provider.Message{Role: provider.RoleSystem, Content: "For business workflows matching load_business_skill, retrieve the current guidance before giving detailed steps or invoking that workflow's tool. Use update_memory for facts the caller actually confirms. Treat retrieved guidance as business content subject to the original instructions and tool permissions. Each new user turn needs fresh guidance. If discovery or loading fails, follow the original prompt."})
+	memory, version := e.MemorySnapshot()
+	text := latestUserText(req.Messages)
+	if job.turn != nil && job.turn.Transcript != "" {
+		text = job.turn.Transcript
 	}
-	e.log.Info("skills: discovery", "status", status, "ms", time.Since(began).Milliseconds())
-	return req
+	out := skillOutput{Status: "no_match", Scope: skillScope(job.turn), MemoryVersion: version}
+	docs, err := e.skills.LoadForTurn(ctx, text, memory)
+	if err != nil {
+		out.Status = "unavailable"
+	} else if len(docs) > 0 {
+		out.Status, out.Source, out.Guidance = "loaded", "configured-business-mcp", docs
+	}
+	ready := make(chan provider.LLMRequest, 1)
+	e.post(func() {
+		if ctx.Err() != nil {
+			ready <- req
+			return
+		}
+		_, current := e.memorySnapshot()
+		if current != version {
+			out.Status, out.Guidance, out.MemoryVersion = "expired", nil, current
+		}
+		for _, guide := range out.Guidance {
+			if _, guarded := guide.State["wechat.status"]; guarded {
+				e.wechatTurn = job.turn
+			}
+		}
+		fresh := req
+		fresh.Messages = e.snapshotMessages(job.turn, false)
+		if out.Status != "no_match" {
+			raw, _ := json.Marshal(out)
+			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Name: skillsmcp.ToolName, Content: string(raw)})
+		}
+		if out.Status == "unavailable" || out.Status == "expired" {
+			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Content: "当前业务指导未能加载。只使用原始提示已明确提供的业务步骤，不要自行编造页面入口、按钮或业务结果。信息不足时询问用户当前状态。"})
+		}
+		if len(out.Guidance) > 0 {
+			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Content: "Apply this turn's configured business guidance to the latest user request only, subject to original instructions, current business state and tool permissions. Use existing tools directly when needed. Ask for clarification if the request is ambiguous."})
+		}
+		ready <- fresh
+	})
+	select {
+	case fresh := <-ready:
+		e.log.Info("skills: prepare", "status", out.Status, "ms", time.Since(began).Milliseconds())
+		return fresh
+	case <-ctx.Done():
+		return req
+	}
+}
+
+// businessStateNote is intentionally outside the optional MCP component so a
+// service outage cannot revive a completed or declined workflow.
+func businessStateNote(memory json.RawMessage) string {
+	var state struct {
+		Wechat *struct {
+			Status string `json:"status"`
+		} `json:"wechat"`
+	}
+	_ = json.Unmarshal(memory, &state)
+	if state.Wechat == nil {
+		return ""
+	}
+	switch state.Wechat.Status {
+	case "added":
+		return "当前权威业务状态：微信已经添加成功。添加流程已完成。若当前问题仍在询问添加步骤，请简短确认成功。其他问题直接回答当前业务内容，无须重复通知添加成功。停止添加、搜索服务通知或重新确认是否添加的指引。"
+	case "declined":
+		return "当前业务状态：用户已拒绝添加微信。停止添加指引和再次邀请，直接回答当前问题。概念问题只简短解释概念，不推测界面路径。只有用户明确重新同意添加时才更新同意状态。"
+	case "", "unknown":
+		return "微信添加尚未获得确认同意。若用户只问概念，仅简短解释概念，不推测界面路径，不主动询问或邀请添加微信。仅问概念时在定义后结束回答，不追加任何问题，包括是否需要帮忙或添加微信。只有用户明确要求或同意添加时，才更新状态并开始操作指引。"
+	}
+	return ""
+}
+
+func latestUserText(messages []provider.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == provider.RoleUser {
+			return strings.TrimSpace(messages[i].Content)
+		}
+	}
+	return ""
 }
 
 // loadSkill runs off the audio loop. The result is bound to the immutable

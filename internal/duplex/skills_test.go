@@ -58,10 +58,10 @@ func skillFixture(t *testing.T, rewrite ...func(string, any) any) skillsmcp.Conf
 			var state map[string]string
 			_ = json.Unmarshal([]byte(args["state"]), &state)
 			messages := []any{}
-			if args["event"] == "quote.revised" || state["wechat.status"] == "consented" {
+			if args["event"] == "quote.revised" || (args["event"] == "auto" && strings.Contains(args["utterance"], "报价")) || (state["wechat.status"] == "consented" && (args["event"] != "auto" || strings.Contains(args["utterance"], "微信"))) {
 				messages = append(messages, map[string]any{"content": map[string]any{"type": "resource_link", "uri": uri, "_meta": map[string]any{"ai.liuchuanming.golive/turn": manifest}}})
 			}
-			result = map[string]any{"_meta": map[string]any{"ai.liuchuanming.golive/turn": map[string]any{"revision": 1}}, "messages": messages}
+			result = map[string]any{"_meta": map[string]any{"ai.liuchuanming.golive/turn": map[string]any{"revision": 1, "auto_selection": true}}, "messages": messages}
 		default:
 			http.Error(w, "unknown", 400)
 			return
@@ -135,10 +135,14 @@ type observedQuote struct {
 	req       chan tools.Request
 	delay     time.Duration
 	completed chan time.Duration
+	started   chan time.Time
 }
 
 func (q observedQuote) Execute(ctx context.Context, _ tools.Tool, r tools.Request) tools.Result {
 	began := time.Now()
+	if q.started != nil {
+		q.started <- began
+	}
 	q.req <- r
 	select {
 	case <-time.After(q.delay):
@@ -167,8 +171,15 @@ func runSkillScenario(t *testing.T, cfg skillsmcp.Config, event string, finishQu
 	engine.Start(ctx)
 	defer func() { engine.Close(); cancel() }()
 	engine.SeedMemory(map[string]any{"wechat": map[string]any{"status": "consented"}, "quote": map[string]any{"交强险": true, "三者险": "200万"}})
+	text := "普通问题"
+	if event == "quote.revised" {
+		text = "修改报价"
+	}
+	if event == "wechat.notification_help" {
+		text = "怎么添加微信"
+	}
 	began := time.Now()
-	engine.SubmitItem(live.ResponseItem{Type: "message", Role: "user", Content: live.TextContent("input_text", "请帮我处理当前业务")}, "")
+	engine.SubmitItem(live.ResponseItem{Type: "message", Role: "user", Content: live.TextContent("input_text", text)}, "")
 	engine.ContinueResponse("")
 	waitFor(t, "first simulated audio", 4*time.Second, func() bool { return collector.audioMS() > 0 })
 	collector.mu.Lock()
@@ -397,7 +408,24 @@ func TestSkillsInterruptedFetchDoesNotResumeAnswer(t *testing.T) {
 	llm.mu.Lock()
 	count := len(llm.requests)
 	llm.mu.Unlock()
-	if count != 1 || collector.audioMS() != 0 {
+	if count != 0 || collector.audioMS() != 0 {
 		t.Fatal("interrupted skill request resumed speech")
+	}
+}
+
+func TestSkillsLegacyServiceFallsBack(t *testing.T) {
+	cfg := skillFixture(t, func(method string, result any) any {
+		if method == "prompts/get" {
+			result.(map[string]any)["_meta"] = map[string]any{"ai.liuchuanming.golive/turn": map[string]any{"revision": 1}}
+		}
+		return result
+	})
+	client, err := skillsmcp.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := client.LoadForTurn(context.Background(), "修改报价", nil)
+	if err == nil || len(docs) != 0 {
+		t.Fatal("old service silently accepted automatic selection")
 	}
 }

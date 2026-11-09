@@ -17,6 +17,17 @@ const slotKey = "ai.liuchuanming.golive/turn"
 var signalName = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`)
 
 func (s Skill) validateBindings() error {
+	if len(s.Match)+len(s.Exclude) > 32 {
+		return errors.New("too many text routing rules")
+	}
+	for _, pattern := range append(append([]string{}, s.Match...), s.Exclude...) {
+		if len(pattern) == 0 || len(pattern) > 1024 {
+			return errors.New("invalid routing pattern length")
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return errors.New("invalid routing regular expression")
+		}
+	}
 	if s.Tool != "" && s.Tool != "quote_total" {
 		return errors.New("unknown tool binding")
 	}
@@ -54,18 +65,26 @@ func (s Skill) matches(event string, state map[string]string) bool {
 }
 
 type turnInput struct {
-	Event string            `json:"event"`
-	State map[string]string `json:"state"`
+	Event     string            `json:"event"`
+	Utterance string            `json:"utterance"`
+	State     map[string]string `json:"state"`
 }
 
 func (c Catalog) selectTurn(t turnInput) ([]Skill, []string, error) {
-	if !signalName.MatchString(t.Event) || len(t.Event) > 96 {
+	if (t.Event != "auto" && !signalName.MatchString(t.Event)) || len(t.Event) > 96 || len(t.Utterance) > 24000 {
 		return nil, nil, errors.New("invalid business event")
 	}
 	skills := []Skill{}
 	tools := []string{}
 	for _, sk := range c.Skills {
-		if !c.available(sk) || !sk.matches(t.Event, t.State) {
+		event := t.Event
+		if event == "auto" {
+			if !sk.matchesText(t.Utterance) || len(sk.Events) == 0 {
+				continue
+			}
+			event = sk.Events[0]
+		}
+		if !c.available(sk) || !sk.matches(event, t.State) {
 			continue
 		}
 		skills = append(skills, sk)
@@ -78,6 +97,7 @@ func (c Catalog) selectTurn(t turnInput) ([]Skill, []string, error) {
 func registerOutboundPrompt(server *mcp.Server, c Catalog) {
 	server.AddPrompt(&mcp.Prompt{Name: "outbound-turn", Description: "Select skill references for the current outbound event and confirmed business state.", Arguments: []*mcp.PromptArgument{
 		{Name: "event", Required: true, Description: "A normalized business event such as wechat.notification_help."},
+		{Name: "utterance", Description: "Current user text for event auto; matched using operator-maintained regular expressions."},
 		{Name: "state", Description: "JSON object of projected string state values, e.g. {\"wechat.status\":\"consented\"}."},
 	}}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		args := req.Params.Arguments
@@ -87,7 +107,7 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog) {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid projected state"}
 		}
 		messages := []*mcp.PromptMessage{}
-		skills, tools, err := c.selectTurn(turnInput{Event: event, State: state})
+		skills, tools, err := c.selectTurn(turnInput{Event: event, State: state, Utterance: args["utterance"]})
 		if err != nil {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: err.Error()}
 		}
@@ -96,6 +116,20 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog) {
 			messages = append(messages, &mcp.PromptMessage{Role: "user", Content: link})
 
 		}
-		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: map[string]any{"revision": c.Revision, "tools": tools}}, Messages: messages}, nil
+		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: map[string]any{"revision": c.Revision, "tools": tools, "auto_selection": true}}, Messages: messages}, nil
 	})
+}
+
+func (s Skill) matchesText(text string) bool {
+	for _, pattern := range s.Exclude {
+		if regexp.MustCompile(pattern).MatchString(text) {
+			return false
+		}
+	}
+	for _, pattern := range s.Match {
+		if regexp.MustCompile(pattern).MatchString(text) {
+			return true
+		}
+	}
+	return false
 }

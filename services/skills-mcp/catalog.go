@@ -23,6 +23,8 @@ var seed string
 var wechatSeed string
 
 type Skill struct {
+	Match       []string            `json:"match,omitempty"`
+	Exclude     []string            `json:"exclude,omitempty"`
 	Tool        string              `json:"tool,omitempty"`
 	Events      []string            `json:"events,omitempty"`
 	State       map[string][]string `json:"state,omitempty"`
@@ -60,7 +62,11 @@ func defaults() Catalog {
 	wechat := seedSkill(wechatSeed)
 	wechat.Events = []string{"wechat.add_requested", "wechat.notification_help"}
 	wechat.State = map[string][]string{"wechat.status": {"consented", "awaiting_confirmation"}}
-	return Catalog{Schema: 2, Revision: 1, Skills: []Skill{quote, wechat}, Quote: ToolConfig{Description: "Calculate the default motor insurance quote, a revised selection, or multiple alternatives using the existing CRM rules and call memory.", TimeoutSeconds: 90, Enabled: true}}
+	quote.Match = []string{`(报个价|给.*报价|帮.*报价|重新.*(算|报价)|再(算|报价)|算一下|算.*(保费|价格)|修改.*(报价|方案)|对比.*(报价|方案)|比较.*(报价|方案)|^报价[吧。？?！!]*$)`}
+	quote.Exclude = []string{`(不要|不用|别|不需要).*(报价|算|比较|对比)`, `(什么是|是什么|为什么).*(报价|保费)`}
+	wechat.Match = []string{`(微信|服务通知).*(哪里|在哪|找|打开|怎么|如何|下一步|接下来|添加|加你)`, `(哪里|怎么|如何|找不到).*(微信|服务通知)`, `^(下一步|接下来)(呢|该.*|怎么.*)?[？?。]?$`}
+	wechat.Exclude = []string{`(不想|不要|不用|不需要|拒绝|别).*(微信|添加|加你)`, `(什么是|是什么|为什么)`}
+	return Catalog{Schema: 3, Revision: 1, Skills: []Skill{quote, wechat}, Quote: ToolConfig{Description: "Calculate the default motor insurance quote, a revised selection, or multiple alternatives using the existing CRM rules and call memory.", TimeoutSeconds: 90, Enabled: true}}
 }
 
 // The original catalog implicitly tied every skill to quote_total. Preserve
@@ -88,7 +94,7 @@ func (c *Catalog) migrate() {
 var skillName = regexp.MustCompile("^[a-z0-9]+(-[a-z0-9]+)*$")
 
 func (c Catalog) validate() error {
-	if c.Schema != 2 {
+	if c.Schema != 3 {
 		return errors.New("unsupported catalog schema")
 	}
 	if len(c.Skills) > 64 {
@@ -180,6 +186,10 @@ func openStore(path string, b backend) (*store, error) {
 		c.migrate()
 		needsSave = true
 	}
+	if c.Schema == 2 {
+		c.migrateRouting()
+		needsSave = true
+	}
 	if err = c.validate(); err != nil {
 		return nil, err
 	}
@@ -236,4 +246,19 @@ func (s *store) publish(c Catalog) (Catalog, error) {
 	s.catalog = c
 	s.server = server
 	return c, nil
+}
+
+// Add editable fast-path rules only to the known seeded workflows. Preserve
+// custom skills and every operator-authored instruction and state guard.
+func (c *Catalog) migrateRouting() {
+	for i := range c.Skills {
+		for _, seed := range defaults().Skills {
+			if c.Skills[i].Name == seed.Name && c.Skills[i].Match == nil {
+				c.Skills[i].Match = seed.Match
+				c.Skills[i].Exclude = seed.Exclude
+			}
+		}
+	}
+	c.Schema = 3
+	c.Revision++
 }

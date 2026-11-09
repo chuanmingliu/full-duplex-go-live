@@ -10,8 +10,8 @@ async function api(method, data, path = '/admin/catalog') {
 function updateSkill() {
   const s = catalog.skills[selected];
   if (!s) return true;
-  try { s.state = JSON.parse(el('guards').value || '{}'); }
-  catch { status('Required state must be a valid JSON object.'); return false; }
+  try { s.state = JSON.parse(el('guards').value || '{}'); s.match = JSON.parse(el('match').value || '[]'); s.exclude = JSON.parse(el('exclude').value || '[]'); }
+  catch { status('State and routing rules must be valid JSON.'); return false; }
   s.events = el('events').value.split(',').map(x => x.trim()).filter(Boolean);
   s.tool = el('binding').value;
   Object.assign(s,{name:el('skillName').value, description:el('skillDesc').value, body:el('body').value, enabled:el('skillOn').checked});
@@ -26,6 +26,7 @@ function renderSkills() {
   if (s) {
     el('skillName').value = s.name; el('skillDesc').value = s.description;
     el('binding').value = s.tool || ''; el('events').value = (s.events || []).join(', '); el('guards').value = JSON.stringify(s.state || {});
+    el('match').value = JSON.stringify(s.match || []); el('exclude').value = JSON.stringify(s.exclude || []);
     el('body').value = s.body; el('skillOn').checked = s.enabled;
   }
 }
@@ -67,7 +68,7 @@ el('save').onclick = async () => {
 el('preview').onclick = async () => {
   try {
     const state = JSON.parse(el('state').value);
-    const selection = await api('POST', {event:el('event').value, state}, '/admin/preview');
+    const selection = await api('POST', {event:el('event').value, utterance:el('utterance').value, state}, '/admin/preview');
     const slots = [
       'Published revision ' + selection.revision,
       'Original prompt\n' + el('original').value,

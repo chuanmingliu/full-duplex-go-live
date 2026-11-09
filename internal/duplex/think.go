@@ -302,7 +302,13 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 	ctx, cancel := context.WithCancel(e.ctx)
 	e.backendCancel = cancel
 	e.backendPending.Add(1)
-	go e.runBackend(ctx, cancel, job, e.backendRequest(e.snapshotMessages(turn, front), front))
+	request := e.backendRequest(e.snapshotMessages(turn, front), front)
+	e.wechatTurn = nil
+	latest := latestUserText(request.Messages)
+	if !front && !e.wechatAdded && (strings.Contains(latest, "微信") || strings.Contains(latest, "服务通知")) {
+		e.wechatTurn = turn
+	}
+	go e.runBackend(ctx, cancel, job, request)
 }
 
 // backendRequest fills in a completion from the session's settings.
@@ -390,6 +396,12 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 		}
 		msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
 	}
+	if !front && e.tools != nil && e.tools.memory != nil {
+		memory, _ := e.memorySnapshot()
+		if note := businessStateNote(memory); note != "" {
+			msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
+		}
+	}
 	return msgs
 }
 
@@ -428,7 +440,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	}
 
 	if !job.front {
-		req = e.prepareSkills(ctx, req)
+		req = e.prepareSkills(ctx, job, req)
 	}
 	if ctx.Err() != nil {
 		return

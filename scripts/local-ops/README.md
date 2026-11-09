@@ -97,3 +97,27 @@ Raw recordings, transcripts, private prompts, phone numbers, credentials, `.env`
 - [handset-capture.py](../handset-capture.py) and [handset_latency.py](../handset_latency.py): separate acoustic capture and measurement.
 
 Follow [CALL-OPERATIONS.md](../../CALL-OPERATIONS.md) for the **call → done → analyze → fix → CI → deploy → verify** workflow, and [HANDSET-LATENCY.md](../../HANDSET-LATENCY.md) for actual handset measurement. Server recordings and simulator metrics do not by themselves prove the physical handset target.
+
+### Synthetic real-model skills comparison
+
+`skills-real-model-sim.py` runs the compiled opt-in skills tests on the ThinkPad.
+It copies only the active provider's connection variables and model choice into
+the child process. The prompts, session data and quotation executor are synthetic.
+It checks the original profile, running executable and launch arguments before
+and after execution.
+
+Build `internal/duplex` as `duplex.test` and `services/skills-mcp` as `catalog.test`
+for Linux, and bundle them with this helper renamed to `simulate.py`. Transfer
+through the reviewed runner queue into a fresh output directory. To use the
+isolated catalog with versioned seed Markdown, run from that directory.
+
+```sh
+python3 simulate.py "$PWD/duplex.test" 20 all fixture
+```
+
+The isolated catalog binds ThinkPad loopback port 18795 and stops in the helper's
+cleanup path. `report.json` contains the paired benchmark and state cases.
+`edges.json` contains outage, interruption, backend-event and same-session quote
+revision cases. `edges` can replace `all` for the edge suite. The iteration count
+accepts 1–20. These measurements cover real-model generation and mock-TTS output.
+Full audio and telephony timing require the separate media simulator.

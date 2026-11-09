@@ -232,6 +232,9 @@ func (e *Engine) SeedMemory(seed map[string]any) {
 		b, _ := json.Marshal(seed)
 		if _, err := e.tools.memory.Patch(b); err == nil {
 			e.log.Debug("tools: memory seeded", "keys", len(seed))
+			if wechat, ok := seed["wechat"].(map[string]any); ok && wechat["status"] == "added" {
+				e.wechatAdded = true
+			}
 		}
 	})
 }
@@ -789,6 +792,11 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil || len(args.Patch) == 0 {
 		// The model sometimes sends the patch itself as the arguments.
 		args.Patch = json.RawMessage(c.Arguments)
+	}
+	var allowed bool
+	args.Patch, allowed = e.protectBusinessState(args.Patch)
+	if !allowed {
+		return `{"ok":false,"error":"wechat added requires a backend addV event"}`
 	}
 	v, err := e.tools.memory.Patch(args.Patch)
 	if err != nil {
