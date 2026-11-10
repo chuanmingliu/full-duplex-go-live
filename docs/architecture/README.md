@@ -18,6 +18,7 @@ This documentation describes `codex/telephony-latency` at **9547d22**, inspected
 | [7. Streaming coordination](07-streaming-coordination.md) | ASR partials, early final, speculation, commitment, text/audio streaming, interruptions and timing |
 | [8. Openers and hangup](08-openers-and-hangup.md) | Keyword selection, LLM continuation, semantic/tool hangup, regex/timer rules and safeguards; verified 1 November 2026 |
 | [9. Skills and prompt rendering](09-skills-prompt-rendering.md) | Original prompt components, progressive skill loading, state freshness, simulation results and deployment roadmap |
+| [Skills MCP operations](../../services/skills-mcp/OPERATIONS.md) | Maintain the published catalog, restore a backup and move the service to another production host |
 | [Optional backchannel detector](../services/backchannel-detector.md) | ThinkPad CPU observer added 2 November 2026; original backchannel controller remains the default, no live-control hook |
 | [6. Simulator and model lab](06-simulator-and-model-lab.md) | Synthetic customer, Talker, edge models and diagnostic tools |
 

@@ -384,6 +384,8 @@ Evaluates the currently published catalog using plain JSON.
 
 Here `state` is an object. The response contains `revision`, `skills` as complete matching catalog skill objects, `tools` as dependent names and `prompt_rendering` with the effective `version`. Preview performs selection only. For v2, the panel also displays its entered original prompt followed by selected skill bodies in `<additional_skill_instructions>`. The engine supplies its own current host policy and working memory during actual rendering. Generation and quotation execution require their own APIs.
 
+For a read-only check of the published insurance skill, preview `{"event":"auto","utterance":"交强险一般保障什么？","state":{}}`. On ThinkPad revision 8 the response contains one skill named `vehicle_insurance_concepts` and an empty `tools` array. A fresh installation must publish the skill or restore a catalog containing it to reproduce this result. [Skill instructions](vehicle_insurance_concepts/SKILL.md) · [Routing rules](vehicle_insurance_concepts/routing.json).
+
 Malformed input or invalid routing input returns 400. The preview decoder currently accepts extra fields and does not enforce the strict trailing-data checks used by catalog PUT. Send only the documented fields.
 
 ## Catalog schema and limits
@@ -526,10 +528,11 @@ For `N` selected skills, normal retrieval performs `2 + 2N` MCP requests. Zero m
 
 | Preparation status | Prompt treatment |
 | --- | --- |
-| `loaded` | Append verified guidance with URI, digest, turn scope and memory version |
+| `loaded` | Apply verified guidance using the selected renderer. Preserve its URI, digest, turn scope and memory version. |
 | `no_match` | Use existing prompt components |
 | `unavailable` | Use original components with an instruction to use known steps and clarify missing information |
 | `expired` | Discard retrieved guidance and rebuild from current memory with fallback instructions |
+| `cancelled` (Journal trace) | The preparation observed cancellation. The superseded generation stops. |
 
 Network work runs on the generation worker. Message snapshots and memory checks run on the engine loop. Guidance applies to the current turn under original instructions, business state and host tool permissions. Interruption cancels the old generation context. Authoritative completed or declined WeChat state is applied even when retrieval fails.
 
@@ -594,7 +597,7 @@ The release uses a static Linux executable in a scratch image, host networking, 
 | `SERVICE_UID`, `SERVICE_GID` | Installer | Current installing user's UID/GID |
 | Listener, CRM URL, container secret paths, catalog path | Executable | Fixed in `main.go` |
 
-Publish catalog content through the admin API for immediate next-request activation. Executable changes require a release deployment. Use the established Mac runner for box operations and the service installation runbook for packaging and rollback. Save the current catalog, release identity and matching configuration before a schema upgrade. Restore a schema-compatible catalog when reverting the executable. [Service runbook](README.md), [local operations](../../scripts/local-ops/README.md).
+Publish catalog content through the admin API for immediate next-request activation. Executable changes require a release deployment. Use the established Mac runner for box operations and the service installation runbook for packaging and rollback. Save the current catalog, release identity and matching configuration before a schema upgrade. Restore a schema-compatible catalog when reverting the executable. [Maintenance and migration runbook](OPERATIONS.md), [local operations](../../scripts/local-ops/README.md).
 
 ### Adding a capability
 

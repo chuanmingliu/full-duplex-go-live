@@ -79,6 +79,12 @@ sequenceDiagram
 
 Selection and verified retrieval share one deadline, defaulting to 150 ms. Network work runs on a generation worker. The audio loop only snapshots state and assembles messages. Ordinary no-match turns need one MCP request. Matching turns additionally verify the manifest, file bytes, frontmatter and catalog revision. The first model completion already has the selected guidance. Existing legacy skill-tool history remains readable and expires at its original scope boundaries.
 
+### Reading skill timing in Call Journal
+
+Open **Skills / MCP** on the call and expand the preparation for the relevant turn and response. A matched entry records the state snapshot, initial selection, manifest and content reads, integrity checks, revision recheck, wait for the engine loop and prompt rendering. A no-match entry stops retrieval after selection. The trace reports the steps that actually ran, their outcomes and durations in microseconds. The panel displays milliseconds.
+
+Preparation can start on a stable ASR partial while the engine is still listening. Compare its completion with turn closure, opener audio and first substantive audio to see how much work overlapped the caller's pause. The preparation timer ends before model inference and speech synthesis. Older builds recorded only aggregate milliseconds and status. Their Journal rows cannot identify which skill loaded or recover individual request timings.
+
 ## Server-maintained routing
 
 The service accepts explicit normalized events, or `event=auto` with the latest user utterance. Automatic selection uses operator-maintained regular expressions and confirmed state. The conversation model interprets the request and generates the response after this selection.
@@ -131,7 +137,7 @@ Selected guidance carries its source URI, digest, caller scope and memory versio
 
 Timeout, unsupported auto-selection, malformed content, digest mismatch and publication races use the original prompt. A no-match turn uses the original components directly. The service's credentials are read privately, redirects are rejected, and configuration permits HTTPS or loopback HTTP.
 
-## Candidate configuration
+## Engine configuration
 
 ```json
 {
@@ -145,7 +151,7 @@ Timeout, unsupported auto-selection, malformed content, digest mismatch and publ
 }
 ```
 
-`GOLIVE_SKILLS_MCP_URL` and `GOLIVE_SKILLS_MCP_TOKEN_FILE` override the corresponding fields. An empty URL disables optional retrieval. The original configuration remains the rollback source. Preserve the catalog snapshot before upgrading to schema 3, since older service releases require a compatible catalog during rollback. Engine activation and endpoint changes require a restart. Later skill-content and routing publications apply on the next request.
+`GOLIVE_SKILLS_MCP_URL` and `GOLIVE_SKILLS_MCP_TOKEN_FILE` override the corresponding fields. To disable retrieval, clear the configured URL and remove any nonempty environment override. The original configuration remains the rollback source. Preserve the catalog snapshot before upgrading to schema 3, since older service releases require a compatible catalog during rollback. Engine activation and endpoint changes require a restart. Later skill-content and routing publications apply on the next request.
 
 ## Validation and deployment roadmap
 
@@ -157,8 +163,8 @@ Timeout, unsupported auto-selection, malformed content, digest mismatch and publ
 | Real-model synthetic comparison | 20-pair benchmark and final-code scenario/state/edge confirmation completed; see the follow-up report |
 | Full media simulation | Exercise actual ASR/TTS and Active Call transport, including echo and background voice cases |
 | Backend forwarding | Call-ID-scoped HTTP callback implemented; real tracking producer still needs customer/action verification and call correlation |
-| Live activation | Deploy the paired catalog/engine candidate when idle, retain original profile and verify Journal chat and both audio directions |
-| Real-call acceptance | Compare normal responses and interruptions, with quotation time and handset measurements reported separately |
+| Live activation | Verified November 10 on the ThinkPad with the original Active Call route, renderer v1 and three published skills. The engine and Journal now record per-turn preparation traces. |
+| Real-call acceptance | Verified chat and both audio directions on the insurance-concepts call. The normal-response p95 target and acoustic handset verification remain open. |
 | Additional workflows | Add server-maintained patterns, state conditions and skills, with reviewed host bindings for new executable tools |
 
 The [historical real-model report](../telephony/2026-11-09-skills-real-model.md) preserves the original sequential-loading measurements and failures. Its reproduction section identifies the synthetic model harness. These measurements cover text input through mock-TTS output; full telephony and acoustic handset timing require the media and real-call stages above.
