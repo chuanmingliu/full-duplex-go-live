@@ -1,5 +1,7 @@
 # Xiaocui skills over MCP
 
+For ThinkPad maintenance, backups, rollback and migration to another production host, use the [operator runbook](OPERATIONS.md).
+
 The [developer API reference](API.md) covers the runtime MCP methods, admin endpoints, catalog schema, authentication, examples, limits and GoLive integration.
 
 The ThinkPad serves outbound workflow instructions and their associated tools from one catalog. The operator edits workflow triggers, state conditions and content over an SSH tunnel. The supplied turn renderer composes the original business prompt with the skills and tools selected for a specific turn.
