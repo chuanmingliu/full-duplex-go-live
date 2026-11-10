@@ -10,6 +10,7 @@ The server maintains business instructions, selects applicable skills, publishes
 - [Quick start](#quick-start)
 - [MCP transport](#mcp-transport)
 - [Discovery and resources](#discovery-and-resources)
+  - [skills/list workflow](#skillslist-workflow)
 - [Skill selection](#skill-selection)
 - [Quotation tool](#quotation-tool)
 - [Admin HTTP API](#admin-http-api)
@@ -115,6 +116,12 @@ def rpc(method, params=None, timeout=5):
 
 discovery = rpc("server/discover")
 assert "io.modelcontextprotocol/skills" in discovery["capabilities"]["extensions"]
+catalog = rpc("skills/list")
+assert catalog["resultType"] == "complete"
+print(json.dumps({"available_skills": [
+    {"name": entry["frontmatter"]["name"], "uri": entry["uri"]}
+    for entry in catalog["skills"]
+]}))
 selection = rpc("prompts/get", {
     "name": "outbound-turn",
     "arguments": {
@@ -180,6 +187,64 @@ Subsequent JSON examples show method parameters or result bodies as labeled. Wra
 The service implements `skills/list` and `skills/get` as custom methods for the `io.modelcontextprotocol/skills` extension. Use capability discovery before relying on them. `prompts/get`, `resources/read` and `tools/call` use MCP's corresponding methods. SDK-generated optional fields may be omitted from examples.
 
 ## Discovery and resources
+
+### skills/list workflow
+
+Use `skills/list` to discover the available catalog before presenting a skill browser or building a client-side selection workflow. A listing describes availability across the catalog. Eligibility for a particular utterance and confirmed session state is evaluated by `prompts/get` with `name=outbound-turn`.
+
+Using the quick-start helper, the discovery operation takes this form.
+
+```python
+catalog = rpc("skills/list")
+for entry in catalog["skills"]:
+    print(entry["frontmatter"]["name"], entry["uri"])
+```
+
+The following abbreviated response illustrates the shape. Each real entry includes the manifest and routing metadata described below.
+
+```json
+{
+  "resultType": "complete",
+  "skills": [
+    {
+      "uri": "skill://vehicle_insurance_concepts/SKILL.md",
+      "frontmatter": {
+        "name": "vehicle_insurance_concepts",
+        "description": "Explain vehicle insurance concepts."
+      }
+    }
+  ]
+}
+```
+
+The verified ThinkPad catalog exposes `motor-quotation`, `wechat-service-notification` and `vehicle_insurance_concepts`. Availability changes after an operator publishes. The listing supplies metadata and content digests. Clients retrieve a selected skill's Markdown with `resources/read`. Keep the original bytes when verifying the SHA-256.
+
+```mermaid
+sequenceDiagram
+    participant C as Catalog client
+    participant M as Skills MCP
+    C->>M: server/discover
+    M-->>C: Skills extension capability
+    C->>M: skills/list
+    M-->>C: Available skill metadata and manifests
+    Note over C: Display the catalog
+    C->>M: prompts/get with utterance and confirmed state
+    M-->>C: Eligible resource links and revision
+    loop Each selected skill
+        C->>M: skills/get
+        M-->>C: Skill manifest
+        C->>M: resources/read
+        M-->>C: Markdown content
+        Note over C: Verify the digest and frontmatter
+    end
+    C->>M: prompts/get to recheck the revision
+    M-->>C: Current selection revision
+    Note over C: Check current memory and render applicable guidance
+```
+
+This diagram shows a catalog-browsing client followed by a matched turn. In the current GoLive engine, automatic preparation starts directly with `prompts/get`. The service performs selection from its current catalog, so the engine can retrieve eligible skills without fetching the whole list on every turn. `internal/skillsmcp.Client.Catalog` implements discovery for clients that need it. Automatic preparation records the requests it actually sends in Call Journal.
+
+A client maintaining a skill browser can call `skills/list` again when refreshing it. In this implementation, resource digests identify the listed content. Catalog revisions accompany turn selections. Use the turn selection's revision and subsequent verification for a consistent prompt snapshot. The complete workflow and host checks are in [GoLive integration](#golive-integration).
 
 ### Skill entries
 
