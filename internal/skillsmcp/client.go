@@ -171,27 +171,48 @@ func (c *Client) selectSkills(ctx context.Context, event string, utterance strin
 	return out, err
 }
 func (c *Client) Load(ctx context.Context, event string, memory json.RawMessage) ([]Guidance, error) {
-	return c.load(ctx, event, "", memory, nil)
+	return c.load(ctx, event, "", memory, nil, nil)
 }
 
 func (c *Client) LoadForTurn(ctx context.Context, utterance string, memory json.RawMessage) ([]Guidance, error) {
-	return c.load(ctx, "auto", utterance, memory, nil)
+	return c.load(ctx, "auto", utterance, memory, nil, nil)
 }
 
 // PrepareForTurn retrieves guidance and its catalog-owned rendering mode in one
 // revision-consistent operation. Existing servers select version 1 by omission.
 func (c *Client) PrepareForTurn(ctx context.Context, utterance string, memory json.RawMessage) ([]Guidance, int, error) {
+	return c.PrepareWithTrace(ctx, utterance, memory, nil)
+}
+
+func (c *Client) PrepareWithTrace(ctx context.Context, utterance string, memory json.RawMessage, trace *Trace) ([]Guidance, int, error) {
 	version := 1
-	guides, err := c.load(ctx, "auto", utterance, memory, &version)
+	guides, err := c.load(ctx, "auto", utterance, memory, &version, trace)
 	return guides, version, err
 }
 
-func (c *Client) load(ctx context.Context, event, utterance string, memory json.RawMessage, renderingVersion *int) ([]Guidance, error) {
+func (c *Client) load(ctx context.Context, event, utterance string, memory json.RawMessage, renderingVersion *int, trace *Trace) (_ []Guidance, loadErr error) {
+	phase := func(name, uri string) {
+		if trace != nil {
+			trace.Begin(name, uri, time.Now())
+		}
+	}
+	defer func() {
+		outcome := "ok"
+		if loadErr != nil {
+			outcome = "failed"
+		}
+		trace.End(outcome, time.Now())
+	}()
+	phase("prompts/get", "")
 	ctx, cancel := c.deadline(ctx)
 	defer cancel()
 	selected, err := c.selectSkills(ctx, event, utterance, memory)
 	if err != nil {
 		return nil, err
+	}
+	phase("validate selection", "")
+	if trace != nil {
+		trace.Revision = selected.Meta[routeKey].Revision
 	}
 	if event == "auto" && !selected.Meta[routeKey].AutoSelection {
 		return nil, errors.New("skills service lacks automatic selection")
@@ -225,9 +246,11 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 		var result struct {
 			Skill Entry `json:"skill"`
 		}
+		phase("skills/get", link.URI)
 		if err = c.rpc(ctx, "skills/get", map[string]any{"uri": link.URI}, &result); err != nil {
 			return nil, err
 		}
+		phase("verify manifest", link.URI)
 		if len(result.Skill.Resources) != 1 || result.Skill.Resources[0] != expected || result.Skill.URI != link.URI {
 			return nil, errors.New("skill changed during retrieval")
 		}
@@ -238,9 +261,11 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 				Text string `json:"text"`
 			} `json:"contents"`
 		}
+		phase("resources/read", link.URI)
 		if err = c.rpc(ctx, "resources/read", map[string]any{"uri": link.URI}, &resource); err != nil {
 			return nil, err
 		}
+		phase("verify digest and frontmatter", link.URI)
 		if len(resource.Contents) != 1 {
 			return nil, errors.New("invalid skill content")
 		}
@@ -266,11 +291,15 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 		if len(front) != 2 || front["name"] != result.Skill.Frontmatter["name"] || front["description"] != result.Skill.Frontmatter["description"] {
 			return nil, errors.New("skill frontmatter mismatch")
 		}
+		if trace != nil {
+			trace.Steps[len(trace.Steps)-1].Digest = expected.Digest
+		}
 		out = append(out, Guidance{URI: link.URI, Digest: expected.Digest, Text: strings.TrimSpace(body), State: result.Skill.Meta[bindingKey].State})
 	}
 	if len(out) == 0 {
 		return out, nil
 	}
+	phase("prompts/get revision recheck", "")
 	latest, err := c.selectSkills(ctx, event, utterance, memory)
 	if err != nil || latest.Meta[routeKey].Revision != selected.Meta[routeKey].Revision {
 		return nil, errors.New("skill catalog changed during retrieval")

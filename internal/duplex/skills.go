@@ -37,22 +37,32 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		return req
 	}
 	began := time.Now()
+	trace := skillsmcp.Trace{}
+	trace.Begin("snapshot turn", "", began)
 	memory, version := e.MemorySnapshot()
 	text := latestUserText(req.Messages)
 	if job.request != "" {
 		text = job.request
 	}
 	out := skillOutput{Status: "no_match", Scope: skillScope(job.turn), MemoryVersion: version}
-	docs, renderingVersion, err := e.skills.PrepareForTurn(ctx, text, memory)
+	docs, renderingVersion, err := e.skills.PrepareWithTrace(ctx, text, memory, &trace)
 	if err != nil {
 		out.Status = "unavailable"
 	} else if len(docs) > 0 {
 		out.Status, out.Source, out.Guidance = "loaded", "configured-business-mcp", docs
 	}
-	ready := make(chan provider.LLMRequest, 1)
+	type rendered struct {
+		req           provider.LLMRequest
+		started       time.Time
+		outcome       string
+		memoryVersion int
+	}
+	trace.Begin("wait for engine loop", "", time.Now())
+	ready := make(chan rendered, 1)
 	e.post(func() {
+		started := time.Now()
 		if ctx.Err() != nil {
-			ready <- req
+			ready <- rendered{req, started, "cancelled", version}
 			return
 		}
 		_, current := e.memorySnapshot()
@@ -85,15 +95,24 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		if len(out.Guidance) > 0 {
 			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Content: "Apply this turn's configured business guidance to the latest user request only, subject to original instructions, current business state and tool permissions. Use existing tools directly when needed. Ask for clarification if the request is ambiguous."})
 		}
-		ready <- fresh
+		ready <- rendered{fresh, started, out.Status, current}
 	})
+	var result rendered
 	select {
-	case fresh := <-ready:
-		e.log.Info("skills: prepare", "status", out.Status, "rendering_version", renderingVersion, "ms", time.Since(began).Milliseconds())
-		return fresh
+	case result = <-ready:
+		trace.Begin("recheck memory and render", "", result.started)
 	case <-ctx.Done():
-		return req
+		result = rendered{req: req, outcome: "cancelled", memoryVersion: version}
 	}
+	ended := time.Now()
+	trace.End(result.outcome, ended)
+	detail, _ := json.Marshal(trace)
+	turnID := ""
+	if job.turn != nil {
+		turnID = job.turn.ID
+	}
+	e.log.Info("skills: prepare", "turn", turnID, "response", job.responseID, "status", result.outcome, "rendering_version", renderingVersion, "memory_version_start", version, "memory_version_end", result.memoryVersion, "ms", ended.Sub(began).Milliseconds(), "us", ended.Sub(began).Microseconds(), "trace", string(detail))
+	return result.req
 }
 
 // businessStateNote is intentionally outside the optional MCP component so a

@@ -248,9 +248,11 @@ type Call struct {
 	// working memory recorded (which keys), a quote asked for, what came
 	// back (a need with its fields, a quote with its total, an error), and
 	// its delivery to the model. Numbers and names only.
-	Quotation        []QuoteStep   `json:"quotation,omitempty"`
-	Fillers          []FillerEvent `json:"fillers,omitempty"`
-	FillerLogVersion int           `json:"filler_log_version,omitempty"`
+	Quotation        []QuoteStep        `json:"quotation,omitempty"`
+	SkillTraces      []SkillPreparation `json:"skill_traces,omitempty"`
+	SkillLogVersion  int                `json:"skill_log_version,omitempty"`
+	Fillers          []FillerEvent      `json:"fillers,omitempty"`
+	FillerLogVersion int                `json:"filler_log_version,omitempty"`
 
 	// Response-only evidence must not rewrite a previously archived call when
 	// a newer reader detects an absent whole latency record in its old log.
@@ -573,6 +575,7 @@ func (ix *Indexer) Feed(l Line) {
 
 	ev := &cb.call.Events
 	cb.readFiller(l)
+	cb.readSkill(l)
 	switch l.Msg {
 	case "transcript: assistant output enabled", "transcript: assistant segment started":
 		cb.readOutputTranscript(l)
@@ -866,6 +869,7 @@ func (ix *Indexer) Calls() []*Call {
 func (cb *callBuild) finish() *Call {
 	c := cb.call
 	c.FillerLogVersion = 1
+	c.SkillLogVersion = 1
 	c.Fillers = append([]FillerEvent(nil), cb.call.Fillers...)
 	c.Turns, c.Markers = nil, append([]Marker(nil), cb.call.Markers...)
 	if !c.EndedAt.IsZero() {

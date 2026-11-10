@@ -83,10 +83,10 @@ func (cb *callBuild) lastOpener(turn string) *FillerEvent {
 	return nil
 }
 
-// Older saved JSON did not index fillers. Read this call's archived log on
+// Older saved JSON did not index filler or skill evidence. Read this call's archived log on
 // demand without rewriting its archive or borrowing another call's evidence.
 func (s *Server) withFillerEvidence(c *Call) *Call {
-	if c.FillerLogVersion > 0 || s.archive == nil || c.Session == "" {
+	if (c.FillerLogVersion > 0 && c.SkillLogVersion > 0) || s.archive == nil || c.Session == "" {
 		return c
 	}
 	p := s.archive.Path(c.ID, archLog)
@@ -103,18 +103,29 @@ func (s *Server) withFillerEvidence(c *Call) *Call {
 		return c
 	}
 	cb := callBuild{call: *c}
-	cb.call.Fillers = nil
+	if c.FillerLogVersion == 0 {
+		cb.call.Fillers = nil
+	}
+	if c.SkillLogVersion == 0 {
+		cb.call.SkillTraces = nil
+	}
 	scan := bufio.NewScanner(io.LimitReader(f, limit))
 	scan.Buffer(make([]byte, 64<<10), 4<<20)
 	for scan.Scan() {
 		l, ok := ParseLine(strings.TrimSpace(scan.Text()))
 		if ok && l.Get("session") == c.Session {
-			cb.readFiller(l)
+			if c.FillerLogVersion == 0 {
+				cb.readFiller(l)
+			}
+			if c.SkillLogVersion == 0 {
+				cb.readSkill(l)
+			}
 		}
 	}
 	if scan.Err() != nil {
 		return c
 	}
 	cb.call.FillerLogVersion = 1
+	cb.call.SkillLogVersion = 1
 	return &cb.call
 }
