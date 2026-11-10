@@ -51,7 +51,7 @@ type Guidance struct {
 	State  map[string][]string `json:"required_state,omitempty"`
 	URI    string              `json:"uri"`
 	Digest string              `json:"digest"`
-	Text   string              `json:"text"`
+	Text   string              `json:"text,omitempty"`
 }
 
 func New(cfg Config) (*Client, error) {
@@ -149,8 +149,11 @@ func (c *Client) projection(memory json.RawMessage) map[string]string {
 
 type selection struct {
 	Meta map[string]struct {
-		Revision      int  `json:"revision"`
-		AutoSelection bool `json:"auto_selection"`
+		Revision        int  `json:"revision"`
+		AutoSelection   bool `json:"auto_selection"`
+		PromptRendering *struct {
+			Version int `json:"version"`
+		} `json:"prompt_rendering"`
 	} `json:"_meta"`
 	Messages []struct {
 		Content struct {
@@ -168,14 +171,22 @@ func (c *Client) selectSkills(ctx context.Context, event string, utterance strin
 	return out, err
 }
 func (c *Client) Load(ctx context.Context, event string, memory json.RawMessage) ([]Guidance, error) {
-	return c.load(ctx, event, "", memory)
+	return c.load(ctx, event, "", memory, nil)
 }
 
 func (c *Client) LoadForTurn(ctx context.Context, utterance string, memory json.RawMessage) ([]Guidance, error) {
-	return c.load(ctx, "auto", utterance, memory)
+	return c.load(ctx, "auto", utterance, memory, nil)
 }
 
-func (c *Client) load(ctx context.Context, event, utterance string, memory json.RawMessage) ([]Guidance, error) {
+// PrepareForTurn retrieves guidance and its catalog-owned rendering mode in one
+// revision-consistent operation. Existing servers select version 1 by omission.
+func (c *Client) PrepareForTurn(ctx context.Context, utterance string, memory json.RawMessage) ([]Guidance, int, error) {
+	version := 1
+	guides, err := c.load(ctx, "auto", utterance, memory, &version)
+	return guides, version, err
+}
+
+func (c *Client) load(ctx context.Context, event, utterance string, memory json.RawMessage, renderingVersion *int) ([]Guidance, error) {
 	ctx, cancel := c.deadline(ctx)
 	defer cancel()
 	selected, err := c.selectSkills(ctx, event, utterance, memory)
@@ -187,6 +198,16 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 	}
 	if selected.Meta[routeKey].Revision < 1 {
 		return nil, errors.New("missing skill catalog revision")
+	}
+	version := 1
+	if mode := selected.Meta[routeKey].PromptRendering; mode != nil {
+		version = mode.Version
+	}
+	if version != 1 && version != 2 {
+		return nil, errors.New("unsupported prompt rendering version")
+	}
+	if renderingVersion != nil {
+		*renderingVersion = version
 	}
 	if len(selected.Messages) > 4 {
 		return nil, errors.New("too many matching skills")

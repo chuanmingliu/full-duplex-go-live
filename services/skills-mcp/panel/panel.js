@@ -31,6 +31,7 @@ function renderSkills() {
   }
 }
 function render() {
+  el('renderingVersion').value = String(catalog.prompt_rendering?.version || 1);
   const response = (catalog.event_responses || {}).addV || {enabled:false, templates:[]};
   el('addVOn').checked = response.enabled;
   el('addVTemplates').value = (response.templates || []).join('\n');
@@ -66,6 +67,7 @@ el('save').onclick = async () => {
     status('Provide 1–12 distinct response lines when enabled, each at most 300 characters.'); return;
   }
   catalog.event_responses = {...catalog.event_responses, addV:{enabled:el('addVOn').checked, templates}};
+  catalog.prompt_rendering = {version:Number(el('renderingVersion').value)};
   catalog.quote_total = {description:el('toolDesc').value, enabled:el('toolOn').checked, timeout_seconds:Number(el('timeout').value)};
   el('editor').inert = true;
   try { catalog = await api('PUT',catalog); dirty = false; render(); status('Published. The next MCP request uses this revision.'); }
@@ -79,11 +81,17 @@ el('preview').onclick = async () => {
     const selection = await api('POST', {event:el('event').value, utterance:el('utterance').value, state}, '/admin/preview');
     const slots = [
       'Published revision ' + selection.revision,
+      'Rendering version ' + (selection.prompt_rendering?.version || 1),
       'Original prompt\n' + el('original').value,
       'Business state\n' + JSON.stringify(state),
       'Skills\n' + (selection.skills.map(s => s.name + '\n' + s.body).join('\n\n') || 'None for this turn'),
       'Available workflow tools\n' + (selection.tools.join(', ') || 'None for this turn')
     ];
+    if (selection.prompt_rendering?.version === 2) {
+      const skillContent = selection.skills.map(skill => skill.body.trim()).join('\n\n');
+      const rendered = skillContent ? el('original').value + '\n\n<additional_skill_instructions>\n' + skillContent + '\n</additional_skill_instructions>' : el('original').value;
+      slots.push('Rendered prompt component\n' + rendered);
+    }
     el('output').textContent = slots.join('\n\n');
   } catch (err) { el('output').textContent = err.message; }
 };

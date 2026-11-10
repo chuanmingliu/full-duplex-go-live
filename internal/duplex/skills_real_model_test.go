@@ -33,26 +33,33 @@ const skillsSyntheticPrompt = `你是小翠，正在进行纯模拟的中文车�
 客户咨询保险生效时间时，回答以保单载明的时间为准。`
 
 type modelProbeCall struct {
-	Request   string              `json:"rendered_user_request,omitempty"`
-	Recovery  bool                `json:"recovery_policy,omitempty"`
-	Calls     []provider.ToolCall `json:"calls,omitempty"`
-	Guides    []skillOutput       `json:"guidance,omitempty"`
-	Text      string              `json:"text,omitempty"`
-	Error     bool                `json:"error,omitempty"`
-	Elapsed   float64             `json:"elapsed_ms"`
-	FirstText time.Time           `json:"first_text_at,omitempty"`
-	done      time.Time
+	Slot           bool                `json:"skill_slot,omitempty"`
+	OriginalPrompt bool                `json:"original_prompt_preserved,omitempty"`
+	Request        string              `json:"rendered_user_request,omitempty"`
+	Recovery       bool                `json:"recovery_policy,omitempty"`
+	Calls          []provider.ToolCall `json:"calls,omitempty"`
+	Guides         []skillOutput       `json:"guidance,omitempty"`
+	Text           string              `json:"text,omitempty"`
+	Error          bool                `json:"error,omitempty"`
+	Elapsed        float64             `json:"elapsed_ms"`
+	FirstText      time.Time           `json:"first_text_at,omitempty"`
+	done           time.Time
 }
 
 type modelProbe struct {
-	inner provider.LLM
-	mu    sync.Mutex
-	trace []*modelProbeCall
+	originalPrompt string
+	inner          provider.LLM
+	mu             sync.Mutex
+	trace          []*modelProbeCall
 }
 
 func (p *modelProbe) Name() string { return p.inner.Name() }
 func (p *modelProbe) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
 	entry := &modelProbeCall{}
+	if len(req.Messages) > 0 {
+		entry.Slot = strings.Contains(req.Messages[0].Content, "<additional_skill_instructions>")
+		entry.OriginalPrompt = p.originalPrompt != "" && strings.HasPrefix(req.Messages[0].Content, strings.TrimSpace(p.originalPrompt))
+	}
 	for _, m := range req.Messages {
 		if m.Role == provider.RoleUser {
 			entry.Request = m.Content
@@ -133,6 +140,10 @@ type realSkillSession struct {
 }
 
 func newRealSkillSession(t *testing.T, llm provider.LLM, cfg skillsmcp.Config, onQuoteStart ...func(*Engine)) *realSkillSession {
+	return newSkillSessionWithPrompt(t, llm, cfg, skillsSyntheticPrompt, onQuoteStart...)
+}
+
+func newSkillSessionWithPrompt(t *testing.T, llm provider.LLM, cfg skillsmcp.Config, prompt string, onQuoteStart ...func(*Engine)) *realSkillSession {
 	t.Helper()
 	opts := testConfig()
 	opts.ToolsMemory = true
@@ -144,8 +155,8 @@ func newRealSkillSession(t *testing.T, llm provider.LLM, cfg skillsmcp.Config, o
 	opts.MaxOutputTokens = 256
 	opts.DisableThinking = true
 	opts.Tools = []config.ToolConfig{{Name: "quote_total", Description: "Calculate a synthetic motor premium using confirmed memory.quote plus the config changes. Preserve all unspecified items. The asynchronous result is authoritative.", Parameters: json.RawMessage(`{"type":"object","properties":{"config":{"type":"object","properties":{"三者险":{"type":"string"},"交强险":{"type":"boolean"},"车损险":{"type":"boolean"}}}},"required":["config"]}`), URL: "http://synthetic.invalid", Async: true, ETASeconds: 3}}
-	s := &realSkillSession{p: &modelProbe{inner: llm}, c: newCollector(opts.ClientRate), quote: observedQuote{req: make(chan tools.Request, 16), started: make(chan time.Time, 16), completed: make(chan time.Duration, 16), delay: 3 * time.Second}}
-	s.e = New(Options{Cfg: opts, Instructions: skillsSyntheticPrompt, SessionID: "synthetic-skills", CallID: "synthetic-skills"}, Deps{ASR: mock.NewASR("合成输入"), LLM: s.p, TTS: mock.NewTTS(), Emit: s.c.emit, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s := &realSkillSession{p: &modelProbe{inner: llm, originalPrompt: prompt}, c: newCollector(opts.ClientRate), quote: observedQuote{req: make(chan tools.Request, 16), started: make(chan time.Time, 16), completed: make(chan time.Duration, 16), delay: 3 * time.Second}}
+	s.e = New(Options{Cfg: opts, Instructions: prompt, SessionID: "synthetic-skills", CallID: "synthetic-skills"}, Deps{ASR: mock.NewASR("合成输入"), LLM: s.p, TTS: mock.NewTTS(), Emit: s.c.emit, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if len(onQuoteStart) > 0 {
 		s.quote.onStart = func() { onQuoteStart[0](s.e) }
 	}

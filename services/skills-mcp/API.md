@@ -1,6 +1,6 @@
 # Xiaocui skills MCP server developer API
 
-This guide describes the implementation at `35458b9`, reviewed on 2026-11-09. The service advertises `xiaocui-skills` version `1.1.0`, persists catalog schema `3`, and uses MCP Go SDK `v1.8.0`. Release commit, advertised service version, catalog schema and catalog revision are independent values.
+This guide describes the implementation reviewed on 2026-11-10, including optional v2 prompt rendering. The service advertises `xiaocui-skills` version `1.1.0`, persists catalog schema `3`, and uses MCP Go SDK `v1.8.0`. Release commit, advertised service version, catalog schema and catalog revision are independent values.
 
 The server maintains business instructions, selects applicable skills, publishes verified Markdown resources, exposes a quotation tool and stores callback response templates. GoLive owns session memory, prompt assembly, conversation generation and audio scheduling. Active Call currently executes quotations through GoLive's native executor. An independent MCP client can execute the server's `quote_total` tool.
 
@@ -264,6 +264,7 @@ Selection results contain these fields.
 | `_meta["ai.liuchuanming.golive/turn"].revision` | Catalog revision used for selection |
 | Same metadata's `auto_selection` | `true`, the capability marker required by GoLive automatic selection |
 | Same metadata's `tools` | Deduplicated dependent tool names |
+| Same metadata's `prompt_rendering.version` | `1` for appended guidance or `2` for the host's `skill_content` slot. Omission by an older server means `1`. |
 | `messages[].role` | `user` in the MCP prompt result |
 | `messages[].content.type` | `resource_link` |
 | `messages[].content.uri/name/description/mimeType` | Selected skill resource metadata |
@@ -381,7 +382,7 @@ Evaluates the currently published catalog using plain JSON.
 }
 ```
 
-Here `state` is an object. The response contains `revision`, `skills` as complete matching catalog skill objects and `tools` as dependent names. Preview performs selection only. The panel can display a composed preview using these results and its entered original prompt. Generation and quotation execution require their own APIs.
+Here `state` is an object. The response contains `revision`, `skills` as complete matching catalog skill objects, `tools` as dependent names and `prompt_rendering` with the effective `version`. Preview performs selection only. For v2, the panel also displays its entered original prompt followed by selected skill bodies in `<additional_skill_instructions>`. The engine supplies its own current host policy and working memory during actual rendering. Generation and quotation execution require their own APIs.
 
 Malformed input or invalid routing input returns 400. The preview decoder currently accepts extra fields and does not enforce the strict trailing-data checks used by catalog PUT. Send only the documented fields.
 
@@ -423,6 +424,8 @@ This is a minimal complete schema-3 catalog example with synthetic business inst
 | --- | --- |
 | `schema` | Must be `3` on publication |
 | `revision` | Must equal the current revision, incremented by the server |
+| `prompt_rendering` | Optional object. Omission or `null` means version 1. |
+| `prompt_rendering.version` | Required integer inside that object, either `1` or `2`. Other values fail publication. |
 | `skills` | At most 64 entries |
 | Skill `name` | Unique, at most 64 bytes, `^[a-z0-9]+(-[a-z0-9]+)*$` |
 | Skill `description` | Nonblank, one line, at most 1,024 Unicode characters |
@@ -531,6 +534,14 @@ For `N` selected skills, normal retrieval performs `2 + 2N` MCP requests. Zero m
 Network work runs on the generation worker. Message snapshots and memory checks run on the engine loop. Guidance applies to the current turn under original instructions, business state and host tool permissions. Interruption cancels the old generation context. Authoritative completed or declined WeChat state is applied even when retrieval fails.
 
 The production Go client falls back when the catalog changes during retrieval. The Python reference `turn_renderer.py` performs at most two attempts on catalog changes and supports host-supplied origin/digest acceptance and tool allowlisting. Its output is a component contract. The Go engine's `snapshotMessages` and `prepareSkills` implement production prompt assembly. [Rendering guide](../../docs/architecture/09-skills-prompt-rendering.md).
+
+### Optional v2 host rendering
+
+Fetch the current catalog, set `prompt_rendering` to `{"version":2}`, and PUT the complete document with its current revision. The panel's **Prompt rendering** selector performs this operation. Version 1 is the default. The effective version arrives in the same selection response and revision as the skill manifests, so choosing v2 adds zero network requests.
+
+The compatible GoLive engine substitutes its existing system prompt into `{{ original_prompt }}` and the verified selected Markdown bodies into `{{ skill_content }}`. The fixed host template places the skill slot inside an `additional_skill_instructions` section after the original component. Bodies are joined in catalog order. Substitution is single-pass and preserves literal template syntax inside values. The original prompt stays on the host. It is not sent to the MCP server for rendering.
+
+The first system message carries the filled template. A separate scoped guidance envelope carries provenance without duplicating the body. Existing history, state constraints and tool schemas keep their normal placement. No-match requests use the original system prompt directly. Retrieval failures and unsupported rendering versions use the original-prompt fallback. Publishing version 1 restores appended guidance on the next model request. Executable support requires deployment of both this server and the compatible engine. Older clients ignore this additive metadata and continue their own rendering. [Implementation and message ordering](../../docs/architecture/09-skills-prompt-rendering.md#optional-v2-skill-content-slot).
 
 ## Failures and operational limits
 

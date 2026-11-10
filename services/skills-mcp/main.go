@@ -96,7 +96,7 @@ func handler(s *store, adminToken, runtimeToken string) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"revision": c.Revision, "skills": skills, "tools": tools})
+		json.NewEncoder(w).Encode(map[string]any{"revision": c.Revision, "skills": skills, "tools": tools, "prompt_rendering": PromptRendering{Version: c.renderingVersion()}})
 	})))
 	mux.Handle("/admin/catalog", protect(adminToken, http.HandlerFunc(s.admin)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ready\n") })

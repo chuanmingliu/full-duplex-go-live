@@ -116,7 +116,7 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog) {
 			messages = append(messages, &mcp.PromptMessage{Role: "user", Content: link})
 
 		}
-		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: map[string]any{"revision": c.Revision, "tools": tools, "auto_selection": true}}, Messages: messages}, nil
+		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: map[string]any{"revision": c.Revision, "tools": tools, "auto_selection": true, "prompt_rendering": PromptRendering{Version: c.renderingVersion()}}}, Messages: messages}, nil
 	})
 }
 

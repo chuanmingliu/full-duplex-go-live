@@ -1,8 +1,11 @@
-"""Run synthetic prompt tests with the active provider's connection settings.
+"""Run skills tests with the active provider's connection settings.
 
 Only provider credentials, endpoint and model identifiers enter the child
-environment. Saved calls, prompts, recipients and lead records are never read.
+environment. The all/edges phases use synthetic prompts and session data.
 Business tool calls are intercepted by the Go test's synthetic executor.
+
+The explicit `slot` phase additionally reads the saved instructions on the box
+for the owner's default-prompt v1/v2 comparison. It requires an isolated fixture.
 """
 import hashlib
 import json
@@ -21,6 +24,11 @@ pids = set(re.findall(r"pid=(\d+)", subprocess.check_output(
 assert len(pids) == 1, "active engine listener ambiguous"
 process = Path("/proc") / pids.pop()
 paths = [root / "configs/telephony.json", process / "exe", process / "cmdline"]
+phase = sys.argv[3] if len(sys.argv) > 3 else "all"
+assert phase in ("all", "edges", "slot")
+if phase == "slot":
+    assert len(sys.argv) > 4 and sys.argv[4] == "fixture", "slot phase requires fixture"
+    paths.append(Path.home() / "golive-last-call.json")
 
 
 def hashes():
@@ -67,7 +75,9 @@ env.update({"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(Path.home()),
             "SKILLS_REAL_RUNS": sys.argv[2],
             "SKILLS_REAL_REPORT": str(Path.cwd() / "report.json")})
 assert 1 <= int(sys.argv[2]) <= 20
-print(json.dumps({"provider": provider, "model": model, "prompts": "synthetic",
+if phase == "slot":
+    env["SKILLS_SLOT_PROMPT_FILE"] = str(paths[-1])
+print(json.dumps({"provider": provider, "model": model, "prompts": "saved-default" if phase == "slot" else "synthetic",
                   "tts": "mock", "real_business_actions": False}), flush=True)
 fixture = None
 if len(sys.argv) > 4 and sys.argv[4] == "fixture":
@@ -95,9 +105,7 @@ try:
                 time.sleep(0.1)
         else:
             raise RuntimeError("isolated service did not start")
-    phase = sys.argv[3] if len(sys.argv) > 3 else "all"
-    assert phase in ("all", "edges")
-    tests = "^TestSkillsRealModelEdges$" if phase == "edges" else "^TestSkillsRealModel"
+    tests = {"slot": "^TestSkillSlotRealModel$", "edges": "^TestSkillsRealModelEdges$", "all": "^TestSkillsRealModel"}[phase]
     result = subprocess.run([sys.argv[1], "-test.run", tests,
                              "-test.v", "-test.timeout", "15m"],
                             env=env, cwd=root, timeout=905)

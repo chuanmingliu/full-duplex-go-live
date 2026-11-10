@@ -21,6 +21,32 @@ Active Call supplies its configured instructions to GoLive. Existing CRM/Jinja r
 
 The implementation is in [prompt assembly](../../internal/duplex/think.go), [skill preparation](../../internal/duplex/skills.go), [business events](../../internal/duplex/business_events.go) and the [MCP client](../../internal/skillsmcp/client.go).
 
+### Optional v2 skill-content slot
+
+The November 10 implementation adds an operator-selected rendering version to the catalog. In the Skills MCP panel, choose **Prompt rendering → Version 2 · skill_content prompt slot** and publish. The version travels in the existing `prompts/get` selection metadata and uses the same revision checks as skill content. Each new model request reads the published mode. This adds zero MCP requests to the existing retrieval sequence.
+
+Version 1 is the default for catalogs without this setting. It appends the scoped skill body in the existing `load_business_skill` system message. Version 2 fills this fixed host template in the first system message.
+
+```text
+{{ original_prompt }}
+
+<additional_skill_instructions>
+{{ skill_content }}
+</additional_skill_instructions>
+```
+
+`original_prompt` is the existing `systemPrompt` output. It starts with the configured default prompt and includes existing backend instructions, host policy and current working memory. `skill_content` is the verified Markdown body of each selected skill, in catalog order, separated by two newlines. Frontmatter is removed by the existing verified loader. The substitution runs once, so Jinja or slot-like text inside either value remains literal.
+
+The engine builds a fresh message snapshot for every request. The scope, memory version, source URI, digest and state guards stay in the named guidance envelope. In v2 that envelope omits the body, which appears once in the first system message. Conversation history, authoritative business-state constraints, executable tool definitions and the final guidance-applicability instruction retain their existing roles. The configured default prompt therefore remains the business foundation, with selected skills contributing additional instructions for the current request.
+
+For example, a consenting caller asking where to find the WeChat service notification selects the published WeChat skill. The loader verifies its manifest, bytes and catalog revision, checks the memory version, then inserts that body's steps into the slot. A trusted `addV` event changes the authoritative state to `added`, so the next request suppresses the addition skill and uses the completion constraint. An ordinary question with no selected skill uses the original system prompt without an empty wrapper.
+
+Timeout, unsupported rendering version, integrity failure, publication race or superseded memory uses the existing original-prompt fallback. Cancellation prevents interrupted retrieval from starting a stale response. A model-request snapshot is ephemeral, so a prior turn's inserted content does not accumulate in stored conversation history.
+
+The panel publishes `"prompt_rendering":{"version":2}` as part of the complete catalog. Selecting version 1 and publishing restores the default rendering on the next request. The host template is fixed in [skill_slot.go](../../internal/duplex/skill_slot.go). The panel configures the version and skill bodies. Deploy the paired engine and catalog release before enabling v2. Older engines ignore the new metadata and continue their existing rendering. New engines treat metadata omission by older services as version 1. Keep a compatible catalog snapshot when rolling back an older catalog executable.
+
+The [default-prompt simulation report](../telephony/2026-11-10-skill-slot-v2.md) records quotation, WeChat and normal-response comparisons, along with fallback and interruption coverage.
+
 ## A turn from speech to answer
 
 ```mermaid

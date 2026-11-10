@@ -79,6 +79,10 @@ The renderer reselects on a publication race and falls back to the original comp
 
 ### Active Call integration
 
+The panel's **Prompt rendering** selector publishes an optional v2 mode. Version 1 remains the catalog default. Version 2 adds verified skill bodies to a `{{ skill_content }}` slot after the existing default system prompt, host policy and memory. The engine retains source and scope metadata separately and fills the template once, preserving literal Jinja inside the original prompt. A no-match turn uses the original prompt directly. Retrieval failures keep the original-prompt fallback.
+
+Deploy the updated engine and catalog service together to use v2. After activation, publishing either version takes effect on the next model request, including within an existing call. Switching the panel back to version 1 restores appended guidance. The [slot implementation guide](../../docs/architecture/09-skills-prompt-rendering.md#optional-v2-skill-content-slot) describes message ordering, substitution and compatibility.
+
 The optional engine integration calls `prompts/get` before the first model completion. The service matches the current utterance against operator patterns and a projection of versioned working memory, then supplies resource links. The host verifies each resource and refreshes the memory snapshot before adding current guidance to the original prompt. This avoids a separate model completion for skill selection. Empty configuration and retrieval failures use the original prompt. The client checks the service’s `auto_selection` capability marker to detect older deployments.
 
 The implemented Go client falls back on a publication race. The Python reference renderer supports a bounded reselect. Both read fresh catalog state on subsequent requests. The engine trusts its explicitly configured, authenticated publishing service for business guidance and retains its own executable tool definitions.

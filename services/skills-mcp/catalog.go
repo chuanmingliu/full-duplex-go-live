@@ -41,11 +41,23 @@ type ToolConfig struct {
 }
 
 type Catalog struct {
-	Schema         int                      `json:"schema"`
-	Revision       int                      `json:"revision"`
-	Skills         []Skill                  `json:"skills"`
-	Quote          ToolConfig               `json:"quote_total"`
-	EventResponses map[string]EventResponse `json:"event_responses,omitempty"`
+	Schema          int                      `json:"schema"`
+	Revision        int                      `json:"revision"`
+	Skills          []Skill                  `json:"skills"`
+	Quote           ToolConfig               `json:"quote_total"`
+	EventResponses  map[string]EventResponse `json:"event_responses,omitempty"`
+	PromptRendering *PromptRendering         `json:"prompt_rendering,omitempty"`
+}
+
+type PromptRendering struct {
+	Version int `json:"version"`
+}
+
+func (c Catalog) renderingVersion() int {
+	if c.PromptRendering == nil {
+		return 1
+	}
+	return c.PromptRendering.Version
 }
 
 func seedSkill(markdown string) Skill {
@@ -95,6 +107,9 @@ func (c *Catalog) migrate() {
 var skillName = regexp.MustCompile("^[a-z0-9]+(-[a-z0-9]+)*$")
 
 func (c Catalog) validate() error {
+	if version := c.renderingVersion(); version != 1 && version != 2 {
+		return errors.New("prompt rendering version must be 1 or 2")
+	}
 	if err := validateEventResponses(c.EventResponses); err != nil {
 		return err
 	}

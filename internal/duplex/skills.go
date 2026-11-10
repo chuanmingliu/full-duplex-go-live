@@ -11,11 +11,12 @@ import (
 )
 
 type skillOutput struct {
-	Status        string               `json:"status"`
-	Scope         string               `json:"scope,omitempty"`
-	MemoryVersion int                  `json:"memory_version"`
-	Source        string               `json:"source,omitempty"`
-	Guidance      []skillsmcp.Guidance `json:"guidance,omitempty"`
+	Status           string               `json:"status"`
+	Scope            string               `json:"scope,omitempty"`
+	MemoryVersion    int                  `json:"memory_version"`
+	Source           string               `json:"source,omitempty"`
+	Guidance         []skillsmcp.Guidance `json:"guidance,omitempty"`
+	RenderingVersion int                  `json:"rendering_version,omitempty"`
 }
 
 func skillScope(turn *Turn) string {
@@ -42,7 +43,7 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		text = job.request
 	}
 	out := skillOutput{Status: "no_match", Scope: skillScope(job.turn), MemoryVersion: version}
-	docs, err := e.skills.LoadForTurn(ctx, text, memory)
+	docs, renderingVersion, err := e.skills.PrepareForTurn(ctx, text, memory)
 	if err != nil {
 		out.Status = "unavailable"
 	} else if len(docs) > 0 {
@@ -65,6 +66,15 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		}
 		fresh := req
 		fresh.Messages = e.snapshotMessages(job.turn, false)
+		if renderingVersion == 2 && len(out.Guidance) > 0 && fillSkillContentSlot(fresh.Messages, out.Guidance) {
+			out.RenderingVersion = 2
+			// The body now resides in the first system message. Keep only its
+			// provenance here, without modifying the retrieved guidance slice.
+			out.Guidance = append([]skillsmcp.Guidance(nil), out.Guidance...)
+			for i := range out.Guidance {
+				out.Guidance[i].Text = ""
+			}
+		}
 		if out.Status != "no_match" {
 			raw, _ := json.Marshal(out)
 			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Name: skillsmcp.ToolName, Content: string(raw)})
@@ -79,7 +89,7 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 	})
 	select {
 	case fresh := <-ready:
-		e.log.Info("skills: prepare", "status", out.Status, "ms", time.Since(began).Milliseconds())
+		e.log.Info("skills: prepare", "status", out.Status, "rendering_version", renderingVersion, "ms", time.Since(began).Milliseconds())
 		return fresh
 	case <-ctx.Done():
 		return req

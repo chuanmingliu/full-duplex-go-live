@@ -121,3 +121,22 @@ cleanup path. `report.json` contains the paired benchmark and state cases.
 revision cases. `edges` can replace `all` for the edge suite. The iteration count
 accepts 1–20. These measurements cover real-model generation and mock-TTS output.
 Full audio and telephony timing require the separate media simulator.
+
+For a comparison using the owner's saved default prompt, run the explicit `slot`
+phase in a fresh output directory with the isolated fixture.
+
+```sh
+python3 simulate.py "$PWD/duplex.test" 10 slot fixture
+```
+
+This phase reads only the `instructions` field for prompt construction from
+`~/golive-last-call.json` and hashes that file before and after the run. Session
+memory and quotation execution remain synthetic. It alternates published v1/v2
+rendering for normal, WeChat and quotation cases, then tests service fallback and
+trusted WeChat completion. Calculation duration is recorded separately. The
+fixture uses port 18795, while the running service keeps its own catalog.
+
+Keep the detailed `report.json` private. Publish only aggregated timings,
+assertion outcomes and the prompt hash. These tests exercise text input through
+mock audio with the configured real model. Use the separate full-media simulator
+and real-call procedure for ASR, TTS, RTP and handset measurements.

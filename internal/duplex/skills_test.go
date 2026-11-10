@@ -379,9 +379,18 @@ func TestSkillsRejectChangedContentAndPublication(t *testing.T) {
 }
 
 func TestSkillsInterruptedFetchDoesNotResumeAnswer(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) { testSkillsInterruptedFetch(t, version) })
+	}
+}
+
+func testSkillsInterruptedFetch(t *testing.T, version int) {
 	fetching, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	cfg := skillFixture(t, func(method string, result any) any {
+		if method == "prompts/get" {
+			result.(map[string]any)["_meta"].(map[string]any)["ai.liuchuanming.golive/turn"].(map[string]any)["prompt_rendering"] = map[string]int{"version": version}
+		}
 		if method == "resources/read" {
 			once.Do(func() { close(fetching) })
 			<-release
