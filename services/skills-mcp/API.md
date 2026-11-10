@@ -427,7 +427,7 @@ This is a minimal complete schema-3 catalog example with synthetic business inst
 | `prompt_rendering` | Optional object. Omission or `null` means version 1. |
 | `prompt_rendering.version` | Required integer inside that object, either `1` or `2`. Other values fail publication. |
 | `skills` | At most 64 entries |
-| Skill `name` | Unique, at most 64 bytes, `^[a-z0-9]+(-[a-z0-9]+)*$` |
+| Skill `name` | Unique, at most 64 bytes, `^[a-z0-9]+([-_][a-z0-9]+)*$` |
 | Skill `description` | Nonblank, one line, at most 1,024 Unicode characters |
 | Skill `body` | Nonblank, at most 65,536 UTF-8 bytes, supplied without generated frontmatter |
 | Skill `enabled` | Boolean availability switch |

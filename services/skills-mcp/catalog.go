@@ -104,7 +104,7 @@ func (c *Catalog) migrate() {
 	c.Revision++
 }
 
-var skillName = regexp.MustCompile("^[a-z0-9]+(-[a-z0-9]+)*$")
+var skillName = regexp.MustCompile("^[a-z0-9]+([-_][a-z0-9]+)*$")
 
 func (c Catalog) validate() error {
 	if version := c.renderingVersion(); version != 1 && version != 2 {
@@ -128,7 +128,7 @@ func (c Catalog) validate() error {
 	names := map[string]bool{}
 	for _, s := range c.Skills {
 		if !skillName.MatchString(s.Name) || len(s.Name) > 64 || names[s.Name] {
-			return errors.New("skill names must be unique lowercase words up to 64 characters, optionally joined by hyphens")
+			return errors.New("skill names must be unique lowercase words up to 64 characters, optionally joined by hyphens or underscores")
 		}
 		names[s.Name] = true
 		if err := s.validateBindings(); err != nil {
