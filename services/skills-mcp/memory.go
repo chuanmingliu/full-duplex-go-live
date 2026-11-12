@@ -20,6 +20,7 @@ type memoryAPI struct {
 	db            *dreaming.Store
 	catalog       *store
 	workerEnabled bool
+	automatic     *dreaming.Automatic
 }
 
 func startMemory(catalog *store) (*memoryAPI, func(), error) {
@@ -31,10 +32,21 @@ func startMemory(catalog *store) (*memoryAPI, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	api := &memoryAPI{db: db, catalog: catalog}
+	engines := os.Getenv("GOLIVE_DREAM_ENGINE_URLS")
+	if engines == "" {
+		engines = "http://127.0.0.1:8765"
+	}
+	automatic, err := dreaming.NewAutomatic(db, os.Getenv("GOLIVE_DREAM_JOURNAL_URL"), strings.Split(engines, ","))
+	if err != nil {
+		db.Close()
+		return nil, nil, err
+	}
+	api := &memoryAPI{db: db, catalog: catalog, automatic: automatic}
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	close := func() { cancel(); wg.Wait(); db.Close() }
+	wg.Add(1)
+	go func() { defer wg.Done(); automatic.Run(ctx) }()
 	endpoint := os.Getenv("GOLIVE_DREAM_MODEL_URL")
 	if endpoint != "" {
 		token, err := os.ReadFile(os.Getenv("GOLIVE_DREAM_TOKEN_FILE"))
@@ -49,7 +61,10 @@ func startMemory(catalog *store) (*memoryAPI, func(), error) {
 		}
 		api.workerEnabled = true
 		wg.Add(1)
-		go func() { defer wg.Done(); db.Run(ctx, model, func(err error) { log.Printf("dream worker: %v", err) }) }()
+		go func() {
+			defer wg.Done()
+			db.Run(ctx, model, func(err error) { log.Printf("dream worker: %v", err) }, automatic.CanReview)
+		}()
 	}
 	return api, close, nil
 }
@@ -73,6 +88,27 @@ func memoryError(w http.ResponseWriter, err error) {
 
 func (m *memoryAPI) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/memory/live", m.live)
+	mux.HandleFunc("GET /admin/memory/jobs/{id}", m.jobDetail)
+	mux.HandleFunc("PUT /admin/memory/settings", func(w http.ResponseWriter, r *http.Request) {
+		settings := dreaming.Settings{AfterHangup: true}
+		if err := dreaming.Decode(r.Body, &settings); err != nil {
+			memoryError(w, err)
+			return
+		}
+		if err := settings.Validate(); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			memoryJSON(w, map[string]string{"error": err.Error()})
+			return
+		}
+		saved, err := m.db.SaveSettings(r.Context(), settings)
+		if err != nil {
+			memoryError(w, err)
+			return
+		}
+		memoryJSON(w, saved)
+	})
 	mux.HandleFunc("GET /admin/memory/status", func(w http.ResponseWriter, r *http.Request) {
 		memoryJSON(w, map[string]any{"worker_enabled": m.workerEnabled})
 	})
@@ -253,6 +289,9 @@ func (m *memoryAPI) publish(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		memoryError(w, err)
 		return
+	}
+	if err := m.db.Record(r.Context(), l.DreamID, "published", "Reviewed lesson published as "+l.ID); err != nil {
+		log.Printf("dream publication event could not be stored")
 	}
 	memoryJSON(w, map[string]any{"revision": c.Revision, "uri": sk.uri()})
 }

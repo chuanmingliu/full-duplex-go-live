@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,14 +59,18 @@ func Open(path string) (*Store, error) {
 CREATE TABLE IF NOT EXISTS episodes(id TEXT PRIMARY KEY, body TEXT NOT NULL, released INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS feedback(episode_id TEXT NOT NULL REFERENCES episodes(id), id TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY(episode_id,id));
 CREATE TABLE IF NOT EXISTS dreams(id TEXT PRIMARY KEY, request TEXT NOT NULL, snapshot TEXT NOT NULL, not_before INTEGER NOT NULL, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '');
-CREATE TABLE IF NOT EXISTS lessons(id TEXT PRIMARY KEY, dream_id TEXT NOT NULL REFERENCES dreams(id), body TEXT NOT NULL);
-UPDATE dreams SET status='pending' WHERE status='running';`)
+CREATE TABLE IF NOT EXISTS lessons(id TEXT PRIMARY KEY, dream_id TEXT NOT NULL REFERENCES dreams(id), body TEXT NOT NULL);`)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
+	store := &Store{db: db, lock: lock}
+	if err = store.initLifecycle(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	opened = true
-	return &Store{db: db, lock: lock}, nil
+	return store, nil
 }
 
 func (s *Store) Close() error {
@@ -230,6 +235,9 @@ func (s *Store) Queue(ctx context.Context, req DreamRequest) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	if err = recordEvent(ctx, tx, req.ID, "queued", "Completed-call evidence captured, released and snapshotted for review"); err != nil {
+		return Job{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return Job{}, err
 	}
@@ -250,8 +258,19 @@ func (s *Store) Job(ctx context.Context, id string) (Job, error) {
 }
 
 func (s *Store) Retry(ctx context.Context, id string) error {
-	r, err := s.db.ExecContext(ctx, `UPDATE dreams SET status='pending',error='' WHERE id=? AND status='failed'`, id)
-	return changed(r, err)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE dreams SET status='pending',error='' WHERE id=? AND status='failed'`, id)
+	if err = changed(result, err); err != nil {
+		return err
+	}
+	if err = recordEvent(ctx, tx, id, "queued", "Failed review explicitly retried"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Lessons(ctx context.Context) ([]Lesson, error) {
@@ -308,6 +327,9 @@ func (s *Store) finish(ctx context.Context, j Job, proposals []Proposal) error {
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dreams SET status='completed',error='' WHERE id=?`, j.ID); err != nil {
+		return err
+	}
+	if err = recordEvent(ctx, tx, j.ID, "completed", fmt.Sprintf("Review completed with %d validated candidate lessons", len(seen))); err != nil {
 		return err
 	}
 	return tx.Commit()

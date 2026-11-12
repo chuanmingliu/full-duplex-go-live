@@ -52,11 +52,20 @@ func (m *Model) Review(ctx context.Context, snapshot Snapshot) ([]Proposal, erro
 		return nil, err
 	}
 	messages := []map[string]string{{"role": "system", "content": reviewPrompt}, {"role": "user", "content": string(evidence)}}
+	if err := progress(ctx, "model_request", "Requesting model reflection on the captured evidence"); err != nil {
+		return nil, err
+	}
 	proposals, err := m.complete(ctx, messages)
 	if err != nil {
 		return nil, err
 	}
+	if err := progress(ctx, "validating", "Checking model proposals against evidence and retrieval examples"); err != nil {
+		return nil, err
+	}
 	if validation := validateProposals(proposals, snapshot); validation != nil {
+		if err := progress(ctx, "repairing", validation.Error()); err != nil {
+			return nil, err
+		}
 		previous, err := json.Marshal(map[string]any{"lessons": proposals})
 		if err != nil {
 			return nil, err

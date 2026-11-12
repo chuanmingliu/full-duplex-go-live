@@ -59,7 +59,10 @@ prove physical handset playout.
 For the owner's real-call workflow, `call` places a real call and `call sim`
 uses the simulator. After a real call, wait for the owner's **done** message
 before beginning the deep review, fixes, GitHub push and box deployment.
-An ended-call status alone does not replace that signal. Keep the selected
+Automatic dreaming has separate standing authorization through the Dreaming
+setup. It releases newly completed archived calls for background review after
+the configured idle delay. The owner-led analysis workflow still waits for
+that signal. Keep the selected
 call ID throughout the review so a newer call cannot silently replace it.
 
 The journal watches every 20 seconds once the service log has been quiet for 8 seconds. It archives only ended calls and only copies audio once `session.json.closed_at` is set. Poll the selected call after it ends, with a bounded wait; do not equate a temporary recording or HTTP audio availability with archival completion.

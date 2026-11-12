@@ -155,3 +155,35 @@ func TestMemoryAuthorizationAndOptionalStartup(t *testing.T) {
 	}
 	close()
 }
+
+func TestLiveMemorySettingsAndRedaction(t *testing.T) {
+	f, m := memoryFixture(t)
+	var live struct {
+		Connected bool                  `json:"connected"`
+		Settings  dreaming.Settings     `json:"settings"`
+		Jobs      []dreaming.JobSummary `json:"jobs"`
+	}
+	data := adminMemory(t, f, "GET", "/live", nil, 200)
+	if err := json.Unmarshal(data, &live); err != nil || !live.Connected || !live.Settings.Enabled || live.Settings.IdleSeconds != 30 {
+		t.Fatal(string(data), err)
+	}
+	live.Settings.IdleSeconds = 7
+	adminMemory(t, f, "PUT", "/settings", live.Settings, 200)
+	adminMemory(t, f, "PUT", "/settings", live.Settings, 409)
+	saved, err := m.db.Settings(context.Background())
+	if err != nil || saved.IdleSeconds != 7 {
+		t.Fatal(saved, err)
+	}
+	saved.IdleSeconds = -1
+	adminMemory(t, f, "PUT", "/settings", saved, 400)
+	e := dreaming.Episode{ID: "private-call", Mode: "simulation", ClosedAt: time.Now().Add(-time.Minute), Evidence: []dreaming.Evidence{{ID: "line", Kind: "user", Text: "PRIVATE TRANSCRIPT"}}}
+	adminMemory(t, f, "POST", "/episodes", e, 200)
+	adminMemory(t, f, "POST", "/dreams", dreaming.DreamRequest{ID: "private-job", EpisodeIDs: []string{e.ID}}, 200)
+	data = adminMemory(t, f, "GET", "/live", nil, 200)
+	if strings.Contains(string(data), "PRIVATE TRANSCRIPT") || !strings.Contains(string(data), "private-call") {
+		t.Fatal("live status leaked source or lost provenance")
+	}
+	if code, _ := f.request("GET", "/admin/memory/live", "runtime-private", nil, nil); code != 401 {
+		t.Fatal("runtime token read admin data", code)
+	}
+}

@@ -62,7 +62,7 @@ response with `finish_reason: stop`. Providers must support this contract.
 image needs the overlay's read-only CA bundle mount for a remote HTTPS provider.
 Set `DREAM_TOKEN_FILE`, `GOLIVE_DREAM_MODEL_URL`, and `GOLIVE_DREAM_MODEL`, then use
 `docker compose -f compose.yaml -f compose.dreaming.yaml ...` in an isolated stack.
-Do not use this command to restart an active call service. This change is not deployed.
+Do not use this command to restart an active call service. Configure the Journal connection described above before deploying automatic capture.
 
 The model receives projected transcript, timing/tool evidence and owner feedback.
 Original archive JSON and audio paths remain local; audio is never opened or uploaded.
@@ -73,11 +73,13 @@ The worker is serial and runs outside MCP request handling, with a 90-second rev
 deadline. A structurally valid model response that fails proposal validation gets
 one repair attempt with the failing lesson/case index under that same deadline.
 The worker validates the repaired result before storing drafts.
-`not_before` schedules a review after a chosen leisure-time boundary;
-it is not a live-call idle detector and does not stop a local model from competing
-for CPU/GPU. Schedule appropriately or use a separate review host. Importing does
-not automatically queue a job. No live call hooks or automatic archive watchers
-are installed in this first version.
+`not_before` schedules an explicitly queued review. The worker also requires
+continuous voice-engine idle time before starting and defers when activity
+resumes. Automatic capture defaults to enabled for newly completed calls,
+with a 30-second idle delay. The Journal Dreaming setup controls this policy.
+See [automatic capture and connection setup](../../journal/DREAMING.md#automatic-review-and-live-status).
+Automatic review is standing authorization to release these completed calls.
+the explicit release endpoint remains available for manually imported calls.
 
 ## API and review workflow
 
@@ -88,6 +90,9 @@ with `/admin/memory`. JSON rejects unknown fields. Existing request limit is 2 M
 | Method and path | Input / result |
 | --- | --- |
 | `GET /status` | `worker_enabled` |
+| `GET /live` | Activity, collector, settings, capture outcomes and latest 100 job summaries |
+| `GET /jobs/{id}` | Latest 100 process events, candidate lessons and current publication states |
+| `PUT /settings` | Revision-checked enabled flag, idle seconds, simulation policy, after-hangup mode and cron tasks |
 | `POST /episodes` | Immutable completed episode below; returns its ID |
 | `POST /episodes/{id}/release` | `{"owner_done":true}` after the owner finishes the real call |
 | `POST /feedback` | `{"episode_id":"call1","id":"feedback1","text":"…"}` |

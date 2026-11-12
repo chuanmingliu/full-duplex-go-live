@@ -4,6 +4,7 @@ go 1.26.11
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/sys v0.41.0
 	modernc.org/sqlite v1.39.1
 )
