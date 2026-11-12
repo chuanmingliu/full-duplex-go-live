@@ -790,6 +790,10 @@ func (e *Engine) ContinueResponse(clientEventID string) {
 // startTypedTurn answers text the user typed. It takes the floor the way a
 // spoken question would.
 func (e *Engine) startTypedTurn() {
+	if e.openingProtected() || e.openingInput != nil {
+		e.openingTyped = true
+		return
+	}
 	text := strings.Join(e.typed, "\n")
 	e.typed = nil
 	if e.assistantHasFloor() {
@@ -1105,6 +1109,9 @@ func (e *Engine) wake() {
 // and a free floor: a function result to read back, then something an
 // application asked to have said.
 func (e *Engine) drainDeferred() {
+	if e.drainOpeningInput() {
+		return
+	}
 	if len(e.continuations) == 0 && len(e.commentary) == 0 {
 		return
 	}

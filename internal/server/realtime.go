@@ -772,7 +772,7 @@ func (s *Session) Open(greeting string) bool {
 	if tel := s.tel; tel != nil {
 		tel.released()
 	}
-	s.withEngine(func(e *duplex.Engine) { e.Say(greeting) })
+	s.withEngine(func(e *duplex.Engine) { e.SayOpening(greeting) })
 	return true
 }
 

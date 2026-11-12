@@ -38,6 +38,12 @@ func (e *Engine) completePlayback(receipt *playbackCompletion, closing bool) {
 	if turn == nil {
 		return
 	}
+	if e.openingTurn == turn {
+		defer func() {
+			e.log.Info("opening: protection finished", "turn", turn.ID, "truncated", receipt.truncated)
+			e.openingTurn = nil
+		}()
+	}
 	if !closing && !receipt.truncated {
 		defer func() {
 			if e.tools != nil && e.tools.handoff == turn {

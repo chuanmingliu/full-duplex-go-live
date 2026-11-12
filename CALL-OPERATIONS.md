@@ -21,6 +21,11 @@ quotation calculation time and result completion separate, using
 quotation-service calculation delay to improve the conversational score.
 
 Keep the original preset opener pools and coordinated main-LLM continuation.
+The telephony profile enables `duplex.protect_opening`. The initial fixed
+greeting finishes before responding to caller speech received during playback.
+That speech is retained for the following response. Subsequent answers use the
+configured barge-in policy. Check `opening: protection started`, deferred-input,
+and protection-finished events when verifying this behavior.
 Talker-generated openers remain disabled. The [opener and hangup implementation
 guide](docs/architecture/08-openers-and-hangup.md) distinguishes literal scenario
 matching, semantic model decisions and transport hangup.

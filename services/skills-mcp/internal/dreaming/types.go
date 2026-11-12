@@ -171,7 +171,7 @@ func (p Proposal) Validate(s Snapshot) error {
 		}
 	}
 	positive, negative := false, false
-	for _, c := range p.Cases {
+	for index, c := range p.Cases {
 		if !validText(c.Utterance, 2000) {
 			return errors.New("invalid routing case")
 		}
@@ -185,13 +185,25 @@ func (p Proposal) Validate(s Snapshot) error {
 			}
 		}
 		if match != c.Match {
-			return errors.New("routing case failed")
+			return fmt.Errorf("routing case %d failed: expected match=%t", index, c.Match)
 		}
 		positive = positive || c.Match
 		negative = negative || !c.Match
 	}
 	if !positive || !negative {
 		return errors.New("routing needs positive and negative cases")
+	}
+	return nil
+}
+
+func validateProposals(proposals []Proposal, snapshot Snapshot) error {
+	if len(proposals) > 8 {
+		return errors.New("too many lessons")
+	}
+	for index, proposal := range proposals {
+		if err := proposal.Validate(snapshot); err != nil {
+			return fmt.Errorf("lesson %d: %w", index, err)
+		}
 	}
 	return nil
 }

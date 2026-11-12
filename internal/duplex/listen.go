@@ -1072,6 +1072,9 @@ func (e *Engine) speculateAtClose() {
 }
 
 func (e *Engine) startSpeculativeTurn(text string) {
+	if e.openingProtected() || e.openingInput != nil {
+		return
+	}
 	if e.hangingUp() {
 		// Nothing after the farewell is answered, and a turn begun here
 		// would become the current one and abort the farewell's speech
@@ -1144,6 +1147,9 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		return
 	}
 
+	if e.deferOpeningInput(text) {
+		return
+	}
 	// The caller's words, final: the keyword rules' moment.
 	e.checkHangupRules(text)
 	if e.tools != nil && e.tools.endCall != nil && !e.tools.endCall.byModel {
