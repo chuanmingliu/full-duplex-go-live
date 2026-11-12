@@ -77,8 +77,11 @@ func (s *store) admin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported method", 405)
 	}
 }
-func handler(s *store, adminToken, runtimeToken string) http.Handler {
+func handler(s *store, adminToken, runtimeToken string, memory ...*memoryAPI) http.Handler {
 	mux := http.NewServeMux()
+	if len(memory) > 0 && memory[0] != nil {
+		mux.Handle("/admin/memory/", protect(adminToken, memory[0].handler()))
+	}
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { s.mu.RLock(); defer s.mu.RUnlock(); return s.server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	mux.Handle("/mcp", protect(runtimeToken, h))
 	mux.Handle("POST /admin/preview", protect(adminToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +136,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv := &http.Server{Addr: addr, Handler: handler(s, adminToken, runtimeToken), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 200 * time.Second, IdleTimeout: 45 * time.Second}
+	memory, closeMemory, err := startMemory(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer closeMemory()
+	srv := &http.Server{Addr: addr, Handler: handler(s, adminToken, runtimeToken, memory), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 200 * time.Second, IdleTimeout: 45 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }
