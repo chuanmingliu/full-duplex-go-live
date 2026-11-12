@@ -11,6 +11,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/requestlog"
 )
 
 // This file is the think channel: delegation in both of gpt-live-1's modes,
@@ -430,6 +431,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	// next request — which then paid a fresh handshake.
 	defer cancel()
 	turn := job.turn
+	ctx = requestlog.WithScope(ctx, requestlog.Scope{SessionID: e.opts.SessionID, TurnID: turn.ID, ResponseID: job.responseID, Purpose: "turn"})
 
 	// The request counts as an answer in progress until it has a speech pipe to
 	// show for it, or has failed to get one. See Engine.assistantHasFloor.
@@ -1238,7 +1240,7 @@ func (e *Engine) warmPrefix(reason string) {
 		// Every copy, to its end: with a pool of keys behind the backend each
 		// copy goes to a different account, and each account keeps its own
 		// cache. Racing them would warm one.
-		ctx, cancel := context.WithTimeout(provider.WithEveryCopy(e.ctx), 5*time.Second)
+		ctx, cancel := context.WithTimeout(provider.WithEveryCopy(requestlog.WithScope(e.ctx, requestlog.Scope{SessionID: e.opts.SessionID, Purpose: "prefix_warm"})), 5*time.Second)
 		defer cancel()
 		started := time.Now()
 		deltas, err := e.deps.LLM.Stream(ctx, req)

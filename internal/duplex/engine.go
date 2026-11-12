@@ -45,6 +45,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/requestlog"
 	"github.com/chuanmingliu/golive/internal/segment"
 	"github.com/chuanmingliu/golive/internal/skillsmcp"
 	"github.com/chuanmingliu/golive/internal/tools"
@@ -490,7 +491,7 @@ func New(opts Options, deps Deps) *Engine {
 // Start launches the engine goroutines.
 func (e *Engine) Start(ctx context.Context) {
 	e.startOutputTranscript()
-	e.ctx, e.cancel = context.WithCancel(ctx)
+	e.ctx, e.cancel = context.WithCancel(requestlog.WithScope(ctx, requestlog.Scope{SessionID: e.opts.SessionID}))
 	if d := e.opts.Cfg.Duplex; d.BackchannelDetectorMode != "" {
 		e.detector = backchannel.New(e.ctx, d.BackchannelDetectorURL, e.log)
 		e.detectorReady = e.detector.Updates

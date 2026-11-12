@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/requestlog"
 )
 
 func init() {
@@ -78,6 +80,7 @@ type LLM struct {
 	APIKey       string
 	DefaultModel string
 	HTTP         *http.Client
+	Requests     *requestlog.Store
 
 	// Extra is sent as further top-level fields of every request: what one
 	// vendor needs and another refuses, such as "enable_thinking": false for a
@@ -123,7 +126,15 @@ func NewNamed(name, keyEnv, defaultBase, defaultModel string) (*LLM, error) {
 		base = config.Env(prefix+"BASE_URL", base)
 		model = config.Env(prefix+"MODEL", model)
 	}
+	var requests *requestlog.Store
+	if directory := os.Getenv("GOLIVE_REQUEST_LOG_DIR"); directory != "" {
+		requests, err = requestlog.Open(directory)
+		if err != nil {
+			return nil, fmt.Errorf("llm request recording: %w", err)
+		}
+	}
 	return &LLM{
+		Requests:     requests,
 		name:         name,
 		BaseURL:      strings.TrimRight(base, "/"),
 		APIKey:       keys[0],
@@ -400,14 +411,24 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 
 	started := time.Now()
 	timing := newStreamTiming(ctx, started, ln)
+	recording := l.recordRequest(ctx, body, model, ln)
+	if recording != nil && timing != nil {
+		timing.id = recording.ID()
+	}
 	resp, err := ln.client.Do(httpReq)
 	if err != nil {
 		timing.report(ctx, "request_error")
+		finishRecording(recording, 0, "", "request_error")
 		return nil, fmt.Errorf("llm: request failed: %w", err)
 	}
 	timing.response(resp.StatusCode)
+	providerID := resp.Header.Get("X-Request-ID")
+	if len(providerID) > 512 {
+		providerID = providerID[:512]
+	}
 	if resp.StatusCode != http.StatusOK {
 		defer timing.report(ctx, "http_error")
+		defer finishRecording(recording, resp.StatusCode, providerID, "http_error")
 		defer resp.Body.Close()
 		// Read a bounded snippet: the body may be an HTML error page, and the
 		// message is surfaced to operators, so it must never carry the request
@@ -446,6 +467,7 @@ func (l *LLM) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provi
 		defer resp.Body.Close()
 		outcome := l.consume(ctx, resp.Body, req.DisableThinking, out, timing)
 		timing.report(ctx, outcome)
+		finishRecording(recording, resp.StatusCode, providerID, outcome)
 	}()
 	return out, nil
 }
