@@ -34,7 +34,7 @@ type Config struct {
 	// the log it was read from) and the owner's notes.
 	DataDir string
 	// NotesDir holds what is written about the calls rather than measured:
-	// retros/<call id>.md, issues.json, decisions.json. It ships with golive's
+	// retros/<call id>.md, issues.json, decisions.json, dreaming.json. It ships with golive's
 	// bundle, so it is versioned with the code it describes.
 	NotesDir string
 	// RepoURL turns a commit hash into a link.
@@ -539,6 +539,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calls/", s.handleCall)
 	mux.HandleFunc("GET /api/talker-status", s.handleTalkerStatus)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
+	mux.HandleFunc("/api/dreaming", s.handleDreaming)
 	mux.HandleFunc("/api/decisions", s.handleFile("decisions.json", `{"decisions":[]}`))
 	mux.HandleFunc("/api/benchmarks", func(w http.ResponseWriter, r *http.Request) {
 		// The standing evaluation's records: journal/benchmarks/*.json,

@@ -2051,6 +2051,22 @@
     });
   }
 
+  function routeDreaming() {
+    var token = ++S.token;
+    setNav('dreaming');
+    document.title = 'Dreaming – Call journal';
+    if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+    showLoading('the dreaming record');
+    return api('/api/dreaming').then(function (data) {
+      if (token !== S.token) return;
+      clear(view);
+      view.appendChild(window.JournalDreaming(data, h));
+    }).catch(function (error) {
+      if (token !== S.token) return;
+      showError(error, routeDreaming, 'The dreaming record');
+    });
+  }
+
   // ====================================================================
   // Router, refresh, keys
   // ====================================================================
@@ -2060,6 +2076,7 @@
     if (p[0] === 'call' && p[1]) return { name: 'call', id: p[1] };
     if (p[0] === 'issues') return { name: 'issues', id: p[1] || '' };
     if (p[0] === 'decisions') return { name: 'decisions' };
+    if (p[0] === 'dreaming') return { name: 'dreaming' };
     if (p[0] === 'benchmarks') return { name: 'benchmarks' };
     return { name: 'overview' };
   }
@@ -2071,6 +2088,7 @@
     if (r.name === 'issues') return routeIssues(r.id);
     if (r.name === 'decisions') return routeDecisions();
     if (r.name === 'benchmarks') return routeBenchmarks();
+    if (r.name === 'dreaming') return routeDreaming();
     return routeOverview(false);
   }
   window.addEventListener('hashchange', route);
@@ -2102,6 +2120,7 @@
       if (busyCall()) p = loadOverview().catch(markStale); // a playing recording or an unsaved note is not disturbed
       else p = routeCall(r.id, true);
     } else if (r.name === 'issues') p = loadOverview().catch(markStale).then(function () { return routeIssues(r.id); });
+    else if (r.name === 'dreaming') p = routeDreaming();
     else if (r.name === 'decisions') p = loadOverview().catch(markStale).then(routeDecisions);
     else p = routeOverview(true);
     Promise.resolve(p).then(done, done);

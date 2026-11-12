@@ -46,6 +46,10 @@ func TestRealtimeBackendAddV(t *testing.T) {
 	id := str(t, object(t, created["session"]), "id")
 	side := dialPath(t, ts, "/v1/live/sessions/"+id+"/attach")
 	events := startReader(side)
+	// The WebSocket upgrade can return before Attach registers the peer.
+	// Observe a sideband response before publishing on the primary connection.
+	sendRaw(t, side, `{"type":"golive.business.event","name":"unknown","event_id":"readiness"}`)
+	await(t, "sideband readiness", 2*time.Second, func() bool { return events.sawError("invalid_business_event") })
 	primary.send(map[string]string{"type": "golive.business.event", "name": "addV", "event_id": "realtime-trace"})
 	event := events.first1(t, live.ExtMemory, 2*time.Second)
 	var patch struct {
