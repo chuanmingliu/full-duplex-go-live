@@ -1795,6 +1795,9 @@ func (e *Engine) policy() string {
 // arrived on top of their second; and it meant something waiting for a free
 // floor took it, only to be cut off mid-word when that answer turned up.
 func (e *Engine) assistantHasFloor() bool {
+	if e.openingProtected() {
+		return true
+	}
 	if e.skills != nil && e.tracker != nil {
 		if turn := e.tracker.Current(); turn != nil && turn.skillPending > 0 && e.tracker.IsCurrent(turn) {
 			return true

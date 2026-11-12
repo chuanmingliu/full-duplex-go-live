@@ -102,6 +102,22 @@ func TestOpeningProtectionCanBeDisabled(t *testing.T) {
 	waitFor(t, "original interruption behavior", 3*time.Second, func() bool { return c.count(live.ExtAudioTruncated) > 0 })
 }
 
+func TestOpeningKeepsFloorUntilCompletionIsRecorded(t *testing.T) {
+	e, _, _ := openingEngine(t, true, mock.NewTTS())
+	result := make(chan bool, 1)
+	e.post(func() {
+		turn := e.tracker.Begin("", false)
+		e.protectOpening(turn)
+		// The player has drained while its completion is still waiting on
+		// the loop. Deferred tool/callback work must continue to see a busy floor.
+		result <- e.assistantHasFloor()
+		e.openingTurn = nil
+	})
+	if !<-result {
+		t.Fatal("opening released the floor before recording completion")
+	}
+}
+
 type failedOpeningTTS struct{ provider.TTS }
 type failedOpeningStream struct{ provider.TTSStream }
 
