@@ -20,8 +20,11 @@ func TestCoveragePromptUsesCallPlanAndFailsClosed(t *testing.T) {
 	if !strings.Contains(text, "共享保额、1万、2万") || strings.Contains(text, "旧险种") || !strings.Contains(text, "Saved original description") {
 		t.Fatal(text)
 	}
-	if e.quotePlanVersion() != 7 {
+	if e.quotePlanVersion("quote_total") != 7 {
 		t.Fatal("plan version lost")
+	}
+	if e.quotePlanVersion("send_wechat") != 0 {
+		t.Fatal("quotation metadata leaked into an unrelated tool")
 	}
 	e.tools.memory.Patch(json.RawMessage(`{"quote_plan":"missing"}`))
 	text = string(e.toolDefinitions()[0])

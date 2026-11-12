@@ -503,7 +503,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			t := ts.byName[c.Name]
 			began := time.Now()
 			res := ts.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
-				Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuotePlanVersion: e.quotePlanVersion()})
+				Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuotePlanVersion: e.quotePlanVersion(c.Name)})
 			out := toolOutput(res)
 			e.log.Info("tools: ran", "tool", c.Name, "ms", time.Since(began).Milliseconds(), "err", errString(res.Err))
 			e.post(func() { p.outputs[c.ID] = out })
@@ -861,7 +861,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 			e.log.Info("tools: a task was superseded by a newer one", "tool", t.Name, "task", oldID)
 		}
 	}
-	req := tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID, Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuoteBaseDefault: t.Name == "quote_total" && ts.quoteBaseDefault, QuotePlanVersion: e.quotePlanVersion()}
+	req := tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID, Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuoteBaseDefault: t.Name == "quote_total" && ts.quoteBaseDefault, QuotePlanVersion: e.quotePlanVersion(c.Name)}
 	task := ts.pool.Submit(e.ctx, t, req, func(task *tools.Task) {
 		e.post(func() { e.onTaskDone(task) })
 	})
@@ -1180,7 +1180,7 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 			c := c
 			go func() {
 				res := e.tools.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
-					Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuotePlanVersion: e.quotePlanVersion()})
+					Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuotePlanVersion: e.quotePlanVersion(c.Name)})
 				e.post(func() {
 					if p := e.pending[job.delegationID]; p != nil {
 						p.outputs[c.ID] = toolOutput(res)

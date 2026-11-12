@@ -144,7 +144,10 @@ func (e *Engine) normalizeQuoteCall(c provider.ToolCall) provider.ToolCall {
 	return c
 }
 
-func (e *Engine) quotePlanVersion() int {
+func (e *Engine) quotePlanVersion(tool string) int {
+	if tool != "quote_total" {
+		return 0
+	}
 	if e.tools != nil && e.tools.quoteBrief != nil {
 		return e.tools.quoteBrief.Version
 	}
