@@ -6,6 +6,7 @@ window.JournalDreamingLive = function (h) {
   var settingsView = h('div');
   var jobsView = h('div');
   var callsView = h('div');
+  var cronView = h('div');
   var message = h('p', {role: 'status'});
   var settings = null;
   var stopped = false;
@@ -14,7 +15,7 @@ window.JournalDreamingLive = function (h) {
   var detailRequest = 0;
   var selectedDetails = h('div');
   var formBuilt = false;
-  root.append(status, settingsView, message, callsView, jobsView, selectedDetails);
+  root.append(status, settingsView, message, cronView, callsView, jobsView, selectedDetails);
 
   function time(value) {
     return value && value.slice(0, 4) !== '0001' ? new Date(value).toLocaleString() : 'Pending';
@@ -40,11 +41,16 @@ window.JournalDreamingLive = function (h) {
     var delay = h('input', {type: 'number', id: 'dream-idle', min: '0', max: '3600', required: true, value: value.idle_seconds});
     var simulations = h('input', {type: 'checkbox', id: 'dream-simulations'});
     simulations.checked = value.include_simulation;
+    var afterHangup = h('input', {type: 'checkbox', id: 'dream-after-hangup'});
+    afterHangup.checked = value.after_hangup;
+    var scheduleEditor = window.JournalDreamingSchedules(h, value.schedules || []);
     var save = h('button', {type: 'submit', class: 'btn btn-main'}, 'Save dreaming settings');
     var form = h('form', {class: 'dream-settings'},
       h('label', {for: 'dream-enabled'}, enabled, ' Enable automatic capture and background review'),
       h('label', {for: 'dream-idle'}, 'Idle delay in seconds', delay),
+      h('label', {for: 'dream-after-hangup'}, afterHangup, ' Queue reviews after each hangup'),
       h('label', {for: 'dream-simulations'}, simulations, ' Include simulator calls'),
+      scheduleEditor.element,
       h('p', null, 'New completed calls are reviewed using the configured model. Text evidence and owner feedback go to that model. Audio stays in the local archive. Lessons require review before publication.'), save);
     form.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -53,7 +59,7 @@ window.JournalDreamingLive = function (h) {
       request('settings', 'PUT', {
         revision: settings.revision, enabled: enabled.checked,
         idle_seconds: Number(delay.value), include_simulation: simulations.checked,
-        since: settings.since
+        since: settings.since, after_hangup: afterHangup.checked, schedules: scheduleEditor.value()
       }).then(function (saved) {
         settings = saved;
         message.textContent = 'Dreaming settings saved.';
@@ -96,6 +102,10 @@ window.JournalDreamingLive = function (h) {
   }
   function render(data) {
     buildSettings(data.settings);
+    var historyOpen = !!cronView.querySelector('details[open]');
+    var taskBook = window.JournalDreamingTaskBook(h, data.cron_tasks || [], data.cron_runs || [], data.settings.enabled);
+    if (historyOpen && taskBook.querySelector('details')) taskBook.querySelector('details').open = true;
+    cronView.replaceChildren(taskBook);
     var activity = data.activity || {};
     var label = activity.status || 'unknown';
     var waiting = data.settings.enabled ? 'Waiting for completed calls' : 'Automatic capture and reviews paused';

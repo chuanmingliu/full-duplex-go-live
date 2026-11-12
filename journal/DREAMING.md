@@ -96,3 +96,25 @@ The automatic review setting is standing authorization to release new completed
 calls for the configured review model. Text evidence can reach that configured
 model. Original audio remains in the archive. Operator-led call analysis still
 uses the owner's `done` workflow.
+
+### Cron task book
+
+Dreaming setup includes an editable list of up to 16 review tasks. Each task
+has a name, enable switch, standard five-field cron expression, and explicit
+IANA timezone. For example, `0 2 * * *` with `Asia/Shanghai` dispatches daily
+at 02:00 China time. Cron parsing uses `github.com/robfig/cron/v3` and embedded
+Go timezone data so the scratch container supports the same timezones.
+
+The after-hangup queue switch defaults to enabled. Turn it off for cron-only
+operation. Calls awaiting a schedule show `waiting_schedule`. Cron dispatch
+queues available, unreviewed completed calls, and the normal idle delay still
+applies before model execution. When multiple tasks coincide they share the
+same idempotent per-call jobs. A dispatch with zero jobs records that outcome.
+
+Next-run times and pending occurrences persist in SQLite. A due task waits
+while engines are busy or unavailable. Missed intervals coalesce into a single
+catch-up occurrence, retaining its original due time. Edits apply a new next-run
+time. Removing a task retains its dispatch history. The panel shows each task's
+next run, pending time, queued job IDs, capture failure count, and dispatch time.
+These are application-managed review schedules. The executable action is fixed
+to the dreaming workflow.

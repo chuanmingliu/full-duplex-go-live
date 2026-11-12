@@ -22,13 +22,23 @@ func (m *memoryAPI) live(w http.ResponseWriter, r *http.Request) {
 		memoryError(w, err)
 		return
 	}
+	tasks, err := m.db.CronTasks(r.Context())
+	if err != nil {
+		memoryError(w, err)
+		return
+	}
+	runs, err := m.db.CronRuns(r.Context())
+	if err != nil {
+		memoryError(w, err)
+		return
+	}
 	var activity dreaming.ActivityState
 	var collector dreaming.CollectorState
 	if m.automatic != nil {
 		activity = m.automatic.Activity.State()
 		collector = m.automatic.State()
 	}
-	memoryJSON(w, map[string]any{"connected": true, "worker_enabled": m.workerEnabled, "settings": settings, "activity": activity, "collector": collector, "calls": calls, "jobs": jobs})
+	memoryJSON(w, map[string]any{"connected": true, "worker_enabled": m.workerEnabled, "settings": settings, "activity": activity, "collector": collector, "calls": calls, "jobs": jobs, "cron_tasks": tasks, "cron_runs": runs})
 }
 
 func (m *memoryAPI) jobDetail(w http.ResponseWriter, r *http.Request) {

@@ -84,6 +84,15 @@ func (s *Server) handleDreamProxy(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		status := 503
+		if resp.StatusCode == 400 {
+			var problem struct {
+				Error string `json:"error"`
+			}
+			if json.NewDecoder(io.LimitReader(resp.Body, 1024)).Decode(&problem) == nil && problem.Error != "" {
+				writeJSON(w, 400, problem)
+				return
+			}
+		}
 		if resp.StatusCode == 409 || resp.StatusCode == 400 {
 			status = resp.StatusCode
 		}

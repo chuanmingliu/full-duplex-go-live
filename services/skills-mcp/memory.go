@@ -91,9 +91,15 @@ func (m *memoryAPI) handler() http.Handler {
 	mux.HandleFunc("GET /admin/memory/live", m.live)
 	mux.HandleFunc("GET /admin/memory/jobs/{id}", m.jobDetail)
 	mux.HandleFunc("PUT /admin/memory/settings", func(w http.ResponseWriter, r *http.Request) {
-		var settings dreaming.Settings
+		settings := dreaming.Settings{AfterHangup: true}
 		if err := dreaming.Decode(r.Body, &settings); err != nil {
 			memoryError(w, err)
+			return
+		}
+		if err := settings.Validate(); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			memoryJSON(w, map[string]string{"error": err.Error()})
 			return
 		}
 		saved, err := m.db.SaveSettings(r.Context(), settings)

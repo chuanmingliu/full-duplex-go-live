@@ -67,3 +67,9 @@
 .dream-events time { display: block; font-size: 12px; opacity: .7; }
 .dream-events strong { display: inline-block; margin-right: 12px; }
 .dream-error { color: #bd4d31; }
+.dream-cron-editor { display: grid; gap: 12px; margin: 16px 0; }
+.dream-cron-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; border: 1px solid var(--line); padding: 16px; }
+.dream-cron-row label { display: flex; flex-wrap: wrap; }
+.dream-cron-row input[type=text] { width: 100%; padding: 8px; }
+.dream-cron-status { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.dream-cron-status code { overflow-wrap: anywhere; }

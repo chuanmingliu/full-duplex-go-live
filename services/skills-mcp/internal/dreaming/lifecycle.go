@@ -9,11 +9,13 @@ import (
 )
 
 type Settings struct {
-	Revision          int       `json:"revision"`
-	Enabled           bool      `json:"enabled"`
-	IdleSeconds       int       `json:"idle_seconds"`
-	IncludeSimulation bool      `json:"include_simulation"`
-	Since             time.Time `json:"since"`
+	Revision          int        `json:"revision"`
+	Enabled           bool       `json:"enabled"`
+	AfterHangup       bool       `json:"after_hangup"`
+	Schedules         []CronTask `json:"schedules"`
+	IdleSeconds       int        `json:"idle_seconds"`
+	IncludeSimulation bool       `json:"include_simulation"`
+	Since             time.Time  `json:"since"`
 }
 
 type Event struct {
@@ -39,7 +41,10 @@ func (s *Store) initLifecycle() error {
  CREATE TABLE IF NOT EXISTS dream_events(id INTEGER PRIMARY KEY AUTOINCREMENT, dream_id TEXT NOT NULL REFERENCES dreams(id), at TEXT NOT NULL, stage TEXT NOT NULL, detail TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS automatic_calls(id TEXT PRIMARY KEY, closed_at TEXT NOT NULL, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', dream_id TEXT NOT NULL DEFAULT '');
  CREATE INDEX IF NOT EXISTS dream_events_job ON dream_events(dream_id,id);
- CREATE INDEX IF NOT EXISTS lessons_job ON lessons(dream_id);`)
+ CREATE INDEX IF NOT EXISTS lessons_job ON lessons(dream_id);
+ CREATE TABLE IF NOT EXISTS cron_tasks(id TEXT PRIMARY KEY,definition TEXT NOT NULL,next_run INTEGER NOT NULL,pending_since INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS cron_dispatch_jobs(task_id TEXT NOT NULL,scheduled_at INTEGER NOT NULL,job_id TEXT NOT NULL,PRIMARY KEY(task_id,scheduled_at,job_id));
+ CREATE TABLE IF NOT EXISTS cron_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT NOT NULL,name TEXT NOT NULL,scheduled_at INTEGER NOT NULL,dispatched_at INTEGER NOT NULL,jobs TEXT NOT NULL,failures INTEGER NOT NULL);`)
 	if err != nil {
 		return err
 	}
@@ -47,12 +52,12 @@ func (s *Store) initLifecycle() error {
 	if err != nil {
 		return err
 	}
-	body, _ := json.Marshal(Settings{Revision: 1, Enabled: true, IdleSeconds: 30, IncludeSimulation: true, Since: time.Now().UTC()})
+	body, _ := json.Marshal(Settings{Revision: 1, Enabled: true, AfterHangup: true, Schedules: []CronTask{}, IdleSeconds: 30, IncludeSimulation: true, Since: time.Now().UTC()})
 	_, err = s.db.Exec(`INSERT INTO dream_settings(id,body) VALUES(1,?) ON CONFLICT(id) DO NOTHING`, string(body))
 	return err
 }
 func (s *Store) Settings(ctx context.Context) (Settings, error) {
-	var settings Settings
+	settings := Settings{AfterHangup: true, Schedules: []CronTask{}}
 	var raw string
 	err := s.db.QueryRowContext(ctx, `SELECT body FROM dream_settings WHERE id=1`).Scan(&raw)
 	if err == nil {
@@ -61,11 +66,20 @@ func (s *Store) Settings(ctx context.Context) (Settings, error) {
 	return settings, err
 }
 func (s *Store) SaveSettings(ctx context.Context, settings Settings) (Settings, error) {
-	if settings.IdleSeconds < 0 || settings.IdleSeconds > 3600 {
-		return Settings{}, errors.New("idle delay must be between 0 and 3600 seconds")
+	if err := settings.Validate(); err != nil {
+		return Settings{}, err
 	}
-	current, err := s.Settings(ctx)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return Settings{}, err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err = tx.QueryRowContext(ctx, `SELECT body FROM dream_settings WHERE id=1`).Scan(&raw); err != nil {
+		return Settings{}, err
+	}
+	current := Settings{AfterHangup: true}
+	if err = json.Unmarshal([]byte(raw), &current); err != nil {
 		return Settings{}, err
 	}
 	if current.Revision != settings.Revision {
@@ -74,17 +88,14 @@ func (s *Store) SaveSettings(ctx context.Context, settings Settings) (Settings, 
 	settings.Since = current.Since
 	settings.Revision++
 	body, _ := json.Marshal(settings)
-	old, _ := json.Marshal(current)
-	result, err := s.db.ExecContext(ctx, `UPDATE dream_settings SET body=? WHERE id=1 AND body=?`, string(body), string(old))
-	if err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE dream_settings SET body=? WHERE id=1`, string(body)); err != nil {
 		return Settings{}, err
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
+	if err = syncSchedules(ctx, tx, settings.Schedules, time.Now()); err != nil {
 		return Settings{}, err
 	}
-	if n != 1 {
-		return Settings{}, ErrConflict
+	if err = tx.Commit(); err != nil {
+		return Settings{}, err
 	}
 	return settings, nil
 }
@@ -217,4 +228,11 @@ func (s *Store) jobSummary(ctx context.Context, id string, detail bool) (JobSumm
 
 func (s *Store) JobDetail(ctx context.Context, id string) (JobSummary, error) {
 	return s.jobSummary(ctx, id, true)
+}
+
+func (settings Settings) Validate() error {
+	if settings.IdleSeconds < 0 || settings.IdleSeconds > 3600 {
+		return errors.New("Idle delay must be between 0 and 3600 seconds")
+	}
+	return validateSchedules(settings.Schedules)
 }

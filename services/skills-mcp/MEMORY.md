@@ -92,7 +92,7 @@ with `/admin/memory`. JSON rejects unknown fields. Existing request limit is 2 M
 | `GET /status` | `worker_enabled` |
 | `GET /live` | Activity, collector, settings, capture outcomes and latest 100 job summaries |
 | `GET /jobs/{id}` | Latest 100 process events, candidate lessons and current publication states |
-| `PUT /settings` | Revision-checked enabled flag, idle seconds and simulation policy |
+| `PUT /settings` | Revision-checked enabled flag, idle seconds, simulation policy, after-hangup mode and cron tasks |
 | `POST /episodes` | Immutable completed episode below; returns its ID |
 | `POST /episodes/{id}/release` | `{"owner_done":true}` after the owner finishes the real call |
 | `POST /feedback` | `{"episode_id":"call1","id":"feedback1","text":"…"}` |

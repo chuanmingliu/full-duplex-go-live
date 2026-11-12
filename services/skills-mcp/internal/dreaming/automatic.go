@@ -78,6 +78,11 @@ func (a *Automatic) collect(ctx context.Context) error {
 	if !settings.Enabled {
 		return nil
 	}
+	due, err := a.Store.DueSchedules(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("Cannot read cron task book")
+	}
+	failures := 0
 	if a.Activity.Check(ctx).Status != "idle" {
 		return nil
 	}
@@ -111,12 +116,23 @@ func (a *Automatic) collect(ctx context.Context) error {
 			switch {
 			case call.Mode == "simulation" && !settings.IncludeSimulation:
 				status = "excluded"
+			case call.Ready && !settings.AfterHangup && len(due) == 0:
+				status = "waiting_schedule"
 			case call.Ready:
-				dreamID, err = a.capture(ctx, call)
+				trigger := "after hangup"
+				if !settings.AfterHangup && len(due) > 0 {
+					trigger = "cron task " + due[0].ID
+				}
+				dreamID, err = a.capture(ctx, call, trigger)
 				status = "queued"
 				if err != nil {
 					status = "capture_failed"
 					detail = err.Error()
+					failures++
+				} else {
+					if err = a.Store.LinkScheduledJob(ctx, due, dreamID); err != nil {
+						return fmt.Errorf("Cannot record cron dispatch progress")
+					}
 				}
 			}
 			_, err = a.Store.db.ExecContext(ctx, `INSERT INTO automatic_calls(id,closed_at,status,error,dream_id) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,error=excluded.error,dream_id=excluded.dream_id`, call.ID, call.ClosedAt.Format(time.RFC3339Nano), status, detail, dreamID)
@@ -125,11 +141,11 @@ func (a *Automatic) collect(ctx context.Context) error {
 			}
 		}
 		if !page.More {
-			return nil
+			return a.Store.FinishSchedules(ctx, due, failures)
 		}
 	}
 }
-func (a *Automatic) capture(ctx context.Context, call SourceCall) (string, error) {
+func (a *Automatic) capture(ctx context.Context, call SourceCall, trigger string) (string, error) {
 	hash := sha256.Sum256([]byte(call.ID))
 	id := fmt.Sprintf("auto-%x", hash[:16])
 	if _, err := a.Store.Job(ctx, id); err == nil {
@@ -177,6 +193,9 @@ func (a *Automatic) capture(ctx context.Context, call SourceCall) (string, error
 	_, err = a.Store.Queue(ctx, DreamRequest{ID: id, EpisodeIDs: []string{call.ID}})
 	if err != nil {
 		return "", fmt.Errorf("Cannot queue completed call")
+	}
+	if err = a.Store.Record(ctx, id, "trigger", trigger); err != nil {
+		return "", fmt.Errorf("Cannot record review trigger")
 	}
 	return id, nil
 }
