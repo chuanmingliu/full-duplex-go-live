@@ -51,7 +51,28 @@ func (m *Model) Review(ctx context.Context, snapshot Snapshot) ([]Proposal, erro
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(map[string]any{"model": m.model, "messages": []map[string]string{{"role": "system", "content": reviewPrompt}, {"role": "user", "content": string(evidence)}}, "response_format": map[string]string{"type": "json_object"}})
+	messages := []map[string]string{{"role": "system", "content": reviewPrompt}, {"role": "user", "content": string(evidence)}}
+	proposals, err := m.complete(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+	if validation := validateProposals(proposals, snapshot); validation != nil {
+		previous, err := json.Marshal(map[string]any{"lessons": proposals})
+		if err != nil {
+			return nil, err
+		}
+		// One repair shares the original job deadline. The worker still validates
+		// every repaired proposal before any draft is stored.
+		messages = append(messages,
+			map[string]string{"role": "assistant", "content": string(previous)},
+			map[string]string{"role": "user", "content": "Validation failed: " + validation.Error() + ". Indices are zero-based. Correct the JSON using the same evidence. Check every Go regexp against every routing case. Include patterns are ORed, then any matching exclude pattern vetoes the match. Return the complete corrected lessons object. Keep meaningful positive and negative examples."})
+		return m.complete(ctx, messages)
+	}
+	return proposals, nil
+}
+
+func (m *Model) complete(ctx context.Context, messages []map[string]string) ([]Proposal, error) {
+	body, err := json.Marshal(map[string]any{"model": m.model, "messages": messages, "response_format": map[string]string{"type": "json_object"}})
 	if err != nil {
 		return nil, err
 	}

@@ -52,18 +52,9 @@ func (s *Store) Step(ctx context.Context, reviewer Reviewer, now time.Time) erro
 	proposals, reviewErr := reviewer.Review(reviewCtx, j.Snapshot)
 	cancel()
 	reason := "provider review failed; check endpoint configuration and retry"
-	if reviewErr == nil && len(proposals) > 8 {
-		reviewErr = errors.New("too many lessons")
-	}
-	if reviewErr != nil && len(proposals) > 8 {
-		reason = "validation failed: too many lessons"
-	}
 	if reviewErr == nil {
-		for _, p := range proposals {
-			if reviewErr = p.Validate(j.Snapshot); reviewErr != nil {
-				reason = "validation failed: " + reviewErr.Error()
-				break
-			}
+		if reviewErr = validateProposals(proposals, j.Snapshot); reviewErr != nil {
+			reason = "validation failed: " + reviewErr.Error()
 		}
 	}
 	if reviewErr == nil {

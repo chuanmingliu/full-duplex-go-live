@@ -70,7 +70,10 @@ A remote review endpoint therefore receives conversational data when explicitly
 configured. Use a local compatible endpoint when that data must stay on the host.
 
 The worker is serial and runs outside MCP request handling, with a 90-second review
-deadline. `not_before` schedules a review after a chosen leisure-time boundary;
+deadline. A structurally valid model response that fails proposal validation gets
+one repair attempt with the failing lesson/case index under that same deadline.
+The worker validates the repaired result before storing drafts.
+`not_before` schedules a review after a chosen leisure-time boundary;
 it is not a live-call idle detector and does not stop a local model from competing
 for CPU/GPU. Schedule appropriately or use a separate review host. Importing does
 not automatically queue a job. No live call hooks or automatic archive watchers
