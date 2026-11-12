@@ -25,6 +25,7 @@ func main() {
 		addr       = flag.String("addr", "127.0.0.1:8790", "address to listen on; the home-network address, never one a tunnel publishes")
 		target     = flag.Int("target", journal.TargetMS, "the latency goal in ms, caller's last sound to first audio at p95")
 		logp       = flag.String("log", "golive-telephony.log", "golive's log")
+		requests   = flag.String("request-log-dir", os.Getenv("GOLIVE_REQUEST_LOG_DIR"), "persistent rendered-request directory to view by session")
 		store      = flag.String("store", "", "golive's store_dir, where recorded calls are kept; empty when calls are not recorded")
 		data       = flag.String("data", "journal-data", "where the journal keeps calls as last read and the owner's notes")
 		notes      = flag.String("notes", "journal", "retros/<call id>.md, issues.json, decisions.json and dreaming.json")
@@ -48,7 +49,7 @@ func main() {
 		os.Exit(archiveReport(*arch, *check))
 	}
 	srv := journal.NewServer(journal.Config{
-		LogPath: *logp, StoreDir: *store, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
+		LogPath: *logp, StoreDir: *store, RequestLogDir: *requests, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
 		ArchiveDir: *arch, LastCallFile: *last, SimDials: *dials, Log: log,
 		TalkerURL: *talker, TalkerPlayground: *playground,
 		DreamMemoryURL: *dreamURL, DreamAdminTokenFile: *dreamToken,

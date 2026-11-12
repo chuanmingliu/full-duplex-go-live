@@ -268,6 +268,7 @@ jstart() {
   setsid nohup "$JBIN" -addr "$JOURNAL_ADDR" -log "$LOG" -store "$store" -data "$JOURNAL_DATA" \
     -archive "$ARCHIVE_DIR" -last-call "$LAST_CALL" -sim-dials "${SIM_DIR:-$HOME/golive-sim}/data/dials.jsonl" \
     -talker "$TALKER_URL" -talker-playground "$playground" \
+    -request-log-dir "${GOLIVE_REQUEST_LOG_DIR:-$HOME/golive-request-records}" \
     -notes journal -repo "$JOURNAL_REPO" -retention-hours "$CALLS_TTL_HOURS" -target "$JOURNAL_TARGET_MS" >> "$JLOG" 2>&1 < /dev/null &
   echo $! > "$JPID"
   sleep 1
