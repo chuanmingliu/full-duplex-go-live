@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -569,11 +570,14 @@ func (s *Server) Handler() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"benchmarks": rows})
 	})
 	var static http.Handler
+	var assets fs.FS
 	if s.cfg.UIDir != "" {
-		static = http.FileServer(http.Dir(s.cfg.UIDir))
+		assets = os.DirFS(s.cfg.UIDir)
+		static = http.FileServer(http.FS(assets))
 	} else {
 		sub, _ := fs.Sub(uiFiles, "ui")
-		static = http.FileServer(http.FS(sub))
+		assets = sub
+		static = http.FileServer(http.FS(assets))
 	}
 	// The page's script and style are revalidated on every load: a browser
 	// that kept the old app.js showed a journal without its newest sections
@@ -581,6 +585,15 @@ func (s *Server) Handler() http.Handler {
 	// until a hard refresh.
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
+		if r.URL.Path == "/" {
+			index, err := versionedIndex(assets)
+			if err != nil {
+				http.Error(w, "Journal assets unavailable", 503)
+				return
+			}
+			http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(index))
+			return
+		}
 		static.ServeHTTP(w, r)
 	}))
 	return mux
