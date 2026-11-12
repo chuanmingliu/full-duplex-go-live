@@ -27,7 +27,7 @@ func main() {
 		logp       = flag.String("log", "golive-telephony.log", "golive's log")
 		store      = flag.String("store", "", "golive's store_dir, where recorded calls are kept; empty when calls are not recorded")
 		data       = flag.String("data", "journal-data", "where the journal keeps calls as last read and the owner's notes")
-		notes      = flag.String("notes", "journal", "retros/<call id>.md, issues.json and decisions.json")
+		notes      = flag.String("notes", "journal", "retros/<call id>.md, issues.json, decisions.json and dreaming.json")
 		repo       = flag.String("repo", "", "repository URL, for turning a commit hash into a link")
 		keep       = flag.Int("retention-hours", 0, "how long golive keeps a recorded call, for the page to say")
 		ui         = flag.String("ui", "", "serve the page from this directory instead of the one built in (for working on it)")
