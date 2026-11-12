@@ -714,3 +714,19 @@ and GoLive rollout ordered so the CRM understands this field before enabling
 new GoLive sessions. See `docs/architecture/11-full-motor-coverage.md` for the
 saved-catalog selector endpoint, versioned descriptions and strict response
 validation.
+
+### Natural-language coverage routing
+
+The seeded concepts matcher includes `几个档`, `一般选`, and 驾乘/司机责任/乘客责任
+questions. The quotation matcher also recognizes scoped `比…多多少`, per-tier
+premium requests and the observed `医保费…加个…` recognition variant. An unrelated
+price comparison does not select the insurance quotation skill. Explanation-only
+and explicit no-quotation requests retain the quotation exclusions.
+
+Matching `医保费` is routing evidence, not an authoritative correction to the
+caller's selection. The quotation instructions require the recent explicit
+三者/司机/乘客 scope or a clarification before executing an ambiguous change.
+Routing is still configured pattern matching, not a general semantic classifier.
+Updating the server binary does not overwrite published skill edits. Publish
+the revised matchers and bodies through the panel using its current revision,
+retain the previous catalog, and verify both `prompts/get` and `resources/read`.

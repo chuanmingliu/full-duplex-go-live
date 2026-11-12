@@ -101,3 +101,34 @@ func TestEveryCoverageChoiceViaMCP(t *testing.T) {
 		t.Fatalf("tested choices=%d", count)
 	}
 }
+
+func TestRealCallCoverageRoutingGaps(t *testing.T) {
+	c := defaults()
+	c.Skills = append(c.Skills, vehicleConcepts(t))
+	for _, tc := range []struct{ q, name string }{
+		{"就是三者险都有几个档", "vehicle_insurance_concepts"},
+		{"医保外用药大家一般选哪", "vehicle_insurance_concepts"},
+		{"驾乘险和司机责任险有什么区别", "vehicle_insurance_concepts"},
+		{"驾乘险现在多少钱", "vehicle_insurance_concepts"},
+		{"三者五百万比三百万多多少", "motor-quotation"},
+		{"医保费给我加个五十万", "motor-quotation"},
+		{"三者险每个档位各多少钱", "motor-quotation"},
+	} {
+		t.Run(tc.q, func(t *testing.T) {
+			skills, _, err := c.selectTurn(turnInput{Event: "auto", Utterance: tc.q})
+			found := false
+			for _, s := range skills {
+				found = found || s.Name == tc.name
+			}
+			if err != nil || !found {
+				t.Fatalf("missing %s: %v %v", tc.name, skills, err)
+			}
+		})
+	}
+	for _, q := range []string{"今天地铁票比昨天多多少", "不要报价，三者险有几个档", "医保外用药大家一般选哪"} {
+		_, tools, err := c.selectTurn(turnInput{Event: "auto", Utterance: q})
+		if err != nil || len(tools) > 0 {
+			t.Fatalf("unrequested quotation %s: %v", q, tools)
+		}
+	}
+}

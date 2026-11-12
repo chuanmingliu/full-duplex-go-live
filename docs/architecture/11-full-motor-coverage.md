@@ -240,3 +240,41 @@ The MCP concepts routes cover catalog names/aliases and option questions;
 coverage label from the preceding conversational exchange, without replaying
 previous pricing instructions or crossing an unrelated user turn. The host
 still controls original prompt, echo rejection, interruption and preset openers.
+
+## Prioritize common cached combinations
+
+The `quote-plans` policy accepts an ordered `prequote.priority` array of canonical
+coverage names. For example, `"priority": ["三者险"]` prices the other configured
+third-party tiers before the remaining coverages. With a 200万 default and the
+current six-tier catalog, the first five variants are 50万, 100万, 150万, 300万
+and 400万. The default itself is prepared separately. Remaining slots follow the
+original catalog order. This is an explicit business priority, not a claim that
+usage frequency has been learned automatically.
+
+An omitted or empty priority retains the old ordering. Unknown or duplicate
+names fail config validation. `max`, `follow_selection_max`, call/fact/version
+cache isolation, foreground scheduling and the upstream calculation delay are
+unchanged. The full-catalog draft includes the priority but still defaults to
+`max: 0`. Existing saved plans are never migrated automatically. To enable it
+on an existing plan, preserve its current config revision and add only the
+priority field to that plan's existing policy. Remove the field to restore
+legacy ordering. Already-running calculations still drain.
+
+## Comparison premium readout
+
+The built-in comparison speech now reads the individual premium for each
+selected coverage in a variant's `change`, followed by that variant's total and
+total difference. It uses the exact matching `variants[].lines[].premium`,
+including valid zero amounts. Missing or duplicate lines are announced as
+unavailable; the total difference never substitutes for a coverage premium.
+Unchanged coverages are not repeated for every variant. A same-as-current
+variant also states its individual premium and total. Failed variants have no
+price readout. Explicitly configured comparison templates retain their behavior
+and can use `variants[].lines` to implement a different presentation.
+
+Coverage explanations use the active catalog over legacy product examples.
+Shared limits describe the compensation limit, not a free premium. Population
+preferences require actual statistics. An unconfigured product such as 驾乘险
+can be discussed as a concept, but cannot be offered as available in the active
+plan. These guards are included in the host catalog guidance as well as the
+concepts skill so they also apply when skill retrieval falls back.

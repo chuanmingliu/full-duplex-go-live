@@ -41,6 +41,8 @@ type PrequotePolicy struct {
 	// FollowSelectionMax bounds additional new background prices per call
 	// after a caller selects a nondefault plan. Zero keeps this disabled.
 	FollowSelectionMax int `json:"follow_selection_max,omitempty"`
+	// Priority names coverages whose alternate tiers are warmed first. Empty preserves catalog order.
+	Priority []string `json:"priority,omitempty"`
 	// Keep names coverages never dropped in a variant (交强险 is compulsory).
 	Keep []string `json:"keep,omitempty"`
 	// Concurrency is how many are started at once; 1 unless said. Through
@@ -246,8 +248,16 @@ func (p QuotePlan) prequoteVariants(def map[string]any) []map[string]any {
 		}
 		out = append(out, m)
 	}
-	// Other tiers of the coverages that have tiers, in the plan's order.
-	for _, c := range p.Coverages {
+	// Priority affects tier warming only; the catalog and selection stay unchanged.
+	order := make([]string, 0, len(p.Coverages))
+	seen := map[string]bool{}
+	for _, c := range append(append([]string(nil), p.Prequote.Priority...), p.Coverages...) {
+		if !seen[c] {
+			order = append(order, c)
+			seen[c] = true
+		}
+	}
+	for _, c := range order {
 		opts, has := p.Options[c]
 		if !has {
 			continue

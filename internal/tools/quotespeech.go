@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,7 +35,7 @@ type QuoteSpeech struct {
 	Template       string `json:"template,omitempty"`
 	PosthookStatus string `json:"posthook_status,omitempty"`
 	// CompareTemplate reads a result that compares several options
-	// (`variants`: label, total, diff, diff_abs, more, same, error) —
+	// (`variants`: label, change, lines, total, diff, diff_abs, more, same, error) —
 	// organized around what changes and by how much, instead of the
 	// template read three times (the owner, 10:07 on 10-28). Empty: the
 	// built-in DefaultCompareTemplate.
@@ -44,8 +46,8 @@ type QuoteSpeech struct {
 }
 
 // DefaultCompareTemplate reads a comparison: the current plan's total, then
-// each option by what it changes and the difference.
-const DefaultCompareTemplate = `现在这个方案一共{{ total | round | int }}元。{% for v in variants %}{% if v.error %}{{ v.label }}暂时算不了；{% elif v.same %}{{ v.label }}就是现在的方案；{% else %}{{ v.label }}一共{{ v.total | round | int }}元，{% if v.more %}多{% else %}少{% endif %}{{ v.diff_abs | round | int }}元{% if not loop.last %}；{% else %}。{% endif %}{% endif %}{% endfor %}`
+// each option's changed-coverage premiums, total, and difference.
+const DefaultCompareTemplate = `现在这个方案一共{{ total | round | int }}元。{% for v in variants %}{% if v.error %}{{ v.label }}暂时算不了；{% elif v.same %}{{ v.label }}就是现在的方案{% if v.premium_detail %}，{{ v.premium_detail }}一共{{ v.total | round | int }}元{% endif %}；{% else %}{{ v.label }}{% if v.premium_detail %}，{{ v.premium_detail }}{% endif %}一共{{ v.total | round | int }}元，{% if v.more %}多{% else %}少{% endif %}{{ v.diff_abs | round | int }}元{% if not loop.last %}；{% else %}。{% endif %}{% endif %}{% endfor %}`
 
 // QuoteSpeechName is the config's name on the lead service.
 const QuoteSpeechName = "quote-speech"
@@ -124,6 +126,9 @@ func (qs QuoteSpeech) Readout(output []byte) string {
 		return ""
 	}
 	if _, isCompare := vars["variants"]; isCompare && vars["compare"] == true && qs.cmp != nil {
+		if strings.TrimSpace(qs.CompareTemplate) == "" {
+			comparisonPremiumDetails(vars)
+		}
 		out, err := qs.cmp.Render(vars)
 		if err != nil {
 			return ""
@@ -181,4 +186,64 @@ func FetchQuoteSpeech(base, token string, timeout time.Duration) (QuoteSpeech, e
 		return qs, err
 	}
 	return ParseQuoteSpeech(raw)
+}
+
+// Add only premiums for the requested changes, never the full repeated policy.
+// Results lacking authoritative lines remain available to the model as missing
+// data; total differences are never used to fabricate a per-coverage amount.
+func comparisonPremiumDetails(vars map[string]any) {
+	variants, _ := vars["variants"].([]any)
+	for _, raw := range variants {
+		v, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if failure, _ := v["error"].(string); failure != "" {
+			continue
+		}
+		change, _ := v["change"].(map[string]any)
+		lines, _ := v["lines"].([]any)
+		skipped := map[string]bool{}
+		if values, ok := v["skipped"].([]any); ok {
+			for _, value := range values {
+				if name, ok := value.(string); ok {
+					skipped[name] = true
+				}
+			}
+		}
+		var names []string
+		for name, selection := range change {
+			if QuoteSelected(selection) {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		var parts []string
+		for _, name := range names {
+			var amount float64
+			count := 0
+			validAmount := false
+			for _, rawLine := range lines {
+				line, ok := rawLine.(map[string]any)
+				if !ok || line["coverage"] != name {
+					continue
+				}
+				count++
+				premium, valid := line["premium"].(float64)
+				if !valid || math.IsNaN(premium) || math.IsInf(premium, 0) {
+					continue
+				}
+				amount = premium
+				validAmount = true
+			}
+			if count == 1 && validAmount && !skipped[name] {
+				parts = append(parts, fmt.Sprintf("%s保费%.0f元", name, math.Round(amount)))
+			} else {
+				parts = append(parts, name+"单项保费未返回")
+			}
+		}
+		if len(parts) > 0 {
+			v["premium_detail"] = strings.Join(parts, "，") + "，"
+		}
+	}
 }

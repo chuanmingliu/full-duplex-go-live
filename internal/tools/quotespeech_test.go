@@ -58,3 +58,28 @@ func TestAComparisonIsReadAsDifferences(t *testing.T) {
 		t.Fatal("a broken compare template was accepted")
 	}
 }
+
+func TestComparisonReadsChangedPremiumsWithoutInventingMissingLines(t *testing.T) {
+	qs, err := ParseQuoteSpeech([]byte(DefaultQuoteSpeech))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := qs.Readout([]byte(`{"status":"quote","compare":true,"total":1200,"variants":[
+ {"label":"三者险200万","same":true,"total":1200,"change":{"三者险":"200万"},"lines":[{"coverage":"三者险","premium":200},{"coverage":"车损险","premium":1000}]},
+ {"label":"三者险300万","total":1300,"diff_abs":100,"more":true,"change":{"三者险":"300万"},"lines":[{"coverage":"三者险","premium":300},{"coverage":"车损险","premium":1000}]},
+ {"label":"三者险400万","total":1400,"diff_abs":200,"more":true,"change":{"三者险":"400万"},"lines":[{"coverage":"三者险"}]},
+ {"label":"附加险","total":1200,"diff_abs":0,"change":{"附加险":true},"lines":[{"coverage":"附加险","premium":0}]},
+ {"label":"未报价项","total":1200,"diff_abs":0,"skipped":["未报价项"],"change":{"未报价项":true},"lines":[{"coverage":"未报价项","premium":0}]},
+ {"label":"重复项","total":1200,"diff_abs":0,"change":{"重复项":true},"lines":[{"coverage":"重复项","premium":7},{"coverage":"重复项","premium":7}]},
+ {"label":"失败项","error":"unavailable","change":{"失败项":true},"lines":[{"coverage":"失败项","premium":99}]}]}`))
+	for _, want := range []string{"三者险保费200元", "三者险保费300元", "三者险单项保费未返回", "附加险保费0元", "一共1300元"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s: %s", want, out)
+		}
+	}
+	for _, bad := range []string{"车损险保费", "失败项保费99元", "三者险保费100元", "未报价项保费0元", "重复项保费7元"} {
+		if strings.Contains(out, bad) {
+			t.Fatalf("invented/unrequested %s: %s", bad, out)
+		}
+	}
+}

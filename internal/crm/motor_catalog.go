@@ -11,7 +11,7 @@ import (
 // FullMotorPlan is an opt-in template. It never replaces a saved default plan.
 func FullMotorPlan() QuotePlan {
 	zero := 0
-	p := QuotePlan{Strict: true, Options: map[string][]string{}, CoverageAliases: map[string]string{}, CoverageDetails: map[string]motorcatalog.Detail{}, Prequote: PrequotePolicy{Max: &zero}}
+	p := QuotePlan{Strict: true, Options: map[string][]string{}, CoverageAliases: map[string]string{}, CoverageDetails: map[string]motorcatalog.Detail{}, Prequote: PrequotePolicy{Max: &zero, Priority: []string{"三者险"}}}
 	for _, e := range motorcatalog.Entries() {
 		p.Coverages = append(p.Coverages, e.Name)
 		p.CoverageDetails[e.Name] = e.Detail

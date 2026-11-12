@@ -146,6 +146,17 @@ func ParseQuotePlans(raw []byte) (QuotePlans, error) {
 		if err := validateCoverageDetails(plan); err != nil {
 			return p, fmt.Errorf("plan %q: %w", name, err)
 		}
+		priorities := map[string]bool{}
+		for _, c := range plan.Prequote.Priority {
+			known := false
+			for _, name := range plan.Coverages {
+				known = known || name == c
+			}
+			if !known || priorities[c] {
+				return p, fmt.Errorf("plan %q: unknown or duplicate prequote priority %q", name, c)
+			}
+			priorities[c] = true
+		}
 		if plan.Prequote.FollowSelectionMax < 0 || plan.Prequote.FollowSelectionMax > 32 {
 			return p, fmt.Errorf("plan %q: follow_selection_max must be between 0 and 32", name)
 		}
