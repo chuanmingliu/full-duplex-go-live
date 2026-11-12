@@ -601,6 +601,9 @@ type DuplexConfig struct {
 
 	// AllowBargeIn lets user speech during playback cut the assistant off.
 	AllowBargeIn bool `json:"allow_barge_in"`
+	// ProtectOpening lets the initial fixed greeting finish before answering
+	// speech received during it. Later responses use the usual barge-in policy.
+	ProtectOpening bool `json:"protect_opening"`
 	// ResetTTSOnInterrupt closes the synthesis connection whenever an answer is
 	// cut short, so the next turn starts on a fresh one.
 	//
@@ -993,6 +996,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Duplex.BackchannelDetectorMode, "GOLIVE_BACKCHANNEL_DETECTOR_MODE")
 	setBool(&c.Duplex.Speculative, "GOLIVE_SPECULATIVE")
 	setBool(&c.Duplex.AllowBargeIn, "GOLIVE_ALLOW_BARGE_IN")
+	setBool(&c.Duplex.ProtectOpening, "GOLIVE_PROTECT_OPENING")
 	setString(&c.Duplex.OnNewQuery, "GOLIVE_ON_NEW_QUERY")
 	setBool(&c.Duplex.ResetTTSOnInterrupt, "GOLIVE_RESET_TTS_ON_INTERRUPT")
 	setBool(&c.Duplex.PlaybackPaced, "GOLIVE_PLAYBACK_PACED")

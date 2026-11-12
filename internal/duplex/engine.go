@@ -277,6 +277,11 @@ type Engine struct {
 	// commentary is text an application asked to have spoken, waiting for the
 	// caller to stop talking and the floor to be free.
 	commentary []queuedCommentary
+	// Opening protection and deferred caller input are owned by the engine loop.
+	openingTurn    *Turn
+	openingStarted bool
+	openingInput   *openingInput
+	openingTyped   bool
 	// appendedChars is how much session.instructions.append has added.
 	appendedChars int
 	// standbyRetryAt is the earliest a recognizer may be dialled on suspicion
@@ -597,11 +602,11 @@ func (e *Engine) Greet() {
 		return
 	}
 	e.post(func() {
-		// A greeting is a real assistant turn: it can be interrupted, it is
-		// truncated honestly if it is, and it enters conversation history so
-		// the backend knows what was already said.
+		// The greeting enters history with the same playback accounting as
+		// later speech. The configured opening policy controls interruptions.
 		turn := e.tracker.Begin("", false)
 		e.commitTurn(turn)
+		e.protectOpening(turn)
 		e.log.Debug("speak: greeting", "turn", turn.ID, "text", text)
 		// Cacheable: it is the same sentence on every call, and it is the
 		// first thing a caller hears. See PhraseCache.
@@ -613,10 +618,9 @@ func (e *Engine) Greet() {
 	})
 }
 
-// Say speaks a line the assistant was handed rather than one it composed: the
-// opening of a phone call, released when the call is answered. Like the
-// greeting it is a real turn — interruptible, truncated honestly, recorded in
-// history — and like the greeting it plays from the phrase cache when the line
+// Say speaks a line the assistant was handed rather than one it composed.
+// It is a real turn with playback accounting, recorded in history,
+// and it plays from the phrase cache when the line
 // was synthesized ahead of time, which is the point of knowing it in advance.
 func (e *Engine) Say(text string) {
 	text = strings.TrimSpace(text)
@@ -644,7 +648,7 @@ func (e *Engine) sayOnLoop(text string) {
 // that the caller has taken the floor.
 func (e *Engine) Interrupt() {
 	e.post(func() {
-		if e.assistantHasFloor() && !e.hangingUp() {
+		if e.assistantHasFloor() && !e.hangingUp() && !e.openingProtected() {
 			e.interrupt()
 		}
 	})
@@ -895,6 +899,10 @@ func (e *Engine) handleDecision(d audio.Decision) {
 		e.speechEndMS = d.EndMS
 		e.speechEndSilenceMS = int64(d.SilenceMS)
 		e.lastActiveMS = int64(d.ActiveMS)
+		if e.openingInput != nil && e.openingInput.awaitingEnd {
+			e.stampOpeningInput()
+			e.openingInput.awaitingEnd = false
+		}
 		e.noteCallerSpoke()
 		e.enrolFocus(d.StartMS, d.EndMS, d.ActiveMS, d.BargeIn)
 		// ...but only for a turn this utterance actually produced. A turn that
@@ -974,9 +982,11 @@ type speechPipe struct {
 	in      chan speechInput
 	readout bool
 	done    chan struct{}
-	ctx     context.Context
-	cancel  context.CancelFunc
-	once    sync.Once
+	// ended is read after done closes and records a queued normal end marker.
+	ended  bool
+	ctx    context.Context
+	cancel context.CancelFunc
+	once   sync.Once
 	// soft asks the pipe to stop after the sentence it is currently
 	// synthesizing, rather than abandoning it mid-word.
 	soft atomic.Bool
@@ -1249,7 +1259,7 @@ consume:
 		}
 	}
 	if p.ctx.Err() == nil && (p.soft.Load() || p.e.tracker.IsCurrent(p.turn)) {
-		p.e.player.Enqueue(Segment{
+		p.ended = p.e.player.Enqueue(Segment{
 			Kind:     SegEnd,
 			content:  true,
 			Gen:      p.turn.Generation,
@@ -1887,6 +1897,9 @@ func (e *Engine) holdFloor(bargeIn bool) bool {
 	// A new utterance supersedes any hold left over from the last one, decided
 	// or not.
 	e.hold = nil
+	if e.openingProtected() {
+		return false
+	}
 	d := e.opts.Cfg.Duplex
 	// Deliberately not conditional on the phrase list. The hold began as
 	// "was that an acknowledgement", but the question it really answers is
@@ -2083,6 +2096,10 @@ func (e *Engine) expireHold() {
 // whether the assistant still holds the floor at all.
 func (e *Engine) yieldFloor(bargeIn bool) {
 	if !e.opts.Cfg.Duplex.AllowBargeIn || !e.assistantHasFloor() {
+		return
+	}
+	if e.openingProtected() {
+		e.log.Info("opening: keeping the floor", "turn", e.openingTurn.ID, "barge_in", bargeIn)
 		return
 	}
 	if e.hangingUp() {
