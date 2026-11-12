@@ -1166,6 +1166,18 @@ func TestAChangeWithNoPlanInMemoryIsLaidOverTheDefault(t *testing.T) {
 	if len(lines) != 4 || len(sel) != 4 || sel["三者险"] != "500万" || sel["车损险"] != true {
 		t.Fatalf("the change was not laid over the default plan: lines %d, selection %v", len(lines), sel)
 	}
+	// The engine now commits requested changes before calculating. An
+	// incomplete selection must still inherit the unmodified default items.
+	call["memory"] = map[string]any{"quote": map[string]any{"三者险": "500万"}}
+	call["quote_base_default"] = true
+	if code, body := fx.do("POST", "/api/tools/quote", call, &q); code != 200 {
+		t.Fatalf("committed default revision: %d %s", code, body)
+	}
+	sel, _ = q["selection"].(map[string]any)
+	if len(sel) != 4 || sel["三者险"] != "500万" || sel["车损险"] != true {
+		t.Fatalf("committed revision lost default coverages: %v", sel)
+	}
+	delete(call, "quote_base_default")
 	// A plan in memory is priced as given, as before.
 	call["arguments"] = map[string]any{}
 	call["memory"] = map[string]any{"quote": map[string]any{"交强险": true, "三者险": "500万"}}

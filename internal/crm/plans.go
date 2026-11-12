@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/chuanmingliu/golive/internal/motorcatalog"
 )
 
 // A quote plan is the owner's answer to "what does a quotation need?":
@@ -32,6 +34,9 @@ type QuotePlans struct {
 
 // QuotePlan is one combination.
 type QuotePlan struct {
+	// Strict plans never silently omit an unsupported requested coverage.
+	Strict          bool                           `json:"strict,omitempty"`
+	CoverageDetails map[string]motorcatalog.Detail `json:"coverage_details,omitempty"`
 	// Coverages the plan offers; a selection naming one outside the plan is
 	// skipped by the quotation and said so.
 	Coverages []string `json:"coverages"`
@@ -138,6 +143,9 @@ func ParseQuotePlans(raw []byte) (QuotePlans, error) {
 		return p, fmt.Errorf("the default plan %q does not exist", p.Default)
 	}
 	for name, plan := range p.Plans {
+		if err := validateCoverageDetails(plan); err != nil {
+			return p, fmt.Errorf("plan %q: %w", name, err)
+		}
 		if plan.Prequote.FollowSelectionMax < 0 || plan.Prequote.FollowSelectionMax > 32 {
 			return p, fmt.Errorf("plan %q: follow_selection_max must be between 0 and 32", name)
 		}
@@ -236,15 +244,38 @@ func (p QuotePlan) NormalizeCoverages(config map[string]any) {
 			delete(config, k)
 		}
 	}
+	for c, v := range config {
+		if d, ok := p.CoverageDetails[c]; ok {
+			config[c] = motorcatalog.Normalize(v, d, p.Options[c])
+		}
+	}
 }
 
 func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need *Need, skipped []string) {
 	p.Normalize(vars)
+	p.NormalizeCoverages(config)
 	var missing []Missing
 	var have []string
 	if len(config) == 0 {
 		missing = append(missing, Missing{Field: "quote", Kind: "plan", For: p.Coverages, Options: p.Coverages,
 			Question: fmt.Sprintf("您想投哪些险种？可选：%s。", strings.Join(p.Coverages, "、"))})
+	}
+	// Strict plans report unknown selections and invalid booleans explicitly.
+	if p.Strict {
+		allowed := map[string]bool{}
+		for _, c := range p.Coverages {
+			allowed[c] = true
+		}
+		for _, c := range sortedKeys(config) {
+			if chosen(config, c) && !allowed[c] {
+				missing = append(missing, Missing{Field: c, Kind: "coverage", Question: "当前方案不支持" + c + "，请确认要选择的险种。", Options: p.Coverages})
+			}
+		}
+	}
+	for _, c := range p.Coverages {
+		if d, ok := p.CoverageDetails[c]; ok && chosen(config, c) && d.Kind == "boolean" && !motorcatalog.Valid(config[c], d, nil) {
+			missing = append(missing, Missing{Field: c, Kind: "choice", For: []string{c}, Options: []string{"投保", "不投保"}, Question: c + "是否投保？"})
+		}
 	}
 	// A coverage with tiers, chosen without one: ask which.
 	for _, c := range p.Coverages {
@@ -304,11 +335,24 @@ func (p QuotePlan) Check(name, source string, config, vars map[string]any) (need
 		}
 		missing = append(missing, Missing{Field: f.Name, For: for_, Question: f.Question, IfUnknown: f.IfUnknown})
 	}
+	// Riders cannot outlive an absent/declined/skipped parent. Ask, never add it.
+	for _, c := range p.Coverages {
+		d := p.CoverageDetails[c]
+		parentSkipped := false
+		for _, x := range skipped {
+			if x == d.Parent {
+				parentSkipped = true
+			}
+		}
+		if d.Parent != "" && chosen(config, c) && (!chosen(config, d.Parent) || parentSkipped) {
+			missing = append(missing, Missing{Field: d.Parent, Kind: "dependency", For: []string{c}, Options: p.Options[d.Parent], Question: c + "需要先投保" + d.Parent + "，您想投保主险还是取消这项附加保障？"})
+		}
+	}
 	if len(missing) == 0 {
 		return nil, skipped
 	}
 	return &Need{Status: "need", Plan: name, Missing: missing, Known: have,
-		Instruction: "报价前还缺少必要信息。请按顺序一次只问一个问题，用户回答后用 update_memory 记录该字段，再重新调用 quote_total；若用户不知道且该字段允许 skip，记录为 \"unknown\" 后重新调用。kind 为 choice 的是险种档位，答案记录在 quote 下该险种名下（如 quote.驾乘险 = \"50万\"，选 0 表示不要）；kind 为 plan 表示还没有险种方案，请问清客户要投的险种并记录在 quote 下。"}, skipped
+		Instruction: "报价前还缺少必要信息。请按顺序一次只问一个问题，用户回答后用 update_memory 记录该字段，再重新调用 quote_total；若用户不知道且该字段允许 skip，记录为 \"unknown\" 后重新调用。kind 为 choice 的是险种档位，答案记录在 quote 下该险种名下（如 quote.驾乘险 = \"50万\"，选 0 表示不要）；kind 为 dependency 时先确认主险或将对应附加险设为 false，禁止自动加保；kind 为 coverage 表示不支持的险种，先澄清；kind 为 plan 表示还没有险种方案，请问清客户要投的险种并记录在 quote 下。"}, skipped
 }
 
 // plan picks the plan a request runs on: vars.quote_plan, else the default.

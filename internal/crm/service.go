@@ -223,7 +223,16 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 }
 
 func (s *Service) quote(req QuoteRequest, follow *selectionWarmSeed) (any, error) {
+	if _, _, err := s.namedDefault(req); err != nil {
+		return nil, err
+	}
 	readyPricing := s.currentReadyPricing()
+	if req.Config == nil {
+		req.Config = map[string]any{}
+	}
+	if req.Vars == nil {
+		req.Vars = map[string]any{}
+	}
 	// The intake: no quotation on a plan with a must field missing.
 	need, skipped, plan, planned := s.intake(req)
 	if need != nil {
@@ -236,6 +245,7 @@ func (s *Service) quote(req QuoteRequest, follow *selectionWarmSeed) (any, error
 		}
 		req.Skipped = append(req.Skipped, skipped...)
 	}
+	req.Strict = plan.Strict
 	var heldAPI *QuoteAPI
 	var heldVersion *ConfigVersion
 	if follow != nil {
@@ -346,7 +356,7 @@ func (s *Service) priceClaimedQuote(req QuoteRequest, follow *selectionWarmSeed,
 func selectedConfig(config map[string]any) map[string]any {
 	out := map[string]any{}
 	for c, v := range config {
-		if selected(v) {
+		if selected(v) || (c == "车船税" && v == false) {
 			out[c] = v
 		}
 	}
@@ -365,7 +375,7 @@ func (s *Service) quoteNow(req QuoteRequest) (any, error) {
 // intake checks the request against the quote plan it runs on, and says
 // which plan that was.
 func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
-	v, err := s.configs.Get(QuotePlansName, 0)
+	v, err := s.configs.Get(QuotePlansName, req.PlanVersion)
 	if err != nil {
 		return nil, nil, QuotePlan{}, false
 	}
@@ -377,7 +387,7 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
 	plan.NormalizeCoverages(req.Config)
 	// A coverage declined ("0", "不要", false) is not in the selection.
 	for c, v := range req.Config {
-		if !selected(v) {
+		if !selected(v) && !(plan.Strict && c == "车船税") {
 			delete(req.Config, c)
 		}
 	}
@@ -391,7 +401,7 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
 				break
 			}
 		}
-		if !inPlan && chosen(req.Config, c) {
+		if !plan.Strict && !inPlan && chosen(req.Config, c) {
 			outside = append(outside, c)
 		}
 	}
@@ -967,15 +977,18 @@ func (s *Service) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}))
+	mux.HandleFunc("GET /api/quote/catalog", s.authed(s.handleMotorCatalog))
+	mux.HandleFunc("GET /api/quote/selection-catalog", s.authed(s.handleSelectedCatalog))
 	mux.HandleFunc("POST /api/tools/quote", s.authed(func(w http.ResponseWriter, r *http.Request) error {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 		if err != nil {
 			return fail(http.StatusBadRequest, "the request could not be read")
 		}
-		req, err := quoteRequestFrom(raw)
+		req, err := quoteRequestFrom(s.normalizeQuoteEnvelope(raw))
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
+		requestedDefault := len(req.Config) == 0 && len(req.Variants) == 0
 		selectionTicket := s.beginSelectionQuote(req)
 		if len(req.Variants) > 0 {
 			// Several options at once: each priced over the plan, answered
@@ -986,6 +999,17 @@ func (s *Service) Handler() http.Handler {
 			}
 			writeJSON(w, http.StatusOK, out)
 			return nil
+		}
+		if len(req.Config) == 0 {
+			if named, ok, err := s.namedDefault(req); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			} else if ok {
+				req.Config, req.Vars = named.Config, named.Vars
+				if len(req.Config) == 0 {
+					return fail(http.StatusBadRequest, "named plan has no default selection")
+				}
+				req.PlanInMemory = true
+			}
 		}
 		if len(req.Config) == 0 {
 			// Nothing chosen: the default plan, worked out while the phone
@@ -1001,7 +1025,11 @@ func (s *Service) Handler() http.Handler {
 		// default plan: laid over the default selection (the 13:55 simulated
 		// call of 10-26 priced the one changed coverage alone).
 		if !req.PlanInMemory {
-			if base := s.DefaultSelection(req.Call); len(base) > 0 {
+			base, err := s.defaultForRequest(req)
+			if err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+			if len(base) > 0 {
 				merged := copyVars(base)
 				for k, v := range req.Config {
 					merged[k] = v
@@ -1018,6 +1046,14 @@ func (s *Service) Handler() http.Handler {
 		q, err := s.Quote(req)
 		if err != nil {
 			return fail(http.StatusUnprocessableEntity, "%v", err)
+		}
+		if requestedDefault {
+			raw, _ := json.Marshal(q)
+			var result map[string]any
+			if json.Unmarshal(raw, &result) == nil && result["status"] == "quote" {
+				result["default"] = true
+				q = result
+			}
 		}
 		s.scheduleSelectionWarming(req, q, selectionTicket)
 		writeJSON(w, http.StatusOK, q)

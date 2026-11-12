@@ -40,7 +40,7 @@ The local quotation service implements the intranet API contract with placeholde
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| [Call working memory](#memory) | Per-call engine state | Keeps facts and the selected coverage plan available across conversational turns. |
+| [Call working memory](#memory) | Per-call engine state | Keeps facts and the requested coverage plan available across conversational turns. |
 | [Async tool coordinator](#tools) | internal/duplex/tools.go | Runs slow business requests while the caller and assistant can continue talking. |
 | [CRM / lead service](#crm) | Linux box · :8791 | Manages prompt templates, rendered calls, business configuration and the quotation-tool API. |
 | [Templates + business configs](#prompts) | ~/golive-crm | Separates business instructions, greeting, field requirements and pricing integration from the engine. |
@@ -53,7 +53,10 @@ The local quotation service implements the intranet API contract with placeholde
 
 ## Call working memory
 
-Keeps facts and the selected coverage plan available across conversational turns.
+Keeps facts and the requested coverage plan available across conversational turns.
+Confirmed local revisions are recorded before quotation submission. See the
+[detailed quotation and working-memory contract](10-quotation-working-memory.md)
+for previews, missing-field intake, result freshness, and default-plan handling.
 
 **Boundary:** Inside golive. **Location:** Per-call engine state.
 

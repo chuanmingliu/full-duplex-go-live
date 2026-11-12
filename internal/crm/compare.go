@@ -54,7 +54,11 @@ type Variant struct {
 func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any, error) {
 	base := copyVars(req.Config)
 	if !req.PlanInMemory || len(base) == 0 {
-		if def := s.DefaultSelection(req.Call); len(def) > 0 {
+		def, err := s.defaultForRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		if len(def) > 0 {
 			merged := copyVars(def)
 			for k, v := range base {
 				merged[k] = v
@@ -71,7 +75,7 @@ func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any
 		}
 	}
 	price := func(cfg map[string]any) (map[string]any, error) {
-		r := QuoteRequest{Config: copyVars(cfg), Vars: copyVars(req.Vars), MemoryVersion: req.MemoryVersion, Call: req.Call}
+		r := QuoteRequest{Config: copyVars(cfg), Vars: copyVars(req.Vars), MemoryVersion: req.MemoryVersion, PlanVersion: req.PlanVersion, Call: req.Call}
 		q, err := s.Quote(r)
 		if err != nil {
 			return nil, err

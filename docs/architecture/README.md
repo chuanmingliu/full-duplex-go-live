@@ -21,6 +21,7 @@ This documentation describes `codex/telephony-latency` at **9547d22**, inspected
 | [Skills MCP operations](../../services/skills-mcp/OPERATIONS.md) | Maintain the published catalog, restore a backup and move the service to another production host |
 | [Optional backchannel detector](../services/backchannel-detector.md) | ThinkPad CPU observer added 2 November 2026; original backchannel controller remains the default, no live-control hook |
 | [6. Simulator and model lab](06-simulator-and-model-lab.md) | Synthetic customer, Talker, edge models and diagnostic tools |
+| [10. Quotation and working memory](10-quotation-working-memory.md) | Tool schemas, confirmed revisions, previews, patch semantics and result reconciliation |
 
 Each component has its own section with responsibility, deployment boundary, location, inputs, outputs, operation, limitations and implementation/runbook links. The explorer contains the same component descriptions. Select a view and a node to highlight its incoming and outgoing relationships. The whole-system view also shows the other connections faintly. Source links in the explorer point to the inspected commit; Markdown links open the local checkout.
 
@@ -115,3 +116,5 @@ python3 docs/architecture/build.py
 ```
 
 The generator validates IDs, complete component coverage and local source references. The resulting [explorer.html](explorer.html) is self-contained and uses no network calls, external assets or credentials. Opening it cannot dial, deploy or modify a service. Source links are ordinary navigation links to GitHub. Existing private prompts, recordings and provider keys are not embedded.
+
+- [Full motor coverage catalog, configuration and backend contract](11-full-motor-coverage.md)

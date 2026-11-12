@@ -43,6 +43,9 @@ type toolState struct {
 	exec   tools.Executor
 	pool   *tools.Pool
 	memory *tools.Memory
+	// The requested quote contains changes to an as-yet-unmaterialized default.
+	quoteBaseDefault bool
+	quoteBrief       *tools.QuoteBrief
 	// tasks are the async tool calls in flight, by task id; latest is the
 	// newest per tool, which supersedes older ones of the same tool.
 	tasks  map[string]*tools.Task
@@ -166,11 +169,15 @@ func (e *Engine) setupTools() {
 		desc := c.Description
 		if c.Brief == "quote-plans" {
 			if brief, err := tools.FetchQuoteBrief(cfg.ToolsBaseURL, e.toolsToken(), 2*time.Second); err == nil {
-				desc = strings.TrimSpace(desc) + "\n" + brief.Text("")
+				ts.quoteBrief = &brief
+				// Render the effective plan from call memory at each model request.
 				e.log.Info("tools: the quote plan's fields are in the tool description", "tool", c.Name, "plan", brief.Plan, "fields", len(brief.Fields))
 			} else {
 				e.log.Warn("tools: the quote plan could not be read for the tool description", "tool", c.Name, "err", err)
 			}
+		}
+		if c.Name == "quote_total" {
+			desc += "\n" + tools.QuoteRevisionInstructions
 		}
 		def := tools.Tool{Name: c.Name, Description: desc, Parameters: c.Parameters,
 			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds,
@@ -254,6 +261,9 @@ func (e *Engine) toolDefinitions() []json.RawMessage {
 	}
 	out := make([]json.RawMessage, 0, len(e.tools.defs))
 	for _, d := range e.tools.defs {
+		if d.Name == "quote_total" {
+			d.Description += "\n" + e.quoteCatalogText()
+		}
 		out = append(out, d.Definition())
 	}
 	return out
@@ -271,6 +281,9 @@ func (e *Engine) memoryBlock() string {
 		snap, v := ts.memory.Snapshot()
 		fmt.Fprintf(&b, "【工作记忆 v%d】以下是本次通话已确认的信息，以此为准：\n%s", v, string(snap))
 	}
+	if ts.quoteBaseDefault {
+		b.WriteString("\n当前 quote 记录对默认方案的已确认改动；未列出的保障仍沿用默认方案，完整方案以报价服务返回为准。")
+	}
 	if len(ts.tasks) > 0 {
 		if b.Len() > 0 {
 			b.WriteString("\n")
@@ -282,6 +295,10 @@ func (e *Engine) memoryBlock() string {
 		b.WriteString("结果出来后会自动告诉你，到时再向用户报告；用户若问起，如实说还在计算。")
 	}
 	if t := ts.lastResult; t != nil {
+		memory, version := e.memorySnapshot()
+		if t.Request.MemoryVersion != version && !quoteResultMatchesMemory(t, memory) {
+			b.WriteString("\n以下为之前方案的报价，当前工作记忆中的方案已修改；不得把旧金额作为当前方案的价格。")
+		}
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
@@ -347,6 +364,7 @@ func (e *Engine) recordSelection(output []byte) {
 			same = false
 		}
 	}
+	ts.quoteBaseDefault = false
 	if same {
 		return
 	}
@@ -485,7 +503,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			t := ts.byName[c.Name]
 			began := time.Now()
 			res := ts.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
-				Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver})
+				Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuotePlanVersion: e.quotePlanVersion()})
 			out := toolOutput(res)
 			e.log.Info("tools: ran", "tool", c.Name, "ms", time.Since(began).Milliseconds(), "err", errString(res.Err))
 			e.post(func() { p.outputs[c.ID] = out })
@@ -798,9 +816,18 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 	if !allowed {
 		return `{"ok":false,"error":"wechat added requires a backend addV event"}`
 	}
+	before := e.tools.memory.Version()
 	v, err := e.tools.memory.Patch(args.Patch)
 	if err != nil {
 		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error())
+	}
+	if v == before {
+		return fmt.Sprintf(`{"ok":true,"version":%d}`, v)
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(args.Patch, &fields)
+	if bytes.Equal(bytes.TrimSpace(fields["quote"]), []byte("null")) {
+		e.tools.quoteBaseDefault = false
 	}
 	e.log.Info("tools: memory updated", "version", v, "chars", len(args.Patch), "keys", patchKeys(args.Patch))
 	e.deps.Emit(live.MemoryEvent{Envelope: live.Envelope{Type: live.ExtMemory}, Version: v, Patch: args.Patch})
@@ -810,12 +837,10 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 // submitTask starts an async tool and answers the model at once.
 func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string, *coalescedTask) {
 	ts := e.tools
-	// A `config` in the call is not folded into the plan here: the lead
-	// service lays it over the plan itself, and the plan in memory follows
-	// what a result priced when the result is delivered (recordSelection).
-	// Folded at call time, a change the model sent beside — or a second
-	// before — a comparison of options set the plan to an option nobody had
-	// chosen (the 10:19, 10:26 and 10:33 simulated calls of 10-28).
+	c = e.normalizeQuoteCall(c)
+	if err := e.applyQuoteRevision(c); err != nil {
+		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()), "", nil
+	}
 	snap, ver := e.memorySnapshot()
 	if r, ok := ts.recent[t.Name]; ok && r.ver == ver && r.args == c.Arguments && time.Since(r.at) < repeatWindow {
 		coalesced := e.noteCoalescedTask(r.id, job.turn)
@@ -836,7 +861,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 			e.log.Info("tools: a task was superseded by a newer one", "tool", t.Name, "task", oldID)
 		}
 	}
-	req := tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID, Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver}
+	req := tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID, Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuoteBaseDefault: t.Name == "quote_total" && ts.quoteBaseDefault, QuotePlanVersion: e.quotePlanVersion()}
 	task := ts.pool.Submit(e.ctx, t, req, func(task *tools.Task) {
 		e.post(func() { e.onTaskDone(task) })
 	})
@@ -1124,11 +1149,14 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 		return
 	}
 	var skillCalls []provider.ToolCall
+	folded := foldedIntoComparison(mine)
 	snap, ver := e.memorySnapshot()
 	for _, c := range mine {
 		e.tools.calls++
 		t := e.tools.byName[c.Name]
 		switch {
+		case folded[c.ID]:
+			p.outputs[c.ID] = `{"status":"merged","note":"该改动已并入同一次对比，方案未变"}`
 		case c.Name == skillsmcp.ToolName:
 			job.turn.skillPending++
 			skillCalls = append(skillCalls, c)
@@ -1152,7 +1180,7 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 			c := c
 			go func() {
 				res := e.tools.exec.Execute(e.ctx, t, tools.Request{Tool: c.Name, CallID: c.ID, Session: e.opts.SessionID, Call: e.opts.CallID,
-					Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver})
+					Arguments: json.RawMessage(c.Arguments), Memory: snap, MemoryVersion: ver, QuotePlanVersion: e.quotePlanVersion()})
 				e.post(func() {
 					if p := e.pending[job.delegationID]; p != nil {
 						p.outputs[c.ID] = toolOutput(res)

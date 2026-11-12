@@ -1,0 +1,22 @@
+{
+  "api_misses": 6375,
+  "cache_hits": 2123,
+  "evaluation_ms": 163984,
+  "family_states": {
+    "三者险": 3601,
+    "乘客责任险": 1051,
+    "交强险": 2,
+    "司机责任险": 1051,
+    "车损险": 26,
+    "车船税": 2
+  },
+  "isolation_checks": 2,
+  "kind": "synthetic HTTP API simulation",
+  "real_audio": false,
+  "repeat_cache_hits": 8498,
+  "seeded_combinations": 2123,
+  "simulated_backend_delay_ms": 0,
+  "structural_policy_space": 413677492904,
+  "tested_unique_combinations": 8498,
+  "total_api_submissions": 8500
+}

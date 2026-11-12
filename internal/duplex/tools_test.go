@@ -1189,8 +1189,7 @@ func TestAPlanChangeIsOneCallAndItsResultStaysWithTheMemory(t *testing.T) {
 	if !strings.Contains(block, "最近一次报价结果") || !strings.Contains(block, "3200") {
 		t.Fatalf("the delivered result is not beside the memory: %q", block)
 	}
-	// The plan in memory follows the priced selection once the result is
-	// delivered — not before.
+	// The delivered selection agrees with the change committed at submission.
 	mem := make(chan string, 1)
 	e.post(func() { snap, _ := e.memorySnapshot(); mem <- string(snap) })
 	if got := <-mem; !strings.Contains(got, `"三者险":"300万"`) {
@@ -1321,30 +1320,6 @@ func TestSeveralOptionsAreReadOutAsOneComparison(t *testing.T) {
 	e.post(func() { snap, _ := e.memorySnapshot(); done <- string(snap) })
 	if mem := <-done; !strings.Contains(mem, `"三者险":"200万"`) || strings.Contains(mem, "500万") {
 		t.Fatalf("the plan in memory should be the current one: %s", mem)
-	}
-}
-
-// A single change is not folded into the plan when the tool is called: the
-// plan follows what a delivered result priced. So a comparison called a
-// second after a single change still compares over the plan as it was.
-func TestAChangeTakesEffectOnlyWhenItsQuotationIsDelivered(t *testing.T) {
-	opts := quoteConfig()
-	rate := opts.Cfg.ClientRate
-	c := newCollector(rate)
-	e := startQuoteEngine(t, opts, Deps{ASR: newTrailingASR("x"), LLM: &quoteLLM{}, Emit: c.emit}, &statusQuote{delay: time.Millisecond, status: "quote"})
-	v := make(chan int, 1)
-	e.post(func() {
-		e.tools.memory.Patch(json.RawMessage(`{"quote":{"三者险":"200万"}}`))
-		job := backendJob{turn: e.tracker.Begin("", false)}
-		e.submitTask(job, provider.ToolCall{ID: "x", Name: "quote_total", Arguments: `{"config":{"三者险":"500万"}}`}, e.tools.byName["quote_total"])
-		snap, ver := e.memorySnapshot()
-		if !strings.Contains(string(snap), `"三者险":"200万"`) || strings.Contains(string(snap), "500万") {
-			t.Errorf("the plan changed at call time: %s", snap)
-		}
-		v <- ver
-	})
-	if got := <-v; got != 1 {
-		t.Fatalf("memory version %d, want 1 (the patch alone)", got)
 	}
 }
 

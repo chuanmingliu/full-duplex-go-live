@@ -237,3 +237,26 @@ func TestProgressiveTurnSelectionAndHotEdit(t *testing.T) {
 		t.Fatal("stale content")
 	}
 }
+
+func TestFullMotorSelectionsPassThroughMCP(t *testing.T) {
+	f := newFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		var v obj
+		if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+			t.Error(err)
+			return
+		}
+		if v["memory"].(obj)["quote_plan"] != "motor-full" {
+			t.Error("plan missing")
+		}
+		args := v["arguments"].(obj)
+		config := args["config"].(obj)
+		if config["医保外用药责任险-司机"] != "共享保额" || config["绝对免赔率-三者"] != "10%" || config["车船税"] != "代缴" {
+			t.Error("selection changed")
+		}
+		io.WriteString(w, `{"status":"need","missing":[{"kind":"dependency","field":"司机责任险"}]}`)
+	})
+	out := f.result("tools/call", obj{"name": "quote_total", "arguments": obj{"call": "synthetic-full", "memory": obj{"quote_plan": "motor-full"}, "config": obj{"医保外用药责任险-司机": "共享保额", "绝对免赔率-三者": "10%", "车船税": "代缴"}}})
+	if out["structuredContent"].(obj)["status"] != "need" {
+		t.Fatal(out)
+	}
+}

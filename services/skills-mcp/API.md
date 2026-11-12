@@ -379,7 +379,7 @@ Use `tools/list` to obtain the current `quote_total` description and SDK-generat
 | `config` | object | Changes to the base coverage selection |
 | `configs` | object array | Up to 16 alternative changes for comparison |
 
-For comparison, replace `config` with `configs`, such as `[{"三者险":"200万"},{"三者险":"300万"}]`. Explicit removal uses `false`. The adapter forwards both fields when both are supplied, and the CRM decides their combined semantics.
+For comparison, replace `config` with `configs`, such as `[{"三者险":"200万"},{"三者险":"300万"}]`. Explicit removal uses `false`. The adapter forwards both fields when both are supplied, and the CRM decides their combined semantics. A single hypothetical option also uses a one-element `configs` array. The Active Call native tool path records confirmed `config` revisions in its working memory before calculation. Direct MCP callers manage their own session state. See the [quotation and working-memory contract](../../docs/architecture/10-quotation-working-memory.md).
 
 The server sends one authenticated CRM request per invocation with this envelope.
 
@@ -683,3 +683,34 @@ For a guidance-only workflow, add a skill with a unique name, body, events, patt
 | [internal/skillsmcp/client.go](../../internal/skillsmcp/client.go) | Production retrieval and verification |
 | [internal/duplex/skills.go](../../internal/duplex/skills.go) | Turn scope, freshness and fallback |
 | [internal/duplex/think.go](../../internal/duplex/think.go) | Final model-request assembly |
+
+### Full motor coverage selections
+
+When the host selects the CRM `motor-full` plan, `quote_total` accepts its
+separate main/rider coverage keys in `config` and `configs`. Pass amount tiers
+as explicit strings (`300万`), percentages as strings (`10%`) and shared limits
+as `共享保额`; do not flatten these into a single number. Preserve
+`memory.quote_plan` and the complete base selection. A `need` result with a
+`dependency` item requires a caller decision about the parent/rider; do not
+silently add coverage. This MCP tool forwards the request; CRM owns validation
+and our quotation backend owns calculation. See the
+[full catalog and backend contract](../../docs/architecture/11-full-motor-coverage.md).
+
+
+### Coverage catalog alignment
+
+Vehicle insurance option inquiries use `vehicle_insurance_concepts`, while
+confirmed changes or explicit premium requests use the quotation skill. The
+concepts skill refers to the host's effective CRM plan rather than storing its
+own tier table. Publish the revised routing/body through the panel to update an
+existing server; replacing source seed files does not rewrite saved catalogs.
+
+For native GoLive→CRM quotation requests, the host adds `quote_plan_version`
+to the request envelope, outside model arguments. It identifies the saved
+`quote-plans` document used to render the tool description and pins selection
+validation/defaults for that call. A direct MCP client that does not supply a
+host-pinned version continues to use current CRM configuration. Keep the CRM
+and GoLive rollout ordered so the CRM understands this field before enabling
+new GoLive sessions. See `docs/architecture/11-full-motor-coverage.md` for the
+saved-catalog selector endpoint, versioned descriptions and strict response
+validation.

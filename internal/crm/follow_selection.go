@@ -40,7 +40,7 @@ func (s *Service) beginSelectionQuote(req QuoteRequest) uint64 {
 	// quotes or comparisons. Existing work is still invalidated by any ask.
 	enabled := false
 	if !req.prequote && len(req.Config) > 0 && len(req.Variants) == 0 {
-		if version, err := s.configs.Get(QuotePlansName, 0); err == nil {
+		if version, err := s.configs.Get(QuotePlansName, req.PlanVersion); err == nil {
 			if plans, err := ParseQuotePlans(version.Body); err == nil {
 				vars := copyVars(s.LeadVars(req.Call))
 				for k, v := range req.Vars {
@@ -90,7 +90,7 @@ func (s *Service) scheduleSelectionWarming(req QuoteRequest, quote any, generati
 	if err != nil || json.Unmarshal(data, &result) != nil || result.Status != "quote" {
 		return
 	}
-	version, err := s.configs.Get(QuotePlansName, 0)
+	version, err := s.configs.Get(QuotePlansName, req.PlanVersion)
 	if err != nil {
 		return
 	}

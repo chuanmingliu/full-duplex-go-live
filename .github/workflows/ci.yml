@@ -24,6 +24,11 @@ jobs:
           python3 -B scripts/test_sim_retro.py
       - name: handset evidence regression tests
         run: make handset-test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: coverage panel regression tests
+        run: node --test scripts/tests/test_motor_catalog.cjs
       - name: build
         run: go build -o /tmp/golive ./cmd/golive
       - name: govulncheck
@@ -48,3 +53,18 @@ jobs:
           cache: true
       - name: test
         run: go test -timeout 25m ${{ matrix.flags }} ./...
+
+  motor-combinations:
+    name: Motor combinations and partial-cache routing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Exhaustive family and cross-family cache simulation
+        env:
+          GOLIVE_MOTOR_CACHE_SIM: '1'
+        run: go test -race -timeout 10m ./internal/crm -run '^TestMotorCombinationCacheSimulation$' -count=1

@@ -1554,15 +1554,19 @@ it as `rule`.
 
 A policy conversation goes round in circles — "三者改成三百万", "座位险不要了",
 "那一共多少钱" — and pricing takes seconds. Two things in the telephony
-profile deal with that; neither touches the turn's latency.
+profile support that flow. Their model continuations and prompt content can
+affect response latency. See the [quotation and memory contract](docs/architecture/10-quotation-working-memory.md).
 
 **Working memory** (`tools_memory: true`). The model keeps what the call has
 settled — the coverage plan, the vehicle, the person's choices — in a JSON
 object it edits through the builtin `update_memory(patch)` (keys set, `null`
-deletes, nested objects merge). Every edit is a version. The memory is
-rendered into the model's context on every request as 【工作记忆 vN】, *after*
-the instructions, so the cached prefix is unchanged and the latest plan is
-always in view; `golive.memory` events carry each edit.
+deletes, nested objects merge). Content changes advance the version. Identical
+patches retain it. Confirmed local `quote_total.config` revisions update the
+requested selection before calculation. Hypothetical alternatives use `configs`.
+The memory is rendered into the model's context on every request as 【工作记忆 vN】, *after*
+the instructions. Stable instructions remain eligible for prefix caching, while
+a changed memory block can limit reuse of the later history. `golive.memory`
+events carry actual updates.
 
 **Tools that run in the background** (`tools`, `async: true`). A tool call
 is carried out by golive itself: a quick one (`async: false`) runs and its

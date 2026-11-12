@@ -45,7 +45,7 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		text = job.request
 	}
 	out := skillOutput{Status: "no_match", Scope: skillScope(job.turn), MemoryVersion: version}
-	docs, renderingVersion, err := e.skills.PrepareWithTrace(ctx, text, memory, &trace)
+	docs, renderingVersion, err := e.skills.PrepareWithTrace(ctx, coverageSelectionText(req.Messages, text), memory, &trace)
 	if err != nil {
 		out.Status = "unavailable"
 	} else if len(docs) > 0 {

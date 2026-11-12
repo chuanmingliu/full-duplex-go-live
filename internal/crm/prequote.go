@@ -91,10 +91,14 @@ func selectionKey(call, pricing string, plan QuotePlan, config, vars map[string]
 	b.WriteString(call)
 	b.WriteString("|")
 	b.WriteString(pricing)
+	if plan.Strict {
+		raw, _ := json.Marshal(plan)
+		b.WriteString(shortSHA(string(raw)))
+	}
 	b.WriteString("|")
 	covs := make([]string, 0, len(config))
 	for c, v := range config {
-		if selected(v) {
+		if selected(v) || (c == "车船税" && v == false) {
 			covs = append(covs, c)
 		}
 	}

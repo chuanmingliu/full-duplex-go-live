@@ -76,6 +76,7 @@ func defaults() Catalog {
 	wechat.Events = []string{"wechat.add_requested", "wechat.notification_help"}
 	wechat.State = map[string][]string{"wechat.status": {"consented", "awaiting_confirmation"}}
 	quote.Match = []string{`(报个价|给.*报价|帮.*报价|重新.*(算|报价)|再(算|报价)|算一下|算.*(保费|价格)|修改.*(报价|方案)|对比.*(报价|方案)|比较.*(报价|方案)|^报价[吧。？?！!]*$)`}
+	quote.Match = append(quote.Match, `(三者|车损|划痕|司机|乘客|精神损害|医保外|免赔率|假日|车船税).*(改成|改为|加上|取消|不投保|多少钱|比较|对比)`, `(加上|取消|改成|改为|不投保).*(三者|车损|划痕|司机|乘客|精神损害|医保外|免赔率|假日|车船税)`)
 	quote.Exclude = []string{`(不要|不用|别|不需要).*(报价|算|比较|对比)`, `(什么是|是什么|为什么).*(报价|保费)`}
 	wechat.Match = []string{`(微信|服务通知).*(哪里|在哪|找|打开|怎么|如何|下一步|接下来|添加|加你)`, `(哪里|怎么|如何|找不到).*(微信|服务通知)`, `^(下一步|接下来)(呢|该.*|怎么.*)?[？?。]?$`}
 	wechat.Exclude = []string{`(不想|不要|不用|不需要|拒绝|别).*(微信|添加|加你)`, `(什么是|是什么|为什么)`}
