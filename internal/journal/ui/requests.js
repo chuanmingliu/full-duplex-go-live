@@ -122,6 +122,23 @@ window.JournalRequests = function (h, sessionID, requestID) {
     var messages = Array.isArray(body.messages) ? body.messages : [];
     var tabs = h('div', {class: 'request-tabs', role: 'tablist', 'aria-label': 'Request views'});
     var pane = h('div', {id: 'request-pane', role: 'tabpanel', tabindex: '0'});
+    var selectedView;
+    var copyStatus = h('span', {class: 'request-copy-status', role: 'status', 'aria-live': 'polite'});
+    var copy = h('button', {class: 'btn', type: 'button', onclick: async function () {
+      var name = selectedView;
+      var text = name === 'Raw request' ? data.raw_request : name === 'Metadata' ? json(data.metadata) :
+        name === 'Rendered prompt' ? Array.from(pane.querySelectorAll('pre')).map(function (pre) { return pre.textContent; }).join('\n\n') : pane.innerText;
+      copy.disabled = true;
+      copyStatus.textContent = '';
+      try {
+        await navigator.clipboard.writeText(text);
+        if (selectedView === name) copyStatus.textContent = 'Copied ' + name.toLowerCase() + '.';
+      } catch (_) {
+        if (selectedView === name) copyStatus.textContent = 'Copy unavailable. Select the content and copy it manually.';
+      } finally {
+        copy.disabled = false;
+      }
+    }}, 'Copy content');
     var views = {
       'Rendered prompt': function () {
         var node = h('div');
@@ -142,6 +159,9 @@ window.JournalRequests = function (h, sessionID, requestID) {
       'Raw request': function () { return block('Exact stored HTTP request body', data.raw_request); }
     };
     function select(name) {
+      selectedView = name;
+      copyStatus.textContent = '';
+      copy.setAttribute('aria-label', 'Copy ' + name.toLowerCase());
       Array.from(tabs.children).forEach(function (button) { button.setAttribute('aria-selected', String(button.textContent === name)); button.tabIndex = button.textContent === name ? 0 : -1; });
       pane.setAttribute('aria-labelledby', 'request-tab-' + Object.keys(views).indexOf(name));
       pane.replaceChildren(views[name]());
@@ -161,7 +181,8 @@ window.JournalRequests = function (h, sessionID, requestID) {
       var link = h('a', {href: url, download: sessionID + '-' + data.metadata.id + '.json'});
       link.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }}, 'Download raw JSON');
-    detail.replaceChildren(h('div', {class: 'request-detail-head'}, h('h2', null, 'Request details'), download),
+    detail.replaceChildren(h('div', {class: 'request-detail-head'}, h('h2', null, 'Request details'),
+      h('div', {class: 'request-detail-actions'}, copyStatus, download, copy)),
       h('code', null, data.metadata.id), h('p', {class: data.integrity_ok ? 'request-integrity' : 'request-error'}, data.integrity_ok ? 'SHA-256 and byte count verified' : 'Integrity mismatch — stored bytes differ from the recorded metadata'), tabs, pane);
     select('Rendered prompt');
   }

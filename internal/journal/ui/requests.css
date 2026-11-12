@@ -21,6 +21,9 @@
 .request-pager { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 0; font-size: 12px; }
 .request-detail { margin-top: 24px; }
 .request-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.request-detail-head, .request-detail-actions { flex-wrap: wrap; }
+.request-detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.request-copy-status { color: var(--ink-2); font-size: 12px; }
 .request-detail > code { overflow-wrap: anywhere; }
 .request-integrity { color: var(--good-ink); margin: 10px 0; }
 .request-error { color: var(--over-ink); padding: 12px 0; }
