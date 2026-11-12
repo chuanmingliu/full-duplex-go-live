@@ -1,0 +1,47 @@
+{
+  "original_configuration_checks": {
+    "production_profile": true,
+    "production_executable": true,
+    "saved_prompt_greeting_voice": true,
+    "quote-plans": true,
+    "quote-api": true,
+    "quote-speech": true,
+    "openers": true,
+    "hangup-rules": true,
+    "silence-reaction": true,
+    "motor-quotation": true,
+    "vehicle_insurance_concepts": true,
+    "wechat-service-notification": true
+  },
+  "production_health": {
+    "model": "golive-1",
+    "sessions": 0,
+    "status": "ok",
+    "version": "3970624"
+  },
+  "stopped_isolated_services": [
+    "aria",
+    "golive",
+    "crm",
+    "catalog.test",
+    "quotesvc"
+  ],
+  "simulator_original_runs": 128,
+  "simulator_original_hashes_verified": true,
+  "journal_retained": "http://192.168.71.9:18871",
+  "detector_health": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 49794,
+    "errors": 1
+  }
+}

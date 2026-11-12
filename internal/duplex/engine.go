@@ -334,12 +334,13 @@ type Engine struct {
 	pausesInside   []int
 	silentBeforeMS float64
 
-	inputMS       atomic.Int64
-	outputMS      atomic.Int64
-	transcriptSeq atomic.Uint64
-	inTok         atomic.Int64
-	outTok        atomic.Int64
-	cachedTok     atomic.Int64
+	inputMS              atomic.Int64
+	inputSampleRemainder int64 // loop-owned sub-millisecond pipeline samples
+	outputMS             atomic.Int64
+	transcriptSeq        atomic.Uint64
+	inTok                atomic.Int64
+	outTok               atomic.Int64
+	cachedTok            atomic.Int64
 	// ctxRatio is math.Float64bits of how full the conversational context is.
 	ctxRatio atomic.Uint64
 	startAt  time.Time
@@ -786,13 +787,18 @@ func (e *Engine) onAudio(pcm []byte) {
 		return
 	}
 	atMS := e.inputMS.Load()
-	e.inputMS.Add(int64(audio.PCM16(e.opts.ClientRate).DurationMS(pcm)))
 
 	converted, err := audio.ResamplePCM16(pcm, e.opts.ClientRate, provider.PipelineRate)
 	if err != nil {
 		e.deps.Emit(live.NewError("invalid_request_error", "bad_audio", err.Error(), ""))
 		return
 	}
+	// Use the same cumulative sample clock as the VAD and detector. Rounding
+	// each incoming packet independently fabricates gaps on fragmented PCM.
+	samples := int64(len(converted)/2) + e.inputSampleRemainder
+	const samplesPerMS = provider.PipelineRate / 1000
+	e.inputMS.Add(samples / samplesPerMS)
+	e.inputSampleRemainder = samples % samplesPerMS
 	e.focusPush(converted, atMS)
 	if e.detector != nil {
 		speaking, filler := e.player.detectorState()

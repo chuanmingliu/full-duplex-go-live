@@ -414,7 +414,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 	}
 	if !front && e.tools != nil && e.tools.memory != nil {
 		memory, _ := e.memorySnapshot()
-		if note := businessStateNote(memory); note != "" {
+		note := businessStateNote(memory)
+		if note == "" && e.skills != nil {
+			note = wechatBootstrapNote(memory, latestUserText(msgs))
+		}
+		if note != "" {
 			msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
 		}
 	}

@@ -132,3 +132,47 @@ func TestRealCallCoverageRoutingGaps(t *testing.T) {
 		}
 	}
 }
+
+func TestFollowupPriceAndWeChatRouting(t *testing.T) {
+	c := defaults()
+	c.Skills = append(c.Skills, vehicleConcepts(t))
+	cases := []struct{ q, skill string }{
+		{"今年续保大概多少钱？", "motor-quotation"},
+		{"只比较三者险两百万和三百万的价格，其他不变。", "motor-quotation"},
+		{"你那个三者险按照四百万算，然后其他的那个。", "motor-quotation"},
+		{"三者就两百万吗？", "vehicle_insurance_concepts"},
+		{"组合还能调整吗？三就是医保外之类的。", "vehicle_insurance_concepts"},
+		{"你这个是在服务通知还是公众号啊？", "wechat-service-notification"},
+		{"这个不能发短信，直接就对着加V是吧？", "wechat-service-notification"},
+		{"我看一下你发过来了是吧。", "wechat-service-notification"},
+		{"行，我加上了，你看到了吧。", "wechat-service-notification"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.q, func(t *testing.T) {
+			skills, _, err := c.selectTurn(turnInput{Event: "auto", Utterance: tc.q, State: map[string]string{"wechat.status": "consented"}})
+			found := false
+			for _, s := range skills {
+				found = found || s.Name == tc.skill
+			}
+			if err != nil || !found {
+				t.Fatalf("missing %s", tc.skill)
+			}
+			if tc.skill == "wechat-service-notification" {
+				for _, status := range []string{"", "unknown", "declined", "added"} {
+					skills, _, _ := c.selectTurn(turnInput{Event: "auto", Utterance: tc.q, State: map[string]string{"wechat.status": status}})
+					for _, s := range skills {
+						if s.Name == tc.skill {
+							t.Fatalf("bypassed state %s", status)
+						}
+					}
+				}
+			}
+		})
+	}
+	for _, q := range []string{"地铁票多少钱", "今年地铁票多少钱", "不要报价，三者就两百万吗？", "三者险是什么保费？"} {
+		_, tools, _ := c.selectTurn(turnInput{Event: "auto", Utterance: q})
+		if len(tools) > 0 {
+			t.Fatalf("unrequested quote %s", q)
+		}
+	}
+}

@@ -133,7 +133,7 @@ func businessStateNote(memory json.RawMessage) string {
 	case "declined":
 		return "当前业务状态：用户已拒绝添加微信。停止添加指引和再次邀请，直接回答当前问题。概念问题只简短解释概念，不推测界面路径。只有用户明确重新同意添加时才更新同意状态。"
 	case "", "unknown":
-		return "微信添加尚未获得确认同意。若用户只问概念，仅简短解释概念，不推测界面路径，不主动询问或邀请添加微信。仅问概念时在定义后结束回答，不追加任何问题，包括是否需要帮忙或添加微信。只有用户明确要求或同意添加时，才更新状态并开始操作指引。"
+		return "微信添加尚未获得确认同意。若用户只问概念，仅简短解释概念，不推测界面路径，不主动询问或邀请添加微信。仅问概念时在定义后结束回答，不追加任何问题，包括是否需要帮忙或添加微信。只有用户明确要求或同意添加时，才调用 update_memory，以 patch={\"wechat\":{\"status\":\"consented\"}} 记录同意，再开始操作指引。用户拒绝时记录 status=declined。不能把用户说已添加当成后端 addV 确认。"
 	}
 	return ""
 }
@@ -185,4 +185,21 @@ func expiredSkillHistory(history []provider.Message, scope string, version int) 
 		}
 	}
 	return out
+}
+
+// Bootstrap only a relevant MCP-enabled turn. Unrelated calls retain their
+// original prompt; consent is still a semantic model decision, not a keyword
+// side effect. Existing declined/added/consented state is never replaced here.
+func wechatBootstrapNote(memory json.RawMessage, text string) string {
+	var state map[string]json.RawMessage
+	if json.Unmarshal(memory, &state) != nil {
+		return ""
+	}
+	if raw, ok := state["wechat"]; ok && string(raw) != "null" {
+		return ""
+	}
+	if !strings.Contains(text, "微信") && !strings.Contains(text, "加微") && !strings.Contains(strings.ToLower(text), "加v") && !strings.Contains(text, "服务通知") {
+		return ""
+	}
+	return businessStateNote(json.RawMessage(`{"wechat":{"status":"unknown"}}`))
 }

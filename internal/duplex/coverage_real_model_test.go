@@ -165,3 +165,114 @@ func TestCoverageNaturalAnswerChecks(t *testing.T) {
 		t.Fatal("accepted unsupported offer")
 	}
 }
+
+// The executor is synthetic here; this checks the real model's choice of the
+// full-range shorthand versus an explicit subset. Recorded sims verify prices.
+func TestCoverageComparisonRealModel(t *testing.T) {
+	report := os.Getenv("COVERAGE_COMPARE_REPORT")
+	if report == "" {
+		t.Skip("opt-in model comparison test")
+	}
+	llm, err := provider.OpenLLM(os.Getenv("SKILLS_REAL_PROVIDER"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := skillsSyntheticPrompt
+	if path := os.Getenv("COVERAGE_PROMPT_FILE"); path != "" {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var saved struct{ Instructions string }
+		if json.Unmarshal(raw, &saved) != nil || saved.Instructions == "" {
+			t.Fatal("saved prompt missing")
+		}
+		prompt = saved.Instructions
+	}
+	cfg := skillsmcp.Config{URL: os.Getenv("SKILLS_SIM_URL"), TokenFile: os.Getenv("SKILLS_SIM_TOKEN_FILE"), TimeoutMS: 400}
+	b := tools.QuoteBrief{Plan: "motor-full", Options: map[string][]string{}, Details: map[string]motorcatalog.Detail{}}
+	for _, entry := range motorcatalog.Entries() {
+		b.Coverages = append(b.Coverages, entry.Name)
+		b.Options[entry.Name] = entry.Options
+		b.Details[entry.Name] = entry.Detail
+	}
+	b.Plans = map[string]tools.QuoteSelectionSchema{"motor-full": {Options: b.Options, Details: b.Details}}
+	rows := []realSkillRow{}
+	for _, tc := range []struct {
+		name, q string
+		count   int
+	}{
+		{"all-tiers", "三者险不同的档位，你帮我都算一下，其他不变。每档单项保费和总价都要。", 6},
+		{"explicit-subset", "只比较三者险两百万和三百万的价格，其他不变，不要其他档位。", 2},
+		{"options-only", "三者险有哪些档位？只介绍选项，不要报价。", 0},
+		{"wechat-first-consent", "好，我同意加微信。", -1},
+	} {
+		s := newSkillSessionWithPrompt(t, llm, cfg, prompt)
+		ready := make(chan struct{})
+		s.e.post(func() {
+			s.e.tools.quoteBrief = &b
+			if tc.count == -1 {
+				_, _ = s.e.tools.memory.Patch(json.RawMessage(`{"wechat":null}`))
+			}
+			s.e.opts.Cfg.MaxOutputTokens = 768
+			for i := range s.e.tools.defs {
+				if s.e.tools.defs[i].Name == "quote_total" {
+					s.e.tools.defs[i].Parameters = quoteComparisonParameters(json.RawMessage(`{"type":"object","properties":{"config":{"type":"object"},"configs":{"type":"array","items":{"type":"object"}}}}`))
+				}
+			}
+			close(ready)
+		})
+		<-ready
+		before, _ := s.e.MemorySnapshot()
+		row := s.turn(t, tc.name, "skills", tc.q)
+		if tc.count >= 0 {
+			row.Checks["selection_unchanged"] = string(before) == string(row.Memory)
+			row.Checks["skill_loaded"] = skillLoaded(row)
+		}
+		if tc.count == -1 {
+			var memory struct{ Wechat struct{ Status string } }
+			_ = json.Unmarshal(row.Memory, &memory)
+			row.Checks["consent_recorded"] = memory.Wechat.Status == "consented"
+			next := s.turn(t, "wechat-followup", "skills", "你说的是服务通知还是公众号？")
+			next.Checks["guarded_skill_loaded"] = skillLoaded(next)
+			for check, ok := range next.Checks {
+				if !ok {
+					t.Errorf("wechat-followup: %s", check)
+				}
+			}
+			rows = append(rows, next)
+		} else if tc.count == 0 {
+			row.Checks["no_quotation"] = len(row.Quotes) == 0
+		} else {
+			tiers := map[string]bool{}
+			for _, req := range row.Quotes {
+				var args struct {
+					Configs []map[string]any `json:"configs"`
+				}
+				_ = json.Unmarshal(req.Arguments, &args)
+				for _, c := range args.Configs {
+					if v, ok := c["三者险"].(string); ok {
+						tiers[v] = true
+					}
+				}
+			}
+			row.Checks["exact_tier_count"] = len(tiers) == tc.count
+			if tc.count == 6 {
+				row.Checks["lowest_tier"] = tiers["50万"]
+			} else {
+				row.Checks["explicit_subset"] = tiers["200万"] && tiers["300万"] && !tiers["50万"]
+			}
+		}
+		rows = append(rows, row)
+		s.e.Close()
+		for check, ok := range row.Checks {
+			if !ok {
+				t.Errorf("%s: %s", tc.name, check)
+			}
+		}
+	}
+	raw, _ := json.MarshalIndent(rows, "", "  ")
+	if err := os.WriteFile(report, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -85,7 +85,8 @@ func (c *Client) notify() {
 }
 
 // The queue absorbs batched WebSocket input (at most 40 KiB of PCM). Its
-// capacity is not a latency allowance: queued chunks still expire at 120 ms.
+// capacity is not a latency allowance: evidence still expires at 150 ms.
+// Up to 500 ms of contiguous history may catch up without acting on old audio.
 // Push never waits for a socket or model. Backpressure invalidates the entire
 // prediction stream instead of silently continuing with broken model history.
 func (c *Client) Push(pcm []byte, startMS int64, gen uint64, speaking, filler bool) {
@@ -200,9 +201,12 @@ func (c *Client) run(ctx context.Context, url string) {
 		case <-ctx.Done():
 			return
 		case p := <-c.queue:
-			if time.Since(p.At) > 120*time.Millisecond {
+			if time.Since(p.At) > 500*time.Millisecond {
 				c.Disable("stale_queue")
 				return
+			}
+			if time.Since(p.At) > 120*time.Millisecond {
+				c.latest.Store(nil) // legacy policy while contiguous history catches up
 			}
 			conn.SetWriteDeadline(time.Now().Add(120 * time.Millisecond))
 			if err = conn.WriteJSON(map[string]any{"type": "audio", "seq": seq, "pcm_s16le": base64.StdEncoding.EncodeToString(p.PCM), "bot_state": p.Bot}); err != nil {
@@ -252,7 +256,11 @@ func (c *Client) run(ctx context.Context, url string) {
 			if ctx.Err() != nil || c.failed.Load() {
 				return
 			}
-			c.latest.Store(latest)
+			if time.Since(p.At) <= 150*time.Millisecond {
+				c.latest.Store(latest)
+			} else {
+				c.latest.Store(nil)
+			}
 			c.processed.Add(1)
 			c.notify()
 			seq++

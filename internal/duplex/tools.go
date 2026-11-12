@@ -182,6 +182,9 @@ func (e *Engine) setupTools() {
 		def := tools.Tool{Name: c.Name, Description: desc, Parameters: c.Parameters,
 			URL: url, Async: c.Async, TimeoutMS: c.TimeoutMS, ETASeconds: c.ETASeconds,
 			Ack: strings.TrimSpace(c.Ack), ResultOpening: strings.TrimSpace(c.ResultOpening), ResultOpeningStatus: c.ResultOpeningStatus}
+		if c.Name == "quote_total" {
+			def.Parameters = quoteComparisonParameters(def.Parameters)
+		}
 		if c.Speech == tools.QuoteSpeechName {
 			if qs, err := tools.FetchQuoteSpeech(cfg.ToolsBaseURL, e.toolsToken(), 2*time.Second); err == nil {
 				def = def.WithSpeech(qs)
@@ -383,22 +386,23 @@ func (e *Engine) recordSelection(output []byte) {
 func foldedIntoComparison(calls []provider.ToolCall) map[string]bool {
 	comparing := map[string]bool{}
 	type shape struct {
-		Config  map[string]any   `json:"config"`
-		Configs []map[string]any `json:"configs"`
+		Config          map[string]any   `json:"config"`
+		Configs         []map[string]any `json:"configs"`
+		CompareCoverage string           `json:"compare_coverage"`
 	}
 	shapes := map[string]shape{}
 	for _, c := range calls {
 		var sh shape
 		_ = json.Unmarshal([]byte(c.Arguments), &sh)
 		shapes[c.ID] = sh
-		if len(sh.Configs) > 0 {
+		if len(sh.Configs) > 0 || sh.CompareCoverage != "" {
 			comparing[c.Name] = true
 		}
 	}
 	out := map[string]bool{}
 	for _, c := range calls {
 		sh := shapes[c.ID]
-		if comparing[c.Name] && len(sh.Configs) == 0 && len(sh.Config) > 0 {
+		if comparing[c.Name] && len(sh.Configs) == 0 && sh.CompareCoverage == "" && len(sh.Config) > 0 {
 			out[c.ID] = true
 		}
 	}
@@ -837,6 +841,11 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 // submitTask starts an async tool and answers the model at once.
 func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (string, string, *coalescedTask) {
 	ts := e.tools
+	var err error
+	c, err = e.expandQuoteComparison(c)
+	if err != nil {
+		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()), "", nil
+	}
 	c = e.normalizeQuoteCall(c)
 	if err := e.applyQuoteRevision(c); err != nil {
 		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()), "", nil

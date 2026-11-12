@@ -170,3 +170,25 @@ func TestQueuedBurstStillExpires(t *testing.T) {
 		t.Fatal("stale queued burst retained evidence")
 	}
 }
+
+func TestContiguousQueueRecoversButNeverPublishesStaleEvidence(t *testing.T) {
+	c := &Client{Updates: make(chan struct{}, 1), queue: make(chan packet, 32), done: make(chan struct{}), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+	// A short scheduler pause exceeds the evidence budget, not model continuity.
+	c.queue <- packet{PCM: make([]byte, 1280), At: time.Now().Add(-200 * time.Millisecond), EndMS: 40, Generation: 1}
+	go c.run(ctx, server(t, false))
+	t.Cleanup(c.Close)
+	await(t, func() bool { return c.processed.Load() == 1 })
+	if c.Snapshot() != nil || !c.Ready() {
+		t.Fatal("stale result published or healthy stream retired")
+	}
+	c.Push(make([]byte, 2560), 40, 1, true, false)
+	await(t, func() bool { return c.Snapshot() != nil && c.Snapshot().EndMS == 120 })
+	if !c.Snapshot().Eligible(time.Now(), 120, 0, 1) {
+		t.Fatal("fresh contiguous stream did not recover")
+	}
+	if c.Snapshot().Eligible(time.Now(), 300, 0, 1) {
+		t.Fatal("input freshness relaxed")
+	}
+}

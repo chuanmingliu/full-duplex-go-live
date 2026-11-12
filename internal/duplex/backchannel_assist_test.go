@@ -195,3 +195,21 @@ func TestDetectorPreAnswerMuteAndLaterGap(t *testing.T) {
 		t.Fatal("mid-call audio gap silently re-enabled detector")
 	}
 }
+
+func TestFragmentedInputKeepsDetectorClockContinuous(t *testing.T) {
+	e := detectorFixture(t)
+	e.opts.ClientRate = 16000
+	e.ctx = context.Background()
+	// 17 samples per packet is 1.0625 ms. Per-packet truncation used to lose
+	// 7 ms over this stream and falsely retire the detector with audio_gap.
+	for i := 0; i < 120; i++ {
+		e.onAudio(make([]byte, 34))
+	}
+	if e.inputMS.Load() != 127 || e.inputSampleRemainder != 8 {
+		t.Fatalf("sample clock drift: %d remainder %d", e.inputMS.Load(), e.inputSampleRemainder)
+	}
+	waitFor(t, "fragmented detector stream", time.Second, func() bool { p := e.detector.Snapshot(); return p != nil && p.EndMS == 120 })
+	if !e.detector.Ready() {
+		t.Fatal("continuous fragmented PCM retired detector")
+	}
+}

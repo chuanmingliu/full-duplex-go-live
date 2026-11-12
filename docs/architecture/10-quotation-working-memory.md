@@ -279,3 +279,8 @@ go test -timeout 25m ./internal/tools ./internal/duplex ./internal/crm ./interna
 ```
 
 The optional [full motor catalog](11-full-motor-coverage.md) adds canonical amount, percentage and shared-limit choices, parent/rider validation, and explicit tax collection.
+
+
+### Comparing every configured tier
+
+Active Call can request `quote_total({"compare_coverage":"三者险"})` to expand all tiers from the effective activity catalog before backend dispatch. This produces the existing `configs` comparison shape and does not commit a new selection. Explicit subsets still use `configs`; never combine the shorthand with `config` or `configs`. The standalone MCP tool continues to accept its existing arguments. See [the comparison and recovery note](../telephony/2026-11-12-coverage-repair.md).

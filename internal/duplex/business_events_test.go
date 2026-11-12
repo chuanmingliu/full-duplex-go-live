@@ -99,3 +99,20 @@ func TestBusinessNotesAndCompletionAssertion(t *testing.T) {
 		}
 	}
 }
+
+func TestWeChatBootstrapIsScopedAndPreservesTrustedState(t *testing.T) {
+	for _, text := range []string{"好，我同意加微信。", "怎么找服务通知？", "我想加V"} {
+		if note := wechatBootstrapNote(json.RawMessage(`{}`), text); !strings.Contains(note, "update_memory") || !strings.Contains(note, "consented") {
+			t.Fatal("missing explicit consent contract")
+		}
+	}
+	if wechatBootstrapNote(json.RawMessage(`{}`), "三者险多少钱？") != "" {
+		t.Fatal("unrelated quote acquired WeChat instructions")
+	}
+	for _, state := range []string{"added", "declined", "consented", "awaiting_confirmation"} {
+		raw, _ := json.Marshal(map[string]any{"wechat": map[string]any{"status": state}})
+		if wechatBootstrapNote(raw, "加微信") != "" {
+			t.Fatalf("overrode %s", state)
+		}
+	}
+}
