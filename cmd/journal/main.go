@@ -4,7 +4,7 @@
 // has gone wrong and been fixed.
 //
 // It reads golive's log and store and takes no part in a call. It has no
-// login, and the page can change nothing but the owner's notes on a call: it
+// login, and the page supports owner notes and dreaming controls. It
 // is meant for a home network, where it listens, and not for a public address.
 package main
 
@@ -36,6 +36,8 @@ func main() {
 		dials      = flag.String("sim-dials", "", "the record of calls placed to the simulated customer (phone-brain.sh call sim writes it); such calls are marked, the rest are real")
 		talker     = flag.String("talker", "", "fixed local Talker URL for current status checks; empty disables checks")
 		playground = flag.String("talker-playground", "", "existing desk Talker page; empty hides the link")
+		dreamURL   = flag.String("dream-memory", dreamMemoryURL(), "skills service origin for live dreaming status and settings")
+		dreamToken = flag.String("dream-admin-token-file", os.Getenv("GOLIVE_DREAM_ADMIN_TOKEN_FILE"), "skills admin token file, read only by the Journal backend")
 		check      = flag.Bool("verify", false, "read every archived file again, compare it with its manifest, print what is wrong, and exit")
 		list       = flag.Bool("archive-status", false, "print what the archive holds, in numbers, and exit")
 	)
@@ -49,6 +51,7 @@ func main() {
 		LogPath: *logp, StoreDir: *store, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
 		ArchiveDir: *arch, LastCallFile: *last, SimDials: *dials, Log: log,
 		TalkerURL: *talker, TalkerPlayground: *playground,
+		DreamMemoryURL: *dreamURL, DreamAdminTokenFile: *dreamToken,
 	})
 	// The archive is fed on a clock, not by whoever opens the page.
 	go srv.Watch(context.Background(), 20*time.Second)
@@ -87,4 +90,12 @@ func archiveReport(dir string, verify bool) int {
 	}
 	fmt.Println("every file matches its manifest")
 	return 0
+}
+
+// The admin token still has to be configured explicitly on the server.
+func dreamMemoryURL() string {
+	if value := os.Getenv("GOLIVE_DREAM_MEMORY_URL"); value != "" {
+		return value
+	}
+	return "http://127.0.0.1:8794"
 }

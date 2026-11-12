@@ -59,9 +59,11 @@ type Config struct {
 	SimDials string
 	// TalkerURL is a fixed local model endpoint used only for an on-demand
 	// status check. TalkerPlayground is the owner's existing desk page.
-	TalkerURL        string
-	TalkerPlayground string
-	Log              *slog.Logger
+	DreamMemoryURL      string
+	DreamAdminTokenFile string
+	TalkerURL           string
+	TalkerPlayground    string
+	Log                 *slog.Logger
 }
 
 // Server serves the journal.
@@ -540,6 +542,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/talker-status", s.handleTalkerStatus)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
 	mux.HandleFunc("/api/dreaming", s.handleDreaming)
+	mux.HandleFunc("GET /api/dreaming/source", s.handleDreamSource)
+	mux.HandleFunc("GET /api/dreaming/source/{id}", s.handleDreamEvidence)
+	mux.HandleFunc("GET /api/dreaming/live", s.handleDreamProxy)
+	mux.HandleFunc("GET /api/dreaming/jobs/{id}", s.handleDreamProxy)
+	mux.HandleFunc("PUT /api/dreaming/settings", s.handleDreamProxy)
+	mux.HandleFunc("POST /api/dreaming/jobs/{id}/retry", s.handleDreamProxy)
 	mux.HandleFunc("/api/decisions", s.handleFile("decisions.json", `{"decisions":[]}`))
 	mux.HandleFunc("/api/benchmarks", func(w http.ResponseWriter, r *http.Request) {
 		// The standing evaluation's records: journal/benchmarks/*.json,

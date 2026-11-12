@@ -2056,14 +2056,19 @@
     setNav('dreaming');
     document.title = 'Dreaming – Call journal';
     if (S.cleanup) { S.cleanup(); S.cleanup = null; }
-    showLoading('the dreaming record');
+    clear(view);
+    view.appendChild(h('h1', null, 'Dreaming'));
+    var live = window.JournalDreamingLive(h);
+    view.appendChild(live.element);
+    S.cleanup = live.stop;
+    var recorded = h('details', {class: 'dream-recorded-workflows'}, h('summary', null, 'Reviewed workflow examples'));
+    view.appendChild(recorded);
     return api('/api/dreaming').then(function (data) {
       if (token !== S.token) return;
-      clear(view);
-      view.appendChild(window.JournalDreaming(data, h));
+      recorded.appendChild(window.JournalDreaming(data, h));
     }).catch(function (error) {
       if (token !== S.token) return;
-      showError(error, routeDreaming, 'The dreaming record');
+      recorded.appendChild(h('p', null, 'Reviewed examples unavailable.'));
     });
   }
 
