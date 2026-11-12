@@ -41,3 +41,18 @@ Recording starts when the environment setting is enabled. Retention is managed
 on this persistent directory independently. The recorder preserves rendered
 prompt content verbatim, so access should follow the existing private call
 archive controls.
+
+The Journal's **Requests** tab lists recent recorded sessions and supports
+searching or opening a session ID directly. Select an individual request to
+inspect its rendered system prompt, ordered conversation, injected memory skill
+text and provenance, metadata, and exact raw JSON. The detail view checks the
+recorded byte count and SHA-256 and offers a raw JSON download. Skill text comes
+from that request's saved body, so later catalog edits do not change the view.
+
+Configure the Journal with `-request-log-dir /home/chuanming/golive-request-records`
+or `GOLIVE_REQUEST_LOG_DIR`. The standard phone launcher passes this directory
+explicitly. The read-only endpoints under `/api/requests/sessions` use the
+Journal's existing access boundary and send `Cache-Control: no-store`.
+Lists have 50 rows per page. Individual bodies up to 64 MiB can be displayed.
+The `#/requests/<session_id>/<request_id>` route can be bookmarked. Refresh
+reloads the selected session and request, including newly completed metadata.

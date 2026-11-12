@@ -31,6 +31,8 @@ type Config struct {
 	// (store_dir); empty when calls are not recorded.
 	LogPath  string
 	StoreDir string
+	// RequestLogDir is the private, persistent rendered-request store.
+	RequestLogDir string
 	// DataDir is the journal's own: each call as last read (so a call outlives
 	// the log it was read from) and the owner's notes.
 	DataDir string
@@ -539,6 +541,9 @@ func (s *Server) archiveOf(c *Call) map[string]any {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/overview", s.handleOverview)
+	mux.HandleFunc("GET /api/requests/sessions", s.handleRequestSessions)
+	mux.HandleFunc("GET /api/requests/sessions/{session}", s.handleSessionRequests)
+	mux.HandleFunc("GET /api/requests/sessions/{session}/{request}", s.handleRecordedRequest)
 	mux.HandleFunc("/api/calls/", s.handleCall)
 	mux.HandleFunc("GET /api/talker-status", s.handleTalkerStatus)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
