@@ -62,7 +62,7 @@ response with `finish_reason: stop`. Providers must support this contract.
 image needs the overlay's read-only CA bundle mount for a remote HTTPS provider.
 Set `DREAM_TOKEN_FILE`, `GOLIVE_DREAM_MODEL_URL`, and `GOLIVE_DREAM_MODEL`, then use
 `docker compose -f compose.yaml -f compose.dreaming.yaml ...` in an isolated stack.
-Do not use this command to restart an active call service. This change is not deployed.
+Use the guarded deployment procedure when enabling this overlay on a running installation. The first deployment and live verification are recorded in `journal/retros/out-mwd5kg3p-fixg.md`.
 
 The model receives projected transcript, timing/tool evidence and owner feedback.
 Original archive JSON and audio paths remain local; audio is never opened or uploaded.
@@ -183,3 +183,22 @@ release gates and private-data access. These are integration/contract results,
 not evidence of better live-call behavior or lower handset latency. Evaluate a
 configured model on held-out completed calls and simulate subsequent behavior
 before enabling learned guidance in a live catalog.
+
+
+## Recording the memory lifecycle in Call Journal
+
+The voice engine already emits `skills: prepare` for every attempted preparation. Call Journal preserves these in `call.json.skill_traces` and renders them in the call's **Skills / MCP** section. Detailed entries include turn/response IDs, status, catalog revision, rendering version, working-memory versions, stage timings, resource URI and verified digest. Older calls may have aggregate timing only.
+
+Record the related lifecycle in `journal/retros/<call-id>.md` as each stage is observed. The Journal loads that file into **Retrospective** on the next call-page request. Use headings, paragraphs, bullets and inline code supported by its Markdown renderer.
+
+- After capture, record the exact call/episode ID, archive verification, owner release status, and whether review has been queued.
+- After retrospective review, record the dream ID, source episode IDs and real/synthetic classification, feedback IDs, terminal status, validated candidate IDs, and any redacted failure category. Distinguish a configured repair allowance from an observed repair attempt.
+- After reviewed publication, record the lesson ID/title, procedural guidance, matching condition, publication revision, resource URI and digest. Record simulation-evidence allowance when used. Keep unpublished candidates identifiable as candidates.
+- After runtime use, record the matching turn, actual rule, loaded/no-match/cancelled outcome, renderer, memory-version check, RPC timings, digest verification and observable answer behavior. Associate controlled probes and later verification calls by exact IDs.
+- If a lesson is subsequently edited or disabled, record that change and its revision without rewriting the historical call's resource digest or observed status.
+
+Publish sanitized retrospective files through the existing Mac runner and verify each exact file against `GET /api/calls/<call-id>` → `retrospective.text`. Notes refresh through the existing Journal read path. Preserve any existing retrospective and concurrent changes, and keep owner feedback in its dedicated feedback channel. Raw conversations, recordings, credentials and model snapshots belong in the protected local stores.
+
+The retrospective links lifecycle evidence to the automatic runtime trace. This version still requires an operator to record dream/publication milestones; the memory worker does not automatically write Journal notes. A live `loaded` trace establishes resource preparation and rendering. Report provider-request reconstruction and behavioral observations according to the evidence actually retained.
+
+The first complete record is `journal/retros/out-mwd5kg3p-fixg.md`, with earlier stages on `out-mwcylt0w-y3eg` and `out-mwd4vx8b-ak45`.
