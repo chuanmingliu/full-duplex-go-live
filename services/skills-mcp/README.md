@@ -109,3 +109,7 @@ For a later check, run `python3 smoke.py` in the installed release directory. It
 ## Callback response templates
 
 The panel's **Callback responses** section maintains spoken confirmation lines for the trusted `addV` event. Published changes are served through `golive://event-responses/addV` and take effect at the next callback, including during an existing call. The Active Call engine preserves normal floor ownership, interruption guards and quotation scheduling. See the [tracking callback runbook](../../docs/services/tracking-events.md#configurable-callback-speech).
+
+## Optional dreaming memory
+
+[Dreaming memory v1](MEMORY.md) stores completed-call evidence locally, reviews it in a deferred worker, and publishes owner-reviewed lessons through this service's existing MCP skill contract. It is disabled by default.
