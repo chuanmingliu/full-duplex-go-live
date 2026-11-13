@@ -1,5 +1,7 @@
 # Dreaming memory v1
 
+For the complete mechanism and a local demonstration, see [Skill lifecycle and dreaming memory](../../docs/architecture/12-skill-mechanism.md).
+
 An optional, local experience store and deferred review worker for the existing
 skills-over-MCP service. Nothing is enabled without `GOLIVE_DREAM_DB`. The voice
 engine, saved prompt, call routing, and authoritative business tools are unchanged.
