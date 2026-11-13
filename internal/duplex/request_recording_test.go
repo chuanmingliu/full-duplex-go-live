@@ -77,4 +77,5 @@ func TestSessionRequestRecordingIncludesRenderedSkill(t *testing.T) {
 	if !bytes.Equal(saved, wire) || !bytes.Contains(saved, []byte("原始业务提示")) || !bytes.Contains(saved, []byte("Ask the caller to open WeChat")) {
 		t.Fatal("recording lost exact wire bytes, original prompt or rendered skill")
 	}
+	t.Logf("RECORD: exact HTTP body verified (%d bytes); session=%s turn=%s response=%s purpose=%s outcome=%s", len(saved), metadata.SessionID, metadata.TurnID, metadata.ResponseID, metadata.Purpose, metadata.Outcome)
 }
