@@ -71,6 +71,10 @@ type Turn struct {
 	skillScope string
 	// skillPending is owned by the engine loop, like pending tool responses.
 	skillPending int
+	// Immutable provenance for synchronous tool speech; inherited across its chain.
+	continuationOrigin taskOrigin
+	// A generated quote acknowledgment finishes naturally unless the caller interrupts.
+	waitingTask string
 
 	// Transcript is the user text this revision was generated from.
 	Transcript string

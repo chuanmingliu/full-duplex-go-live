@@ -14,11 +14,12 @@ import sys
 
 MESSAGE = "turn: response latency"
 TOOL_DELIVERY = "tools: delivering a task's result"
+CONTINUATION = "tools: continuing with function results"
 COALESCED_DELIVERY = "tools: delivering a coalesced task result"
 OUTPUT_STARTED = "transcript: assistant segment started"
 NONANSWER_MESSAGES = ("speak: the opener became a backchannel; the caller went on",
                       "speak: opening line", "speak: greeting")
-EVIDENCE_MESSAGES = (MESSAGE, TOOL_DELIVERY, COALESCED_DELIVERY, OUTPUT_STARTED, *NONANSWER_MESSAGES)
+EVIDENCE_MESSAGES = (MESSAGE, TOOL_DELIVERY, COALESCED_DELIVERY, CONTINUATION, OUTPUT_STARTED, *NONANSWER_MESSAGES)
 
 
 def integer(row, key):
@@ -146,6 +147,7 @@ def join_tool_results(records, links, counts):
     Wall-clock timestamps and adjacency are deliberately never consulted.
     """
     by_turn, by_task, by_origin, by_result = {}, Counter(), Counter(), Counter()
+    original_rows = {id(row): dict(row) for row in records}
     primary_links = [link for link in links if link["msg"] == TOOL_DELIVERY]
     coalesced_links = [link for link in links if link["msg"] == COALESCED_DELIVERY]
     extra_origins = Counter((str(link.get("session", "")), str(link.get("origin_turn", "")))
@@ -165,16 +167,17 @@ def join_tool_results(records, links, counts):
         counts["invalid_tool_links"] += 1
         counts["unverified"] += 1
 
-    def validate(link):
+    def validate(link, continuation=False):
         if any(not isinstance(link.get(key), str) or not link[key]
-               for key in ("session", "task", "turn", "origin_turn")):
+               for key in (("session", "turn", "origin_turn") if continuation else ("session", "task", "turn", "origin_turn"))):
             return None
-        session, task = link["session"], link["task"]
+        session, task = link["session"], link.get("task", "")
         origin_key, result_key = (session, link["origin_turn"]), (session, link["turn"])
         origins, children = by_turn.get(origin_key, []), by_turn.get(result_key, [])
         if len(origins) > 1 or origin_key == result_key:
             return None
-        origin = origins[0] if origins else {}
+        live_origin = origins[0] if origins else {}
+        origin = original_rows[id(live_origin)] if origins else {}
         timing_keys = ("origin_timing_version", "origin_speech_end_ms", "origin_end_silence_ms")
         input_timing = any(key in link for key in timing_keys)
         input_pause = canonical_integer(link, "origin_end_silence_ms")
@@ -207,6 +210,13 @@ def join_tool_results(records, links, counts):
         cancelled_origin = original_content is False and boolean(origin, "truncated") is True
         if not input_timing and (not has_origin_audio or cancelled_origin):
             return None
+        if (continuation and boolean(child, "first_audio_present") is False and
+                boolean(child, "first_content_present") is False and
+                boolean(child, "response_to_speech") is False and
+                canonical_integer(child, "end_silence_ms") == 0 and
+                boolean(child, "opened") is not None and boolean(child, "truncated") is not None and
+                pause is not None and pause >= 0 and latency_sum(pause, offset) is not None):
+            return live_origin, child, None
         if (pause is None or pause < 0 or
                 boolean(child, "response_to_speech") is not False or
                 boolean(child, "first_audio_present") is not True or
@@ -232,7 +242,40 @@ def join_tool_results(records, links, counts):
                             interrupted=boolean(child, "truncated"))
         if input_timing:
             result["origin_evidence"] = "caller_input_v1"
-        return origin, child, result
+        return live_origin, child, result
+
+    continuation_rows = []
+    continuation_links = [link for link in links if link["msg"] == CONTINUATION]
+    continuation_children = Counter((link.get("session"), link.get("turn")) for link in continuation_links)
+    for link in sorted(continuation_links, key=lambda item: canonical_integer(item, "origin_to_result_start_ms") or 0):
+        identity = (link.get("session"), link.get("turn"))
+        validated = validate(link, continuation=True)
+        if validated is None or continuation_children[identity] != 1:
+            invalid()
+            continue
+        origin, child, result = validated
+        if result is None:
+            continue
+        result.pop("task")
+        continuation_rows.append(result)
+        if origin and boolean(origin, "truncated") is False:
+            audio_offset = result["origin_to_result_start_ms"] + canonical_integer(child, "first_audio_out_ms")
+            if boolean(origin, "first_audio_present") is False:
+                origin["first_audio_present"] = True
+                origin["first_audio_out_ms"] = audio_offset
+                origin["_continuation_audio_joined"] = True
+            elif origin.get("_continuation_audio_joined"):
+                origin["first_audio_out_ms"] = min(origin["first_audio_out_ms"], audio_offset)
+            offset = result["origin_to_result_start_ms"] + result["child_first_content_ms"]
+            if boolean(origin, "first_content_present") is False:
+                origin["first_content_present"] = True
+                origin["first_content_ms"] = offset
+                origin["_continuation_joined"] = True
+                origin["_continuation_interrupted"] = result["interrupted"]
+                counts["continuations_joined"] += 1
+            elif origin.get("_continuation_joined") and offset < origin["first_content_ms"]:
+                origin["first_content_ms"] = offset
+                origin["_continuation_interrupted"] = result["interrupted"]
 
     def add(link, validated):
         origin, child, result = validated
@@ -287,7 +330,7 @@ def join_tool_results(records, links, counts):
         key = (str(child.get("session", "")), str(child.get("turn", "")))
         if boolean(child, "quote_result") is True and by_result[key] == 0:
             counts["quote_readouts_unverified"] += 1
-    return results, readouts
+    return results, readouts, continuation_rows
 
 
 def distribution(values, target):
@@ -306,7 +349,7 @@ def analyse(lines, pause, target):
         "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause",
         "tool_result_links", "tool_results_joined", "invalid_tool_links",
         "quote_readouts_missing", "quote_readouts_unverified", "missing_output_records",
-        "quote_only_responses")})
+        "quote_only_responses", "continuations_joined")})
     seen, rows, audio, content, reply = set(), [], [], [], []
     conversational_content = []
     records, links = [], []
@@ -336,7 +379,7 @@ def analyse(lines, pause, target):
                       if not identity[1].startswith("bc_")}
     counts["missing_output_records"] = len(missing_output)
     counts["unverified"] += len(missing_output)
-    tool_results, quote_readouts = join_tool_results(records, links, counts)
+    tool_results, quote_readouts, continuations = join_tool_results(records, links, counts)
     for row in records:
         counts["records"] += 1
         identity = (str(row.get("session", "")), str(row.get("turn", "")))
@@ -362,7 +405,8 @@ def analyse(lines, pause, target):
         legacy = spoken is None or audio_present is None or content_present is None or opened is None
         if opened is None:
             opened = opener_ms is not None and opener_ms > 0
-        truncated = boolean(row, "truncated") is True or row.get("_tool_result_interrupted") is True
+        truncated = (boolean(row, "truncated") is True or row.get("_tool_result_interrupted") is True or
+                     row.get("_continuation_interrupted") is True)
         if truncated and (audio_present is False or content_present is False):
             # An opener cut off before any answer is a backchannel, not an answer.
             counts["cancelled"] += 1
@@ -429,6 +473,8 @@ def analyse(lines, pause, target):
                 tool_result=distribution([r["total_ms"] for r in tool_results], target),
                 tool_result_scope="last_sound_to_linked_result_first_content_may_include_posthook",
                 tool_result_rows=tool_results,
+                continuation_rows=continuations,
+                continuation_content=distribution([r["total_ms"] for r in continuations], target),
                 non_quote_tool_result=distribution([r["total_ms"] for r in tool_results if not r["quotation"]], target),
                 quote_readout=distribution([r["total_ms"] for r in quote_readouts if r["status"] == "observed"], target),
                 quote_readout_scope="last_sound_to_deterministic_quote_readout_output",

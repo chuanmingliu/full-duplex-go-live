@@ -54,6 +54,7 @@ type pendingResponse struct {
 	// scriptedTask is the task the ack is for: finished already when the
 	// ack is due, it is not said.
 	scriptedTask string
+	generatedAck bool
 	// server: the engine's own tools made the calls (onServerCalls), and
 	// the continuation is the engine's to retire when the caller has gone
 	// on. A client's function result (ContinueResponse) is the point of
@@ -838,11 +839,9 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		return
 	}
 
-	if p.scripted != "" {
-		// The owner's words for the wait, in place of resuming the model —
-		// but only if there is a wait: a task that is done within the grace
-		// (a `need` from the rules takes 15 ms) gets no "请您稍等" (the owner,
-		// 22:31 on 10-23); its result is delivered as usual.
+	if p.scripted != "" || p.generatedAck {
+		// Both configured and generated acknowledgments wait for the same
+		// ready-result grace. Fast results go directly to their readout.
 		ts := e.tools
 		if ts == nil {
 			return
@@ -863,14 +862,25 @@ func (e *Engine) startContinuation(p *pendingResponse) {
 		e.log.Info("tools: a coalesced follow-up is answered by its task result", "turn", p.turn.ID, "task", task.ID, "calls", len(p.calls))
 		return
 	}
+	e.resumeToolSpeech(p)
+}
+
+func (e *Engine) resumeToolSpeech(p *pendingResponse) {
 	turn := e.tracker.Begin("", false)
 	turn.skillScope = skillScope(p.turn)
 	turn.DelegationID = p.delegationID
+	turn.continuationOrigin = taskOriginFromTurn(p.turn)
+	if p.generatedAck {
+		turn.waitingTask = p.scriptedTask
+	}
 	e.specTurn = nil
 	e.commitTurn(turn)
-	e.log.Debug("think: resuming the backend with function results",
-		"delegation", p.delegationID, "turn", turn.ID, "calls", len(p.calls),
-		"waited_ms", time.Since(p.createdAt).Milliseconds())
+	attrs := []any{"delegation", p.delegationID, "turn", turn.ID, "calls", len(p.calls), "waited_ms", time.Since(p.createdAt).Milliseconds()}
+	if origin := turn.continuationOrigin; !origin.speechEndAt.IsZero() {
+		attrs = origin.appendTiming(attrs, turn)
+		e.log.Info("tools: continuing with function results", attrs...)
+	}
+	e.log.Debug("think: resuming the backend with function results", attrs...)
 	e.beginGeneration(turn, "tool_result", false)
 }
 
@@ -887,6 +897,10 @@ func (e *Engine) sayAck(p *pendingResponse) {
 	}
 	delete(ts.ackPending, p.scriptedTask)
 	delete(ts.ackGraceStarted, p.scriptedTask)
+	if p.generatedAck && e.continuationSuperseded(p) {
+		e.maybeDeliver()
+		return
+	}
 	if ts.tasks[p.scriptedTask] == nil {
 		// Done within the grace: no "请您稍等" for a wait that did not happen.
 		// The owner's rule of 23:15 on 10-23 had a quick real result still
@@ -914,6 +928,10 @@ func (e *Engine) sayAck(p *pendingResponse) {
 			return
 		}
 		e.log.Info("tools: the task finished while its ack waited for the floor; not saying it", "task", p.scriptedTask)
+		return
+	}
+	if p.generatedAck {
+		e.resumeToolSpeech(p)
 		return
 	}
 	origin := ts.origins[p.scriptedTask]
@@ -1158,6 +1176,10 @@ func (e *Engine) drainDeferred() {
 			// (startContinuation clears specTurn), a whole backend round
 			// on top of the stale answer.
 			if p.server && e.continuationSuperseded(p) {
+				if p.generatedAck {
+					delete(e.tools.ackPending, p.scriptedTask)
+					delete(e.tools.ackGraceStarted, p.scriptedTask)
+				}
 				e.continuations[0] = nil
 				e.continuations = e.continuations[1:]
 				e.recordContinuation(p)

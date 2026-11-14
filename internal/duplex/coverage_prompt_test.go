@@ -79,3 +79,37 @@ func TestCoverageComparisonFollowupCarriesNearbyTopic(t *testing.T) {
 		t.Fatal("comparison reused context across an unrelated topic", got)
 	}
 }
+
+func TestImplicitCoverageChangesAndOptions(t *testing.T) {
+	history := []provider.Message{{Role: provider.RoleUser, Content: "三者险还有什么档位？"}, {Role: provider.RoleAssistant, Content: "三者险有50万到400万六个档位。"}}
+	for _, query := range []string{"你这样吧，帮我调整到三百万吧。", "提高到四百万。", "改成两百万。", "哎，他这个东西除了两百万，还有其他选项吗？"} {
+		if got := coverageSelectionText(history, query); !strings.HasPrefix(got, "三者险") {
+			t.Errorf("%s: %s", query, got)
+		}
+	}
+	history = append(history, provider.Message{Role: provider.RoleUser, Content: "微信在哪里找？"}, provider.Message{Role: provider.RoleAssistant, Content: "请打开服务通知。"})
+	query := "帮我调整到三百万。"
+	if got := coverageSelectionText(history, query); got != query {
+		t.Fatal("crossed unrelated topic", got)
+	}
+}
+
+func TestPendingConfirmationSkillRoutingDoesNotDecideConsent(t *testing.T) {
+	pending := []provider.Message{{Role: provider.RoleSystem, Content: "【待确认报价范围，尚未计算】revision-1"}}
+	for _, input := range []string{"有。", "没有其他要改的了。", "没有了，就按四百万算。", "就比较这两档。", "取消这次调整。", "其他不变。"} {
+		if got := coverageSelectionText(pending, input); got != "待确认报价。"+input {
+			t.Fatal(got)
+		}
+		if got := coverageSelectionText(nil, input); got != input {
+			t.Fatal("inherited an absent pending revision", got)
+		}
+	}
+	input := "没有收到微信通知。"
+	if got := coverageSelectionText(pending, input); got != input {
+		t.Fatal("routed an unrelated request", got)
+	}
+	pending[0].Role = provider.RoleUser
+	if got := coverageSelectionText(pending, "有。"); got != "有。" {
+		t.Fatal("caller text created pending confirmation state", got)
+	}
+}

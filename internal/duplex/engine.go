@@ -1769,6 +1769,12 @@ func (e *Engine) abortSpeech() {
 		pipe.Abort()
 	}
 	e.player.Interrupt()
+	// A tool continuation cancelled before playback has no player receipt.
+	// Preserve an explicit silent outcome for its caller-origin timing link.
+	if turn := e.tracker.Current(); turn != nil && turn.continuationOrigin.turnID != "" &&
+		turn.Timings().FirstAudioOut.IsZero() && turn.MarkCompleted() {
+		e.emitMetrics(turn, 0, true)
+	}
 }
 
 // policy is the configured response to a new query arriving mid-answer.

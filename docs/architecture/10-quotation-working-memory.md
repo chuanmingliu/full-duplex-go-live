@@ -284,3 +284,37 @@ The optional [full motor catalog](11-full-motor-coverage.md) adds canonical amou
 ### Comparing every configured tier
 
 Active Call can request `quote_total({"compare_coverage":"三者险"})` to expand all tiers from the effective activity catalog before backend dispatch. This produces the existing `configs` comparison shape and does not commit a new selection. Explicit subsets still use `configs`; never combine the shorthand with `config` or `configs`. The standalone MCP tool continues to accept its existing arguments. See [the comparison and recovery note](../telephony/2026-11-12-coverage-repair.md).
+
+
+## Confirmation continuation timing and waiting speech
+
+When a state-only tool result requires another model round, the continuation
+retains the original caller turn ID and monotonic input timing. The engine emits
+`tools: continuing with function results` with the child turn ID,
+`origin_to_result_start_ms`, and versioned caller-input provenance. A nested
+continuation keeps that same root input.
+
+Call Journal evidence version 6 and `scripts/call_latency.py` join this offset
+to the child's first content and add the original endpoint pause once. A
+confirmation question therefore includes the time spent selecting skills,
+generating the tool call, executing it and generating the question. The Journal
+shows these links under confirmation and tool continuation timing. Malformed,
+duplicate and overflowing links remain unverified. A validated silent child
+contributes no response sample. A continuation cancelled before its first audio
+gets an explicit silent completion record. Existing archives require the explicit
+link to recover this measurement.
+
+After an approved revision, generated waiting speech uses the same 400 ms
+ready-result grace as configured acknowledgments. A result already ready during
+that grace suppresses the waiting response. Once the generated response owns the
+floor, its own result waits for the phrase to finish. Caller interruption still
+cancels that speech through the usual interruption path. If a repeated confirmation
+starts another caller response while quotation is pending, a ready quotation
+finishes the current speaking segment before taking the floor. Quotation execution
+and quoted-figure output keep their separate timing evidence.
+
+Short adjustments such as “帮我调整到三百万” can inherit a nearby coverage label
+for skill selection. An unrelated caller turn ends that context. The current
+utterance still controls requested changes and confirmation. Existing custom
+MCP catalogs retain their operator-owned match rules, so publishing updated
+routing rules remains a separate catalog update during deployment.

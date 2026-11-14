@@ -18,6 +18,13 @@
         (incomplete ? e.missing + ' responses missing timing; ' + e.unverified + ' unverified records or links; ' + e.duplicates + ' duplicate records. This sample cannot pass the latency gate. ' : '') +
         (d.n < 20 ? 'Fewer than 20 responses: insufficient samples for the strict gate. ' : '') +
         'These measurements stop at server output; handset latency remains unmeasured.'),
+      (e.continuation_rows || []).length ? h('div', null,
+        h('h3', null, 'Confirmation and tool continuation timing'),
+        h('p', { class: 'standing-note' }, 'Each continuation retains the caller’s original clock, including earlier model and tool rounds.'),
+        e.continuation_rows.map(function (row) {
+          return h('p', { class: 'standing-note' }, row.origin_turn + ' → ' + row.result_turn + ' · ' +
+            ms(row.total_ms) + ' including endpoint pause ' + ms(row.end_silence_ms));
+        })) : null,
       h('h3', null, 'Caller’s last sound → linked result first content'),
       result && result.n ? h('div', null,
         h('p', { class: 'num' }, 'p50 ' + ms(result.p50_ms) + ' · p95 ' + ms(result.p95_ms) + ' · worst ' + ms(result.max_ms)),

@@ -470,11 +470,11 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			out, taskID, coalesced := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
 			p.noteCoalescedCall(c.ID, coalesced)
-			if taskID != "" && t.Ack != "" && p.scripted == "" {
+			if taskID != "" && (t.Ack != "" || e.confirmsQuoteRevisions() && confirmedQuoteCall(c)) && p.scriptedTask == "" {
 				p.scriptedTask = taskID
-				// The owner's words for the wait, not the model's: said from
-				// the phrase cache once the model's own sentence has played,
-				// and the model is not resumed until the result comes.
+				p.generatedAck = t.Ack == ""
+				// Keep configured wording in the phrase cache. Confirmed
+				// revisions with no fixed Ack resume the model after the grace.
 				p.scripted = t.Ack
 				if ts.ackPending == nil {
 					ts.ackPending = map[string]bool{}
@@ -488,7 +488,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			wait = append(wait, c)
 		}
 	}
-	if p.scripted != "" {
+	if p.scripted != "" || p.generatedAck {
 		// The model was told to say nothing in the turn that calls the tool;
 		// when it talks anyway ("好的，我帮您看一下基本方案", 4.2 s on the 20:35
 		// call of 10-25, with the default quotation ready at once behind it),
@@ -1012,9 +1012,15 @@ func (e *Engine) maybeDeliver() {
 	if busy && waited < wait {
 		return
 	}
-	if cur := e.tracker.Current(); busy && cur != nil && cur.Scripted && e.assistantHasFloor() {
+	if cur := e.tracker.Current(); busy && cur != nil && (cur.Scripted || cur.waitingTask == task.ID) && e.assistantHasFloor() {
 		// The ack for this very task is still being said; the result waits
 		// for it to finish rather than cutting "请您稍等" in half.
+		return
+	}
+	if busy && task.Tool.Name == "quote_total" && e.speaking.Load() {
+		// A repeated confirmation can start a new caller response while
+		// pricing runs. Finish its speaking segment before the result handoff.
+		e.softInterrupt()
 		return
 	}
 	ts.deliveries[0] = taskDelivery{}
@@ -1220,8 +1226,9 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 			out, taskID, coalesced := e.submitTask(job, c, t)
 			p.outputs[c.ID] = out
 			p.noteCoalescedCall(c.ID, coalesced)
-			if taskID != "" && t.Ack != "" && p.scripted == "" {
+			if taskID != "" && (t.Ack != "" || e.confirmsQuoteRevisions() && confirmedQuoteCall(c)) && p.scriptedTask == "" {
 				p.scriptedTask = taskID
+				p.generatedAck = t.Ack == ""
 				p.scripted = t.Ack
 				if e.tools.ackPending == nil {
 					e.tools.ackPending = map[string]bool{}

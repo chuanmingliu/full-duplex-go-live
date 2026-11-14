@@ -186,3 +186,13 @@ func TestQuotationConfirmationRouting(t *testing.T) {
 		}
 	}
 }
+
+func TestContextualQuotationFollowupRouting(t *testing.T) {
+	c := defaults()
+	for _, text := range []string{"就是最低报价多少钱啊。", "三者险。你这样吧，帮我调整到三百万吧。", "三者险。提高到四百万。", "我还想去掉车损险。", "车损险不要了。", "不带车损。", "待确认报价。没有其他要改的了。", "待确认报价。有。"} {
+		skills, _, err := c.selectTurn(turnInput{Event: "auto", Utterance: text})
+		if err != nil || len(skills) != 1 || skills[0].Name != "motor-quotation" {
+			t.Errorf("%s: skills=%v err=%v", text, skills, err)
+		}
+	}
+}

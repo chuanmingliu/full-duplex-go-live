@@ -30,7 +30,7 @@ func (e *Engine) releaseCompletedCallingAck(taskID string) {
 		return
 	}
 	p := e.continuations[0]
-	if p.scripted == "" || p.scriptedTask != taskID || !p.complete() || p.turn == nil {
+	if (p.scripted == "" && !p.generatedAck) || p.scriptedTask != taskID || !p.complete() || p.turn == nil {
 		return
 	}
 	reason := "playback_completed"

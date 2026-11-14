@@ -10,7 +10,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/tools"
 )
 
-const quoteConfirmationInstructions = `本通话开启后续报价确认。已有报价后，客户改保障、问新方案价格或要求比较档位，都先简短复述待报价范围并自然询问是否还有其他保障要调整，并在同一轮必须调用一次 quote_total 登记，不能只问不保存；这时只保存，不启动计算。修改选定方案用 config；假设或比较用 configs（全部档位也可用 compare_coverage），确认比较不会修改已选方案。收到 awaiting_confirmation 后，本轮已经问过就不要重复，否则补问。后续修改比较范围时传完整更新后的 configs；改为选定一个方案才用 config。只说具体险种和选项，不概括改动项数；结合上下文变换措辞，不机械重复上一句，不说已经在计算。只有客户在后续发言明确确认报价范围全部确定，才传 revision_action="confirm" 和当前 revision_id，不再传 config/configs。按上一问理解回答：“还有别的要改吗”的“有”表示还有改动，“没有了，就这样”表示结束调整。含糊回答先澄清，不从沉默或无关肯定推断同意。客户仅说“车损再改改”或“算一下这些”且具体选项尚不明确时，先按活动目录问清是否投保等具体选择，不能猜测保额或直接计算。取消用 revision_action="cancel" 和当前 revision_id。不得用 update_memory.quote 绕过确认。首次报价仍用原流程。确认后计算中的简短回应由你按上下文表达，避免重复固定等待话术。`
+const quoteConfirmationInstructions = `本通话开启后续报价确认。已有报价后，客户改保障、问新方案价格或要求比较档位，都先简短复述待报价范围并自然询问是否还有其他保障要调整，并在同一轮必须调用一次 quote_total 登记，不能只问不保存；这时只保存，不启动计算。已有待确认范围时，客户每次增加或删除保障，必须先调用 quote_total 更新登记，再依据返回的完整待确认范围复述；口头说已调整不等于保存。例如已有三者300万待确认，客户说“我还想去掉车损险”，先传 config={"车损险":false}，不能沿用旧 revision_id 直接确认。修改选定方案用 config；假设或比较用 configs（全部档位也可用 compare_coverage），确认比较不会修改已选方案。收到 awaiting_confirmation 后，本轮已经问过就不要重复，否则补问。后续修改比较范围时传完整更新后的 configs；改为选定一个方案才用 config。只说具体险种和选项，不概括改动项数；结合上下文变换措辞，不机械重复上一句，不说已经在计算。只有客户在后续发言明确确认报价范围全部确定，才传 revision_action="confirm" 和当前 revision_id，不再传 config/configs。按上一问理解回答：“还有别的要改吗”的“有”表示还有改动，“没有了，就这样”表示结束调整。含糊回答先澄清，不从沉默或无关肯定推断同意。客户仅说“车损再改改”或“算一下这些”且具体选项尚不明确时，先按活动目录问清是否投保等具体选择，不能猜测保额或直接计算。取消用 revision_action="cancel" 和当前 revision_id。不得用 update_memory.quote 绕过确认。首次报价仍用原流程。确认后计算中的简短回应由你按上下文表达，避免重复固定等待话术。`
 
 type pendingQuoteRevision struct {
 	ID          string           `json:"revision_id"`
@@ -65,13 +65,17 @@ func (e *Engine) confirmationTool(t tools.Tool, c provider.ToolCall) tools.Tool 
 	if c.Name != "quote_total" || !e.confirmsQuoteRevisions() {
 		return t
 	}
-	var args struct {
-		Action string `json:"revision_action"`
-	}
-	if json.Unmarshal([]byte(c.Arguments), &args) == nil && args.Action == "confirm" {
+	if confirmedQuoteCall(c) {
 		t.Ack = ""
 	}
 	return t
+}
+
+func confirmedQuoteCall(c provider.ToolCall) bool {
+	var args struct {
+		Action string `json:"revision_action"`
+	}
+	return c.Name == "quote_total" && json.Unmarshal([]byte(c.Arguments), &args) == nil && args.Action == "confirm"
 }
 
 func (e *Engine) quoteConfirmationPrompt() string {

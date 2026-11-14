@@ -3,6 +3,9 @@ package duplex
 // Capture the originating input once, independently of whether its speculative
 // answer ever plays. Never borrow the engine's current caller clock at delivery.
 func taskOriginFromTurn(turn *Turn) taskOrigin {
+	if turn.continuationOrigin.turnID != "" {
+		return turn.continuationOrigin
+	}
 	timing := turn.Timings()
 	return taskOrigin{turnID: turn.ID, speechEndAt: timing.SpeechEndAt,
 		inputKnown:  !timing.SpeechEndAt.IsZero() && timing.SpeechEndMS >= 0 && timing.EndSilenceMS >= 0,

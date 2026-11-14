@@ -81,6 +81,61 @@ class CallLatencyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 2, result.stderr)
         return result.returncode, json.loads(result.stdout)
 
+    def test_synchronous_confirmation_chain_is_measured(self):
+        origin, child = tool_pair(first_content_ms=655)
+        link = input_delivery(msg="tools: continuing with function results", origin_to_result_start_ms=508)
+        link.pop("task")
+        _, report = self.run_report([origin, child, link])
+        self.assertEqual(report["first_content"]["p95_ms"], 1543)
+        self.assertEqual(report["counts"]["missing"], 0)
+        self.assertEqual(report["counts"]["continuations_joined"], 1)
+        self.assertEqual(report["tool_result"]["n"], 0)
+        _, interrupted = self.run_report([origin, dict(child, truncated=True), link])
+        self.assertEqual(interrupted["counts"]["interrupted_answers"], 1)
+        origin["first_audio_present"] = False
+        _, report = self.run_report([origin, child, link])
+        self.assertEqual(report["first_audio"]["p95_ms"], 888)
+        for offset in (-1, 2**63-1):
+            _, report = self.run_report([origin, child, dict(link, origin_to_result_start_ms=offset)])
+            self.assertGreater(report["counts"]["invalid_tool_links"], 0)
+        _, report = self.run_report([origin, child, link, link])
+        self.assertEqual(report["counts"]["invalid_tool_links"], 2)
+
+    def test_continuations_choose_earliest_observed_output(self):
+        origin = turn(1, first_audio_present=False, first_content_present=False)
+        children = [turn(2, response_to_speech=False, end_silence_ms=0, first_audio_out_ms=800, first_content_ms=900),
+                    turn(3, response_to_speech=False, end_silence_ms=0, first_audio_out_ms=0, first_content_ms=100)]
+        links = [input_delivery(msg="tools: continuing with function results", origin_to_result_start_ms=400),
+                 input_delivery(msg="tools: continuing with function results", turn="item_3", origin_to_result_start_ms=600)]
+        for events in (children + links, list(reversed(children + links))):
+            _, report = self.run_report([origin] + events)
+            self.assertEqual(report["counts"]["invalid_tool_links"], 0)
+            self.assertEqual(report["first_audio"]["p95_ms"], 980)
+            self.assertEqual(report["first_content"]["p95_ms"], 1080)
+
+    def test_silent_continuation_validates_provenance(self):
+        origin, child = tool_pair(first_audio_present=False, first_content_present=False)
+        link = input_delivery(msg="tools: continuing with function results")
+        _, report = self.run_report([origin, child, link])
+        self.assertEqual(report["counts"]["invalid_tool_links"], 0)
+        self.assertEqual(report["counts"]["missing"], 1)
+        for invalid in (dict(link, origin_to_result_start_ms=-1), dict(link, origin_turn="item_2")):
+            _, report = self.run_report([origin, child, invalid])
+            self.assertEqual(report["counts"]["invalid_tool_links"], 1)
+        _, report = self.run_report([origin, child, link, link])
+        self.assertEqual(report["counts"]["invalid_tool_links"], 2)
+
+    def test_confirmation_ack_remains_before_quotation_result(self):
+        origin, child = tool_pair(first_content_ms=600)
+        link = input_delivery(msg="tools: continuing with function results", origin_to_result_start_ms=500)
+        quote = turn(3, response_to_speech=False, end_silence_ms=0, quote_result=True,
+                     readout_expected=True, first_readout_present=True, first_readout_ms=200, first_content_ms=100)
+        _, report = self.run_report([origin, child, link, quote, delivery(child=3, origin_to_result_start_ms=2000)])
+        self.assertEqual(report["counts"]["invalid_tool_links"], 0)
+        self.assertEqual(report["counts"]["quote_only_responses"], 0)
+        self.assertEqual(report["first_content"]["p95_ms"], 1480)
+        self.assertEqual(report["quote_readout"]["p95_ms"], 2580)
+
     def test_input_origin_times_quote_without_inventing_conversation(self):
         _, child = quote_pair(first_content_ms=100, first_readout_ms=1000)
         rows = [turn(i) for i in range(100, 120)] + [child, input_delivery(origin_to_result_start_ms=5000)]

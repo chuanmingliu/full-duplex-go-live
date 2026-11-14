@@ -236,7 +236,12 @@ def test_analysis_separates_quotes_normal_and_other_sessions(ops, monkeypatch):
     rows = [fixture.turn(i) for i in range(100, 120)]
     _, child = fixture.quote_pair(first_content_ms=200, first_readout_ms=400)
     rows += [child, fixture.input_delivery(origin_to_result_start_ms=5000),
-             fixture.turn(30, first_content_ms=100),
+             fixture.turn(30, first_content_present=False, first_content_ms=0),
+             fixture.turn(31, first_content_present=False, first_content_ms=0),
+             fixture.turn(32, response_to_speech=False, end_silence_ms=0, first_content_ms=200),
+             fixture.turn(33, response_to_speech=False, end_silence_ms=0, first_content_ms=200),
+             fixture.input_delivery(origin_turn="item_31", turn="item_32", msg="tools: continuing with function results", origin_to_result_start_ms=500),
+             fixture.input_delivery(origin_turn="item_30", turn="item_33", msg="tools: continuing with function results", origin_to_result_start_ms=600),
              {"msg": "tools: task submitted", "session": "sess_test", "turn": "item_30", "tool": "quote_total"}]
     for row in rows:
         row["session"] = "sess-test"
@@ -247,9 +252,12 @@ def test_analysis_separates_quotes_normal_and_other_sessions(ops, monkeypatch):
     manifest["files"]["golive.log"] = {"bytes": log.stat().st_size, "sha256": worker.sha(log)}
     (directory / "manifest.json").write_text(json.dumps(manifest))
     result = ops.analyze("out-test", owner_done=True, handset_estimate=True)
-    assert result["normal_first_content"]["n"] == 20
+    assert result["normal_first_content"]["n"] == 21
+    assert result["normal_first_content"]["max_ms"] == 1080
+    assert result["counts"]["continuations_joined"] == 2
     assert result["normal_first_content"]["p95_ms"] == 880
     assert result["quotation_acknowledgment"]["n"] == 1
+    assert result["quotation_acknowledgment"]["p95_ms"] == 1180
     assert result["quotation_result"]["p95_ms"] == 5580
     assert result["quotation_readout"]["p95_ms"] == 5780
     assert result["normal_gate"]["passed"] is True

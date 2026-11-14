@@ -117,7 +117,7 @@ func TestInputTimingEvidenceUpgradeDoesNotDoubleCountMissingOutput(t *testing.T)
 	c.Latency.MissingOutputRecords = 1
 	c.Latency.Unverified = 1
 	e := NewServer(Config{}).withLatencyEvidence(c).Latency
-	if e.Version != 5 || e.Unverified != 1 || e.MissingOutputRecords != 1 {
+	if e.Version != 6 || e.Unverified != 1 || e.MissingOutputRecords != 1 {
 		t.Fatalf("old overlay counted twice: %+v", e)
 	}
 }

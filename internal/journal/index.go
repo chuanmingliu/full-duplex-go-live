@@ -391,6 +391,7 @@ type callBuild struct {
 	copyWins            map[int]int
 	openerScenarios     map[string]string
 	deliveries          []Line
+	continuations       []Line
 	coalescedDeliveries []Line
 	transcriptLog       bool
 	transcriptSeq       int
@@ -850,6 +851,8 @@ func (ix *Indexer) Feed(l Line) {
 			st.Kind = "other"
 		}
 		cb.call.Quotation = append(cb.call.Quotation, st)
+	case "tools: continuing with function results":
+		cb.continuations = append(cb.continuations, l)
 	case "tools: delivering a task's result":
 		cb.deliveries = append(cb.deliveries, l)
 		if id := l.Get("turn"); id != "" {

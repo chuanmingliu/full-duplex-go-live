@@ -52,7 +52,11 @@ pricing alternatives; it does not select one or change the confirmed policy.
    finish with only a question; the pending request must be saved.
    An `awaiting_confirmation` result means pricing has not started. If the
    question has already been spoken this turn, do not ask it a second time.
-3. Collect additional changes. For comparisons, send the complete updated
+3. Save each additional change with another staging `quote_total` call before
+   describing it as part of the pending scope. A spoken acknowledgment does not
+   update the pending request. For example, with 300万 already pending, “我还想
+   去掉车损险” requires `{"config":{"车损险":false}}`. Use the returned pending
+   scope for the confirmation question. For comparisons, send the complete updated
    `configs` including all shared changes in every relevant alternative. Use
    `config` only when the caller is choosing a revised policy. Do not silently
    turn exploration into a purchase or policy-selection decision.
@@ -94,3 +98,8 @@ Do not say the premium is being calculated before approval. Do not mechanically
 repeat “保费正在计算中”. For a request with unresolved choices, ask about those
 choices instead of using a generic waiting message. When this host contract is
 absent, retain its original tool parameters and configured acknowledgment flow.
+
+Keep a confirmation question short. Name the actual changes, summarize the rest
+as “其他保障保持不变”, and ask one question. Avoid rereading every unchanged
+coverage. Stage the pending revision in that same response. If the caller adds
+another change, vary the question while accurately preserving earlier changes.
