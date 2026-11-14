@@ -1,0 +1,159 @@
+{
+  "scope": "Server timing, excluding verified quotation-only readouts. Segment/TTS stamps can refer to the cached opener, not the main content stage; no handset inference.",
+  "calls": [
+    {
+      "call": "out-mvxk9u0n-11lw",
+      "normal_content_tail": [
+        {
+          "turn": "item_33",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "464",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "280",
+          "truncated": "false",
+          "total_content_ms": 1279,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 899
+        },
+        {
+          "turn": "item_19",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "573",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "300",
+          "truncated": "false",
+          "total_content_ms": 1157,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 777
+        },
+        {
+          "turn": "item_16",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "459",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "330",
+          "truncated": "true",
+          "total_content_ms": 1101,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 721
+        },
+        {
+          "turn": "item_10",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "106",
+          "first_segment_ms": "-320",
+          "tts_first_audio_ms": "-320",
+          "opener_ms": "540",
+          "truncated": "false",
+          "total_content_ms": 1096,
+          "end_silence_ms": 700,
+          "content_after_endpoint_ms": 396
+        },
+        {
+          "turn": "item_21",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "442",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "390",
+          "truncated": "false",
+          "total_content_ms": 1084,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 704
+        },
+        {
+          "turn": "item_13",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "474",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "280",
+          "truncated": "false",
+          "total_content_ms": 1029,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 649
+        }
+      ]
+    },
+    {
+      "call": "out-mvxkn1v4-jeyp",
+      "normal_content_tail": [
+        {
+          "turn": "item_4",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "678",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "540",
+          "truncated": "false",
+          "total_content_ms": 1300,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 920
+        },
+        {
+          "turn": "item_36",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "424",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "290",
+          "truncated": "false",
+          "total_content_ms": 1200,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 820
+        },
+        {
+          "turn": "item_13",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "551",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "490",
+          "truncated": "true",
+          "total_content_ms": 1186,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 806
+        },
+        {
+          "turn": "item_14",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "518",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "330",
+          "truncated": "false",
+          "total_content_ms": 1148,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 768
+        },
+        {
+          "turn": "item_28",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "450",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "490",
+          "truncated": "true",
+          "total_content_ms": 1081,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 701
+        },
+        {
+          "turn": "item_22",
+          "asr_final_ms": "0",
+          "llm_first_token_ms": "449",
+          "first_segment_ms": "0",
+          "tts_first_audio_ms": "0",
+          "opener_ms": "470",
+          "truncated": "false",
+          "total_content_ms": 1067,
+          "end_silence_ms": 380,
+          "content_after_endpoint_ms": 687
+        }
+      ]
+    }
+  ]
+}

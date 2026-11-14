@@ -1157,7 +1157,7 @@
         box.appendChild(gap);
         rows.push({ el: gap, answered: true, gap: true });
       }
-      var note = l.kind === 'greeting' ? 'opening line' : (caller && !answered ? 'not answered' : (!caller && l.interrupted ? 'cut short by the caller' : ''));
+      var note = l.kind === 'greeting' ? 'opening line' : (caller && !answered ? 'reply timing unavailable' : (!caller && l.interrupted ? 'cut short by the caller' : ''));
       if (caller && l.focus === 'vetoed') note = 'another voice; the answer was dropped unheard';
       else if (caller && l.focus === 'late') note = 'another voice; judged after the answer began';
       else if (caller && l.focus === 'other') note = 'another voice (observing only)';
@@ -1199,7 +1199,7 @@
     function applyFilter() { rows.forEach(function (r) { r.el.hidden = !shown(r); }); count.textContent = countText(); }
     function countText() {
       var said = rows.filter(function (r) { return !r.gap && shown(r); }).length;
-      return plural(said, 'line') + (answeredOnly ? ' in ' : ', ') + plural(Object.keys(byTurn).length, 'answered turn');
+      return plural(said, 'line') + (answeredOnly ? ' in ' : ', ') + plural(Object.keys(byTurn).length, 'linked turn');
     }
     function plain() {
       return rows.filter(function (r) { return !r.gap && shown(r); }).map(function (r) {
@@ -1214,7 +1214,7 @@
 
     // controls
     var filter = h('span', { class: 'seg', role: 'group', 'aria-label': 'What to show' });
-    [['Everything said', false], ['Answered turns only', true]].forEach(function (o) {
+    [['Everything said', false], ['Replies with timing', true]].forEach(function (o) {
       var b = h('button', { type: 'button', 'aria-pressed': String(o[1] === answeredOnly) }, o[0]);
       b.addEventListener('click', function () {
         answeredOnly = o[1];
@@ -1507,8 +1507,8 @@
     (call.quotation || []).forEach(function (q) {
       var what, cls = 'q-' + q.kind;
       switch (q.kind) {
-        case 'memory': what = 'recorded ' + (q.keys || '?') + ' → memory v' + q.version; break;
-        case 'asked': asks++; what = q.tool + ' asked (' + q.task + ', on memory v' + q.version + ')'; break;
+        case 'memory': what = 'recorded ' + (q.keys || '?') + ' → memory v' + (q.version === undefined ? 0 : q.version); break;
+        case 'asked': asks++; what = q.tool + ' asked (' + q.task + ', on memory v' + (q.version === undefined ? 0 : q.version) + ')'; break;
         case 'need': needs++; what = 'lead service: fields missing — ' + (q.missing || '?') + (q.plan ? ' (plan ' + q.plan + ')' : ''); break;
         case 'quote': quotes++; what = 'lead service: quote ' + (q.total ? q.total.toFixed(2) : '0') + ', ' + plural(q.lines || 0, 'line') + (q.skipped ? ', skipped ' + q.skipped : '') + (q.source ? ' (' + q.source + ')' : ''); break;
         case 'error': errors++; what = 'lead service: ' + (q.error || 'error'); break;
@@ -1663,7 +1663,7 @@
       pager('top'),
       h('div', { class: 'call-title' }, h('h1', null, (d.sim_run ? 'Simulated call of ' : 'Call of '), h('span', { class: 'num' }, when(call.started_at))), d.sim_run ? h('span', { class: 'sim-badge' }, 'sim') : null, verdictChip(st), intervalGauge(st)),
       h('nav', { class: 'jump', 'aria-label': 'On this page' },
-        [['Read the conversation', 'sec-conversation', 'jump-main'], ['Turn by turn', 'sec-turns'], ['Where the time goes', 'sec-stages'], ['Retrospective', 'sec-retro'], ['Your notes', 'sec-notes']].map(function (j) {
+        [['Read the conversation', 'sec-conversation', 'jump-main'], ['Turn by turn', 'sec-turns'], ['Skills / MCP', 'sec-skills'], ['Talker / fillers', 'sec-fillers'], ['Where the time goes', 'sec-stages'], ['Retrospective', 'sec-retro'], ['Your notes', 'sec-notes']].map(function (j) {
           var b = h('button', { type: 'button', class: 'linkbtn' + (j[2] ? ' ' + j[2] : '') }, j[0]);
           b.addEventListener('click', function () { var e = document.getElementById(j[1]); if (e) e.scrollIntoView({ block: 'start' }); });
           return b;
@@ -1671,7 +1671,7 @@
       meta,
       h('div', { class: 'defs' },
         h('div', { class: 'def' },
-          h('h3', null, 'Caller’s last sound → first audio', h('span', { class: 'def-tag' }, 'the target’s definition')),
+          h('h3', null, 'Caller’s last sound → first audio', h('span', { class: 'def-tag' }, 'includes fillers')),
           h('div', { class: 'figs' },
             fig('p50', num(st.p50), { unit: ' ms' }), fig('p90', num(st.p90)),
             fig(t.label, num(t.v), { mark: tailMark(st, target), cls: t.v > target ? 'is-over' : '' }),
@@ -1682,7 +1682,8 @@
           h('h3', null, 'Turn judged over → first audio', h('span', { class: 'def-tag' }, 'the latency console’s definition')),
           h('div', { class: 'figs' }, fig('p50', num(st.reply_p50), { unit: ' ms' }), fig('p90', num(st.reply_p90)), fig('p95', num(st.reply_p95))),
           h('p', { class: 'standing-note' }, 'Does not include the pause that ended the turn.'))),
-      h('p', { class: 'legnote' }, 'The phone leg (exchange, gateway, carrier, both ways) is on top of either figure and is not included.')));
+      window.JournalLatency(call, h, target),
+      h('p', { class: 'legnote' }, 'The phone leg (exchange, gateway, carrier, both ways) is on top of these figures and is not included.')));
 
     // recording
     var recBody;
@@ -1718,7 +1719,9 @@
     function add(id, sec) { sec.id = id; view.appendChild(sec); }
     state.conv = conversation(call, target, state.player, state);
     add('sec-conversation', section('Conversation', 'What was said, in order. Between a caller’s line and its answer is the wait: last sound → first audio.', state.conv.el));
-    add('sec-turns', section('Turn by turn', plural((call.turns || []).length, 'answered turn') + ', from the caller’s last sound. A row opens what was said.', waterfall(call, target, state.player, state)));
+    add('sec-skills', section('Skills / MCP', 'Skill preparation attempts in call order. Times are measured on the GoLive server.', window.JournalSkills(call, h)));
+    add('sec-fillers', section('Talker / fillers', 'The filler evidence recorded for this call. Click a time to hear it.', window.JournalFillers(call, { h: h, pos: pos, player: state.player, api: api })));
+    add('sec-turns', section('Turn by turn', plural((call.turns || []).length, 'response with first audio', 'responses with first audio') + ', from the caller’s last sound. A row opens what was said.', waterfall(call, target, state.player, state)));
     add('sec-stages', section('Where the time goes', 'This call’s median turn, stage by stage.', stageMedians(call)));
     add('sec-events', section('What else happened', 'Counted from the log, besides the answered turns.', eventsBlock(call)));
     if (call.quotation && call.quotation.length) add('sec-quote', section('Quotation', 'Every step of the quotation, in order: what the assistant recorded (which fields, never the values), each ask, what the lead service answered, and when the model was told. Click a time to hear it.', quotationBlock(call, state)));
@@ -2048,6 +2051,39 @@
     });
   }
 
+  function routeRequests(sessionID, requestID) {
+    ++S.token;
+    setNav('requests');
+    document.title = 'Requests – Call journal';
+    if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+    clear(view);
+    var browser = window.JournalRequests(h, sessionID, requestID);
+    view.appendChild(browser.element);
+    S.cleanup = browser.stop;
+    return browser.ready;
+  }
+
+  function routeDreaming() {
+    var token = ++S.token;
+    setNav('dreaming');
+    document.title = 'Dreaming – Call journal';
+    if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+    clear(view);
+    view.appendChild(h('h1', null, 'Dreaming'));
+    var live = window.JournalDreamingLive(h);
+    view.appendChild(live.element);
+    S.cleanup = live.stop;
+    var recorded = h('details', {class: 'dream-recorded-workflows'}, h('summary', null, 'Reviewed workflow examples'));
+    view.appendChild(recorded);
+    return api('/api/dreaming').then(function (data) {
+      if (token !== S.token) return;
+      recorded.appendChild(window.JournalDreaming(data, h));
+    }).catch(function (error) {
+      if (token !== S.token) return;
+      recorded.appendChild(h('p', null, 'Reviewed examples unavailable.'));
+    });
+  }
+
   // ====================================================================
   // Router, refresh, keys
   // ====================================================================
@@ -2057,6 +2093,8 @@
     if (p[0] === 'call' && p[1]) return { name: 'call', id: p[1] };
     if (p[0] === 'issues') return { name: 'issues', id: p[1] || '' };
     if (p[0] === 'decisions') return { name: 'decisions' };
+    if (p[0] === 'requests') return { name: 'requests', id: p[1] || '', request: p[2] || '' };
+    if (p[0] === 'dreaming') return { name: 'dreaming' };
     if (p[0] === 'benchmarks') return { name: 'benchmarks' };
     return { name: 'overview' };
   }
@@ -2068,6 +2106,8 @@
     if (r.name === 'issues') return routeIssues(r.id);
     if (r.name === 'decisions') return routeDecisions();
     if (r.name === 'benchmarks') return routeBenchmarks();
+    if (r.name === 'requests') return routeRequests(r.id, r.request);
+    if (r.name === 'dreaming') return routeDreaming();
     return routeOverview(false);
   }
   window.addEventListener('hashchange', route);
@@ -2099,6 +2139,8 @@
       if (busyCall()) p = loadOverview().catch(markStale); // a playing recording or an unsaved note is not disturbed
       else p = routeCall(r.id, true);
     } else if (r.name === 'issues') p = loadOverview().catch(markStale).then(function () { return routeIssues(r.id); });
+    else if (r.name === 'requests') p = routeRequests(r.id, r.request);
+    else if (r.name === 'dreaming') p = routeDreaming();
     else if (r.name === 'decisions') p = loadOverview().catch(markStale).then(routeDecisions);
     else p = routeOverview(true);
     Promise.resolve(p).then(done, done);

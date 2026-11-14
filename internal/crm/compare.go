@@ -32,6 +32,9 @@ type Variant struct {
 	// Selection is the whole plan it was priced on.
 	Selection map[string]any `json:"selection,omitempty"`
 	Total     float64        `json:"total"`
+	// Lines retain the service's individual premiums. A total difference is
+	// not a substitute for a coverage price when the caller asks for one.
+	Lines []QuoteLine `json:"lines,omitempty"`
 	// Diff is total − the current plan's total; DiffAbs its size, More
 	// whether it costs more — for a template without arithmetic.
 	Diff    float64 `json:"diff"`
@@ -51,7 +54,11 @@ type Variant struct {
 func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any, error) {
 	base := copyVars(req.Config)
 	if !req.PlanInMemory || len(base) == 0 {
-		if def := s.DefaultSelection(req.Call); len(def) > 0 {
+		def, err := s.defaultForRequest(req)
+		if err != nil {
+			return nil, err
+		}
+		if len(def) > 0 {
 			merged := copyVars(def)
 			for k, v := range base {
 				merged[k] = v
@@ -68,7 +75,7 @@ func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any
 		}
 	}
 	price := func(cfg map[string]any) (map[string]any, error) {
-		r := QuoteRequest{Config: copyVars(cfg), Vars: copyVars(req.Vars), MemoryVersion: req.MemoryVersion, Call: req.Call}
+		r := QuoteRequest{Config: copyVars(cfg), Vars: copyVars(req.Vars), MemoryVersion: req.MemoryVersion, PlanVersion: req.PlanVersion, Call: req.Call}
 		q, err := s.Quote(r)
 		if err != nil {
 			return nil, err
@@ -92,6 +99,10 @@ func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any
 		return nil, fmt.Errorf("the current plan could not be priced: %w", err)
 	}
 	baseTotal, _ := current["total"].(float64)
+	baseLines, err := comparisonLines(current)
+	if err != nil {
+		return nil, err
+	}
 	var variants []Variant
 	for _, change := range req.Variants {
 		cfg := copyVars(base)
@@ -107,6 +118,7 @@ func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any
 		}
 		if same {
 			v.Same, v.Total, v.Selection = true, baseTotal, selectedConfig(base)
+			v.Lines = append([]QuoteLine(nil), baseLines...)
 			if sk, ok := current["skipped"].([]any); ok {
 				for _, x := range sk {
 					v.Skipped = append(v.Skipped, fmt.Sprint(x))
@@ -122,6 +134,10 @@ func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any
 			continue
 		}
 		v.Total, _ = out["total"].(float64)
+		v.Lines, err = comparisonLines(out)
+		if err != nil {
+			return nil, err
+		}
 		v.Diff = v.Total - baseTotal
 		v.DiffAbs, v.More = v.Diff, v.Diff > 0
 		if v.DiffAbs < 0 {
@@ -147,6 +163,21 @@ func (s *Service) Compare(ctx context.Context, req QuoteRequest) (map[string]any
 	delete(current, "default")
 	s.log.Info("crm: options compared", "call", req.Call, "variants", len(variants), "ms", time.Since(began).Milliseconds())
 	return current, nil
+}
+
+// Each decoded slice belongs to this comparison, including cache hits;
+// neither a caller editing its result nor a same-plan variant owns the
+// cached quote's line storage.
+func comparisonLines(quote map[string]any) ([]QuoteLine, error) {
+	raw, err := json.Marshal(quote["lines"])
+	if err != nil {
+		return nil, fmt.Errorf("cannot retain quotation lines: %w", err)
+	}
+	var lines []QuoteLine
+	if err := json.Unmarshal(raw, &lines); err != nil {
+		return nil, fmt.Errorf("cannot retain quotation lines: %w", err)
+	}
+	return lines, nil
 }
 
 // labelOf names a change: "三者险300万", "驾乘险50万", "不要座位险", "加座位险".

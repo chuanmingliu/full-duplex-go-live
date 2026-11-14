@@ -1,0 +1,25 @@
+{
+  "call_id": "5c0f68b9-83a5-4a05-aed7-3d73e6bba05e",
+  "checks": {
+    "third_party_medical_all_11": true,
+    "driver_medical_all_6": true,
+    "passenger_medical_all_6": true,
+    "third_party_liability_all_6": true,
+    "holiday_known_and_unknown_separated": true,
+    "no_quotation_events": true
+  },
+  "skill_preparations": 22,
+  "loaded": 7,
+  "loaded_skill_ms": {
+    "p50": 3.22,
+    "p95": 3.79
+  },
+  "split_followup_loaded_turns": [
+    "item_8",
+    "item_12"
+  ],
+  "notes": [
+    "One recognition of 司机 as 四级 initially received the previous scope; the caller clarification produced the correct driver list.",
+    "Generic holiday answer request had no skill match in this recording; its exact utterance was added to the local MCP regression and routing fixed afterward."
+  ]
+}

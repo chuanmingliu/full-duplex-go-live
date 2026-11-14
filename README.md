@@ -3,6 +3,13 @@
 [![Built with Codex](https://img.shields.io/badge/Built_with-Codex-000000?style=flat)](https://openai.com/codex/)
 [![Built with Cursor](https://img.shields.io/badge/Built_with-Cursor-000000?style=flat)](https://cursor.com/)
 
+`codex/telephony-latency` is the active branch for optimizing the original
+GoLive service through **Active Call**. Shared improvements from the SIP/RTP
+exploration are documented in the [integration notes](docs/telephony/2026-11-01-active-call-integration.md).
+Use [CALL-OPERATIONS.md](CALL-OPERATIONS.md) for calls, recording and analysis.
+The [GoLive plugin](plugins/golive/README.md) packages the existing service as
+an MCP server with Codex/Claude plugin manifests and call, review and optimization skills.
+
 A full-duplex realtime audio service in Go.
 
 It speaks the **gpt-live-1 event protocol** over a WebSocket, and simulates
@@ -63,6 +70,10 @@ generation or a beat of delay, never a wrong answer.
 ---
 
 ## Architecture
+
+Explore the [interactive system map and component guides](docs/architecture/README.md),
+including a [detailed ASR → LLM → TTS walkthrough](docs/architecture/07-streaming-coordination.md)
+covering speculative preparation, turn commitment, streamed playback and interruptions.
 
 ```
                         ┌──────────── session (WebSocket) ────────────┐

@@ -1,0 +1,163 @@
+{
+  "baseline": {
+    "rows": [
+      {
+        "kind": "caller",
+        "vad_open_ms": 308,
+        "onset_to_cut_ms": 488,
+        "detection_to_cut_ms": 180
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": 312,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": 307,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "caller",
+        "vad_open_ms": 305,
+        "onset_to_cut_ms": 486,
+        "detection_to_cut_ms": 181
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": 305,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": 305,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "caller",
+        "vad_open_ms": 306,
+        "onset_to_cut_ms": 486,
+        "detection_to_cut_ms": 180
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": 305,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": 306,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": 308,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      }
+    ],
+    "log_sha256": "9d58ccf4d83a36263c2c094ea3656831d7d4f2535d62dc71fdf7f1a073eb8724",
+    "caller_median_ms": 486,
+    "negative_control_cuts": 0
+  },
+  "candidate": {
+    "rows": [
+      {
+        "kind": "caller",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": 310,
+        "detection_to_cut_ms": 1
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": 313,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": 312,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "caller",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": 310,
+        "detection_to_cut_ms": 1
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": 311,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "caller",
+        "vad_open_ms": 308,
+        "onset_to_cut_ms": 309,
+        "detection_to_cut_ms": 1
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": 307,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": 306,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": 309,
+        "onset_to_cut_ms": -1,
+        "detection_to_cut_ms": -1
+      }
+    ],
+    "log_sha256": "168db342b90d2ef1b0be985a61a7748e991139c3f7e2a7969fcdaecd4adaa07b",
+    "caller_median_ms": 310,
+    "negative_control_cuts": 0
+  },
+  "scope": "Controlled in-process simulation using the original phone profile and a scheduled mock ASR; no live-provider or handset gain claimed",
+  "fixture_sha256": "f69c0727da6fd5c3d6e327d1339de19ffdeb12941afc495a2cc5ea8748109980",
+  "baseline_commit": "eb8a48c"
+}

@@ -1,0 +1,27 @@
+{
+  "engine": {
+    "pid": "453349",
+    "parent": "17555",
+    "exe_sha256": "6f1e3f13475a6569064ad810623a114b6274592ec078d3e7d1b78d57c47760ed"
+  },
+  "crm": {
+    "pid": "453293",
+    "parent": "1",
+    "exe_sha256": "7898419c7d805d653bb0e7fd8a832121ccb7cfdedfc200c764bf4e257664e334"
+  },
+  "health": {
+    "sessions": 0,
+    "status": "ok",
+    "version": "40c20f6"
+  },
+  "silence": {
+    "version": 2,
+    "sha": "a4a7c847b1dc",
+    "enabled": true,
+    "min_wait_ms": 3000,
+    "max_wait_ms": 6000,
+    "max_attempts": 2,
+    "template_count": 2,
+    "templates_are_original": true
+  }
+}

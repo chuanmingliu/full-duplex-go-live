@@ -23,14 +23,14 @@ func (e *Engine) speakBackchannel(turn *Turn, phrase string) {
 		if cached, ok := Phrases().Get(key); ok {
 			pcm, err := audio.ResamplePCM16(cached.PCM, cached.Rate, e.opts.ClientRate)
 			if err == nil && len(pcm) > 0 {
-				if !e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, Text: phrase}) {
+				if !e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, owner: turn, Text: phrase}) {
 					e.log.Debug("backchannel: dropped; the answer took the floor first",
 						"turn", turn.ID, "text", phrase)
 					return
 				}
-				e.player.Enqueue(Segment{Kind: SegAudio, Gen: turn.Generation, TurnID: turn.ID, PCM: pcm})
-				e.player.Enqueue(Segment{Kind: SegMark, Gen: turn.Generation, TurnID: turn.ID, Text: phrase})
-				e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID})
+				e.player.Enqueue(Segment{Kind: SegAudio, Gen: turn.Generation, TurnID: turn.ID, owner: turn, PCM: pcm})
+				e.player.Enqueue(Segment{Kind: SegMark, Gen: turn.Generation, TurnID: turn.ID, owner: turn, Text: phrase})
+				e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID, owner: turn})
 				return
 			}
 		}
@@ -53,7 +53,7 @@ func (e *Engine) speakBackchannel(turn *Turn, phrase string) {
 	}
 	// The floor may have been taken while this was synthesizing, in which case
 	// the player refuses it and there is nothing to say or to transcribe.
-	if !e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, Text: phrase}) {
+	if !e.player.Enqueue(Segment{Kind: SegBegin, Gen: turn.Generation, TurnID: turn.ID, owner: turn, Text: phrase}) {
 		e.log.Debug("backchannel: dropped; the answer took the floor while it was synthesizing",
 			"turn", turn.ID, "text", phrase)
 		return
@@ -75,10 +75,10 @@ func (e *Engine) speakBackchannel(turn *Turn, phrase string) {
 		if err != nil {
 			continue
 		}
-		e.player.Enqueue(Segment{Kind: SegAudio, Gen: turn.Generation, TurnID: turn.ID, PCM: pcm})
+		e.player.Enqueue(Segment{Kind: SegAudio, Gen: turn.Generation, TurnID: turn.ID, owner: turn, PCM: pcm})
 	}
-	e.player.Enqueue(Segment{Kind: SegMark, Gen: turn.Generation, TurnID: turn.ID, Text: phrase})
-	e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID})
+	e.player.Enqueue(Segment{Kind: SegMark, Gen: turn.Generation, TurnID: turn.ID, owner: turn, Text: phrase})
+	e.player.Enqueue(Segment{Kind: SegEnd, Gen: turn.Generation, TurnID: turn.ID, owner: turn})
 	if useCache && len(keep) > 0 && bcCtx.Err() == nil {
 		Phrases().Put(key, PhraseAudio{PCM: keep, Rate: stream.SampleRate()})
 	}

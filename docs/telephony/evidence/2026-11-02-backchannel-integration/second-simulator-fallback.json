@@ -1,0 +1,64 @@
+{
+  "call_id": "out-mvzf4ctp-jqjp",
+  "run_id": "sim-d0b56295a3ebeccb0eccede7",
+  "build": "7a466e3",
+  "scenario": "set-a-01-barge-in",
+  "stage": "archive_verified_integration_failed",
+  "detector_connected": true,
+  "detector_processed_chunks": 30,
+  "detector_fallback": "queue_overflow",
+  "archive_audio": true,
+  "handset_target_proven": false,
+  "counts": {
+    "records": 4,
+    "answered": 1,
+    "non_speech": 3,
+    "cancelled": 0,
+    "interrupted_answers": 1,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 1,
+    "tool_results_joined": 1,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 1
+  },
+  "first_audio": {
+    "n": 1,
+    "p50_ms": 380,
+    "p90_ms": 380,
+    "p95_ms": 380,
+    "max_ms": 380,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 1,
+    "p50_ms": 792,
+    "p90_ms": 792,
+    "p95_ms": 792,
+    "max_ms": 792,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 1,
+    "p50_ms": 792,
+    "p90_ms": 792,
+    "p95_ms": 792,
+    "max_ms": 792,
+    "at_or_above_target": 0
+  }
+}

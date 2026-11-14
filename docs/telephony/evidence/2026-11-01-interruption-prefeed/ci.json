@@ -1,0 +1,23 @@
+{
+  "commit": "f1fd9a648544c131600958323961bebad563c6b8",
+  "push_run": 41298313932,
+  "pr_run": 41298317591,
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "quality",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "Go tests (race)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "Go tests (normal)",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ]
+}

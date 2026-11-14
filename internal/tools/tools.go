@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -150,6 +151,10 @@ type Request struct {
 	// version, so a slow tool's result can say what it was computed on.
 	Memory        json.RawMessage `json:"memory,omitempty"`
 	MemoryVersion int             `json:"memory_version,omitempty"`
+	// QuoteBaseDefault marks a requested selection that still needs the call's
+	// default coverages. It is set by the engine, never by model arguments.
+	QuoteBaseDefault bool `json:"quote_base_default,omitempty"`
+	QuotePlanVersion int  `json:"quote_plan_version,omitempty"`
 }
 
 // Result is what comes back: the output the model is given, as JSON.
@@ -307,7 +312,7 @@ func (p *Pool) Running() int {
 
 // Memory is a call's working memory: what has been settled so far, as a
 // JSON object the model edits by merging patches, with a version that counts
-// the edits. It is rendered into the model's context on every request, so
+// changes to its contents. It is rendered into the model's context on every request, so
 // the latest state is always in view and never has to be reconstructed from
 // the conversation.
 type Memory struct {
@@ -327,7 +332,7 @@ func NewMemory(seed map[string]any) *Memory {
 }
 
 // Patch merges a JSON object into the memory: keys are set, null deletes,
-// nested objects merge one level down. It returns the new version.
+// nested objects merge recursively. Unchanged patches retain the version.
 func (m *Memory) Patch(patch json.RawMessage) (int, error) {
 	var p map[string]any
 	if err := json.Unmarshal(patch, &p); err != nil || p == nil {
@@ -335,30 +340,42 @@ func (m *Memory) Patch(patch json.RawMessage) (int, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	merge(m.data, p)
+	if !merge(m.data, p) {
+		return m.version, nil
+	}
 	m.version++
 	m.updated = time.Now()
 	return m.version, nil
 }
 
-func merge(dst, src map[string]any) {
+func merge(dst, src map[string]any) bool {
+	changed := false
 	for k, v := range src {
+		previous, exists := dst[k]
 		if v == nil {
-			delete(dst, k)
+			if exists {
+				delete(dst, k)
+				changed = true
+			}
 			continue
 		}
-		if sv, ok := v.(map[string]any); ok {
-			if dv, ok := dst[k].(map[string]any); ok {
-				merge(dv, sv)
+		if object, ok := v.(map[string]any); ok {
+			if current, ok := previous.(map[string]any); ok {
+				changed = merge(current, object) || changed
 				continue
 			}
-			cp := map[string]any{}
-			merge(cp, sv)
-			dst[k] = cp
+			copy := map[string]any{}
+			merge(copy, object)
+			dst[k] = copy
+			changed = true
 			continue
 		}
-		dst[k] = v
+		if !exists || !reflect.DeepEqual(previous, v) {
+			dst[k] = v
+			changed = true
+		}
 	}
+	return changed
 }
 
 // Snapshot is the memory as JSON and its version.
@@ -369,7 +386,7 @@ func (m *Memory) Snapshot() (json.RawMessage, int) {
 	return b, m.version
 }
 
-// Version is the count of edits so far.
+// Version counts changes to the memory contents.
 func (m *Memory) Version() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -400,7 +417,8 @@ var EndCallTool = Tool{
 var UpdateMemoryTool = Tool{
 	Name: "update_memory",
 	Description: "记录或修改本次通话已经确定的信息（工作记忆）。每当用户确认、新增或更改了投保方案、车辆信息、联系方式等事实时调用；" +
-		"传入要合并的字段，值为 null 表示删除该字段。当前工作记忆会随时出现在你的上下文中，不必复述。",
+		"传入要合并的字段，值为 null 表示删除该字段。当前工作记忆会随时出现在你的上下文中，不必复述。" +
+		"若可调用 quote_total，对已有方案的明确局部改动直接用其 config；假设或比较用其 configs。仅新建方案或补齐事实时需要先调用本工具。",
 	Parameters: json.RawMessage(`{"type":"object","properties":{"patch":{"type":"object","description":"要合并进工作记忆的字段"}},"required":["patch"]}`),
 	Builtin:    "update_memory",
 }

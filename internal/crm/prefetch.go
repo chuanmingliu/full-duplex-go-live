@@ -28,6 +28,7 @@ import (
 
 // prefetched is one default quotation in flight or done.
 type prefetched struct {
+	ready   *readyQuote // immutable after done closes
 	call    string
 	started time.Time
 	vars    map[string]any
@@ -64,6 +65,7 @@ func (s *Service) Prefetch(call string, vars map[string]any) {
 	s.mu.Unlock()
 	go func() {
 		defer close(p.done)
+		pricing := s.currentReadyPricing()
 		req, err := s.defaultRequest(call, p.vars)
 		if err != nil {
 			p.err = err
@@ -85,6 +87,9 @@ func (s *Service) Prefetch(call string, vars map[string]any) {
 			}
 		}
 		p.took = time.Since(p.started)
+		if p.err == nil {
+			p.ready = s.completedReadyQuote(call, p.started, pricing, defaultQuoteResult(p))
+		}
 		s.log.Info("crm: default quotation prefetched", "call", call, "ms", p.took.Milliseconds(), "err", errString(p.err), "vars", len(p.vars))
 		if p.err == nil {
 			// The combinations the caller is likely to ask for next, priced
@@ -181,23 +186,27 @@ func (s *Service) DefaultQuote(ctx context.Context, call string, vars map[string
 	if p.err != nil {
 		return nil, p.err
 	}
+	return defaultQuoteResult(p), nil
+}
+
+func defaultQuoteResult(p *prefetched) any {
 	// Marked as the default: golive says neither the prehook nor the
 	// posthook for it — the price was ready before the call, and the
 	// customer is simply told (the owner, 22:29 on 10-24).
 	raw, err := json.Marshal(p.quote)
 	if err != nil {
-		return p.quote, nil
+		return p.quote
 	}
 	var out map[string]any
 	if json.Unmarshal(raw, &out) != nil {
-		return p.quote, nil
+		return p.quote
 	}
 	out["default"] = true
 	out["prefetched_ms"] = p.took.Milliseconds()
 	if len(p.selection) > 0 {
 		out["selection"] = copyVars(p.selection)
 	}
-	return out, nil
+	return out
 }
 
 // DefaultSelection is the default plan a call was quoted on, as priced —

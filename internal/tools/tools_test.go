@@ -134,3 +134,28 @@ func TestDefinitionIsChatCompletionsShape(t *testing.T) {
 		t.Fatalf("%s", UpdateMemoryTool.Definition())
 	}
 }
+
+func TestMemoryNoOpPatchesPreserveVersionAndTimestamp(t *testing.T) {
+	m := NewMemory(nil)
+	if _, err := m.Patch(json.RawMessage(`{"quote":{"三者险":"300万"},"choices":[1,2]}`)); err != nil {
+		t.Fatal(err)
+	}
+	before, version := m.Snapshot()
+	updated := m.updated
+	for _, patch := range []string{`{}`, `{"missing":null}`, `{"quote":{}}`, `{"quote":{"三者险":"300万"},"choices":[1,2]}`} {
+		got, err := m.Patch(json.RawMessage(patch))
+		after, _ := m.Snapshot()
+		if err != nil || got != version || string(before) != string(after) || m.updated != updated {
+			t.Fatalf("no-op %s changed state: version=%d err=%v", patch, got, err)
+		}
+	}
+	for _, patch := range []string{`null`, `[]`, `{"quote":`} {
+		if _, err := m.Patch(json.RawMessage(patch)); err == nil {
+			t.Fatalf("invalid patch accepted: %s", patch)
+		}
+		after, v := m.Snapshot()
+		if string(after) != string(before) || v != version {
+			t.Fatal("invalid patch partially mutated memory")
+		}
+	}
+}

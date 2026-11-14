@@ -1,0 +1,12 @@
+#timeout 1400
+#push bcd-matrix-source-20261102.tar.gz /home/chuanming/golive/bcd-matrix-source-20261102.tar.gz
+#push bcd-matrix-test-20261102.py /home/chuanming/golive/bcd-matrix-test-20261102.py
+#pull /home/chuanming/golive-telephony/codex-latency/backchannel-matrix-20261102/operation.json bcd-matrix-operation-20261102.json
+#pull /home/chuanming/golive-telephony/codex-latency/backchannel-matrix-20261102/results.json bcd-matrix-results-20261102.json
+set -eu
+python3 -B - <<'VERIFY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/bcd-matrix-test-20261102.py').read_bytes()).hexdigest()=='55370158005a6d6ac71deafae4f954639e4195004cbcb42e2e670b5886d435ab'
+VERIFY
+python3 -B /home/chuanming/golive/bcd-matrix-test-20261102.py

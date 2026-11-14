@@ -1,0 +1,42 @@
+[
+  {
+    "file": "baseline-sim.sh",
+    "sha256": "3e8012ec9b87fb584b34e1022d3bee7ca912727312e28c7089835f3226ffae3a",
+    "bytes": 10319
+  },
+  {
+    "file": "candidate-sim-a.sh",
+    "sha256": "03af4b42c7befcff5a4329552ce6bce3cee3f33961e84f9a75ad5e785338c43a",
+    "bytes": 10324
+  },
+  {
+    "file": "candidate-sim-b.sh",
+    "sha256": "9930a26a59cf5b23ceb2b1e75025b984d29a79372da6248aac57fcb7d3bceffd",
+    "bytes": 10324
+  },
+  {
+    "file": "cut-decisions.py",
+    "sha256": "194a05ece5af08268108e224f128d19b7cad605412403dc6f98ce84584c4b3db",
+    "bytes": 2431
+  },
+  {
+    "file": "deploy-f1fd9a6.sh",
+    "sha256": "e6ffdf6937d78224e014af50f4d04668530d1bb5486ba270850d93727d142c77",
+    "bytes": 9484
+  },
+  {
+    "file": "publish-review.sh",
+    "sha256": "d9d1b644949ee1fb078a7efa2d561609d6e80c4a23ba163a117827a2fc5af458",
+    "bytes": 2721
+  },
+  {
+    "file": "record-aria-binding.sh",
+    "sha256": "a15f505c21381a913fd48dd1106252bdcdbbbf9ec01fe84b5c71140ea5af8ca8",
+    "bytes": 2169
+  },
+  {
+    "file": "review-payload.json",
+    "sha256": "76062b5645f201b356124e203be9af2a22aa278878a70b50930b22260465972c",
+    "bytes": 5209
+  }
+]

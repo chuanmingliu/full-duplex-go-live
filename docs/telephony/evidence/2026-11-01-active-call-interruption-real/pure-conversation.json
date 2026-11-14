@@ -1,0 +1,14 @@
+{
+  "scope": "Secondary diagnostic: exclude every caller linked to a quotation tool, including spoken acknowledgments before calculation; canonical metric remains unchanged.",
+  "distribution": {
+    "n": 28,
+    "p50_ms": 989.0,
+    "p90_ms": 1117,
+    "p95_ms": 1135,
+    "max_ms": 1260,
+    "at_or_above_target": 1
+  },
+  "excluded_turns": [
+    "item_11"
+  ]
+}

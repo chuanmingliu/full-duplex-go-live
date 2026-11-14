@@ -1,0 +1,226 @@
+{
+  "date": "2026-11-09",
+  "measurement": "synthetic text submission to mock TTS output, using real deepseek-chat completions",
+  "benchmark_job": "skills-final-context-8",
+  "main_rows": 129,
+  "edge_rows": 10,
+  "benchmarks": {
+    "normal": {
+      "original": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 660.773,
+          "p95": 1009.153
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 545.172,
+          "p95": 885.471
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 757.0,
+          "p95": 1024.835
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 641.21,
+          "p95": 973.173
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      }
+    },
+    "wechat": {
+      "original": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 831.673,
+          "p95": 1083.562
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 685.606,
+          "p95": 984.825
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 913.891,
+          "p95": 1128.051
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 777.044,
+          "p95": 955.011
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      }
+    },
+    "quotation": {
+      "original": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 1380.827,
+          "p95": 2651.22
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 1265.481,
+          "p95": 2548.234
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 2.0,
+          "p95": 4
+        },
+        "expected_skill_selection_passed": 20,
+        "quote_start_ms": {
+          "n": 20,
+          "p50": 866.149,
+          "p95": 1394.709
+        }
+      },
+      "skills": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 1760.213,
+          "p95": 2552.244
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 1669.722,
+          "p95": 2402.488
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 2.0,
+          "p95": 4
+        },
+        "expected_skill_selection_passed": 20,
+        "quote_start_ms": {
+          "n": 20,
+          "p50": 1008.132,
+          "p95": 1419.318
+        }
+      }
+    }
+  },
+  "benchmark_failed_checks": [
+    {
+      "scenario": "interrupt_retrieval_recovery",
+      "mode": "skills",
+      "check": "recovery_does_not_resume_old_task"
+    }
+  ],
+  "confirmation": {
+    "job": "skills-boundary-confirm-10",
+    "scenario_and_state_rows": 15,
+    "edge_rows": 11,
+    "failed_checks": [],
+    "change_since_benchmark": "Interruption rendering now separates current request and interrupted context into different messages. The core latency scenarios do not interrupt. A real-model clarification case was added."
+  },
+  "calculation_ms": {
+    "original": 3000.514,
+    "skills": 3000.18
+  },
+  "interruptions": [
+    {
+      "scenario": "interrupt_retrieval_recovery",
+      "mode": "skills",
+      "first_audio_ms": 873.582,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "interruption_phase_reached": true,
+        "latest_request_separated": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "recovery_answers_latest_question": true,
+        "recovery_does_not_resume_old_task": true,
+        "recovery_has_no_old_skill": true,
+        "response": true
+      }
+    },
+    {
+      "scenario": "interrupt_playback_recovery",
+      "mode": "original",
+      "first_audio_ms": 937.667,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "interruption_phase_reached": true,
+        "latest_request_separated": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "recovery_answers_latest_question": true,
+        "recovery_does_not_resume_old_task": true,
+        "recovery_has_no_old_skill": true,
+        "response": true
+      }
+    },
+    {
+      "scenario": "interrupt_playback_recovery",
+      "mode": "skills",
+      "first_audio_ms": 498.062,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "interruption_phase_reached": true,
+        "latest_request_separated": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "recovery_answers_latest_question": true,
+        "recovery_does_not_resume_old_task": true,
+        "recovery_has_no_old_skill": true,
+        "response": true
+      }
+    },
+    {
+      "scenario": "interrupt_clarification",
+      "mode": "skills",
+      "first_audio_ms": 1033.323,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "clarification_context_preserved": true,
+        "interruption_phase_reached": true,
+        "latest_request_separated": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "response": true
+      }
+    }
+  ],
+  "original_runtime_and_profile_preserved": true,
+  "runner_exit": 0,
+  "manual_review": "Final 26 synthetic outputs reviewed, including definition-only unknown consent, completed addition, current-question recovery and contextual clarification."
+}

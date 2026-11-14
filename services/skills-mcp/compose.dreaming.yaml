@@ -1,0 +1,13 @@
+# Optional overlay; never enabled by the existing install workflow.
+services:
+  catalog:
+    environment:
+      GOLIVE_DREAM_DB: /data/memory/experiences.sqlite
+      GOLIVE_DREAM_JOURNAL_URL: ${GOLIVE_DREAM_JOURNAL_URL:?set the Journal origin for completed-call capture}
+      GOLIVE_DREAM_ENGINE_URLS: ${GOLIVE_DREAM_ENGINE_URLS:-http://127.0.0.1:8765}
+      GOLIVE_DREAM_MODEL_URL: ${GOLIVE_DREAM_MODEL_URL:?set the explicit review endpoint}
+      GOLIVE_DREAM_MODEL: ${GOLIVE_DREAM_MODEL:?set the review model}
+      GOLIVE_DREAM_TOKEN_FILE: /run/secrets/dream-model
+    volumes:
+      - ${DREAM_TOKEN_FILE:?set the review credential file}:/run/secrets/dream-model:ro
+      - ${DREAM_CA_FILE:-/etc/ssl/certs/ca-certificates.crt}:/etc/ssl/certs/ca-certificates.crt:ro

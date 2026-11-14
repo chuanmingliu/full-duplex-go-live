@@ -1,0 +1,282 @@
+[
+  {
+    "mode": "preset",
+    "index": 0,
+    "FirstAudio": 400,
+    "FirstContent": 700,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 0,
+    "FirstAudio": 400,
+    "FirstContent": 696,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 1,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 1,
+    "FirstAudio": 400,
+    "FirstContent": 705,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 2,
+    "FirstAudio": 400,
+    "FirstContent": 702,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 2,
+    "FirstAudio": 400,
+    "FirstContent": 702,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 3,
+    "FirstAudio": 400,
+    "FirstContent": 696,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 3,
+    "FirstAudio": 400,
+    "FirstContent": 702,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 4,
+    "FirstAudio": 400,
+    "FirstContent": 700,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 4,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 5,
+    "FirstAudio": 400,
+    "FirstContent": 707,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 5,
+    "FirstAudio": 400,
+    "FirstContent": 702,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 6,
+    "FirstAudio": 400,
+    "FirstContent": 702,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 6,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 7,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 7,
+    "FirstAudio": 400,
+    "FirstContent": 704,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 8,
+    "FirstAudio": 400,
+    "FirstContent": 698,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 8,
+    "FirstAudio": 400,
+    "FirstContent": 703,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 9,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 9,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 10,
+    "FirstAudio": 400,
+    "FirstContent": 704,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 10,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 11,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 11,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 12,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 12,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 13,
+    "FirstAudio": 400,
+    "FirstContent": 710,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 13,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 14,
+    "FirstAudio": 400,
+    "FirstContent": 701,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 14,
+    "FirstAudio": 400,
+    "FirstContent": 703,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 15,
+    "FirstAudio": 400,
+    "FirstContent": 698,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 15,
+    "FirstAudio": 400,
+    "FirstContent": 702,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 16,
+    "FirstAudio": 400,
+    "FirstContent": 703,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 16,
+    "FirstAudio": 400,
+    "FirstContent": 700,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 17,
+    "FirstAudio": 400,
+    "FirstContent": 694,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 17,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 18,
+    "FirstAudio": 400,
+    "FirstContent": 705,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 18,
+    "FirstAudio": 400,
+    "FirstContent": 698,
+    "talker": true
+  },
+  {
+    "mode": "preset",
+    "index": 19,
+    "FirstAudio": 400,
+    "FirstContent": 699,
+    "talker": false
+  },
+  {
+    "mode": "talker",
+    "index": 19,
+    "FirstAudio": 400,
+    "FirstContent": 706,
+    "talker": true
+  }
+]

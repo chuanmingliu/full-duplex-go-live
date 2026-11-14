@@ -1,0 +1,10 @@
+#timeout 45
+#push activecall-details-20261102.py /home/chuanming/golive/activecall-details-20261102.py
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvykfqfn-wibn/details.json review-out-mvykfqfn-wibn-details.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/activecall-details-20261102.py').read_bytes()).hexdigest()=='56414d081a5515db8ca56d7de0ac8c3f81356352b56085a925f61b657677139b'
+PY
+python3 -B /home/chuanming/golive/activecall-details-20261102.py

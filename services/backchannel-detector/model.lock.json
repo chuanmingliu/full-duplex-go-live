@@ -1,0 +1,9 @@
+{
+  "repository": "pipecat-ai/backchannel-detector",
+  "revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+  "license": "bsd-2-clause",
+  "files": {
+    "backchannel-fp32.onnx": "3e5d47740e5f75211cc78c5df701be9afe7b76c4115144212a18598766909240",
+    "model.json": "db970ffd0367225c0482c962e9b70c6553700582c720e35c3dda551ed31b7073"
+  }
+}

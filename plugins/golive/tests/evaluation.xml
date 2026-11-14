@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Manual, read-only agent evaluations against this package's stable resources
+     and tool contracts. No calls, deployments or production mutations. -->
+<evaluation>
+  <qa_pair><question>Read the architecture and operating rules. Which component bridges the brain's WebSocket audio to the phone transport in the supported default path?</question><answer>Active Call</answer></qa_pair>
+  <qa_pair><question>Using the architecture resource and tool schemas, can the client replace Active Call with the experimental adapter through this plugin?</question><answer>No</answer></qa_pair>
+  <qa_pair><question>The owner says done while a dial receipt says accepted. After consulting the operating resource and review prompt, does this authorize another call?</question><answer>No</answer></qa_pair>
+  <qa_pair><question>A status operation was submitted but the response disappeared. From the tool contracts, which tool retrieves the original attempt without submitting it again?</question><answer>golive_get_operation</answer></qa_pair>
+  <qa_pair><question>A user requests call gpt-live-1 while only this plugin is installed. Read its route rules and supported modes. May it substitute the original path?</question><answer>No</answer></qa_pair>
+  <qa_pair><question>Read the architecture and analysis tool contract. Does a two-sided server archive establish the time audio was audible at the handset?</question><answer>No</answer></qa_pair>
+  <qa_pair><question>From the review tool and skill, what optional assumed number of milliseconds can be added without claiming acoustic measurement?</question><answer>50</answer></qa_pair>
+  <qa_pair><question>Read the review skill and analysis schema. Is quotation calculation included in the normal conversational latency target?</question><answer>No</answer></qa_pair>
+  <qa_pair><question>Read the architecture and operation resource. Should a detector outage independently disable the original background-speaker rejection?</question><answer>No</answer></qa_pair>
+  <qa_pair><question>From the architecture and call tool contract, how many hours of working recording retention does preflight require?</question><answer>8760</answer></qa_pair>
+</evaluation>

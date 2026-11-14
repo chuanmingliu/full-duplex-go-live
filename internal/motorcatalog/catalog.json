@@ -1,0 +1,332 @@
+[
+  {
+    "name": "车损险",
+    "label": "机动车损失保险",
+    "code": "951",
+    "kind": "boolean",
+    "options": [],
+    "parent": "",
+    "aliases": [
+      "机动车损失保险",
+      "机动车损失险",
+      "车损"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "机动车损失保险，可选择投保或不投保；对应被保险车辆自身损失，具体赔付以所选产品条款为准。"
+  },
+  {
+    "name": "划痕险",
+    "label": "车身划痕险",
+    "code": "955",
+    "kind": "amount",
+    "options": [
+      "2000",
+      "5000",
+      "1万",
+      "2万"
+    ],
+    "parent": "车损险",
+    "aliases": [
+      "车身划痕险",
+      "划痕"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "车身划痕附加保障，须投保车损险；保额选项按本目录列出。"
+  },
+  {
+    "name": "绝对免赔率-车损",
+    "label": "绝对免赔率-车损",
+    "code": "XC-DEDUCT-DAMAGE",
+    "kind": "percent",
+    "options": [
+      "5%",
+      "10%",
+      "15%",
+      "20%"
+    ],
+    "parent": "车损险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "车损险的绝对免赔率附加约定。比例为免赔设置，不是保额，也不能据此承诺实际保费折扣。"
+  },
+  {
+    "name": "三者险",
+    "label": "第三者责任险",
+    "code": "952",
+    "kind": "amount",
+    "options": [
+      "50万",
+      "100万",
+      "150万",
+      "200万",
+      "300万",
+      "400万"
+    ],
+    "parent": "",
+    "aliases": [
+      "第三者责任险",
+      "第三者责任保险",
+      "商业三者险",
+      "三者"
+    ],
+    "input_unit": "万",
+    "group": "商业险",
+    "description": "第三者责任险，保障对象是第三者；保额按本产品目录选择。"
+  },
+  {
+    "name": "精神损害险-三者",
+    "label": "精神损害险-三者",
+    "code": "XC-MENTAL-TP",
+    "kind": "amount",
+    "options": [
+      "1万",
+      "2万",
+      "5万",
+      "10万"
+    ],
+    "parent": "三者险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "按合同约定赔付对应三者范围的精神损害抚慰金，须保留对应主险。"
+  },
+  {
+    "name": "假日三者翻倍险",
+    "label": "假日三者翻倍险",
+    "code": "XC-HOLIDAY-TP",
+    "kind": "boolean",
+    "options": [],
+    "parent": "三者险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "本产品已明确约定：法定节假日期间（含双休日，即周末）第三者责任险保额翻倍。调休细则未提供，需另行核对。作为单独附加保障选择，不改写平日三者险保额。"
+  },
+  {
+    "name": "绝对免赔率-三者",
+    "label": "绝对免赔率-三者",
+    "code": "XC-DEDUCT-TP",
+    "kind": "percent",
+    "options": [
+      "5%",
+      "10%",
+      "15%",
+      "20%"
+    ],
+    "parent": "三者险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "对事故中对应三者受伤、死亡的责任赔偿部分设置免赔比例。比例为免赔设置，不是保额，也不能据此承诺实际保费折扣。"
+  },
+  {
+    "name": "医保外用药责任险-三者",
+    "label": "医保外用药责任险-三者",
+    "code": "XC-MEDICAL-TP",
+    "kind": "shared_amount",
+    "options": [
+      "共享保额",
+      "10万",
+      "15万",
+      "20万",
+      "30万",
+      "50万",
+      "100万",
+      "150万",
+      "200万",
+      "300万",
+      "400万"
+    ],
+    "parent": "三者险",
+    "aliases": [
+      "医保外用药-三者"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "按合同约定承担对应三者治疗中的医保外医疗费用；共享保额使用对应主险限额，不另增独立保额，也可按列出的独立保额选择。"
+  },
+  {
+    "name": "司机责任险",
+    "label": "司机责任险",
+    "code": "953",
+    "kind": "amount",
+    "options": [
+      "2万",
+      "3万",
+      "4万",
+      "5万",
+      "10万",
+      "20万"
+    ],
+    "parent": "",
+    "aliases": [
+      "司机险"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "赔付合同约定的道路交通事故中本车驾驶员人身伤亡费用。"
+  },
+  {
+    "name": "精神损害险-司机",
+    "label": "精神损害险-司机",
+    "code": "XC-MENTAL-DRIVER",
+    "kind": "amount",
+    "options": [
+      "1万",
+      "2万",
+      "5万",
+      "10万"
+    ],
+    "parent": "司机责任险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "按合同约定赔付对应司机范围的精神损害抚慰金，须保留对应主险。"
+  },
+  {
+    "name": "绝对免赔率-司机",
+    "label": "绝对免赔率-司机",
+    "code": "XC-DEDUCT-DRIVER",
+    "kind": "percent",
+    "options": [
+      "5%",
+      "10%",
+      "15%",
+      "20%"
+    ],
+    "parent": "司机责任险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "对事故中对应司机受伤、死亡的责任赔偿部分设置免赔比例。比例为免赔设置，不是保额，也不能据此承诺实际保费折扣。"
+  },
+  {
+    "name": "医保外用药责任险-司机",
+    "label": "医保外用药责任险-司机",
+    "code": "XC-MEDICAL-DRIVER",
+    "kind": "shared_amount",
+    "options": [
+      "共享保额",
+      "1万",
+      "2万",
+      "5万",
+      "10万",
+      "20万"
+    ],
+    "parent": "司机责任险",
+    "aliases": [
+      "医保外用药-司机"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "按合同约定承担对应司机治疗中的医保外医疗费用；共享保额使用对应主险限额，不另增独立保额，也可按列出的独立保额选择。"
+  },
+  {
+    "name": "乘客责任险",
+    "label": "乘客责任险",
+    "code": "954",
+    "kind": "amount",
+    "options": [
+      "2万",
+      "3万",
+      "4万",
+      "5万",
+      "10万",
+      "20万"
+    ],
+    "parent": "",
+    "aliases": [
+      "乘客险"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "赔付合同约定的道路交通事故中本车乘客（非驾驶人员）人身伤亡费用，注意每座保额与座位数。"
+  },
+  {
+    "name": "精神损害险-乘客",
+    "label": "精神损害险-乘客",
+    "code": "XC-MENTAL-PASSENGER",
+    "kind": "amount",
+    "options": [
+      "1万",
+      "2万",
+      "5万",
+      "10万"
+    ],
+    "parent": "乘客责任险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "按合同约定赔付对应乘客范围的精神损害抚慰金，须保留对应主险。"
+  },
+  {
+    "name": "绝对免赔率-乘客",
+    "label": "绝对免赔率-乘客",
+    "code": "XC-DEDUCT-PASSENGER",
+    "kind": "percent",
+    "options": [
+      "5%",
+      "10%",
+      "15%",
+      "20%"
+    ],
+    "parent": "乘客责任险",
+    "aliases": [],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "对事故中对应乘客受伤、死亡的责任赔偿部分设置免赔比例。比例为免赔设置，不是保额，也不能据此承诺实际保费折扣。"
+  },
+  {
+    "name": "医保外用药责任险-乘客",
+    "label": "医保外用药责任险-乘客",
+    "code": "XC-MEDICAL-PASSENGER",
+    "kind": "shared_amount",
+    "options": [
+      "共享保额",
+      "1万",
+      "2万",
+      "5万",
+      "10万",
+      "20万"
+    ],
+    "parent": "乘客责任险",
+    "aliases": [
+      "医保外用药-乘客"
+    ],
+    "input_unit": "",
+    "group": "商业险",
+    "description": "按合同约定承担对应乘客治疗中的医保外医疗费用；共享保额使用对应主险限额，不另增独立保额，也可按列出的独立保额选择。"
+  },
+  {
+    "name": "交强险",
+    "label": "交强险",
+    "code": "",
+    "kind": "boolean",
+    "options": [],
+    "parent": "",
+    "aliases": [
+      "交强",
+      "机动车交通事故责任强制保险"
+    ],
+    "input_unit": "",
+    "group": "交强险",
+    "description": "机动车交通事故责任强制保险，与商业险分开列示；适用责任和法定限额以有效条款为准。"
+  },
+  {
+    "name": "车船税",
+    "label": "车船税",
+    "code": "",
+    "kind": "enum",
+    "options": [
+      "代缴"
+    ],
+    "parent": "",
+    "aliases": [],
+    "input_unit": "",
+    "group": "车船税",
+    "description": "车船税代缴选项，与保险保费分开列示；不代缴用 false。"
+  }
+]

@@ -1,0 +1,50 @@
+{
+  "candidate": "45b5564",
+  "state": "warmed",
+  "phase": "complete",
+  "release": "/home/chuanming/golive-releases/codex-45b5564-20261101-162734",
+  "raw_archive_files_unchanged": 572,
+  "archive_files_verified": 715,
+  "archived_calls_verified": 143,
+  "recording_verified": true,
+  "journal_verified": true,
+  "phrase_warm_verified": true,
+  "runtime_configs_preserved": true,
+  "existing_services_preserved": true,
+  "ci": {
+    "commit": "45b55649290007c275eb682cbab4d40ea4380fcf",
+    "conclusion": "success",
+    "run_id": 41287492177,
+    "url": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41287492177",
+    "jobs": [
+      {
+        "name": "Go tests (normal)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "Go tests (race)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "quality",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "reconciliation_receipt_sha256": "db813786b99fb9906763c048d01ecca93420ef1d92e1c3100e9f7edaaa29e578",
+  "additive_call_metadata_verified": 143,
+  "initial_deployment_failed_guard": "saved context archive changed",
+  "raw_archive_scope": [
+    "audio.wav",
+    "transcript.txt",
+    "session.json",
+    "golive.log"
+  ],
+  "metadata_delta": [
+    "latency.conversational_first_content",
+    "latency.quote_only_responses"
+  ]
+}

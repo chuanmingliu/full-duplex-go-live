@@ -1,0 +1,12 @@
+{
+  "request_id": "4cd24682-d3cd-429f-a4ba-257f56b5348a",
+  "ok": true,
+  "engine_version": "9e29eed",
+  "sessions": 0,
+  "profile_sha256": "c98dea3a562a9544d6e7242fda0e86621e0a514c941ccd3a66000c085dd483ae",
+  "backend": "local",
+  "binding_revision": 13,
+  "preset_openers": true,
+  "journal_retention_hours": 8760,
+  "journal_target_ms": 1200
+}
