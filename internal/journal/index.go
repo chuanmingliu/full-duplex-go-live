@@ -283,6 +283,13 @@ type QuoteStep struct {
 	WaitedMS     int  `json:"waited_ms,omitempty"`
 	Interrupting bool `json:"interrupting,omitempty"`
 	TookMS       int  `json:"took_ms,omitempty"`
+	// recovery: quotation delivery state, without private spoken content.
+	Turn          string `json:"turn,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+	Completed     string `json:"completed,omitempty"`
+	Remaining     string `json:"remaining,omitempty"`
+	Interruptions int    `json:"interruptions,omitempty"`
 }
 
 // --- reading the log ---
@@ -577,6 +584,8 @@ func (ix *Indexer) Feed(l Line) {
 	cb.readFiller(l)
 	cb.readSkill(l)
 	switch l.Msg {
+	case "quote: delivery progress":
+		cb.call.Quotation = append(cb.call.Quotation, QuoteStep{TS: cb.at(l.Time), Kind: "recovery", Task: l.Get("task"), Turn: l.Get("turn"), Status: l.Get("status"), Reason: l.Get("reason"), Version: l.N("memory_version"), Completed: l.Get("completed"), Remaining: l.Get("remaining"), Interruptions: l.N("interruptions")})
 	case "transcript: assistant output enabled", "transcript: assistant segment started":
 		cb.readOutputTranscript(l)
 	case "realtime: session.update":

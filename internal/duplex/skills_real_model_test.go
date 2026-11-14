@@ -127,6 +127,7 @@ type realSkillRow struct {
 	QuoteStartMS      float64           `json:"quote_start_ms,omitempty"`
 	InterruptCutoffMS float64           `json:"interruption_cutoff_ms,omitempty"`
 	Trace             []*modelProbeCall `json:"trace"`
+	ResponseText      string            `json:"response_text,omitempty"`
 	Memory            json.RawMessage   `json:"final_memory"`
 	Quotes            []tools.Request   `json:"quote_requests,omitempty"`
 	Checks            map[string]bool   `json:"checks"`
@@ -205,8 +206,15 @@ func (s *realSkillSession) observeTurn(t *testing.T, scenario, mode string, acti
 		}
 		s.c.mu.Unlock()
 		s.p.mu.Lock()
-		quiet := len(s.p.trace) > startTrace && len(s.p.trace[len(s.p.trace)-1].Calls) == 0 && !s.p.trace[len(s.p.trace)-1].done.IsZero() && time.Since(s.p.trace[len(s.p.trace)-1].done) > 350*time.Millisecond
+		quiet := len(s.p.trace) > startTrace && !s.p.trace[len(s.p.trace)-1].done.IsZero() && time.Since(s.p.trace[len(s.p.trace)-1].done) > 350*time.Millisecond
 		s.p.mu.Unlock()
+		if quiet {
+			settled := make(chan bool, 1)
+			s.e.post(func() {
+				settled <- s.e.backendPending.Load() == 0 && len(s.e.pending) == 0 && len(s.e.continuations) == 0 && (s.e.tools == nil || (len(s.e.tools.tasks) == 0 && len(s.e.tools.deliveries) == 0))
+			})
+			quiet = <-settled
+		}
 		if row.AudioMS > 0 && quiet {
 			row.Checks["model_chain_completed"] = true
 			break
@@ -218,6 +226,19 @@ func (s *realSkillSession) observeTurn(t *testing.T, scenario, mode string, acti
 	b, _ := json.Marshal(s.p.trace[startTrace:])
 	_ = json.Unmarshal(b, &row.Trace)
 	s.p.mu.Unlock()
+	s.c.mu.Lock()
+	for i, event := range s.c.events {
+		if s.c.at[i].Before(began) {
+			continue
+		}
+		if envelope, ok := event.(live.ResponseEventEnvelope); ok {
+			var delta struct{ Type, Delta string }
+			if json.Unmarshal(envelope.Event, &delta) == nil && delta.Type == "response.output_text.delta" {
+				row.ResponseText += delta.Delta
+			}
+		}
+	}
+	s.c.mu.Unlock()
 	for _, step := range row.Trace {
 		if !step.FirstText.IsZero() && row.TextMS == 0 {
 			row.TextMS = float64(step.FirstText.Sub(began).Microseconds()) / 1000

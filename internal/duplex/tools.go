@@ -44,8 +44,12 @@ type toolState struct {
 	pool   *tools.Pool
 	memory *tools.Memory
 	// The requested quote contains changes to an as-yet-unmaterialized default.
-	quoteBaseDefault bool
-	quoteBrief       *tools.QuoteBrief
+	quoteBaseDefault    bool
+	quoteRevision       *pendingQuoteRevision
+	quoteRevisionSerial int
+	confirmedRevision   string
+	quotedSelection     bool
+	quoteBrief          *tools.QuoteBrief
 	// tasks are the async tool calls in flight, by task id; latest is the
 	// newest per tool, which supersedes older ones of the same tool.
 	tasks  map[string]*tools.Task
@@ -112,9 +116,11 @@ type toolState struct {
 	// is what the caller heard of it when that turn was cut short (10:48 on
 	// 10-26: the second quotation's readout was cut 4.7 s in and the total
 	// was never said again).
-	lastResultTurn  string
-	lastResultCut   bool
-	lastResultHeard string
+	lastResultTurn     string
+	lastResultCut      bool
+	lastResultHeard    string
+	lastResultComplete bool
+	quoteDelivery      *quoteDelivery
 	// stats
 	calls, async, delivered, dropped, superseded int
 }
@@ -202,6 +208,10 @@ func (e *Engine) setupTools() {
 	for _, d := range ts.defs {
 		ts.byName[d.Name] = d
 	}
+	if _, ok := ts.byName["quote_total"]; ok && cfg.Duplex.QuoteInterruptionRecovery {
+		ts.defs = append(ts.defs, quoteDeliveryTool)
+		ts.byName[quoteDeliveryTool.Name] = quoteDeliveryTool
+	}
 	token := ""
 	if cfg.ToolsTokenFile != "" {
 		if b, err := os.ReadFile(cfg.ToolsTokenFile); err == nil {
@@ -266,6 +276,10 @@ func (e *Engine) toolDefinitions() []json.RawMessage {
 	for _, d := range e.tools.defs {
 		if d.Name == "quote_total" {
 			d.Description += "\n" + e.quoteCatalogText()
+			if e.confirmsQuoteRevisions() {
+				d.Description += "\n" + quoteConfirmationInstructions
+				d.Parameters = quoteConfirmationParameters(d.Parameters)
+			}
 		}
 		out = append(out, d.Definition())
 	}
@@ -306,12 +320,17 @@ func (e *Engine) memoryBlock() string {
 			b.WriteString("\n")
 		}
 		fmt.Fprintf(&b, "【最近一次报价结果】基于工作记忆 v%d：%s", t.Request.MemoryVersion, lastResultLine(t))
-		if ts.lastResultCut {
+		if ts.quoteDelivery != nil && ts.quoteDelivery.task == t {
+			fmt.Fprintf(&b, "\n原始播报已播放片段：%s。当前讲解范围与完成情况见本轮报价讲解进度。", ts.lastResultHeard)
+		} else if ts.lastResultCut {
 			fmt.Fprintf(&b, "\n这段报价念到“%s”时被客户打断。按客户当前问题补充：只问某险种时只答该险种的明细，问总价时再答方案合计；不要强行重报总价。已有明细无需重复查询，缺失的金额须查询，不能推算。", ts.lastResultHeard)
-		} else {
+		} else if ts.lastResultComplete {
 			b.WriteString("\n播报内容已完整念给客户；明细依据仅供回答追问。")
+		} else {
+			b.WriteString("\n报价已进入播报流程，尚未确认播放完成；按客户当前问题回答。")
 		}
 	}
+	b.WriteString(e.quoteConfirmationPrompt())
 	return b.String()
 }
 
@@ -432,7 +451,7 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 	var wait []provider.ToolCall
 	for _, c := range calls {
 		ts.calls++
-		t := ts.byName[c.Name]
+		t := e.confirmationTool(ts.byName[c.Name], c)
 		switch {
 		case folded[c.ID]:
 			// A single change called beside a comparison of options in the
@@ -443,6 +462,8 @@ func (e *Engine) onServerCalls(job backendJob, calls []provider.ToolCall) {
 			p.outputs[c.ID] = `{"status":"merged","note":"该改动已并入同一次对比，方案未变；对比结果念出后请问客户选哪个"}`
 		case t.Builtin == "update_memory":
 			p.outputs[c.ID] = e.applyMemoryCall(c)
+		case t.Builtin == "quote_delivery":
+			p.outputs[c.ID] = e.applyQuoteDeliveryCall(c, job.turn)
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:
@@ -815,6 +836,12 @@ func (e *Engine) applyMemoryCall(c provider.ToolCall) string {
 		// The model sometimes sends the patch itself as the arguments.
 		args.Patch = json.RawMessage(c.Arguments)
 	}
+	if e.confirmsQuoteRevisions() && e.hasQuotedSelection() {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(args.Patch, &fields) == nil && fields["quote"] != nil {
+			return `{"ok":false,"error":"Use quote_total config to stage revised coverage, then wait for caller confirmation. Confirmed quote memory is updated by the engine."}`
+		}
+	}
 	var allowed bool
 	args.Patch, allowed = e.protectBusinessState(args.Patch)
 	if !allowed {
@@ -847,6 +874,11 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()), "", nil
 	}
 	c = e.normalizeQuoteCall(c)
+	var response string
+	c, response = e.prepareQuoteRevision(job.turn, c)
+	if response != "" {
+		return response, "", nil
+	}
 	if err := e.applyQuoteRevision(c); err != nil {
 		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()), "", nil
 	}
@@ -895,6 +927,9 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	e.deps.Emit(live.TaskEvent{Envelope: live.Envelope{Type: live.ExtTask}, TaskID: task.ID, Tool: c.Name, Status: "running", MemoryVersion: ver})
 	if t.Ack != "" {
 		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID, nil
+	}
+	if t.Name == "quote_total" && t.Speech != nil && t.Speech.ConfirmRevisions {
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"客户已确认全部改动，现在才开始计算。结合刚确认的内容简短自然回应一次，变换表达，避免重复上一句等待话术；不要再次询问是否调整，不编造金额。结果稍后自动通知。"}`, task.ID, eta), task.ID, nil
 	}
 	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID, nil
 }
@@ -1002,7 +1037,7 @@ func (e *Engine) maybeDeliver() {
 	} else {
 		fmt.Fprintf(&note, "，结果：%s", string(task.Result.Output))
 		if readout != "" {
-			fmt.Fprintf(&note, "\n系统已替你完整念出报价：“%s%s”。你的回复里不得出现任何数字、金额或险种名，不要复述；只用一句话简短询问客户对这个方案的意见，或继续对话。", opening, readout)
+			fmt.Fprintf(&note, "\n本次回复开头已排队播报报价：“%s%s”。仅本次回复的后续内容不要重复这些数字、金额或险种名，只用一句话简短询问客户对这个方案的意见。实际播放进度以最新报价讲解进度为准，后续客户追问时可依据工具结果回答。", opening, readout)
 		} else if opening != "" {
 			fmt.Fprintf(&note, "\n系统已替你说出开头“%s”，请直接接着说后面的内容，不要重复这个开头。", opening)
 		}
@@ -1021,6 +1056,9 @@ func (e *Engine) maybeDeliver() {
 	turn := e.tracker.Begin("", false)
 	turn.Opening, turn.Readout = opening, readout
 	turn.QuoteResult = task.Result.Err == nil && tools.ResultStatus(task.Result.Output) == "quote"
+	if turn.QuoteResult && task.Tool.Name == "quote_total" && current {
+		ts.quotedSelection = true
+	}
 	attrs := []any{"tool", task.Tool.Name, "task", task.ID, "turn", turn.ID,
 		"waited_for_gap_ms", waited.Milliseconds(), "interrupting", busy, "memory_changed", task.Request.MemoryVersion != ver,
 		"posthook_skipped", posthookSkipped}
@@ -1034,8 +1072,10 @@ func (e *Engine) maybeDeliver() {
 	e.deliverCoalescedTask(delivery, turn)
 	e.specTurn = nil
 	e.commitTurn(turn)
-	if task.Result.Err == nil && task.Tool.OpeningFor(task.Result.Output) != "" {
+	if task.Result.Err == nil && (turn.QuoteResult || task.Tool.OpeningFor(task.Result.Output) != "") {
 		ts.lastResult, ts.lastResultTurn, ts.lastResultCut, ts.lastResultHeard = task, turn.ID, false, ""
+		ts.lastResultComplete = false
+		e.startQuoteDelivery(task, turn)
 	}
 	e.beginGeneration(turn, "task_result", false)
 }
@@ -1162,7 +1202,7 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 	snap, ver := e.memorySnapshot()
 	for _, c := range mine {
 		e.tools.calls++
-		t := e.tools.byName[c.Name]
+		t := e.confirmationTool(e.tools.byName[c.Name], c)
 		switch {
 		case folded[c.ID]:
 			p.outputs[c.ID] = `{"status":"merged","note":"该改动已并入同一次对比，方案未变"}`
@@ -1171,6 +1211,8 @@ func (e *Engine) onServerCallsAmong(job backendJob, mine, theirs []provider.Tool
 			skillCalls = append(skillCalls, c)
 		case t.Builtin == "update_memory":
 			p.outputs[c.ID] = e.applyMemoryCall(c)
+		case t.Builtin == "quote_delivery":
+			p.outputs[c.ID] = e.applyQuoteDeliveryCall(c, job.turn)
 		case t.Builtin == "end_call":
 			p.outputs[c.ID] = e.requestEndCall(c)
 		case t.Async:

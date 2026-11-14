@@ -306,6 +306,9 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 	e.backendCancel = cancel
 	e.backendPending.Add(1)
 	request := e.backendRequest(e.snapshotMessages(turn, front), front)
+	if !front && reason != "tool_result" {
+		e.requireQuoteScopeControl(turn, &request)
+	}
 	e.wechatTurn = nil
 	latest := job.request
 	if !front && !e.wechatAdded && (strings.Contains(latest, "微信") || strings.Contains(latest, "服务通知")) {
@@ -420,6 +423,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 		}
 		if note != "" {
 			msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
+		}
+	}
+	if !front {
+		if note := e.quoteRecoveryPrompt(turn); note != "" {
+			msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Name: "golive_quote_delivery", Content: note})
 		}
 	}
 	return msgs
@@ -572,6 +580,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	}
 
 	pushText(repeatedReadout.Flush())
+	if !failed && len(calls) == 0 && e.opts.Cfg.Duplex.QuoteInterruptionRecovery {
+		pushText(e.finishQuoteClarification(ctx, turn, full.String()))
+	}
 	text := full.String()
 	turn.AppendResponse(text[fixedBytes:])
 	e.log.Debug("think: backend complete",
@@ -814,6 +825,18 @@ func (e *Engine) startTypedTurn() {
 // startContinuation resumes a backend response with its function results.
 func (e *Engine) startContinuation(p *pendingResponse) {
 	e.recordContinuation(p)
+	if e.deliveredQuoteCovers(p) {
+		e.log.Info("quote: delivered result covers calling continuation", "turn", p.turn.ID, "task", e.tools.lastResult.ID)
+		return
+	}
+	if e.quoteConfirmationAnswered(p) {
+		e.log.Info("quote: confirmation question answered in calling turn", "turn", p.turn.ID)
+		return
+	}
+	if e.quoteControlAnswered(p) {
+		e.log.Info("quote: control answered in calling turn", "turn", p.turn.ID)
+		return
+	}
 
 	if p.scripted != "" {
 		// The owner's words for the wait, in place of resuming the model —

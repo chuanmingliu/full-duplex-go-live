@@ -2196,6 +2196,9 @@ func (e *Engine) interrupt() {
 	e.cancelBackend()
 	gen := e.gen.Bump()
 	e.abortSpeech()
+	if e.opts.Cfg.Duplex.QuoteInterruptionRecovery {
+		e.drainPlaybackCompletions(false)
+	}
 	if e.opts.Cfg.Duplex.ResetTTSOnInterrupt {
 		e.resetTTS()
 	}

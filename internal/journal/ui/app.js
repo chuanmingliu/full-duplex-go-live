@@ -1513,6 +1513,7 @@
         case 'quote': quotes++; what = 'lead service: quote ' + (q.total ? q.total.toFixed(2) : '0') + ', ' + plural(q.lines || 0, 'line') + (q.skipped ? ', skipped ' + q.skipped : '') + (q.source ? ' (' + q.source + ')' : ''); break;
         case 'error': errors++; what = 'lead service: ' + (q.error || 'error'); break;
         case 'delivered': what = 'told the model (' + q.task + ')' + (q.waited_ms ? ' after waiting ' + q.waited_ms + ' ms for a gap' : '') + (q.interrupting ? ', interrupting' : ''); break;
+        case 'recovery': what = 'quotation ' + q.status + ' (' + q.reason + ', ' + q.task + ', memory v' + q.version + ')' + ' · played sections ' + (q.completed || '[]') + ' · remaining ' + (q.remaining || '[]') + ' · interruptions ' + (q.interruptions || 0) + (q.turn ? ' · ' + q.turn : ''); break;
         default: what = q.kind + (q.error ? ': ' + q.error : '');
       }
       var t = h('a', { class: 'warn-t num', href: '#', onclick: function (e) { e.preventDefault(); if (state.player) state.player.playFrom(Math.max(0, q.t_s - 2)); } }, q.t_s.toFixed(1) + ' s');

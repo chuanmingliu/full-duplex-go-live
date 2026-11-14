@@ -537,6 +537,9 @@ type DuplexConfig struct {
 	// telephone call. Zero disables it. Prepared quote audio is private to the
 	// call; unchanged validated results still govern what may be spoken.
 	QuoteReadoutWarmMax int `json:"quote_readout_warm_max"`
+	// QuoteInterruptionRecovery retains section-level quotation playback and
+	// exposes pause/resume controls to the response model. Opt in per profile.
+	QuoteInterruptionRecovery bool `json:"quote_interruption_recovery"`
 	// BackendPrefixWarm sends the backend a one-token request carrying the
 	// conversation so far when the caller starts speaking, so a provider with a
 	// prefix cache has it loaded by the time the real request follows. It

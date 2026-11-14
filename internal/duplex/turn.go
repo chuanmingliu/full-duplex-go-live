@@ -102,8 +102,12 @@ type Turn struct {
 	Opening  string
 	// Readout is a deterministic tool-result prefix, separate from its
 	// optional posthook so only the figures establish readout output.
-	Readout     string
-	QuoteResult bool
+	Readout string
+	// quoteDelivery binds playback accounting to the result seen by this turn.
+	quoteDelivery      *quoteDelivery
+	quoteDeliveryEpoch int
+	quoteClarification bool
+	QuoteResult        bool
 	// Opened is the opener the engine said for this turn at the pause, before
 	// the model's first clause; the pipe says it once. OpenedMS is its audio.
 	Opened   string

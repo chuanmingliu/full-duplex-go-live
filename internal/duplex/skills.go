@@ -95,6 +95,8 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		if len(out.Guidance) > 0 {
 			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Content: "Apply this turn's configured business guidance to the latest user request only, subject to original instructions, current business state and tool permissions. Use existing tools directly when needed. Ask for clarification if the request is ambiguous."})
 		}
+		fresh.Messages = quoteRecoveryLast(fresh.Messages)
+		e.prepareQuoteClarification(job.turn, out.Guidance, &fresh)
 		ready <- rendered{fresh, started, out.Status, current}
 	})
 	var result rendered

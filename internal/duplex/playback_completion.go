@@ -56,7 +56,14 @@ func (e *Engine) completePlayback(receipt *playbackCompletion, closing bool) {
 			e.noteAckPlayback(r.TurnID, false)
 			e.noteReadoutCut(r.TurnID, r.SpokenText)
 		}
+		if e.tools != nil && r.TurnID == e.tools.lastResultTurn {
+			e.tools.lastResultComplete = false
+		}
+		wasNatural := turn.Timings().CompletedNaturally
 		if !turn.MarkCompleted() {
+			if wasNatural {
+				e.noteQuotePlayback(turn, r, true)
+			}
 			return
 		}
 	} else {
@@ -65,6 +72,10 @@ func (e *Engine) completePlayback(receipt *playbackCompletion, closing bool) {
 			return
 		}
 	}
+	if e.tools != nil && r.TurnID == e.tools.lastResultTurn {
+		e.tools.lastResultComplete = !receipt.truncated
+	}
+	e.noteQuotePlayback(turn, r, receipt.truncated)
 	e.recordTurn(turn, r.TurnID, r.SpokenText)
 	if !closing && !receipt.truncated {
 		e.noteAckPlayback(r.TurnID, true)
@@ -85,17 +96,24 @@ func (e *Engine) completePlayback(receipt *playbackCompletion, closing bool) {
 	}
 }
 
-// finishPlaybackAtClose runs only after the loop and player have stopped. A
-// naturally completed receipt wins over the last active snapshot through the
-// same once-only Turn completion guard used during the call.
-func (e *Engine) finishPlaybackAtClose(last PlaybackReport) {
+// Drain only playback receipts on the engine loop. Interrupt returns after the
+// player's truncation callback, so a new request can see the updated prefix
+// even when both actions occur within the same control callback.
+func (e *Engine) drainPlaybackCompletions(closing bool) {
 	e.playbackMu.Lock()
 	pending := e.playbackPending
 	e.playbackPending = nil
 	e.playbackMu.Unlock()
 	for _, receipt := range pending {
-		e.completePlayback(receipt, true)
+		e.completePlayback(receipt, closing)
 	}
+}
+
+// finishPlaybackAtClose runs only after the loop and player have stopped. A
+// naturally completed receipt wins over the last active snapshot through the
+// same once-only Turn completion guard used during the call.
+func (e *Engine) finishPlaybackAtClose(last PlaybackReport) {
+	e.drainPlaybackCompletions(true)
 	turn := last.validTurn()
 	if turn == nil || IsBackchannel(last.TurnID) || turn.Timings().FirstAudioOut.IsZero() || turn.Dead() && !turn.Committed() {
 		return
@@ -103,11 +121,5 @@ func (e *Engine) finishPlaybackAtClose(last PlaybackReport) {
 	// Preserve the existing truncation event/log as well as the latency row.
 	// This callback only queues accounting; it cannot launch new work here.
 	e.onTruncated(last)
-	e.playbackMu.Lock()
-	pending = e.playbackPending
-	e.playbackPending = nil
-	e.playbackMu.Unlock()
-	for _, receipt := range pending {
-		e.completePlayback(receipt, true)
-	}
+	e.drainPlaybackCompletions(true)
 }

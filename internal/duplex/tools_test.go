@@ -997,8 +997,8 @@ func TestTheQuoteIsReadOutFromThePanelsTemplate(t *testing.T) {
 	llm.mu.Lock()
 	defer llm.mu.Unlock()
 	last := llm.requests[len(llm.requests)-1].Messages
-	if note := last[len(last)-1].Content; !strings.Contains(note, "不得出现任何数字") || strings.Contains(note, "报总价和关键构成") {
-		t.Fatalf("the model was not told the figures were read out: %q", note)
+	if note := last[len(last)-1].Content; !strings.Contains(note, "已排队播报报价") || !strings.Contains(note, "仅本次回复") || strings.Contains(note, "已替你完整念出") || strings.Contains(note, "报总价和关键构成") {
+		t.Fatalf("the model did not receive scoped queued-readout guidance: %q", note)
 	}
 }
 

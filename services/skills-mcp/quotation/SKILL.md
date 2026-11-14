@@ -37,3 +37,25 @@ alternatives obey the same dependency and tier rules and remain independent.
 客户要各档单项保费及总价时，用一次 configs 比较所有指定的有效档位；逐档说清该险种保费与整单合计，不得把总价差额当成单项保费。单项保费只取各 variants[].lines 中对应 coverage 的 premium；缺失时说明未返回并查询。医保费可能是医保外用药的识别结果，结合最近明确的三者/司机/乘客范围确认；范围不清先问清，不能自动选择三者。共享保额是额度规则，本身不能判断是否收费。费用未知时回答‘是否收费、收多少，以本次报价明细为准’，既不能说免费，也不能断言一定收费或必须额外收费；只有权威报价明细明确返回该项保费为0时才能说本次报价为0元，不能承诺所有客户免费。没有客户统计数据时，不说大多数客户、大家一般都选某档。可以按客户需求解释取舍，不编造人群偏好。原始话术提及的驾乘险等产品若未在本轮活动目录中，不得报价、承诺可加保或主动推销；应说明当前方案未提供，并区分已配置的司机和乘客责任险。
 
 客户泛指某一险种不同档位或全部档位的价格、没有限定比较子集时，若工具声明 compare_coverage，使用它指定险种，让引擎按活动目录完整展开（包括最低档），不要自行漏选。工具未声明该参数时，按活动目录逐项构造 configs。客户明确只比较两档等子集时，严格按指定档位使用 configs。比较不代表确认修改方案。
+
+## Confirming changes before a revised quotation
+
+When the host exposes `revision_action` and `revision_id`, follow its two-step
+revision contract. After an existing quote, send requested changes in `config`.
+An `awaiting_confirmation` result means calculation has not started. Briefly
+recap the pending changes and ask whether the caller needs anything else
+adjusted. Use natural wording appropriate to this conversation and vary it
+across rounds. Do not announce that a premium is being calculated yet.
+
+Accumulate further changes with `config`. Only after a later caller utterance
+clearly settles all pending changes, use `revision_action: confirm` with the
+current `revision_id`, without repeating `config`. Interpret consent in context.
+“Yes” to “anything else to adjust?” requests more changes. “No more, use this”
+settles them. Clarify ambiguous responses. Use `revision_action: cancel` to
+discard pending changes when the caller abandons the revision. Never use
+`update_memory.quote` to bypass confirmation.
+
+During calculation, follow the host response. If it requests model-generated
+acknowledgment, briefly acknowledge the confirmed change with varied wording.
+The original configured acknowledgment remains the fallback when this host
+contract is absent. Existing prices and result-readout rules still apply.

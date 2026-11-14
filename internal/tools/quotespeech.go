@@ -29,11 +29,13 @@ import (
 //	                posthook; empty leaves the figures to the model
 //	posthook_status the result status the posthook and template are for
 type QuoteSpeech struct {
-	Version        int    `json:"version,omitempty"`
-	Prehook        string `json:"prehook"`
-	Posthook       string `json:"posthook"`
-	Template       string `json:"template,omitempty"`
-	PosthookStatus string `json:"posthook_status,omitempty"`
+	Version int `json:"version,omitempty"`
+	// ConfirmRevisions collects follow-up selection changes before pricing them.
+	ConfirmRevisions bool   `json:"confirm_revisions,omitempty"`
+	Prehook          string `json:"prehook"`
+	Posthook         string `json:"posthook"`
+	Template         string `json:"template,omitempty"`
+	PosthookStatus   string `json:"posthook_status,omitempty"`
 	// CompareTemplate reads a result that compares several options
 	// (`variants`: label, change, lines, total, diff, diff_abs, more, same, error) —
 	// organized around what changes and by how much, instead of the
