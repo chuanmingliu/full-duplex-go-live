@@ -38,24 +38,59 @@ alternatives obey the same dependency and tier rules and remain independent.
 
 客户泛指某一险种不同档位或全部档位的价格、没有限定比较子集时，若工具声明 compare_coverage，使用它指定险种，让引擎按活动目录完整展开（包括最低档），不要自行漏选。工具未声明该参数时，按活动目录逐项构造 configs。客户明确只比较两档等子集时，严格按指定档位使用 configs。比较不代表确认修改方案。
 
-## Confirming changes before a revised quotation
+## Confirming the scope of a follow-up quotation
 
-When the host exposes `revision_action` and `revision_id`, follow its two-step
-revision contract. After an existing quote, send requested changes in `config`.
-An `awaiting_confirmation` result means calculation has not started. Briefly
-recap the pending changes and ask whether the caller needs anything else
-adjusted. Use natural wording appropriate to this conversation and vary it
-across rounds. Do not announce that a premium is being calculated yet.
+When the host exposes `revision_action` and `revision_id`, use its pending-request
+contract for every follow-up pricing request, including hypothetical comparisons.
+The original first quotation follows the normal flow. A comparison authorizes
+pricing alternatives; it does not select one or change the confirmed policy.
 
-Accumulate further changes with `config`. Only after a later caller utterance
-clearly settles all pending changes, use `revision_action: confirm` with the
-current `revision_id`, without repeating `config`. Interpret consent in context.
-“Yes” to “anything else to adjust?” requests more changes. “No more, use this”
-settles them. Clarify ambiguous responses. Use `revision_action: cancel` to
-discard pending changes when the caller abandons the revision. Never use
-`update_memory.quote` to bypass confirmation.
+1. Identify whether the caller wants a selected-policy change (`config`) or a
+   comparison (`configs`, or `compare_coverage` for all configured tiers).
+2. Briefly restate the requested scope and ask whether any other coverage needs
+   adjustment. Speak naturally and invoke the staging tool in that same response. Do not
+   finish with only a question; the pending request must be saved.
+   An `awaiting_confirmation` result means pricing has not started. If the
+   question has already been spoken this turn, do not ask it a second time.
+3. Collect additional changes. For comparisons, send the complete updated
+   `configs` including all shared changes in every relevant alternative. Use
+   `config` only when the caller is choosing a revised policy. Do not silently
+   turn exploration into a purchase or policy-selection decision.
+4. If the caller has not specified an option, ask a targeted question first.
+   For “车损再调整一下”, use the active catalog to clarify inclusion/removal or
+   an explicitly supported rider. Do not invent an adjustable insured-value
+   menu or ask for vehicle purchase information as a substitute for clarifying
+   what the caller wants to change.
+5. Interpret the answer against the preceding question. “有” after “还有别的
+   保障要调整吗” means more changes. “没有了，就这样算” settles the scope.
+   A bare affirmative to an unrelated question, silence or a clarification
+   request does not authorize pricing.
+6. Only after a later caller utterance clearly approves the complete scope,
+   invoke `quote_total` with `revision_action: confirm` and the current
+   `revision_id`. Omit `config`, `configs` and `compare_coverage` on that call.
+   Use `revision_action: cancel` when the caller abandons the pending request.
+   Never use `update_memory.quote` to bypass this contract.
+7. If interrupted, answer the new question using the current pending scope.
+   Preserve accumulated changes, and return to confirmation when appropriate.
+   Respect a request to pause, cancel or end the call.
+8. Once the tool says pricing has started, give at most one brief contextual
+   acknowledgment when needed. A ready result can be presented immediately.
+   Read only authoritative returned premiums and keep calculation time separate
+   from conversational responsiveness.
 
-During calculation, follow the host response. If it requests model-generated
-acknowledgment, briefly acknowledge the confirmed change with varied wording.
-The original configured acknowledgment remains the fallback when this host
-contract is absent. Existing prices and result-readout rules still apply.
+### Natural wording
+
+These examples describe intent and are not fixed playback templates. Vary the
+phrasing and sentence structure across rounds while preserving the scope.
+Check the last confirmation question in the conversation and use a different
+question form; changing only the coverage amount is insufficient.
+
+- Comparing tiers — “先看两百万、三百万和四百万这几个档，其他保障还需要一起调整吗？”
+- Changing a policy — “三者提高到三百万，其他项目先保留，您还有别的想改的吗？”
+- Adding a change — “这几个方案都去掉车损。还有哪一项需要一起看看？”
+- After approval — “好，我按您确认的这几个方案核算一下。”
+
+Do not say the premium is being calculated before approval. Do not mechanically
+repeat “保费正在计算中”. For a request with unresolved choices, ask about those
+choices instead of using a generic waiting message. When this host contract is
+absent, retain its original tool parameters and configured acknowledgment flow.

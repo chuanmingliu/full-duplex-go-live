@@ -176,3 +176,13 @@ func TestFollowupPriceAndWeChatRouting(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotationConfirmationRouting(t *testing.T) {
+	c := defaults()
+	for _, query := range []string{"三者险。你帮我对比一下，两百万、三百万、四百万分别是多少？", "车损也想再调整一下。"} {
+		skills, _, err := c.selectTurn(turnInput{Event: "auto", Utterance: query})
+		if err != nil || len(skills) != 1 || skills[0].Name != "motor-quotation" {
+			t.Fatalf("confirmation routing failed for %q: %v", query, err)
+		}
+	}
+}

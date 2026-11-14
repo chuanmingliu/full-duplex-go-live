@@ -156,7 +156,20 @@ func (q observedQuote) Execute(ctx context.Context, _ tools.Tool, r tools.Reques
 	if q.completed != nil {
 		q.completed <- time.Since(began)
 	}
-	return tools.Result{Output: json.RawMessage(`{"status":"quote","total":3200,"currency":"CNY"}`), Took: q.delay}
+	var args struct {
+		Configs []map[string]any `json:"configs"`
+	}
+	_ = json.Unmarshal(r.Arguments, &args)
+	output := map[string]any{"status": "quote", "total": 3200, "currency": "CNY"}
+	if len(args.Configs) > 0 {
+		variants := make([]map[string]any, 0, len(args.Configs))
+		for i, variant := range args.Configs {
+			variants = append(variants, map[string]any{"label": fmt.Sprint(variant["三者险"]), "change": variant, "total": 3200 + 100*i, "lines": []any{map[string]any{"coverage": "三者险", "choice": variant["三者险"], "premium": 1300 + 100*i}}})
+		}
+		output["variants"] = variants
+	}
+	raw, _ := json.Marshal(output)
+	return tools.Result{Output: raw, Took: q.delay}
 }
 func runSkillScenario(t *testing.T, cfg skillsmcp.Config, event string, finishQuote bool) (time.Duration, []provider.LLMRequest) {
 	t.Helper()

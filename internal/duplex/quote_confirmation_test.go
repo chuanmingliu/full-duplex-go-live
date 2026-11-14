@@ -97,7 +97,7 @@ func TestQuoteConfirmationCancellationAndInputChange(t *testing.T) {
 }
 
 func TestQuoteConfirmationGuardsAndCompatibility(t *testing.T) {
-	for _, args := range []string{`{"configs":[{"三者险":"300万"}]}`, `{}`} {
+	for _, args := range []string{`{}`} {
 		e := confirmationEngine()
 		_, response := e.prepareQuoteRevision(&Turn{ID: "one"}, revisionCall(args))
 		if response != "" {
@@ -233,5 +233,67 @@ func TestQuoteConfirmationDispatchStartsOnlyAfterApproval(t *testing.T) {
 	request := revisionRequest(t, quotes)
 	if strings.Contains(string(request.Arguments), "revision_") || !strings.Contains(string(request.Memory), `"三者险":"300万"`) {
 		t.Fatalf("incorrect confirmed request: %+v", request)
+	}
+}
+
+func TestQuoteConfirmationComparisonWaitsWithoutSelectingPolicy(t *testing.T) {
+	e := confirmationEngine()
+	before, version := e.memorySnapshot()
+	call := revisionCall(`{"configs":[{"三者险":"200万"},{"三者险":"300万"},{"三者险":"400万"}]}`)
+	_, response := e.prepareQuoteRevision(&Turn{ID: "compare", Transcript: "对比这三档"}, call)
+	if !strings.Contains(response, "awaiting_confirmation") || e.tools.quoteRevision == nil {
+		t.Fatal("comparison bypassed confirmation", response)
+	}
+	id := e.tools.quoteRevision.ID
+	confirmed, response := e.prepareQuoteRevision(&Turn{ID: "approve", Transcript: "没有其他，就对比这三档"}, revisionCall(confirmationArgs(id, "confirm")))
+	if response != "" {
+		t.Fatal(response)
+	}
+	var args struct {
+		Configs []map[string]any `json:"configs"`
+	}
+	if json.Unmarshal([]byte(confirmed.Arguments), &args) != nil || len(args.Configs) != 3 {
+		t.Fatal("comparison lost variants", confirmed.Arguments)
+	}
+	if err := e.applyQuoteRevision(confirmed); err != nil {
+		t.Fatal(err)
+	}
+	after, nextVersion := e.memorySnapshot()
+	if string(after) != string(before) || nextVersion != version {
+		t.Fatal("confirmed comparison changed selected policy")
+	}
+}
+
+func TestQuoteConfirmationComparisonPreservesPendingChangesAndInvalidatesOldApproval(t *testing.T) {
+	e := confirmationEngine()
+	e.prepareQuoteRevision(&Turn{ID: "change"}, revisionCall(`{"config":{"车损险":false}}`))
+	old := e.tools.quoteRevision.ID
+	e.prepareQuoteRevision(&Turn{ID: "compare"}, revisionCall(`{"configs":[{"三者险":"200万"},{"三者险":"300万"}]}`))
+	pending := e.tools.quoteRevision
+	if len(pending.Configs) != 2 || pending.Configs[0]["车损险"] != false || pending.Configs[1]["车损险"] != false {
+		t.Fatal("comparison dropped pending common change", pending)
+	}
+	_, output := e.prepareQuoteRevision(&Turn{ID: "later", Transcript: "确认"}, revisionCall(confirmationArgs(old, "confirm")))
+	if !strings.Contains(output, "expired") {
+		t.Fatal("old request remained confirmable", output)
+	}
+	_, output = e.prepareQuoteRevision(&Turn{ID: "cancel"}, revisionCall(confirmationArgs(pending.ID, "cancel")))
+	if !strings.Contains(output, "cancelled") || e.tools.quoteRevision != nil {
+		t.Fatal(output)
+	}
+}
+
+func TestQuoteConfirmationComparisonLegacyAndFirstQuote(t *testing.T) {
+	for _, first := range []bool{true, false} {
+		e := confirmationEngine()
+		if first {
+			e.tools.lastResult = nil
+		} else {
+			e.tools.byName["quote_total"].Speech.ConfirmRevisions = false
+		}
+		_, output := e.prepareQuoteRevision(&Turn{ID: "compare"}, revisionCall(`{"configs":[{"三者险":"200万"},{"三者险":"300万"}]}`))
+		if output != "" {
+			t.Fatal("first quote or legacy comparison changed", output)
+		}
 	}
 }

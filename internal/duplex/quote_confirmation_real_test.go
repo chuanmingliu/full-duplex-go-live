@@ -26,10 +26,20 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 		if enabled {
 			mode = "confirmation"
 		}
-		for _, scenario := range []string{"accumulate", "clarify", "cancel"} {
-			s := newRealSkillSession(t, llm, skillsmcp.Config{})
+		for _, scenario := range []string{"accumulate", "clarify", "cancel", "compare"} {
+			cfg := skillsmcp.Config{}
+			if enabled && os.Getenv("QUOTE_CONFIRMATION_SKILL") != "" {
+				cfg = quotationSkillFixture(t, os.Getenv("QUOTE_CONFIRMATION_SKILL"))
+			}
+			s := newRealSkillSession(t, llm, cfg)
 			s.e.post(func() {
 				tool := s.e.tools.byName["quote_total"]
+				var schema map[string]any
+				_ = json.Unmarshal(tool.Parameters, &schema)
+				properties := schema["properties"].(map[string]any)
+				properties["configs"] = map[string]any{"type": "array", "items": properties["config"]}
+				delete(schema, "required")
+				tool.Parameters, _ = json.Marshal(schema)
 				tool.Ack = "这会儿正在给您计算保费，请您稍等。"
 				tool.Speech = &tools.QuoteSpeech{ConfirmRevisions: enabled}
 				s.e.tools.byName[tool.Name] = tool
@@ -43,8 +53,15 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 				s.e.history = []provider.Message{{Role: provider.RoleUser, Content: "之前那份报价我知道了，我们看看怎么调整。"}, {Role: provider.RoleAssistant, Content: "目前是三者险两百万，加车损和交强险，总共4500元。"}}
 			})
 			probeBarrier(s.e)
-			initial := s.turn(t, scenario+"_request", mode, "三者险改成三百万，其他暂时不变。")
+			request := "三者险改成三百万，其他暂时不变。"
+			if scenario == "compare" {
+				request = "先比较一下三者险二百万、三百万、四百万的价格，其他保障不变。"
+			}
+			initial := s.turn(t, scenario+"_request", mode, request)
 			if enabled {
+				if cfg.URL != "" {
+					initial.Checks["quotation_skill_loaded"] = skillLoaded(initial)
+				}
 				initial.Checks["no_pricing_before_confirmation"] = len(initial.Quotes) == 0
 				initial.Checks["confirmed_memory_unchanged"] = strings.Contains(string(initial.Memory), `"三者险":"200万"`)
 				s.e.post(func() { initial.Checks["revision_staged"] = s.e.tools.quoteRevision != nil })
@@ -70,7 +87,7 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 				})
 				probeBarrier(s.e)
 				more.Checks["no_invented_change_count"] = !strings.Contains(more.ResponseText, "三项") && !strings.Contains(more.ResponseText, "三处")
-				more.Checks["confirmation_wording_varied"] = strings.TrimSpace(more.ResponseText) != strings.TrimSpace(initial.ResponseText)
+				more.Checks["confirmation_wording_varied"] = confirmationQuestion(more.ResponseText) != confirmationQuestion(initial.ResponseText)
 				rows = append(rows, more)
 				final := s.turn(t, "confirm_all", mode, "没有其他要改的了，就按三者三百万、不带车损的方案算吧。")
 				final.Checks["one_confirmed_calculation"] = len(final.Quotes) == 1
@@ -86,6 +103,32 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 				rows = append(rows, pause)
 				final := s.turn(t, "confirm_after_clarification", mode, "明白了，没有其他调整，就按刚才三百万的方案计算吧。")
 				final.Checks["confirmed_after_clarification"] = len(final.Quotes) == 1
+				rows = append(rows, final)
+			case "compare":
+				unclear := s.turn(t, "unspecified_damage_change", mode, "车损也想再调整一下。")
+				unclear.Checks["no_pricing_on_unspecified_change"] = len(unclear.Quotes) == 0
+				unclear.Checks["asks_for_details"] = strings.ContainsAny(unclear.ResponseText, "？?")
+				rows = append(rows, unclear)
+				more := s.turn(t, "comparison_damage_removed", mode, "把三个比较方案都去掉车损险，三者那三个档位保留。")
+				more.Checks["no_pricing_before_scope_confirmation"] = len(more.Quotes) == 0
+				more.Checks["confirmation_wording_varied"] = confirmationQuestion(more.ResponseText) != confirmationQuestion(initial.ResponseText)
+				rows = append(rows, more)
+				final := s.turn(t, "confirm_comparison", mode, "没有其他的了，就比较这三个方案。")
+				final.Checks["one_confirmed_comparison"] = len(final.Quotes) == 1
+				if len(final.Quotes) == 1 {
+					var args struct {
+						Configs []map[string]any `json:"configs"`
+					}
+					_ = json.Unmarshal(final.Quotes[0].Arguments, &args)
+					final.Checks["three_alternatives"] = len(args.Configs) == 3
+					tiers := map[string]bool{}
+					for _, variant := range args.Configs {
+						tier, _ := variant["三者险"].(string)
+						tiers[tier] = variant["车损险"] == false
+					}
+					final.Checks["comparison_preserves_requested_scope"] = tiers["200万"] && tiers["300万"] && tiers["400万"]
+				}
+				final.Checks["comparison_kept_original_policy"] = strings.Contains(string(final.Memory), `"三者险":"200万"`) && strings.Contains(string(final.Memory), `"车损险":true`)
 				rows = append(rows, final)
 			case "cancel":
 				cancelled := s.turn(t, "cancel_pending", mode, "先不改了，取消这次调整，还是保留原来的两百万。")
@@ -108,4 +151,16 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 			}
 		}
 	}
+}
+
+func confirmationQuestion(text string) string {
+	end := strings.LastIndexAny(text, "？?")
+	if end < 0 {
+		return ""
+	}
+	parts := strings.FieldsFunc(text[:end], func(r rune) bool { return strings.ContainsRune("。；！？，,;!?\n", r) })
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(parts[len(parts)-1])
 }

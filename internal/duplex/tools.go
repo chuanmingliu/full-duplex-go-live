@@ -874,6 +874,7 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 		return fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()), "", nil
 	}
 	c = e.normalizeQuoteCall(c)
+	previousConfirmation := ts.confirmedRevision
 	var response string
 	c, response = e.prepareQuoteRevision(job.turn, c)
 	if response != "" {
@@ -928,8 +929,8 @@ func (e *Engine) submitTask(job backendJob, c provider.ToolCall, t tools.Tool) (
 	if t.Ack != "" {
 		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，系统会替你对用户说“%s”，你这句话到此为止，不要再说任何等待的话；结果出来后会自动通知你"}`, task.ID, eta, t.Ack), task.ID, nil
 	}
-	if t.Name == "quote_total" && t.Speech != nil && t.Speech.ConfirmRevisions {
-		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"客户已确认全部改动，现在才开始计算。结合刚确认的内容简短自然回应一次，变换表达，避免重复上一句等待话术；不要再次询问是否调整，不编造金额。结果稍后自动通知。"}`, task.ID, eta), task.ID, nil
+	if t.Name == "quote_total" && ts.confirmedRevision != previousConfirmation {
+		return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"客户已确认报价范围，现在才开始计算。比较只计算备选方案，不改变已选方案。结合刚确认的内容简短自然回应一次，变换表达，避免重复上一句等待话术；不要再次询问是否调整，不编造金额。结果稍后自动通知。"}`, task.ID, eta), task.ID, nil
 	}
 	return fmt.Sprintf(`{"status":"running","task_id":%q,"eta_s":%d,"note":"任务已在后台计算，结果出来后会自动通知你；请先告诉用户稍等，并继续回答用户的其他问题"}`, task.ID, eta), task.ID, nil
 }

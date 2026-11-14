@@ -2,27 +2,30 @@
 
 A caller can change several coverages while discussing an existing quote. A
 calculation must wait until the caller has finished adjusting that selection.
-The first quotation and explicit hypothetical comparisons keep their current
-flow. Quotation calculation and result delivery remain separate from normal
+The first quotation keeps its current flow. Follow-up policy changes and
+hypothetical comparisons both require confirmation of the pricing scope. Quotation calculation and result delivery remain separate from normal
 response latency.
 
 ## Conversation and state
 
-1. After an existing quote, `quote_total` with a selection change creates a
+1. After an existing quote, `quote_total` with a selection change or comparison creates a
    call-scoped pending revision. It returns `awaiting_confirmation` and a
    `revision_id`, without submitting a pricing request or changing confirmed
    quotation memory.
 2. The model briefly acknowledges the actual requested changes and asks whether
    the caller wants any other adjustment. It chooses wording from the current
    conversation and avoids repeating the previous confirmation sentence.
-3. Additional changes merge into the pending revision and issue a new identifier.
+3. Additional selected-policy changes merge into the pending revision. Updated
+   comparisons replace the pending alternatives and issue a new identifier.
    An explanation or interruption leaves those pending changes available.
 4. Only a later caller turn clearly approving that selection permits
    `quote_total` with `revision_action: confirm` and its current `revision_id`.
    A yes to “anything else to change?” means more changes are coming. A no to
    that question can mean the selection is complete. The model must interpret
    the answer in context and clarify ambiguous responses.
-5. Confirmation commits the accumulated selection before normal async dispatch.
+5. Confirmation commits a selected-policy change before normal async dispatch.
+   A comparison dispatches the confirmed alternatives with the original selected
+   policy intact.
    A short contextual acknowledgment is model-generated when calculation is
    actually running. Prices continue to come exclusively from the quote result.
 6. `revision_action: cancel` discards pending changes. Expired identifiers,
@@ -34,7 +37,7 @@ The existing CRM `quote-speech` JSON panel exposes `confirm_revisions`. It is
 opt-in, defaults to false for existing configurations, and is read at call
 start. Enabled calls expose the additional host-local arguments on
 `quote_total`. The host removes them before HTTP or MCP dispatch. Existing
-presets, first-quote speech, comparisons and calculation delays retain their
+presets, first-quote speech and calculation delays retain their
 configuration. Disabling the option restores the earlier revision flow.
 
 The host stores pending changes outside confirmed `update_memory` state so they
@@ -113,3 +116,69 @@ These small samples measure different conversational actions and synthetic
 audio. They do not establish a handset latency improvement. Deterministic
 regressions separately cover interrupted question playback, stale identifiers,
 input changes, idempotence, unrelated tool results and dispatch ordering.
+
+## Follow-up comparison gap found in the real call
+
+Call `out-mwgjkzc6-hpnz` loaded quote-speech version 4 but made no pending
+revision. Its follow-up request compared three third-party tiers. The initial
+implementation exempted `configs`, so it immediately submitted that comparison.
+The owner expected a natural confirmation question before this follow-up quote.
+
+The correction extends the same pending-request gate to follow-up `configs`
+and expanded `compare_coverage`. First quotations retain their existing flow.
+A comparison confirmation authorizes pricing its alternatives and leaves the
+selected policy unchanged. Further comparison edits send the complete updated
+`configs`; a `config` explicitly switches to selecting one revised policy.
+Pending selected-policy changes carry into a subsequently requested comparison.
+Unspecified adjustments require a clarification about supported choices before
+staging, such as whether to include or remove vehicle-damage cover.
+
+Regression coverage must first reproduce the comparison bypass, then verify
+no early pricing, exact alternative preservation, no selection mutation,
+cancellation, stale IDs and confirmation after interruption. A real-model replay
+uses synthetic three-tier comparisons, additional edits, an ambiguous reply
+and explicit approval. Keep calculation delay, voice and telephony configuration
+as configured; measure the new conversational question separately from pricing.
+
+## Maintaining the behavior in the quotation skill
+
+`services/skills-mcp/quotation/SKILL.md` contains the conversation procedure and
+paraphrasable examples. Its corresponding `motor-quotation` entry can be edited
+in the MCP panel. Publish with the current catalog revision, retaining other
+skills, routing rules, tools and prompt settings. The next retrieval observes
+the published content without restarting the MCP service.
+
+The engine owns the pending request, revision identity, same-turn guard and
+pricing dispatch. Its fallback instructions preserve the confirmation contract
+when skill retrieval is unavailable. A style change can live in the skill;
+changing the execution contract requires compatible host support.
+
+For a numeric comparison follow-up that omits the coverage name, the host adds
+only a nearby coverage label to the routing query. It stops at an intervening
+unrelated caller turn. The model receives the original caller words. Catalog
+rules also recognize an explicit request to adjust a named coverage.
+
+## Comparison and skill replay verification
+
+The final follow-up replay passed 17 real-model turns with DeepSeek
+`deepseek-chat`, the actual quotation skill body, v1 prompt rendering, synthetic
+caller prompts and mock audio/pricing. Four baseline turns submitted four
+immediate requests. The candidate staged all four initial requests, made no
+pricing requests before approval, preserved additional edits through
+clarification, cancelled correctly and submitted one three-alternative comparison
+without changing the selected policy. The comparison fixture returned distinct
+totals and individual premiums for all three alternatives.
+
+Baseline first audio ranged from 539 to 1,166 ms. The four initial confirmation
+questions ranged from 762 to 1,868 ms. Their conversational purposes differ,
+so this is a behavior comparison rather than evidence of a speedup. Additional
+change questions took 1,905 and 1,841 ms. Approved-calculation acknowledgments
+took 1,590, 1,906 and 1,408 ms. The mock pricing delay stayed at three seconds.
+Question-form variation, contextual consent, pending-state retention and exact
+alternative preservation passed. Live configuration and binary hashes were
+unchanged by the replay.
+
+The replay fixes skill selection to isolate verified content retrieval and
+rendering. Independent catalog/host tests cover routing and bounded coverage
+context. Deterministic tests cover interrupted confirmation playback; these
+results do not measure acoustic interruption or handset latency.

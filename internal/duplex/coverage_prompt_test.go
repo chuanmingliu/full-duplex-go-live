@@ -60,3 +60,22 @@ func TestCoverageFragmentFollowup(t *testing.T) {
 		t.Fatal("changed business request", got)
 	}
 }
+
+func TestCoverageComparisonFollowupCarriesNearbyTopic(t *testing.T) {
+	messages := []provider.Message{
+		{Role: provider.RoleUser, Content: "三者险有几档？"},
+		{Role: provider.RoleAssistant, Content: "三者险可以选多个档位。"},
+	}
+	explicit := "对比车损五十万和七十万"
+	if got := coverageSelectionText(messages, explicit); got != explicit {
+		t.Fatal("explicit coverage was relabeled", got)
+	}
+	query := "你帮我对比一下，两百万、三百万、四百万分别是多少？"
+	if got := coverageSelectionText(messages, query); !strings.HasPrefix(got, "三者险。") {
+		t.Fatal("comparison lost its coverage context", got)
+	}
+	messages = append(messages, provider.Message{Role: provider.RoleUser, Content: "说说今天的天气"})
+	if got := coverageSelectionText(messages, query); got != query {
+		t.Fatal("comparison reused context across an unrelated topic", got)
+	}
+}
