@@ -94,12 +94,12 @@ func (c Catalog) selectTurn(t turnInput) ([]Skill, []string, error) {
 	}
 	return skills, tools, nil
 }
-func registerOutboundPrompt(server *mcp.Server, c Catalog) {
+func registerOutboundPrompt(server *mcp.Server, c Catalog, index *skillIndex) {
 	server.AddPrompt(&mcp.Prompt{Name: "outbound-turn", Description: "Select skill references for the current outbound event and confirmed business state.", Arguments: []*mcp.PromptArgument{
 		{Name: "event", Required: true, Description: "A normalized business event such as wechat.notification_help."},
 		{Name: "utterance", Description: "Current user text for event auto; matched using operator-maintained regular expressions."},
 		{Name: "state", Description: "JSON object of projected string state values, e.g. {\"wechat.status\":\"consented\"}."},
-	}}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	}}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		args := req.Params.Arguments
 		event := args["event"]
 		state := map[string]string{}
@@ -107,7 +107,26 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog) {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid projected state"}
 		}
 		messages := []*mcp.PromptMessage{}
-		skills, tools, err := c.selectTurn(turnInput{Event: event, State: state, Utterance: args["utterance"]})
+		input := turnInput{Event: event, State: state, Utterance: args["utterance"]}
+		skills, tools, err := c.selectTurn(input)
+		var prepared *preparedTurn
+		if supportsPreparedTurn(req) {
+			prepared, err = index.prepareTurn(ctx, input, skills, err)
+			if errors.Is(err, errPreparedTooLarge) {
+				prepared, err = nil, nil
+			}
+			if err == nil && prepared != nil {
+				skills = nil
+				tools = nil
+				for _, resource := range prepared.Resources {
+					item := index.items[index.byURI[resource.Manifest.URI]].skill
+					skills = append(skills, item)
+					if item.Tool != "" && !slices.Contains(tools, item.Tool) {
+						tools = append(tools, item.Tool)
+					}
+				}
+			}
+		}
 		if err != nil {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: err.Error()}
 		}
@@ -116,16 +135,24 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog) {
 			messages = append(messages, &mcp.PromptMessage{Role: "user", Content: link})
 
 		}
-		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: map[string]any{"revision": c.Revision, "tools": tools, "auto_selection": true, "prompt_rendering": PromptRendering{Version: c.renderingVersion()}}}, Messages: messages}, nil
+		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: map[string]any{"revision": c.Revision, "tools": tools, "auto_selection": true, "prompt_rendering": PromptRendering{Version: c.renderingVersion()}, "prepared": prepared}}, Messages: messages}, nil
 	})
 }
 
-func (s Skill) matchesText(text string) bool {
+func (s Skill) excludesText(text string) bool {
 	for _, pattern := range s.Exclude {
 		if regexp.MustCompile(pattern).MatchString(text) {
-			return false
+			return true
 		}
 	}
+	return false
+}
+
+func (s Skill) matchesText(text string) bool {
+	if s.excludesText(text) {
+		return false
+	}
+
 	for _, pattern := range s.Match {
 		if regexp.MustCompile(pattern).MatchString(text) {
 			return true

@@ -1,0 +1,79 @@
+<div id="mcp-code-walkthrough">
+  <style>
+    #mcp-code-walkthrough { display: grid; gap: calc(var(--font-size-base, 14px) * 1); color: var(--foreground); }
+    #mcp-code-walkthrough .flow { display: flex; gap: calc(var(--font-size-base, 14px) * .75); align-items: center; flex-wrap: wrap; }
+    #mcp-code-walkthrough .content { display: grid; gap: calc(var(--font-size-base, 14px) * .5); }
+    #mcp-code-walkthrough pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+    #mcp-code-walkthrough .stage { flex: 1; min-width: 180px; }
+    #mcp-code-walkthrough summary { padding-block: calc(var(--font-size-base, 14px) * .5); }
+    #mcp-code-walkthrough .step-content { border-left: 2px solid var(--border); padding-left: calc(var(--font-size-base, 14px) * 1); }
+  </style>
+  <h2>MCP skills &rarr; code &rarr; quotation</h2>
+  <div class="text-small text-muted" data-role="run-label"></div>
+  <div class="viz-controls">
+    <button type="button" class="btn" data-action="previous" aria-label="Previous step">Previous</button>
+    <label class="form-label stage">Step
+      <select class="form-select" data-role="steps"></select>
+    </label>
+    <button type="button" class="btn btn-primary" data-action="next" aria-label="Next step">Next</button>
+  </div>
+  <div class="flow" aria-label="Request flow">
+    <span data-role="from"></span><span aria-hidden="true">&rarr;</span><span data-role="to"></span>
+    <code data-role="method"></code>
+  </div>
+  <div class="content step-content">
+    <h3 data-role="title"></h3>
+    <div data-role="note" aria-live="polite"></div>
+    <pre><code data-role="display"></code></pre>
+  </div>
+  <details>
+    <summary class="cursor-interaction">Full captured request and response</summary>
+    <pre><code data-role="raw"></code></pre>
+  </details>
+  <script type="application/json" data-role="trace">__CODE_MODE_TRACE__</script>
+  <script>
+    (() => {
+      const root = document.getElementById("mcp-code-walkthrough");
+      const get = name => root.querySelector(`[data-role="${name}"]`);
+      const trace = JSON.parse(get("trace").textContent);
+      get("run-label").textContent = trace.run_label || "Verified local run · synthetic CRM prices · prewritten JavaScript";
+      const select = get("steps");
+      const previous = root.querySelector('[data-action="previous"]');
+      const next = root.querySelector('[data-action="next"]');
+      const state = window.openai?.widgetState;
+      let current = Number.isInteger(state?.privateContent?.step) ? state.privateContent.step : 0;
+      trace.steps.forEach((step, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = `${index + 1}. ${step.title}`;
+        select.appendChild(option);
+      });
+      function render() {
+        current = Math.max(0, Math.min(current, trace.steps.length - 1));
+        const step = trace.steps[current];
+        select.value = String(current);
+        for (const key of ["from", "to", "method", "title", "note"]) get(key).textContent = step[key];
+        const lines = step.display.split("\n");
+        get("display").textContent = lines.length > 18 ? lines.slice(0, 18).join("\n") + "\n\u2026 Full content is available below." : step.display;
+        get("raw").textContent = JSON.stringify({request: step.request, response: step.response}, null, 2);
+        previous.disabled = current === 0;
+        next.disabled = current === trace.steps.length - 1;
+      }
+      function move(index) {
+        current = index;
+        root.querySelector("details").open = false;
+        render();
+        const save = window.openai?.setWidgetState;
+        if (save) save({modelContent: {step: trace.steps[current].title, synthetic: true}, privateContent: {step: current}}).catch(() => {});
+      }
+      select.addEventListener("change", () => move(Number(select.value)));
+      previous.addEventListener("click", () => move(current - 1));
+      next.addEventListener("click", () => move(current + 1));
+      window.addEventListener("openai:set_globals", event => {
+        const step = event.detail?.globals?.widgetState?.privateContent?.step;
+        if (Number.isInteger(step)) { current = step; render(); }
+      });
+      render();
+    })();
+  </script>
+</div>

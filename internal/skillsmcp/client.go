@@ -4,7 +4,6 @@ package skillsmcp
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,7 +70,7 @@ func (c *Client) deadline(ctx context.Context) (context.Context, context.CancelF
 	return context.WithTimeout(ctx, time.Duration(c.cfg.TimeoutMS)*time.Millisecond)
 }
 func (c *Client) rpc(ctx context.Context, method string, params map[string]any, out any) error {
-	params["_meta"] = map[string]any{"io.modelcontextprotocol/protocolVersion": protocol, "io.modelcontextprotocol/clientInfo": map[string]string{"name": "xiaocui-active-call", "version": "1"}, "io.modelcontextprotocol/clientCapabilities": map[string]any{}}
+	params["_meta"] = map[string]any{"io.modelcontextprotocol/protocolVersion": protocol, "io.modelcontextprotocol/clientInfo": map[string]string{"name": "xiaocui-active-call", "version": "1"}, "io.modelcontextprotocol/clientCapabilities": map[string]any{"extensions": map[string]any{turnPreparationExtension: map[string]string{"version": "1"}}}}
 	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
 	if err != nil {
 		return err
@@ -149,8 +148,9 @@ func (c *Client) projection(memory json.RawMessage) map[string]string {
 
 type selection struct {
 	Meta map[string]struct {
-		Revision        int  `json:"revision"`
-		AutoSelection   bool `json:"auto_selection"`
+		Revision        int           `json:"revision"`
+		AutoSelection   bool          `json:"auto_selection"`
+		Prepared        *preparedTurn `json:"prepared"`
 		PromptRendering *struct {
 			Version int `json:"version"`
 		} `json:"prompt_rendering"`
@@ -233,6 +233,9 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 	if len(selected.Messages) > 4 {
 		return nil, errors.New("too many matching skills")
 	}
+	if prepared := selected.Meta[routeKey].Prepared; prepared != nil {
+		return verifyPrepared(selected, prepared, trace)
+	}
 	out := []Guidance{}
 	for _, message := range selected.Messages {
 		link := message.Content
@@ -270,31 +273,15 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 			return nil, errors.New("invalid skill content")
 		}
 		file := resource.Contents[0]
-		if file.URI != link.URI || file.MIME != "text/markdown" || len(file.Text) != expected.Size || fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(file.Text))) != expected.Digest {
-			return nil, errors.New("skill integrity check failed")
+		guidance, err := verifyGuidance(expected, result.Skill, file.URI, file.MIME, file.Text)
+		if err != nil {
+			return nil, err
 		}
-		// The maintained server emits exactly two JSON-quoted YAML fields.
-		head, body, ok := strings.Cut(file.Text, "\n---\n")
-		lines := strings.Split(head, "\n")
-		if !ok || len(lines) != 3 || lines[0] != "---" {
-			return nil, errors.New("unsupported skill frontmatter")
-		}
-		front := map[string]string{}
-		for _, line := range lines[1:] {
-			key, value, ok := strings.Cut(line, ": ")
-			var text string
-			if !ok || json.Unmarshal([]byte(value), &text) != nil {
-				return nil, errors.New("invalid skill frontmatter")
-			}
-			front[key] = text
-		}
-		if len(front) != 2 || front["name"] != result.Skill.Frontmatter["name"] || front["description"] != result.Skill.Frontmatter["description"] {
-			return nil, errors.New("skill frontmatter mismatch")
-		}
+
 		if trace != nil {
 			trace.Steps[len(trace.Steps)-1].Digest = expected.Digest
 		}
-		out = append(out, Guidance{URI: link.URI, Digest: expected.Digest, Text: strings.TrimSpace(body), State: result.Skill.Meta[bindingKey].State})
+		out = append(out, guidance)
 	}
 	if len(out) == 0 {
 		return out, nil

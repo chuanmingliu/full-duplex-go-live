@@ -8,9 +8,14 @@ import (
 // Trace contains timings and resource identities only. It belongs to one
 // preparation and is never shared between concurrent turns.
 type Trace struct {
-	Revision int         `json:"revision,omitempty"`
-	Steps    []TraceStep `json:"steps"`
-	started  time.Time
+	ContextTruncated  bool        `json:"context_truncated,omitempty"`
+	Retrieval         string      `json:"retrieval,omitempty"`
+	EmbeddingProvider string      `json:"embedding_provider,omitempty"`
+	EmbeddingRevision string      `json:"embedding_revision,omitempty"`
+	FallbackReason    string      `json:"fallback_reason,omitempty"`
+	Revision          int         `json:"revision,omitempty"`
+	Steps             []TraceStep `json:"steps"`
+	started           time.Time
 }
 type TraceStep struct {
 	Stage   string `json:"stage"`

@@ -13,12 +13,55 @@ The server maintains business instructions, selects applicable skills, publishes
   - [skills/list workflow](#skillslist-workflow)
 - [Skill selection](#skill-selection)
 - [Quotation tool](#quotation-tool)
+- [Code mode](#code-mode)
+- [Companion skill selection](#companion-skill-selection)
 - [Admin HTTP API](#admin-http-api)
 - [Catalog schema and limits](#catalog-schema-and-limits)
 - [Callback response resources](#callback-response-resources)
 - [GoLive integration](#golive-integration)
 - [Failures and operational limits](#failures-and-operational-limits)
 - [Development and deployment](#development-and-deployment)
+
+## Code mode
+
+The local implementation adds `POST /mcp/code`, authenticated with the runtime
+bearer credential. Its tool catalog exposes `execute_code`. The existing
+`/mcp` endpoint exposes direct business tools. Published skills, prompt selection
+and resources are available through both endpoints. The code-mode endpoint also
+serves `skill://mcp-code-mode/runtime/SKILL.md` and `codemode://tools/typescript`.
+See the [code-mode contract](../../docs/architecture/13-mcp-code-mode.md) for
+outer call-context arguments, discovery, examples, limits and cancellation.
+
+## Companion skill selection
+
+Catalog `skill_selection` configures activation with `mode` (`auto`, `always`,
+`off`) and `threshold` (integer 0–100000). Omission defaults to `auto` with
+threshold 50, enabling the companion when available skills exceed 50.
+The selection extension reports `enabled`, `mode`, `threshold`, and
+`available_skills` through `server/discover`. Disabled selection exposes an
+empty method list and skips embedding preparation. Publish policy changes
+through the existing admin catalog API.
+
+When companion selection is active, both endpoints expose `skills/search`, `skills/describe`, `skills/resolve`, and
+`skills/load` under extension `ai.liuchuanming.golive/skill-selection` version 1.
+Code-mode JavaScript calls the corresponding `tools.skills_search`,
+`tools.skills_describe`, `tools.skills_resolve`, and `tools.skills_load` functions.
+Search accepts `query`, conversation `context` (up to 8,192 UTF-8 bytes),
+`search_mode` (`auto`, `semantic`, or `lexical`), and optional `min_similarity`
+(default 0.3). Configure `SKILLS_EMBEDDING_URL` and `SKILLS_EMBEDDING_MODEL` for
+cosine matching against cached skill descriptions. `auto` reports lexical
+fallback through `fallback_reason` when embeddings are unavailable. Replies
+include `retrieval` and semantic matches include `similarity`.
+`SKILLS_EMBEDDING_POOL_FILE` selects an ordered pool and takes precedence over
+the single-provider environment settings. Pool semantic replies also include
+`embedding_provider` and `embedding_revision`. Each member maintains its own
+description vectors and query cache. See the [pool configuration](embeddings/README.md#embedding-service-pool).
+Search returns a revision and bounded metadata. The subsequent operations use
+that revision and explicit URIs. Selection enforces priorities, dependencies,
+conflicts, state guards, and byte/count budgets. Batch load returns manifests
+and exact bodies for host verification.
+Read the [selection contract](../../docs/architecture/14-mcp-skill-selection.md)
+for parameters, examples, limits, and compatibility details.
 
 ## Addresses and authentication
 
@@ -493,7 +536,7 @@ This is a minimal complete schema-3 catalog example with synthetic business inst
 | `revision` | Must equal the current revision, incremented by the server |
 | `prompt_rendering` | Optional object. Omission or `null` means version 1. |
 | `prompt_rendering.version` | Required integer inside that object, either `1` or `2`. Other values fail publication. |
-| `skills` | At most 64 entries |
+| `skills` | At most 100,000 entries, subject to the 64 MiB catalog limit |
 | Skill `name` | Unique, at most 64 bytes, `^[a-z0-9]+([-_][a-z0-9]+)*$` |
 | Skill `description` | Nonblank, one line, at most 1,024 Unicode characters |
 | Skill `body` | Nonblank, at most 65,536 UTF-8 bytes, supplied without generated frontmatter |
@@ -509,7 +552,7 @@ This is a minimal complete schema-3 catalog example with synthetic business inst
 | Event `templates` | At most 12 distinct strings, 1–300 Unicode characters each, single-line, trimmed, no NUL |
 | Event `enabled` | When true, requires at least one template |
 
-Authenticated request bodies are capped at 2 MiB. A schema-valid catalog can still produce a runtime response larger than GoLive's 512 KiB response limit, or match more than its four-skill limit. Keep selected guidance within both client limits.
+Authenticated runtime request bodies are capped at 2 MiB. Admin catalog publication accepts up to 64 MiB. A schema-valid catalog can still produce a runtime response larger than GoLive's 512 KiB response limit, or match more than its four-skill limit. Keep selected guidance within both client limits.
 
 On startup, historical schema-0 catalogs migrate through the earlier tool-binding layout. Schema-2 catalogs migrate to schema 3, adding default routing patterns to recognized seed skills where patterns are absent. Operator content and existing rules are retained according to those migrations. Catalog PUT requires schema 3. Keep a compatible catalog snapshot with each deployment rollback.
 
@@ -631,7 +674,7 @@ Distinguish HTTP failure, JSON-RPC error and MCP tool error when handling a requ
 | Limit | Value |
 | --- | --- |
 | HTTP read-header / read / write / idle timeouts | 5 / 15 / 200 / 45 seconds |
-| Authenticated request body | 2 MiB |
+| Authenticated request body | 2 MiB for runtime requests, 64 MiB for admin catalog publication |
 | CRM result body | 1 MiB |
 | GoLive MCP response body | 512 KiB |
 | GoLive decoded event response text | 20,000 bytes |
@@ -730,3 +773,12 @@ Routing is still configured pattern matching, not a general semantic classifier.
 Updating the server binary does not overwrite published skill edits. Publish
 the revised matchers and bodies through the panel using its current revision,
 retain the previous catalog, and verify both `prompts/get` and `resources/read`.
+
+## Negotiated turn preparation
+
+Active Call advertises `ai.liuchuanming.golive/turn-preparation` version `"1"`
+in client capabilities. `prompts/get` for `outbound-turn` then includes
+`prepared` under its turn metadata, containing exact manifests and bodies from
+one catalog snapshot. The host verifies those resources directly. Older clients
+continue receiving resource links. See the selection architecture for routing,
+state, deadline and fallback behavior.

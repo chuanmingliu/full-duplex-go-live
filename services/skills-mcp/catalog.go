@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -22,7 +24,13 @@ var seed string
 //go:embed wechat/SKILL.md
 var wechatSeed string
 
+const maxCatalogSkills = 100000
+const maxCatalogBytes = 64 << 20
+
 type Skill struct {
+	Priority    int                 `json:"priority,omitempty"`
+	Requires    []string            `json:"requires,omitempty"`
+	Conflicts   []string            `json:"conflicts,omitempty"`
 	Match       []string            `json:"match,omitempty"`
 	Exclude     []string            `json:"exclude,omitempty"`
 	Tool        string              `json:"tool,omitempty"`
@@ -41,6 +49,7 @@ type ToolConfig struct {
 }
 
 type Catalog struct {
+	SkillSelection  *SkillSelectionConfig    `json:"skill_selection,omitempty"`
 	Schema          int                      `json:"schema"`
 	Revision        int                      `json:"revision"`
 	Skills          []Skill                  `json:"skills"`
@@ -112,6 +121,9 @@ func (c *Catalog) migrate() {
 var skillName = regexp.MustCompile("^[a-z0-9]+([-_][a-z0-9]+)*$")
 
 func (c Catalog) validate() error {
+	if err := c.validateSelectionSettings(); err != nil {
+		return err
+	}
 	if version := c.renderingVersion(); version != 1 && version != 2 {
 		return errors.New("prompt rendering version must be 1 or 2")
 	}
@@ -121,8 +133,8 @@ func (c Catalog) validate() error {
 	if c.Schema != 3 {
 		return errors.New("unsupported catalog schema")
 	}
-	if len(c.Skills) > 64 {
-		return errors.New("maximum 64 skills")
+	if len(c.Skills) > maxCatalogSkills {
+		return errors.New("maximum 100000 skills")
 	}
 	if c.Quote.TimeoutSeconds < 5 || c.Quote.TimeoutSeconds > 180 {
 		return errors.New("tool timeout must be 5–180 seconds")
@@ -145,6 +157,13 @@ func (c Catalog) validate() error {
 		if strings.TrimSpace(s.Body) == "" || len(s.Body) > 64<<10 {
 			return errors.New("skill body must be 1–65536 bytes")
 		}
+	}
+	if err := validateSkillRelations(c); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil || len(data) > maxCatalogBytes {
+		return errors.New("catalog exceeds 64 MiB")
 	}
 	return nil
 }
@@ -172,6 +191,7 @@ func (s Skill) entry() entry {
 	data := s.markdown()
 	return entry{
 		Meta: map[string]any{
+			skillSelectionExtension: map[string]any{"priority": s.Priority, "requires": s.Requires, "conflicts": s.Conflicts},
 			"ai.liuchuanming.golive/routing": map[string]any{
 				"events": s.Events,
 				"state":  s.State,
@@ -187,14 +207,21 @@ func (s Skill) entry() entry {
 }
 
 type store struct {
-	mu      sync.RWMutex
-	path    string
-	catalog Catalog
-	server  *mcp.Server
-	backend backend
+	mu         sync.RWMutex
+	path       string
+	catalog    Catalog
+	server     *mcp.Server
+	codeServer *mcp.Server
+	backend    backend
+	index      *skillIndex
+	embedder   *embeddingClient
 }
 
 func openStore(path string, b backend) (*store, error) {
+	return openStoreWithEmbeddings(path, b, nil)
+}
+
+func openStoreWithEmbeddings(path string, b backend, embedder *embeddingClient) (*store, error) {
 	c := defaults()
 	data, err := os.ReadFile(path)
 	needsSave := os.IsNotExist(err)
@@ -220,7 +247,14 @@ func openStore(path string, b backend) (*store, error) {
 	if c.Revision < 1 {
 		return nil, errors.New("invalid catalog revision")
 	}
-	s := &store{path: path, backend: b, catalog: c, server: buildServer(c, b)}
+	index := newSkillIndex(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := index.prepareEmbeddings(ctx, embedder, nil); err != nil {
+		return nil, err
+	}
+	server, codeServer := serversWithIndex(c, b, index)
+	s := &store{path: path, backend: b, catalog: c, server: server, codeServer: codeServer, index: index, embedder: embedder}
 	if needsSave {
 		if err = s.persist(c); err != nil {
 			return nil, err
@@ -254,21 +288,43 @@ func (s *store) persist(c Catalog) error {
 var errConflict = errors.New("another editor published a revision; reload before saving")
 
 func (s *store) publish(c Catalog) (Catalog, error) {
+	return s.publishContext(context.Background(), c)
+}
+
+func (s *store) publishContext(ctx context.Context, c Catalog) (Catalog, error) {
 	if err := c.validate(); err != nil {
 		return Catalog{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if c.Revision != s.catalog.Revision {
+	s.mu.RLock()
+	previous := s.index
+	currentRevision := s.catalog.Revision
+	s.mu.RUnlock()
+	if c.Revision != currentRevision {
 		return Catalog{}, errConflict
 	}
 	c.Revision++
-	server := buildServer(c, s.backend)
+	index := newSkillIndex(c)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := index.prepareEmbeddings(ctx, s.embedder, previous); err != nil {
+		return Catalog{}, err
+	}
+	server, codeServer := serversWithIndex(c, s.backend, index)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.catalog.Revision != currentRevision {
+		return Catalog{}, errConflict
+	}
+	if err := ctx.Err(); err != nil {
+		return Catalog{}, err
+	}
 	if err := s.persist(c); err != nil {
 		return Catalog{}, err
 	}
 	s.catalog = c
+	s.index = index
 	s.server = server
+	s.codeServer = codeServer
 	return c, nil
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/thehumanworks/codemode-go/mcptool"
 )
 
 const extension = "io.modelcontextprotocol/skills"
@@ -34,24 +35,64 @@ func addText(s *mcp.Server, uri, name, desc, mime, body string) {
 	})
 }
 func buildServer(c Catalog, b backend) *mcp.Server {
-	caps := &mcp.ServerCapabilities{Resources: &mcp.ResourceCapabilities{}, Tools: &mcp.ToolCapabilities{}, Extensions: map[string]any{extension: map[string]any{}}}
-	s := mcp.NewServer(&mcp.Implementation{Name: "xiaocui-skills", Version: "1.1.0"}, &mcp.ServerOptions{Capabilities: caps, Instructions: "Use outbound-turn to select skills for a business event. Discover skills with skills/list or skill://index.json and read matched resources on demand.", SetCacheable: func(_ context.Context, _ mcp.Request, h *mcp.Cacheable) { h.TTLMs = 0; h.CacheScope = "private" }})
+	return buildMCPServer(c, b, false)
+}
+
+func serversWithIndex(c Catalog, b backend, index *skillIndex) (*mcp.Server, *mcp.Server) {
+	return buildMCPServerWithIndex(c, b, false, index), buildMCPServerWithIndex(c, b, true, index)
+}
+
+func buildMCPServer(c Catalog, b backend, codeMode bool) *mcp.Server {
+	return buildMCPServerWithIndex(c, b, codeMode, newSkillIndex(c))
+}
+
+func buildMCPServerWithIndex(c Catalog, b backend, codeMode bool, index *skillIndex) *mcp.Server {
+	capabilities := map[string]any{extension: map[string]any{}, skillSelectionExtension: index.selectionCapabilities(), turnPreparationExtension: map[string]any{"version": "1"}}
+	caps := &mcp.ServerCapabilities{Resources: &mcp.ResourceCapabilities{}, Tools: &mcp.ToolCapabilities{}, Extensions: capabilities}
+	instructions := "Use outbound-turn to select skills for a business event. Discover skills with skills/list or skill://index.json and read matched resources on demand."
+	if index.selection.enabled {
+		instructions += " Use skills/search, skills/describe, skills/resolve and skills/load for bounded catalog selection."
+	}
+	s := mcp.NewServer(&mcp.Implementation{Name: "xiaocui-skills", Version: "1.1.0"}, &mcp.ServerOptions{Capabilities: caps, Instructions: instructions, SetCacheable: func(_ context.Context, _ mcp.Request, h *mcp.Cacheable) { h.TTLMs = 0; h.CacheScope = "private" }})
 	entries := []entry{}
-	index := []map[string]string{}
-	if c.Quote.Enabled {
+	resourceIndex := []map[string]string{}
+	var registry *mcptool.Registry
+	if codeMode {
+		registry = newCodeRegistry(s, c.Revision)
+		if c.Quote.Enabled {
+			mcptool.AddTool(registry, &mcp.Tool{Name: "quote_total", Description: c.Quote.Description}, b.quote(c.Quote))
+		}
+	} else if c.Quote.Enabled {
 		mcp.AddTool(s, &mcp.Tool{Name: "quote_total", Description: c.Quote.Description}, b.quote(c.Quote))
 	}
-	registerOutboundPrompt(s, c)
+	if index.selection.enabled {
+		registerSkillSelection(s, index, registry)
+	}
+	if registry != nil {
+		registry.Register()
+	}
+	registerOutboundPrompt(s, c, index)
 	registerEventResponses(s, c)
-	for _, sk := range c.Skills {
-		if !c.available(sk) {
+	for _, item := range index.items {
+		sk := item.skill
+		if !item.available {
 			continue
 		}
-		entries = append(entries, sk.entry())
-		index = append(index, map[string]string{"type": "skill-md", "name": sk.Name, "description": sk.Description, "url": sk.uri()})
-		addText(s, sk.uri(), sk.Name, sk.Description, "text/markdown", sk.markdown())
+		entries = append(entries, item.manifest)
+		resourceIndex = append(resourceIndex, map[string]string{"type": "skill-md", "name": sk.Name, "description": sk.Description, "url": sk.uri()})
+		addText(s, sk.uri(), sk.Name, sk.Description, "text/markdown", item.body)
 	}
-	data, _ := json.Marshal(map[string]any{"$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json", "skills": index})
+	if codeMode {
+		sk := seedSkill(codeModeInstructions(index.selection.enabled))
+		item := sk.entry()
+		item.URI = codeModeSkillURI
+		item.Resources[0].URI = codeModeSkillURI
+		item.Meta["ai.liuchuanming.golive/code-mode"] = map[string]any{"catalog_revision": c.Revision}
+		entries = append(entries, item)
+		resourceIndex = append(resourceIndex, map[string]string{"type": "skill-md", "name": sk.Name, "description": sk.Description, "url": codeModeSkillURI})
+		addText(s, codeModeSkillURI, sk.Name, sk.Description, "text/markdown", sk.markdown())
+	}
+	data, _ := json.Marshal(map[string]any{"$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json", "skills": resourceIndex})
 	addText(s, "skill://index.json", "Skill catalog", "Available quotation workflows", "application/json", string(data))
 	cache := mcp.Cacheable{CacheScope: "private"}
 	invalid := func(msg string) error { return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: msg} }

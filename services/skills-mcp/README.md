@@ -17,6 +17,28 @@ The ThinkPad serves outbound workflow instructions and their associated tools fr
 | Persistence | One Compose replica owns `~/golive-skills-mcp/data/catalog.json`. Each publication compares the displayed revision with the current revision and atomically replaces the file. Prior to editing, an operator can copy that file for backup. |
 | Deployment boundary | Active Call continues to use its existing quote integration. The optional Active Call host integration loads guidance through MCP. Its existing native quotation executor owns call-time execution. |
 
+## Code mode
+
+MCP clients can select `/mcp/code` with the runtime bearer credential and call
+`execute_code`. JavaScript discovers registered tools with `search` and
+`describe`, then composes calls such as `await tools.quote_total({...})`.
+The caller supplies the call ID and confirmed memory on the outer request.
+Read the [design and API examples](../../docs/architecture/13-mcp-code-mode.md)
+for the usage skill, resource limits, error semantics and local checks.
+Building the skills service now requires Go 1.27.2 or newer.
+
+## Companion skill selection
+
+Companion selection defaults to activation above 50 available skills. Set the
+catalog's `skill_selection.mode` to `always` or `off` to override, or change
+`skill_selection.threshold` for a different automatic threshold. Discovery
+reports the current activation state. When active, use
+`skills/search`, `skills/describe`, `skills/resolve`, and `skills/load` for
+bounded discovery and composition alongside the existing automatic routing.
+The same operations are callable through code-mode JavaScript. See the
+[selection contract](../../docs/architecture/14-mcp-skill-selection.md) for
+revision binding, priorities, dependencies, conflicts, and exact output bounds.
+
 ## Open the panel on the Mac
 
 If the tunnel is already running, open [the operator panel](http://127.0.0.1:18794/). To create the tunnel from a Mac terminal:
@@ -32,7 +54,7 @@ Copy the admin token to the Mac clipboard and paste it into the panel. This comm
 ssh chuanming@192.168.71.9 'cat ~/golive-skills-mcp/secrets/admin' | pbcopy
 ```
 
-Select or add a skill, edit its events, automatic-selection patterns and exclusions, state conditions, tool binding and Markdown instructions, then publish. Disabling the quotation tool withdraws dependent skills. Guidance-only workflows remain available. The next MCP request sees the new catalog. If a second editor published first, the panel reports a conflict. Copy any draft text you want to retain before reloading. New executable tools and backend bindings are reviewed code additions. To add a tool, register a typed handler in `buildServer`, extend the catalog and panel for its operator settings, and include an integration test.
+Select or add a skill, edit its events, automatic-selection patterns and exclusions, state conditions, tool binding and Markdown instructions, then publish. Disabling the quotation tool withdraws dependent skills. Guidance-only workflows remain available. The next MCP request sees the new catalog. If a second editor published first, the panel reports a conflict. Copy any draft text you want to retain before reloading. New executable tools and backend bindings are reviewed code additions. To add a tool, register its typed handler for both endpoints in `buildMCPServer`, extend the catalog and panel for its operator settings, and include an integration test. Define its call-context binding in `code_mode.go`.
 
 ## Quotation example
 

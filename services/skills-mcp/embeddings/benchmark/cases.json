@@ -1,0 +1,583 @@
+{
+  "description": "Synthetic development benchmark fixed before evaluating Qwen3, BGE-M3 and EmbeddingGemma. Includes related skills and explicit corrections of earlier intent.",
+  "skills": [
+    {
+      "name": "quote",
+      "description": "Calculate motor insurance premiums and compare prices for coverage options."
+    },
+    {
+      "name": "coverage",
+      "description": "解释保险保障范围、免赔额、责任限额以及除外责任等条款。"
+    },
+    {
+      "name": "claim_report",
+      "description": "Open a new insurance claim after an accident and collect incident evidence."
+    },
+    {
+      "name": "claim_status",
+      "description": "查询已提交理赔案件的审核进度、赔款状态和预计处理时间。"
+    },
+    {
+      "name": "renew_policy",
+      "description": "Renew an insurance policy that is approaching its expiry date."
+    },
+    {
+      "name": "cancel_policy",
+      "description": "办理保险退保，说明终止保障的流程并核算可退保费。"
+    },
+    {
+      "name": "vehicle_change",
+      "description": "Amend the vehicle details on an existing insurance policy."
+    },
+    {
+      "name": "roadside",
+      "description": "安排车辆故障后的道路救援，包括拖车、搭电和紧急换胎。"
+    },
+    {
+      "name": "wechat_add",
+      "description": "Guide a customer through adding the service contact as a WeChat friend."
+    },
+    {
+      "name": "wechat_message",
+      "description": "帮助客户在微信内找到已有服务通知、公众号消息或聊天记录。"
+    },
+    {
+      "name": "password",
+      "description": "Reset a forgotten password and restore login credentials."
+    },
+    {
+      "name": "unlock",
+      "description": "处理因多次登录失败或风控而被锁定、冻结的账户。"
+    },
+    {
+      "name": "delivery",
+      "description": "Track a shipped parcel and estimate its delivery time."
+    },
+    {
+      "name": "delivery_address",
+      "description": "在订单允许修改时更新收货地址或收件人联系方式。"
+    },
+    {
+      "name": "return_item",
+      "description": "Start a product return and provide return shipping instructions."
+    },
+    {
+      "name": "refund_status",
+      "description": "查询已经发起的退款是否处理完成以及款项预计到账时间。"
+    },
+    {
+      "name": "invoice_new",
+      "description": "Issue a new invoice for a completed purchase."
+    },
+    {
+      "name": "invoice_fix",
+      "description": "更正已开具发票中的抬头、税号或金额，并处理重新开票。"
+    },
+    {
+      "name": "appointment_new",
+      "description": "Book a new vehicle maintenance or repair appointment."
+    },
+    {
+      "name": "appointment_change",
+      "description": "修改或取消已有的车辆维修保养预约时间。"
+    },
+    {
+      "name": "payment_methods",
+      "description": "Explain available payment methods and supported payment channels."
+    },
+    {
+      "name": "payment_failed",
+      "description": "排查支付失败、扣款异常或付款后订单仍显示未支付的问题。"
+    },
+    {
+      "name": "privacy_delete",
+      "description": "Process requests to delete an account and its stored personal information."
+    },
+    {
+      "name": "human_agent",
+      "description": "将对话转接给人工客服或安排人工顾问回电。"
+    }
+  ],
+  "queries": [
+    {
+      "skill": "quote",
+      "language": "en",
+      "context": "How much would comprehensive insurance for my car cost?"
+    },
+    {
+      "skill": "quote",
+      "language": "en",
+      "context": "Calculate the premium if I add third-party liability cover."
+    },
+    {
+      "skill": "quote",
+      "language": "zh",
+      "context": "给我的车算一下全险多少钱。"
+    },
+    {
+      "skill": "quote",
+      "language": "zh",
+      "context": "刚才解释过免赔额了，现在我想知道加上三者险后的总保费。"
+    },
+    {
+      "skill": "coverage",
+      "language": "en",
+      "context": "What does the deductible in this policy mean?"
+    },
+    {
+      "skill": "coverage",
+      "language": "en",
+      "context": "Does my coverage exclude damage caused by flooding?"
+    },
+    {
+      "skill": "coverage",
+      "language": "zh",
+      "context": "保单里的免赔额是什么意思？"
+    },
+    {
+      "skill": "coverage",
+      "language": "zh",
+      "context": "先不用算价格，我想弄清楚哪些事故保险不赔。"
+    },
+    {
+      "skill": "claim_report",
+      "language": "en",
+      "context": "I just had a crash. Help me report it to the insurer."
+    },
+    {
+      "skill": "claim_report",
+      "language": "en",
+      "context": "Where do I send photographs to start an accident claim?"
+    },
+    {
+      "skill": "claim_report",
+      "language": "zh",
+      "context": "刚出了交通事故，我要报案申请理赔。"
+    },
+    {
+      "skill": "claim_report",
+      "language": "zh",
+      "context": "这是第一次报这个事故，需要提供哪些照片和材料？"
+    },
+    {
+      "skill": "claim_status",
+      "language": "en",
+      "context": "I already filed a claim last week. Has it been approved?"
+    },
+    {
+      "skill": "claim_status",
+      "language": "en",
+      "context": "Check when the compensation for my existing claim will be paid."
+    },
+    {
+      "skill": "claim_status",
+      "language": "zh",
+      "context": "上周提交的理赔申请审核到哪一步了？"
+    },
+    {
+      "skill": "claim_status",
+      "language": "zh",
+      "context": "材料早就交齐了，我只想查一下这笔赔款什么时候到账。"
+    },
+    {
+      "skill": "renew_policy",
+      "language": "en",
+      "context": "My car insurance expires next month. Help me renew it."
+    },
+    {
+      "skill": "renew_policy",
+      "language": "en",
+      "context": "I want to extend the policy for another year."
+    },
+    {
+      "skill": "renew_policy",
+      "language": "zh",
+      "context": "车险下个月到期，帮我办理续保。"
+    },
+    {
+      "skill": "renew_policy",
+      "language": "zh",
+      "context": "还是这辆车和原来的保障，我想把保险再续一年。"
+    },
+    {
+      "skill": "cancel_policy",
+      "language": "en",
+      "context": "I sold the car and want to terminate its insurance."
+    },
+    {
+      "skill": "cancel_policy",
+      "language": "en",
+      "context": "How do I cancel my policy and receive the unused premium?"
+    },
+    {
+      "skill": "cancel_policy",
+      "language": "zh",
+      "context": "车已经卖掉了，我要退保。"
+    },
+    {
+      "skill": "cancel_policy",
+      "language": "zh",
+      "context": "我不打算续保了，还想提前终止现在的保单，能退多少钱？"
+    },
+    {
+      "skill": "vehicle_change",
+      "language": "en",
+      "context": "I need to change the registration number on my policy."
+    },
+    {
+      "skill": "vehicle_change",
+      "language": "en",
+      "context": "My insured car details are wrong. Update the vehicle information."
+    },
+    {
+      "skill": "vehicle_change",
+      "language": "zh",
+      "context": "保单上车牌号写错了，帮我修改。"
+    },
+    {
+      "skill": "vehicle_change",
+      "language": "zh",
+      "context": "保险继续保留，只需要把车辆信息更正一下。"
+    },
+    {
+      "skill": "roadside",
+      "language": "en",
+      "context": "My car will not start. Can you send someone to jump-start it?"
+    },
+    {
+      "skill": "roadside",
+      "language": "en",
+      "context": "I am stranded on the highway and need a tow truck."
+    },
+    {
+      "skill": "roadside",
+      "language": "zh",
+      "context": "车在路上抛锚了，帮我叫拖车。"
+    },
+    {
+      "skill": "roadside",
+      "language": "zh",
+      "context": "不是事故理赔，我的电瓶没电了，需要有人来搭电。"
+    },
+    {
+      "skill": "wechat_add",
+      "language": "en",
+      "context": "How do I add your service account as a friend on WeChat?"
+    },
+    {
+      "skill": "wechat_add",
+      "language": "en",
+      "context": "Send me the steps for adding the adviser on WeChat."
+    },
+    {
+      "skill": "wechat_add",
+      "language": "zh",
+      "context": "怎么把你们客服加为微信好友？"
+    },
+    {
+      "skill": "wechat_add",
+      "language": "zh",
+      "context": "我还没有加上顾问微信，能教我怎么添加吗？"
+    },
+    {
+      "skill": "wechat_message",
+      "language": "en",
+      "context": "Where is the service notification you sent in WeChat?"
+    },
+    {
+      "skill": "wechat_message",
+      "language": "en",
+      "context": "I already added you. Help me find the earlier WeChat message."
+    },
+    {
+      "skill": "wechat_message",
+      "language": "zh",
+      "context": "微信里你们之前发的服务通知在哪里看？"
+    },
+    {
+      "skill": "wechat_message",
+      "language": "zh",
+      "context": "好友已经加好了，只是找不到上次发来的那条消息。"
+    },
+    {
+      "skill": "password",
+      "language": "en",
+      "context": "I cannot remember my password. How can I reset it?"
+    },
+    {
+      "skill": "password",
+      "language": "en",
+      "context": "Help me create a new password for my account."
+    },
+    {
+      "skill": "password",
+      "language": "zh",
+      "context": "登录密码忘记了，怎么重置？"
+    },
+    {
+      "skill": "password",
+      "language": "zh",
+      "context": "账号没有被锁，我只是记不起来密码了，想重新设置。"
+    },
+    {
+      "skill": "unlock",
+      "language": "en",
+      "context": "I know my password, but the account is locked after too many attempts."
+    },
+    {
+      "skill": "unlock",
+      "language": "en",
+      "context": "The login page says my account is frozen. Please unlock it."
+    },
+    {
+      "skill": "unlock",
+      "language": "zh",
+      "context": "密码我知道，但是输错几次后账户被锁住了。"
+    },
+    {
+      "skill": "unlock",
+      "language": "zh",
+      "context": "页面提示账号冻结，不是忘记密码，怎么解除限制？"
+    },
+    {
+      "skill": "delivery",
+      "language": "en",
+      "context": "Where is my package now, and when will it arrive?"
+    },
+    {
+      "skill": "delivery",
+      "language": "en",
+      "context": "Check the latest tracking update for this shipment."
+    },
+    {
+      "skill": "delivery",
+      "language": "zh",
+      "context": "我的包裹现在到哪里了，什么时候送到？"
+    },
+    {
+      "skill": "delivery",
+      "language": "zh",
+      "context": "收货地址没变，我只想查一下快递运输进度。"
+    },
+    {
+      "skill": "delivery_address",
+      "language": "en",
+      "context": "Change the shipping address before my order is dispatched."
+    },
+    {
+      "skill": "delivery_address",
+      "language": "en",
+      "context": "The recipient phone number is wrong. Please update it."
+    },
+    {
+      "skill": "delivery_address",
+      "language": "zh",
+      "context": "订单还没发货，帮我换一下收货地址。"
+    },
+    {
+      "skill": "delivery_address",
+      "language": "zh",
+      "context": "不是查物流，我填错了收件人的手机号，要修改。"
+    },
+    {
+      "skill": "return_item",
+      "language": "en",
+      "context": "I want to send this product back. How do I start a return?"
+    },
+    {
+      "skill": "return_item",
+      "language": "en",
+      "context": "Where should I mail the item I no longer want?"
+    },
+    {
+      "skill": "return_item",
+      "language": "zh",
+      "context": "这个商品我不想要了，怎么申请退货？"
+    },
+    {
+      "skill": "return_item",
+      "language": "zh",
+      "context": "退款还没申请，我先想知道退货寄回哪里。"
+    },
+    {
+      "skill": "refund_status",
+      "language": "en",
+      "context": "My return was accepted. When will the refund reach my bank?"
+    },
+    {
+      "skill": "refund_status",
+      "language": "en",
+      "context": "Check the status of the refund I requested three days ago."
+    },
+    {
+      "skill": "refund_status",
+      "language": "zh",
+      "context": "退货已经收到了，退款什么时候到账？"
+    },
+    {
+      "skill": "refund_status",
+      "language": "zh",
+      "context": "我已经申请退款三天了，现在处理到哪一步？"
+    },
+    {
+      "skill": "invoice_new",
+      "language": "en",
+      "context": "Please issue an invoice for the order I paid for."
+    },
+    {
+      "skill": "invoice_new",
+      "language": "en",
+      "context": "How can I get a receipt invoice for my purchase?"
+    },
+    {
+      "skill": "invoice_new",
+      "language": "zh",
+      "context": "这笔订单已经付款了，请帮我开发票。"
+    },
+    {
+      "skill": "invoice_new",
+      "language": "zh",
+      "context": "我还没有开过票，需要为这次购买申请电子发票。"
+    },
+    {
+      "skill": "invoice_fix",
+      "language": "en",
+      "context": "The invoice has the wrong company name. Please correct it."
+    },
+    {
+      "skill": "invoice_fix",
+      "language": "en",
+      "context": "I received an invoice, but its tax identification number is incorrect."
+    },
+    {
+      "skill": "invoice_fix",
+      "language": "zh",
+      "context": "已经开的发票抬头错了，帮我更正。"
+    },
+    {
+      "skill": "invoice_fix",
+      "language": "zh",
+      "context": "不是第一次开票，上次发票的税号填错了，需要重开。"
+    },
+    {
+      "skill": "appointment_new",
+      "language": "en",
+      "context": "Can I book a car service appointment for next Monday?"
+    },
+    {
+      "skill": "appointment_new",
+      "language": "en",
+      "context": "I need to reserve a workshop visit for an oil change."
+    },
+    {
+      "skill": "appointment_new",
+      "language": "zh",
+      "context": "帮我预约下周一去店里保养汽车。"
+    },
+    {
+      "skill": "appointment_new",
+      "language": "zh",
+      "context": "我还没有预约，想约一个换机油的时间。"
+    },
+    {
+      "skill": "appointment_change",
+      "language": "en",
+      "context": "Move my existing service appointment from Monday to Friday."
+    },
+    {
+      "skill": "appointment_change",
+      "language": "en",
+      "context": "I cannot attend my scheduled workshop visit. Cancel that booking."
+    },
+    {
+      "skill": "appointment_change",
+      "language": "zh",
+      "context": "把我已经约好的保养时间改到周五。"
+    },
+    {
+      "skill": "appointment_change",
+      "language": "zh",
+      "context": "周一的维修预约去不了了，帮我取消这次预约。"
+    },
+    {
+      "skill": "payment_methods",
+      "language": "en",
+      "context": "Can I pay with a credit card instead of a bank transfer?"
+    },
+    {
+      "skill": "payment_methods",
+      "language": "en",
+      "context": "Which payment methods do you accept?"
+    },
+    {
+      "skill": "payment_methods",
+      "language": "zh",
+      "context": "你们支持哪些付款方式？可以刷信用卡吗？"
+    },
+    {
+      "skill": "payment_methods",
+      "language": "zh",
+      "context": "还没有尝试付款，我想先了解能不能用银行转账。"
+    },
+    {
+      "skill": "payment_failed",
+      "language": "en",
+      "context": "My card was charged, but the order still says unpaid."
+    },
+    {
+      "skill": "payment_failed",
+      "language": "en",
+      "context": "The payment keeps failing even though my card has enough funds."
+    },
+    {
+      "skill": "payment_failed",
+      "language": "zh",
+      "context": "银行卡扣款了，但订单还显示未支付。"
+    },
+    {
+      "skill": "payment_failed",
+      "language": "zh",
+      "context": "不是想了解付款方式，我刚刚支付失败了，要查一下原因。"
+    },
+    {
+      "skill": "privacy_delete",
+      "language": "en",
+      "context": "Delete my account and remove my personal data."
+    },
+    {
+      "skill": "privacy_delete",
+      "language": "en",
+      "context": "I want you to erase all the information stored about me."
+    },
+    {
+      "skill": "privacy_delete",
+      "language": "zh",
+      "context": "我要注销账户，并删除保存的个人信息。"
+    },
+    {
+      "skill": "privacy_delete",
+      "language": "zh",
+      "context": "不需要找回账号了，我想彻底删除这个账户和相关资料。"
+    },
+    {
+      "skill": "human_agent",
+      "language": "en",
+      "context": "Please transfer me to a human customer service agent."
+    },
+    {
+      "skill": "human_agent",
+      "language": "en",
+      "context": "I would like a real adviser to call me back."
+    },
+    {
+      "skill": "human_agent",
+      "language": "zh",
+      "context": "请转人工客服。"
+    },
+    {
+      "skill": "human_agent",
+      "language": "zh",
+      "context": "这些问题我想直接跟真人顾问说，安排回电吧。"
+    }
+  ]
+}

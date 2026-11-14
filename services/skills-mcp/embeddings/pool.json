@@ -1,0 +1,17 @@
+{
+  "members": [
+    {
+      "name": "bge",
+      "url": "http://127.0.0.1:8796/v1/embeddings",
+      "model": "bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+    },
+    {
+      "name": "qwen",
+      "url": "http://127.0.0.1:8797/v1/embeddings",
+      "model": "qwen3-embedding-0.6b",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+      "query_prefix": "Instruct: Given the current customer request, retrieve the skill description that best matches the action the assistant should perform.\nQuery: "
+    }
+  ]
+}

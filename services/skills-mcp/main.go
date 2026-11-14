@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	codemode "github.com/thehumanworks/codemode-go"
 )
 
 //go:embed panel/*
@@ -38,7 +39,11 @@ func protect(token string, h http.Handler) http.Handler {
 			http.Error(w, "Bearer credential required", 401)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+		limit := int64(2 << 20)
+		if r.Method == "PUT" && r.URL.Path == "/admin/catalog" {
+			limit = maxCatalogBytes
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		h.ServeHTTP(w, r)
 	})
 }
@@ -58,7 +63,7 @@ func (s *store) admin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid catalog JSON", 400)
 			return
 		}
-		c, err := s.publish(c)
+		c, err := s.publishContext(r.Context(), c)
 		if err != nil {
 			var pe *os.PathError
 			switch {
@@ -84,6 +89,12 @@ func handler(s *store, adminToken, runtimeToken string, memory ...*memoryAPI) ht
 	}
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { s.mu.RLock(); defer s.mu.RUnlock(); return s.server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	mux.Handle("/mcp", protect(runtimeToken, h))
+	codeHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.codeServer
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	mux.Handle("/mcp/code", protect(runtimeToken, codeHandler))
 	mux.Handle("POST /admin/preview", protect(adminToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var turn turnInput
 		if err := json.NewDecoder(r.Body).Decode(&turn); err != nil {
@@ -132,10 +143,15 @@ func main() {
 		log.Fatal("admin and runtime credentials must differ")
 	}
 	b := backend{"http://127.0.0.1:8791/api/tools/quote", secret("/run/secrets/crm"), &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-	s, err := openStore("/data/catalog.json", b)
+	embedder, err := embeddingClientFromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
+	s, err := openStoreWithEmbeddings("/data/catalog.json", b, embedder)
+	if err != nil {
+		log.Fatal(err)
+	}
+	codemode.Warm()
 	memory, closeMemory, err := startMemory(s)
 	if err != nil {
 		log.Fatal(err)
