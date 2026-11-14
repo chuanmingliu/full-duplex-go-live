@@ -1196,8 +1196,18 @@ func TestGreetingKeepsItsOwnOrigin(t *testing.T) {
 func TestFillerYieldsToTheAnswerItWasCovering(t *testing.T) {
 	var mu sync.Mutex
 	heard := map[string]int{}
+	fillerCommitted := make(chan struct{})
+	releaseFiller := make(chan struct{})
+	resumeFiller := sync.OnceFunc(func() { close(releaseFiller) })
+	var firstFiller sync.Once
 	p := NewPlayer(PlayerConfig{Rate: 24000, ChunkMS: 40, Paced: true, LeadMS: 40},
 		func(id string, pcm []byte, _ time.Time) {
+			if id == "bc_1" {
+				firstFiller.Do(func() {
+					close(fillerCommitted)
+					<-releaseFiller
+				})
+			}
 			mu.Lock()
 			heard[id] += len(pcm)
 			mu.Unlock()
@@ -1209,41 +1219,49 @@ func TestFillerYieldsToTheAnswerItWasCovering(t *testing.T) {
 	}
 
 	var gen Generation
-	go p.Run(&gen)
-	defer p.Close()
+	done := make(chan struct{})
+	go func() {
+		p.Run(&gen)
+		close(done)
+	}()
+	defer func() {
+		p.Close()
+		resumeFiller()
+		<-done
+	}()
 
-	// Nothing playing: there is nothing to preempt, and saying so matters —
-	// the engine calls this on every first segment.
 	if p.PreemptBackchannel() {
 		t.Fatal("preempted a filler that was not there")
 	}
 
-	// A filler takes the floor. Paced, and a second of audio, so there is a
-	// real tail to cut rather than a race with the run loop.
 	oneSecond := make([]byte, 2*24000)
 	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "bc_1", Text: "我看一下"})
 	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "bc_1", PCM: oneSecond})
-	waitFor(t, "the filler to be heard", 2*time.Second, func() bool { return bytesFor("bc_1") > 0 })
+	select {
+	case <-fillerCommitted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("filler did not commit its first audio chunk")
+	}
 
+	// Output is committed under the player lock, then delivered outside it.
+	// Preempt while the first chunk is in the sink. That committed chunk may
+	// finish after preemption, but the remaining filler must be discarded.
 	if !p.PreemptBackchannel() {
 		t.Fatal("a playing filler was not preempted")
 	}
-	cut := bytesFor("bc_1")
-	if cut >= len(oneSecond) {
-		t.Fatal("the filler had already finished; nothing was actually cut")
+	if p.Active() {
+		t.Fatal("preempted filler still holds the floor")
 	}
-	waitFor(t, "the floor to be released", 2*time.Second, func() bool { return !p.Active() })
+	resumeFiller()
 
-	// And it stays cut: the rest of that second must never reach the wire.
-	time.Sleep(200 * time.Millisecond)
-	if now := bytesFor("bc_1"); now > cut {
-		t.Errorf("filler audio kept flowing after preemption: %d bytes then %d now", cut, now)
-	}
-
-	// An answer must never be preempted this way, whatever else is true.
 	p.Enqueue(Segment{Kind: SegBegin, Gen: gen.Current(), TurnID: "item_9", Text: "明天下午两点"})
 	p.Enqueue(Segment{Kind: SegAudio, Gen: gen.Current(), TurnID: "item_9", PCM: oneSecond})
 	waitFor(t, "the answer to be heard", 2*time.Second, func() bool { return bytesFor("item_9") > 0 })
+	// The serial player reached the answer, so the filler loop has exited.
+	// Exactly its already-committed 40 ms chunk may have reached the sink.
+	if got, want := bytesFor("bc_1"), 2*24000*40/1000; got != want {
+		t.Errorf("filler output after preemption = %d bytes, want committed chunk %d", got, want)
+	}
 	if p.PreemptBackchannel() {
 		t.Fatal("PreemptBackchannel cut a real answer; only bc_ turns may be dropped")
 	}
