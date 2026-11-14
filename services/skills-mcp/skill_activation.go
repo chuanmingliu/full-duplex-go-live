@@ -63,7 +63,7 @@ func (x *skillIndex) selectionCapabilities() map[string]any {
 		capabilities["methods"] = []string{"skills/search", "skills/describe", "skills/resolve", "skills/load"}
 		capabilities["max_reply_bytes"] = maxSelectionBytes
 		capabilities["search_modes"] = []string{"auto", "semantic", "lexical"}
-		capabilities["semantic_available"] = x.semantic != nil
+		capabilities["semantic_available"] = x.semantic != nil || x.pool != nil
 	}
 	return capabilities
 }
