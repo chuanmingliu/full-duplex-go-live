@@ -1,0 +1,265 @@
+{
+  "scope": "scripted final text only; excludes ASR, identity gates and latency",
+  "rows": [
+    {
+      "id": "ack_mm",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_right",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_ok",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_understood",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_continue",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_wait",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_correction",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_stop",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_mm_then_question",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_ok_then_change",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_question",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_repeat",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_yes",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_oh",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_keep_going",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_i_see",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_exactly",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_fine",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_true",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_combined",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "ack_listening",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_got_it",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_clear",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_understand",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_go_on",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_heard",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_okay",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "ack_understood_now",
+      "intended_label": "backchannel",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_not_that",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_no",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_wrong",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_wait_short",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_stop_short",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_repeat_short",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_amount",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_different",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_yes_but",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_right_change",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_oh_repeat",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_understood_question",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_ok_stop",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_mm_correction",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_fine_question",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "floor_clear_change",
+      "intended_label": "floor",
+      "legacy_phrase_match": false
+    },
+    {
+      "id": "prosody_mm_flat",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_mm_question",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_right_flat",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_right_question",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_yes_flat",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_yes_question",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_oh_flat",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    },
+    {
+      "id": "prosody_oh_question",
+      "intended_label": "ambiguous",
+      "legacy_phrase_match": true
+    }
+  ]
+}

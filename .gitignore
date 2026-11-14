@@ -11,3 +11,6 @@ bench-fdb.json
 eval-golive.log
 /golivebench
 .eval.pid
+
+# Private, operator-reviewed Dreaming records are deployed separately from source.
+/journal/dreaming.json

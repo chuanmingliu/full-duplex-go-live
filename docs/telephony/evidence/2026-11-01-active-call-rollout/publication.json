@@ -1,0 +1,15 @@
+{
+  "stage": "verified",
+  "build": "45b5564",
+  "source_commit": "0c2ba18",
+  "previous_issues_sha256": "163abe64123f80039bec9f926dc527a17778276aea4e09bddfcc7ae535fd9bd7",
+  "calls": [
+    "out-mvxk9u0n-11lw.md",
+    "out-mvxkn1v4-jeyp.md",
+    "out-mvxksnvy-4i3q.md"
+  ],
+  "journal_retro_count": 3,
+  "desk_lines_added": 1,
+  "issues_sha256": "7a5e09246e8c1d8919bcecd03506c99cec2c9299d13ed10ad57b61bc3fcfdbf1",
+  "desk_control_preserved": true
+}

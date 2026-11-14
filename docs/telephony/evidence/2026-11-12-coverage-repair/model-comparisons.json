@@ -1,0 +1,46 @@
+[
+  {
+    "scenario": "all-tiers",
+    "mode": "skills",
+    "first_text_ms": 1176.093,
+    "first_audio_ms": 1320.681,
+    "checks": {
+      "bounded_model_steps": true,
+      "exact_tier_count": true,
+      "lowest_tier": true,
+      "model_chain_completed": true,
+      "response": true,
+      "selection_unchanged": true,
+      "skill_loaded": true
+    }
+  },
+  {
+    "scenario": "explicit-subset",
+    "mode": "skills",
+    "first_text_ms": 1864.419,
+    "first_audio_ms": 2083.315,
+    "checks": {
+      "bounded_model_steps": true,
+      "exact_tier_count": true,
+      "explicit_subset": true,
+      "model_chain_completed": true,
+      "response": true,
+      "selection_unchanged": true,
+      "skill_loaded": true
+    }
+  },
+  {
+    "scenario": "options-only",
+    "mode": "skills",
+    "first_text_ms": 744.952,
+    "first_audio_ms": 917.52,
+    "checks": {
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "response": true,
+      "selection_unchanged": true,
+      "skill_loaded": true
+    }
+  }
+]

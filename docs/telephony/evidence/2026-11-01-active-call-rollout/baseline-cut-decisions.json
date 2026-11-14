@@ -1,0 +1,99 @@
+{
+  "call": "out-mvxk9u0n-11lw",
+  "scope": "Server VAD utterance-open to cut decision while playback was active; excludes pre-detection voice time, transport and audible playout stop. One cut per latest open; unpaired events retained separately.",
+  "barge_in_opens": 2,
+  "paired_playback_cuts": 2,
+  "unpaired_playback_cuts": 0,
+  "p50_ms": 300.0,
+  "p95_ms": 371.0,
+  "max_ms": 371.0,
+  "rows": [
+    {
+      "detection_to_cut_ms": 229.0,
+      "vad_active_ms": "320"
+    },
+    {
+      "detection_to_cut_ms": 371.0,
+      "vad_active_ms": "320"
+    }
+  ],
+  "focus_decisions": [
+    {
+      "verdict": "yield",
+      "primary_ms": "500",
+      "voiced_ms": "500",
+      "coverage": "0.88",
+      "waited_ms": "229"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "500",
+      "voiced_ms": "500",
+      "coverage": "0.89",
+      "waited_ms": "441"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "620",
+      "voiced_ms": "620",
+      "coverage": "0.86",
+      "waited_ms": "293"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "1200",
+      "voiced_ms": "1200",
+      "coverage": "0.98",
+      "waited_ms": "728"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "560",
+      "voiced_ms": "560",
+      "coverage": "0.87",
+      "waited_ms": "391"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "600",
+      "voiced_ms": "600",
+      "coverage": "0.89",
+      "waited_ms": "380"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "560",
+      "voiced_ms": "560",
+      "coverage": "0.92",
+      "waited_ms": "325"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "500",
+      "voiced_ms": "500",
+      "coverage": "0.91",
+      "waited_ms": "302"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "620",
+      "voiced_ms": "620",
+      "coverage": "0.97",
+      "waited_ms": "371"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "600",
+      "voiced_ms": "600",
+      "coverage": "0.88",
+      "waited_ms": "253"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "520",
+      "voiced_ms": "520",
+      "coverage": "0.85",
+      "waited_ms": "325"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+name: backchannel detector
+on:
+  push:
+    branches: [codex/telephony-latency]
+    paths:
+      - services/backchannel-detector/**
+      - .github/workflows/backchannel-detector.yml
+  pull_request:
+    paths:
+      - services/backchannel-detector/**
+      - .github/workflows/backchannel-detector.yml
+jobs:
+  service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/backchannel-detector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/backchannel-detector/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python fetch_model.py --directory models
+      - run: BCD_MODEL_DIR=models python -m unittest -v test_service test_chinese_eval test_chinese_matrix test_chinese_summary
+      - run: docker compose config --quiet
+      - name: Real model streaming smoke
+        run: |
+          set -eu
+          MODEL_DIR=models python server.py > /tmp/backchannel-service.log 2>&1 &
+          detector_pid=$!
+          trap 'kill "$detector_pid" 2>/dev/null || true' EXIT
+          python - <<'PY'
+          import time, urllib.request
+          for attempt in range(30):
+              try:
+                  urllib.request.urlopen('http://127.0.0.1:18087/healthz', timeout=1).read()
+                  break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit('detector did not become ready')
+          PY
+          python probe.py --seconds 4

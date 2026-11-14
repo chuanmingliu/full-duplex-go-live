@@ -1,0 +1,157 @@
+{
+  "call_id": "859201e6-a2c5-45bb-bf0f-3c7e4afab309",
+  "run_id": "sim-13a4278711dbe223e23bc91d",
+  "phase": "completed",
+  "build": "coverage-followup-b",
+  "duration_s": 255.7,
+  "transcript_turns": {
+    "assistant": 27,
+    "caller": 20
+  },
+  "audio_channels_with_signal": [
+    true,
+    true
+  ],
+  "archive_verified": true,
+  "original_profile_and_saved_prompt_preserved": true,
+  "journal_url": "http://192.168.71.9:18870/#/call/859201e6-a2c5-45bb-bf0f-3c7e4afab309",
+  "latency": {
+    "version": 5,
+    "first_audio": {
+      "n": 19,
+      "p50_ms": 380,
+      "p95_ms": 381,
+      "max_ms": 381,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 19,
+      "p50_ms": 1024,
+      "p95_ms": 4606,
+      "max_ms": 4606,
+      "at_or_above_target": 11
+    },
+    "conversational_first_content": {
+      "n": 16,
+      "p50_ms": 1001.5,
+      "p95_ms": 1542,
+      "max_ms": 1542,
+      "at_or_above_target": 8
+    },
+    "quote_only_responses": 3,
+    "tool_result": {
+      "n": 4,
+      "p50_ms": 3310.5,
+      "p95_ms": 4606,
+      "max_ms": 4606,
+      "at_or_above_target": 4
+    },
+    "tool_result_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_19",
+        "result_turn": "item_21",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2462,
+        "child_first_content_ms": 219,
+        "total_ms": 3061,
+        "interrupted": true,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_20",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2332,
+        "child_first_content_ms": 848,
+        "total_ms": 3560,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t3",
+        "origin_turn": "item_23",
+        "result_turn": "item_26",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 4212,
+        "child_first_content_ms": 14,
+        "total_ms": 4606,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t4",
+        "origin_turn": "item_32",
+        "result_turn": "item_33",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 669,
+        "child_first_content_ms": 191,
+        "total_ms": 1240,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readout": {
+      "n": 2,
+      "p50_ms": 3405.5,
+      "p95_ms": 5571,
+      "max_ms": 5571,
+      "at_or_above_target": 2
+    },
+    "quote_readout_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_19",
+        "result_turn": "item_21",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2462,
+        "child_first_readout_ms": null,
+        "total_ms": null,
+        "status": "missing",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_20",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2332,
+        "child_first_readout_ms": null,
+        "total_ms": null,
+        "status": "unverified",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t3",
+        "origin_turn": "item_23",
+        "result_turn": "item_26",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 4212,
+        "child_first_readout_ms": 979,
+        "total_ms": 5571,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t4",
+        "origin_turn": "item_32",
+        "result_turn": "item_33",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 669,
+        "child_first_readout_ms": 191,
+        "total_ms": 1240,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readouts_missing": 1,
+    "quote_readouts_unverified": 1,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "cancelled": 0,
+    "tool_results_joined": 3,
+    "invalid_tool_links": 0
+  }
+}

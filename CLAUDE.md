@@ -554,6 +554,20 @@ made on one build.
   line that always reaches one person; empty on the test line.
 - **The settled close must not fire while an early final is pending**: it
   judges "no new words" on hypotheses that trail the audio.
+- **Two races on the loop, 11-02 (ISS-101, ISS-102).** The player lets go
+  of the floor under its own lock and only then posts the receipt that
+  stamps `lastQuietAt`, so a tick in between saw a free floor and a clock
+  still running from the caller's last word: the silence rule could fire as
+  a long answer ended. The clock now also runs from the last tick that saw
+  the floor held, or a receipt posted and not yet run (`floorHeldAt`,
+  `silenceClockStart`). And a quick tool's continuation came back off the
+  loop whenever the tool returned; `drainDeferred` started it on any free
+  floor, over the caller's newer question, and `startContinuation` cleared
+  `specTurn` — the new question lost its head start, a whole backend round.
+  A continuation of the engine's own tools whose caller has gone on is
+  retired with its history recorded (`continuationSuperseded`; a client's
+  late function result is still read back); any continuation is held
+  through a floor hold or a live speculation. Neither seen on a call yet: unit tests only.
 - **A trailing "啊" is not a different turn.** `sameWords` keeps an answer
   begun on "也可以是吧" when the final says "也可以是吧，啊".
 - **Dialling from the box**: `POST /api/outbound/dial` needs `to`; the locked

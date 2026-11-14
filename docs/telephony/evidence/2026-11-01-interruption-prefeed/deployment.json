@@ -1,0 +1,22 @@
+{
+  "stage": "verified",
+  "commit": "f1fd9a648544c131600958323961bebad563c6b8",
+  "old_version": "45b5564",
+  "new_version": "f1fd9a6",
+  "old_sha256": "0af8a624053a706bc4f2f20ec2b9f847409eef2e6f502e21520cca60a8ec8a29",
+  "new_sha256": "30978356547cce422e0af04363828af9ee7cf2397406d5efc278811c86b32c22",
+  "release": "/home/chuanming/golive-releases/interruption-f1fd9a6",
+  "ci_run": 41298313932,
+  "aria_backend": "local",
+  "aria_revision": 13,
+  "restore_only_on_owner_request": true,
+  "pid_identity": [
+    "1528817",
+    "184673303"
+  ],
+  "phrase_warm_verified": true,
+  "archive_files_unchanged": 847,
+  "original_configuration_preserved": true,
+  "other_services_preserved": true,
+  "aria_route_preserved": true
+}

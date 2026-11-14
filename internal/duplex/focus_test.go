@@ -57,9 +57,10 @@ func (f *fakeScorer) Push(pcm []byte, atMS int64) error {
 	fr := focus.Frame{StartMS: atMS, EndMS: atMS + dur, P: p}
 	deliver := func() {
 		f.mu.Lock()
-		closed := f.closed
-		f.mu.Unlock()
-		if closed {
+		defer f.mu.Unlock()
+		// Close uses the same lock: it must not close frames between this
+		// check and the nonblocking send, including delayed deliveries.
+		if f.closed {
 			return
 		}
 		select {
@@ -344,7 +345,15 @@ func TestAnotherVoiceOverTheAnswerDoesNotCutIt(t *testing.T) {
 // while the assistant is silent, is let go by with no turn made of it; the
 // caller's next one is answered as usual.
 func TestABackgroundVoicesUtteranceIsLetGoBy(t *testing.T) {
+	testBackgroundVoiceRejected(t, "")
+}
+
+func testBackgroundVoiceRejected(t *testing.T, talkerURL string) {
 	cfg := earlyFinalConfig(120)
+	if talkerURL != "" {
+		cfg.opts.Cfg.Duplex.Opener = true
+		cfg.opts.Cfg.Duplex.TalkerOpenerURL = talkerURL
+	}
 	cfg.opts.Cfg.Duplex.Focus = "veto"
 	rate := cfg.opts.Cfg.ClientRate
 	c := newCollector(rate)

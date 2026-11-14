@@ -1,0 +1,16 @@
+#timeout 45
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import json,subprocess,urllib.request,re,hashlib
+home=Path.home();root=home/'golive-telephony'
+def cmd(args):return subprocess.check_output(args,text=True,stderr=subprocess.STDOUT).strip()
+def get(url):
+ with urllib.request.urlopen(url,timeout=8) as f:return json.load(f)
+pids=set(re.findall(r'pid=(\d+)',cmd(['ss','-lntpH','sport = :8765'])))
+assert len(pids)==1
+proc=Path('/proc')/pids.pop()
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+result={'health':get('http://127.0.0.1:8765/healthz'),'aria':get('http://127.0.0.1:3000/api/realtime/brain'),'profile_sha256':sha(root/'configs/telephony.json'),'binary_sha256':sha(proc/'exe'),'architecture':cmd(['uname','-m']),'cpu':cmd(['lscpu','-J']),'memory':cmd(['free','-m']),'docker_version':cmd(['docker','version','--format','{{.Server.Version}}']),'compose_version':cmd(['docker','compose','version','--short']),'containers':cmd(['docker','ps','--format','{{.Names}} {{.Image}} {{.Ports}}']),'candidate_port':cmd(['ss','-lntH','sport = :18087']),'service_roots':[str(p) for p in home.glob('*') if p.is_dir() and any(s in p.name for s in ['compose','service','golive'])]}
+print(json.dumps(result))
+PY

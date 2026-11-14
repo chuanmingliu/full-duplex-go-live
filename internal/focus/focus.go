@@ -377,6 +377,9 @@ type Attribution struct {
 	// primary was not.
 	Primary float64
 	Others  float64
+	// PrimaryMS retains the exact duration of the primary's labelled frames.
+	// Reconstructing it from Primary * VoicedMS can round a threshold down.
+	PrimaryMS int64
 	// VoicedMS is how much of the span the model heard anybody in.
 	VoicedMS int64
 	// Known is false before a primary speaker is enrolled: nothing can be
@@ -431,6 +434,7 @@ func (t *Tracker) attribute(startMS, endMS int64, throughMasks bool, echo int) A
 	}
 	a.Coverage = float64(labelled) / float64(endMS-startMS)
 	a.VoicedMS = voiced
+	a.PrimaryMS = primaryMS
 	if voiced > 0 {
 		a.Primary = float64(primaryMS) / float64(voiced)
 		a.Others = float64(othersMS) / float64(voiced)

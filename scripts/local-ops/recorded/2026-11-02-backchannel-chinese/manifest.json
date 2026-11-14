@@ -1,0 +1,46 @@
+{
+  "files": {
+    "inventory.job": {
+      "sha256": "c693d20ef26bebc29fa109bc6b5ece7c68b64d8469406f21a190353750ab5d7c",
+      "bytes": 973,
+      "original_name": "bcd-zh-inventory-20261102.job"
+    },
+    "test.py": {
+      "sha256": "ddbc43a6e5765661f6584e83b26a95a16cd75a2ff1775af06a19e17af6fefa70",
+      "bytes": 7408,
+      "original_name": "bcd-zh-test-20261102.py"
+    },
+    "test.job": {
+      "sha256": "caa40774e4b9c0a2268507d71a53649cda7c06456a500947968b2f26ce7737e9",
+      "bytes": 722,
+      "original_name": "bcd-zh-test-20261102.job"
+    },
+    "correlate.job": {
+      "sha256": "4f4d18359b0523314f0c6b91169ae7d820119d6a799ce829809aa9279c500439",
+      "bytes": 3563,
+      "original_name": "bcd-zh-correlate-20261102.job"
+    },
+    "correlate-v2.job": {
+      "sha256": "dd2d665511a6d21e8ab40dea44c4ea769e544b2c8b24132607d09d7afb43cf2a",
+      "bytes": 4128,
+      "original_name": "bcd-zh-correlate-v2-20261102.job"
+    },
+    "services/backchannel-detector/chinese_eval.py": {
+      "sha256": "23dec4552ae3e56ff66bc43ead1462022835a3a15d4bb8b66de915d489aa91c6",
+      "bytes": 8824
+    },
+    "services/backchannel-detector/chinese_cases.json": {
+      "sha256": "9b862be418443b4858faf2d49d5936a319bb81a431e35f3afa4812e3f535e55d",
+      "bytes": 982
+    },
+    "services/backchannel-detector/probe.py": {
+      "sha256": "98fc53fada726d086241b53246a7c81a3f3c593c2a07013aab48e94baf241511",
+      "bytes": 5578
+    },
+    "services/backchannel-detector/test_chinese_eval.py": {
+      "sha256": "b83a937ad0991f8ccf370156ab84c4d0b0a80993384fd0bf6e2b213fb26cb5f8",
+      "bytes": 1412
+    }
+  },
+  "payload_sha256": "1c16cad2ad8763416fb739ce39be2bf8317389a52034ae1b96499c683d7860ea"
+}

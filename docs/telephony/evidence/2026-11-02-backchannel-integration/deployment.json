@@ -1,0 +1,25 @@
+{
+  "stage": "verified",
+  "commit": "60dbe53bb7c3ae75b47260cfb5d2d7a07b495c76",
+  "old_version": "f1fd9a6",
+  "new_version": "60dbe53",
+  "old_sha256": "30978356547cce422e0af04363828af9ee7cf2397406d5efc278811c86b32c22",
+  "new_sha256": "f4d36a4814514e5ddcfb405a3af086457c8235d5b8a4d826a9952f186132dd9a",
+  "release": "/home/chuanming/golive-releases/backchannel-60dbe53",
+  "ci_run": 41467549715,
+  "aria_backend": "local",
+  "aria_revision": 13,
+  "restore_only_on_owner_request": true,
+  "pid_identity": [
+    "193910",
+    "194902453"
+  ],
+  "phrase_warm_verified": true,
+  "archive_files_unchanged": 877,
+  "original_settings_preserved": true,
+  "original_profile_backup": "/home/chuanming/golive-releases/backchannel-60dbe53/profile.previous.json",
+  "trial_profile_sha256": "c98dea3a562a9544d6e7242fda0e86621e0a514c941ccd3a66000c085dd483ae",
+  "detector_mode": "asr_assist",
+  "other_services_preserved": true,
+  "aria_route_preserved": true
+}

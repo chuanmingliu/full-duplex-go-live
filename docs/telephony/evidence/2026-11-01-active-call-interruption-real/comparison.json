@@ -1,0 +1,102 @@
+{
+  "call": "out-mvxr0ein-wwqh",
+  "kind": "real",
+  "transport": "Active Call",
+  "build": "f1fd9a6",
+  "previous_real_call": "out-mvxo348d-w5pb",
+  "previous_build": "45b5564",
+  "original_prompt_voice_greeting_preserved": true,
+  "comparison_is_observational_not_matched_replay": true,
+  "normal_excluding_all_quote_origin_requests": {
+    "previous": {
+      "n": 32,
+      "p50_ms": 963.5,
+      "p90_ms": 1066,
+      "p95_ms": 1078,
+      "max_ms": 1081,
+      "at_or_above_target": 0
+    },
+    "current": {
+      "n": 28,
+      "p50_ms": 989.0,
+      "p90_ms": 1117,
+      "p95_ms": 1135,
+      "max_ms": 1260,
+      "at_or_above_target": 1
+    }
+  },
+  "canonical_conversational_content_including_mixed_quote_ack": {
+    "previous": {
+      "n": 32,
+      "p50_ms": 963.5,
+      "p90_ms": 1066,
+      "p95_ms": 1078,
+      "max_ms": 1081,
+      "at_or_above_target": 0
+    },
+    "current": {
+      "n": 29,
+      "p50_ms": 991,
+      "p90_ms": 1135,
+      "p95_ms": 1260,
+      "max_ms": 1504,
+      "at_or_above_target": 2
+    },
+    "additional_current_turn": "item_11",
+    "additional_current_turn_ms": 1504,
+    "scope": "Includes the spoken response before a quotation task; excludes quote-only handoffs. Calculation time itself is not included in that 1504 ms."
+  },
+  "confirmed_barge_in_cuts": {
+    "previous": {
+      "n": 11,
+      "p50_ms": 265.0,
+      "p95_ms": 680.0,
+      "max_ms": 680.0
+    },
+    "current": {
+      "n": 15,
+      "p50_ms": 207.0,
+      "p95_ms": 694.0,
+      "max_ms": 694.0
+    },
+    "median_improvement_ms": 58,
+    "median_improvement_percent": 21.9,
+    "p95_change_ms": 14,
+    "boundary": "VAD-open to server cut, both barge_in=true and speaking=true"
+  },
+  "other_non_barge_playback_cancellations": {
+    "previous": 3,
+    "current": 4,
+    "current_tool_delivery_cancellations": 2,
+    "note": "Retained separately. Do not pair a task-result cancellation with an earlier caller open and call the resulting 4.454/5.415 seconds interruption delay."
+  },
+  "prefed_interruption_count": 8,
+  "vad_accumulated_voiced_ms": 320,
+  "quotation_api_cycles": {
+    "n": 18,
+    "min_ms": 3003,
+    "max_ms": 4507,
+    "ahead_true": 16,
+    "failed": 0,
+    "scope": "Submission and polling cycle, not isolated calculation or foreground caller delay"
+  },
+  "canonical_gate": {
+    "enabled": true,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "passed": false,
+    "reasons": [
+      "conversational_first_content: p95 1260 ms is not below 1200 ms",
+      "1 quote_readouts_unverified record(s)"
+    ]
+  },
+  "actual_acoustic_handset_verified": false,
+  "optional_50_ms_estimate": {
+    "pure_normal_p95_ms": 1185,
+    "canonical_conversational_p95_ms": 1310,
+    "scope": "Owner assumption, not acoustic measurement"
+  },
+  "runtime_changes_during_review": false,
+  "redialed": false
+}

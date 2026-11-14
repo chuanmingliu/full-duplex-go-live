@@ -1,0 +1,65 @@
+{
+  "date": "2026-11-08",
+  "branch": "codex/telephony-latency",
+  "kind": "controlled_engine_simulation_with_deployed_mcp",
+  "service_release": "0bd39794",
+  "catalog_revision": 5,
+  "iterations_per_scenario_per_mode": 20,
+  "input": "synthetic text through Engine.SubmitItem and ContinueResponse",
+  "llm": "scripted provider, 120ms per completion",
+  "tts": "mock provider",
+  "active_call_sip_rtp_included": false,
+  "handset_measurement": false,
+  "real_model_semantics_verified": false,
+  "normal": {
+    "baseline": {
+      "p50_ms": 120.926,
+      "p95_ms": 121.246
+    },
+    "skills": {
+      "p50_ms": 121.871,
+      "p95_ms": 122.3
+    }
+  },
+  "quote_revised_acknowledgment": {
+    "baseline": {
+      "p50_ms": 120.893,
+      "p95_ms": 121.347
+    },
+    "skills": {
+      "p50_ms": 245.669,
+      "p95_ms": 246.43
+    }
+  },
+  "wechat_notification_help": {
+    "baseline": {
+      "p50_ms": 120.978,
+      "p95_ms": 121.265
+    },
+    "skills": {
+      "p50_ms": 245.811,
+      "p95_ms": 246.518
+    }
+  },
+  "separate_synthetic_calculation_ms": {
+    "baseline": 3000.76,
+    "skills": 3001.15
+  },
+  "checks": [
+    "guidance reaches model continuation",
+    "original prompt retained",
+    "native quote receives base plan and requested change",
+    "calculation completes and delivery task emitted",
+    "normal turn uses one completion",
+    "changed resource rejected",
+    "concurrent publication rejected",
+    "interrupted pending fetch does not resume speech"
+  ],
+  "source": "Mac runner xiaocui-skills-final-2, exit 0",
+  "limitations": [
+    "first-content audio boundary uses mock synthesis",
+    "scripted tool choice does not validate semantic routing by the configured model",
+    "real-model probe rejected by automatic approval review due to private saved prompt egress"
+  ],
+  "test_binary_sha256": "485f1d97a93478c6404e3e579265c452a5f27e574b67bf9c991cc7c32b0ee71f"
+}

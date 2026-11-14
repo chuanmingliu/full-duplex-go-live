@@ -1,0 +1,165 @@
+{
+  "call_id": "402cafab-d280-40bc-b427-5e5d56c2de55",
+  "run_id": "sim-1bc7d8f0c93c2b9708bd4761",
+  "phase": "completed",
+  "build": "7a3d3ac",
+  "duration_s": 223.4,
+  "transcript_turns": {
+    "assistant": 22,
+    "caller": 19
+  },
+  "audio_channels_with_signal": [
+    true,
+    true
+  ],
+  "archive_verified": true,
+  "original_profile_and_saved_prompt_preserved": true,
+  "journal_url": "http://192.168.71.9:18870/#/call/402cafab-d280-40bc-b427-5e5d56c2de55",
+  "latency": {
+    "version": 5,
+    "first_audio": {
+      "n": 16,
+      "p50_ms": 380,
+      "p95_ms": 380,
+      "max_ms": 380,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 16,
+      "p50_ms": 954.5,
+      "p95_ms": 20642,
+      "max_ms": 20642,
+      "at_or_above_target": 6
+    },
+    "conversational_first_content": {
+      "n": 14,
+      "p50_ms": 954.5,
+      "p95_ms": 1226,
+      "max_ms": 1226,
+      "at_or_above_target": 5
+    },
+    "quote_only_responses": 2,
+    "tool_result": {
+      "n": 4,
+      "p50_ms": 18502,
+      "p95_ms": 20642,
+      "max_ms": 20642,
+      "at_or_above_target": 3
+    },
+    "tool_result_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_13",
+        "result_turn": "item_14",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 409,
+        "child_first_content_ms": 3,
+        "total_ms": 792,
+        "interrupted": true,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_17",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 20260,
+        "child_first_content_ms": 2,
+        "total_ms": 20642,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_18",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 18890,
+        "child_first_content_ms": 2,
+        "total_ms": 19272,
+        "interrupted": false,
+        "coalesced": true,
+        "primary_origin_turn": "item_17",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_19",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 17350,
+        "child_first_content_ms": 2,
+        "total_ms": 17732,
+        "interrupted": false,
+        "coalesced": true,
+        "primary_origin_turn": "item_17",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readout": {
+      "n": 4,
+      "p50_ms": 19504,
+      "p95_ms": 21644,
+      "max_ms": 21644,
+      "at_or_above_target": 3
+    },
+    "quote_readout_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_13",
+        "result_turn": "item_14",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 409,
+        "child_first_readout_ms": 3,
+        "total_ms": 792,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_17",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 20260,
+        "child_first_readout_ms": 1004,
+        "total_ms": 21644,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_18",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 18890,
+        "child_first_readout_ms": 1004,
+        "total_ms": 20274,
+        "status": "observed",
+        "coalesced": true,
+        "primary_origin_turn": "item_17",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_19",
+        "result_turn": "item_22",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 17350,
+        "child_first_readout_ms": 1004,
+        "total_ms": 18734,
+        "status": "observed",
+        "coalesced": true,
+        "primary_origin_turn": "item_17",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "cancelled": 0,
+    "tool_results_joined": 2,
+    "invalid_tool_links": 0
+  }
+}

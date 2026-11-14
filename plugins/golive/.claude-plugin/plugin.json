@@ -1,0 +1,9 @@
+{
+  "name": "golive",
+  "version": "0.1.0",
+  "description": "Operate GoLive Active Call, run simulations, and review call latency and recordings.",
+  "author": {"name": "Chuanming Liu"},
+  "repository": "https://github.com/chuanmingliu/full-duplex-go-live",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

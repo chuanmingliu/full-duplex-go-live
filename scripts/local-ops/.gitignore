@@ -1,0 +1,5 @@
+.runner/
+__pycache__/
+*.pyc
+*.tar.gz
+.env*

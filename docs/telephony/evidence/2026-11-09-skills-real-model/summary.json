@@ -1,0 +1,224 @@
+{
+  "date": "2026-11-09",
+  "engine_commit": "6a32731",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "tts": "mock",
+  "input": "synthetic text",
+  "baseline": "same engine with skills disabled",
+  "temperature": 0,
+  "max_output_tokens": 256,
+  "measurement": "text submission to mock audio output; quote_start is native synthetic executor entry",
+  "benchmarks": {
+    "normal": {
+      "original": {
+        "n": 20,
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 774.032,
+          "p95": 1296.59
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 663.141,
+          "p95": 1211.661
+        },
+        "workflow_text_ms": {
+          "n": 20,
+          "p50": 663.141,
+          "p95": 1211.661
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "n": 20,
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 873.245,
+          "p95": 1143.054
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 791.353,
+          "p95": 1087.234
+        },
+        "workflow_text_ms": {
+          "n": 20,
+          "p50": 791.353,
+          "p95": 1087.234
+        },
+        "expected_skill_selection_passed": 19
+      }
+    },
+    "quotation": {
+      "original": {
+        "n": 20,
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 1675.969,
+          "p95": 2568.873
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 1541.365,
+          "p95": 2286.866
+        },
+        "workflow_text_ms": {
+          "n": 20,
+          "p50": 1541.365,
+          "p95": 2286.866
+        },
+        "quote_start_ms": {
+          "n": 20,
+          "p50": 1110.399,
+          "p95": 1216.53
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "n": 20,
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 2778.199,
+          "p95": 3737.518
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 2620.735,
+          "p95": 3551.69
+        },
+        "workflow_text_ms": {
+          "n": 20,
+          "p50": 2620.735,
+          "p95": 3551.69
+        },
+        "quote_start_ms": {
+          "n": 20,
+          "p50": 2006.561,
+          "p95": 2675.708
+        },
+        "expected_skill_selection_passed": 20
+      }
+    },
+    "wechat": {
+      "original": {
+        "n": 20,
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 735.702,
+          "p95": 1050.885
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 620.586,
+          "p95": 899.234
+        },
+        "workflow_text_ms": {
+          "n": 20,
+          "p50": 620.586,
+          "p95": 899.234
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "n": 20,
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 1671.468,
+          "p95": 2094.943
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 1543.969,
+          "p95": 1966.85
+        },
+        "workflow_text_ms": {
+          "n": 20,
+          "p50": 1543.969,
+          "p95": 1966.85
+        },
+        "expected_skill_selection_passed": 20
+      }
+    }
+  },
+  "failures": [
+    {
+      "scenario": "normal",
+      "mode": "skills",
+      "check": "expected_skill_selection"
+    },
+    {
+      "source": "edges-2.json",
+      "scenario": "interrupt_retrieval_recovery",
+      "mode": "skills",
+      "check": "recovery_has_no_old_skill"
+    }
+  ],
+  "baseline_runtime": "9e29eed",
+  "candidate_engine_code": "6a32731 with opt-in MCP settings in isolated test processes",
+  "production_profile_preserved": true,
+  "benchmark_trials": 120,
+  "batches": 2,
+  "samples_per_scenario_per_mode": 20,
+  "quantiles": "median and nearest-rank p95",
+  "calculation_ms": {
+    "batch1": {
+      "original": 3000.497,
+      "skills": 3000.818
+    },
+    "batch2": {
+      "original": 3001.155,
+      "skills": 3000.113
+    }
+  },
+  "semantic_review": {
+    "normal_false_positive_skill_loads": {
+      "observed": 1,
+      "trials": 20
+    },
+    "expected_quote_skill_loads": {
+      "observed": 20,
+      "trials": 20
+    },
+    "expected_wechat_skill_loads": {
+      "observed": 20,
+      "trials": 20
+    },
+    "addV_between_turns": {
+      "memory_updated": true,
+      "skills_correct_reply": 2,
+      "skills_trials": 2,
+      "original_continued_add_guidance": 2,
+      "original_trials": 2
+    },
+    "addV_during_retrieval": {
+      "memory_updated": true,
+      "stale_guidance_expired": true,
+      "correct_reply": 1,
+      "trials": 2
+    },
+    "interruption": {
+      "audio_after_100ms": false,
+      "abandoned_wechat_reloaded_on_recovery": 2,
+      "retrieval_interrupt_trials": 2,
+      "old_claims_steps_continued_after_playback_interrupt_in_both_modes": true
+    },
+    "fallback": {
+      "discovery_outage_response_trials": 2,
+      "retrieval_outage_response_trials": 2,
+      "response_returned_all": true,
+      "instruction_accuracy_not_guaranteed": true
+    },
+    "consent": {
+      "declined_guidance_restarted_in_confirmatory_run": true,
+      "unknown_consent_guidance_started_in_confirmatory_run": true
+    }
+  },
+  "limitations": [
+    "text input, mock TTS and no Active Call/RustPBX or handset transport",
+    "synthetic prompt and deterministic 3-second quotation executor",
+    "20 trials per mode and scenario are exploratory",
+    "The first batch captured five original quotation turns after first audio and tool submission, before later continuation. Their latency timestamps are included. Complete-chain assertions and semantic conclusions use the confirmatory batch, with historical failures retained separately.",
+    "addV injection uses a mock adapter to SeedMemory, not a production event consumer"
+  ]
+}

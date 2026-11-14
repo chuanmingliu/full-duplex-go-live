@@ -1,0 +1,23 @@
+{
+  "stage": "verified",
+  "commit": "40c20f638a8adf60b71850b60acde1e41c5c38ed",
+  "release": "/home/chuanming/golive-releases/silence-40c20f6",
+  "ci_run": 42206853218,
+  "old_sha256": {
+    "engine": "bd11b8cb2f8b0ce1cac5d63b5676c6c5f5684e7a91a0275e9b45496d3d5b2caf",
+    "crm": "863d264d8914317708da62e99135f0791323ce9c266c6159dddc5cad0e5a08d2"
+  },
+  "new_sha256": {
+    "engine": "6f1e3f13475a6569064ad810623a114b6274592ec078d3e7d1b78d57c47760ed",
+    "crm": "7898419c7d805d653bb0e7fd8a832121ccb7cfdedfc200c764bf4e257664e334"
+  },
+  "original_config_count": 6,
+  "engine_pid": "453349",
+  "crm_pid": "453293",
+  "config_version": 1,
+  "phrase_warm_verified": true,
+  "original_settings_preserved": true,
+  "other_services_preserved": true,
+  "aria_restore_anchor_preserved": true,
+  "crm_event_prefix_preserved": true
+}

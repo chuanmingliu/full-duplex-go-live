@@ -521,6 +521,9 @@ func (s *Session) handleRealtimeEvent(ctx context.Context, p *peer, data []byte)
 	}
 
 	switch eventType {
+	case live.ClientBusinessEvent:
+		return s.onBusinessEvent(p, data, eventID)
+
 	case "session.update":
 		var ev realtimeSessionUpdate
 		if err := json.Unmarshal(data, &ev); err != nil {
@@ -769,7 +772,7 @@ func (s *Session) Open(greeting string) bool {
 	if tel := s.tel; tel != nil {
 		tel.released()
 	}
-	s.withEngine(func(e *duplex.Engine) { e.Say(greeting) })
+	s.withEngine(func(e *duplex.Engine) { e.SayOpening(greeting) })
 	return true
 }
 

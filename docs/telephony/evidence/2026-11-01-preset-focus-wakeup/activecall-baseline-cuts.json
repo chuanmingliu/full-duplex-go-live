@@ -1,0 +1,17 @@
+{
+  "call": "out-mvxuom0e-mp6l",
+  "scope": "full Active Call baseline; VAD open to server cut, excludes pre-detection and handset stop",
+  "cuts_ms": [
+    150.0,
+    175.0
+  ],
+  "distribution": {
+    "n": 2,
+    "p50_ms": 162.5,
+    "p90_ms": 175.0,
+    "p95_ms": 175.0,
+    "max_ms": 175.0,
+    "at_or_above_target": 0
+  },
+  "unpaired": 0
+}

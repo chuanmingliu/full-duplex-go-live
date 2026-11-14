@@ -1,0 +1,1416 @@
+{
+  "runtime": {
+    "backend": "sentence-transformers",
+    "name": "gemma",
+    "revision": "57c266a740f537b4dc058e1b0cda161fd15afa75",
+    "platform": "Linux-7.0.0-42-generic-x86_64-with-glibc2.35",
+    "gpu": "Quadro P5000",
+    "capability": [
+      6,
+      1
+    ],
+    "cuda": "12.4",
+    "torch": "2.6.0+cu124",
+    "transformers": "4.57.6",
+    "sentence_transformers": "5.1.1",
+    "device": "cuda",
+    "dtype": "float32",
+    "threads": 2,
+    "prompts": {
+      "query": "task: search result | query: ",
+      "document": "title: none | text: ",
+      "BitextMining": "task: search result | query: ",
+      "Clustering": "task: clustering | query: ",
+      "Classification": "task: classification | query: ",
+      "InstructionRetrieval": "task: code retrieval | query: ",
+      "MultilabelClassification": "task: classification | query: ",
+      "PairClassification": "task: sentence similarity | query: ",
+      "Reranking": "task: search result | query: ",
+      "Retrieval": "task: search result | query: ",
+      "Retrieval-query": "task: search result | query: ",
+      "Retrieval-document": "title: none | text: ",
+      "STS": "task: sentence similarity | query: ",
+      "Summarization": "task: summarization | query: "
+    },
+    "query_override": null
+  },
+  "skills": 24,
+  "dimensions": 768,
+  "dataset_sha256": "933a2af8ebb941d52e40e1a6de6f05b89524268476f1851ee55f213234163de2",
+  "timestamp_utc": "2026-11-14T08:55:16.462025+00:00",
+  "load_seconds": 6.66,
+  "document_batch_ms": 249.33,
+  "warmup_requests": 6,
+  "quality": {
+    "queries": 96,
+    "top1_correct": 91,
+    "top3_correct": 95,
+    "top5_correct": 96,
+    "mrr": 0.97083,
+    "en": {
+      "total": 48,
+      "top1_correct": 47,
+      "top3_correct": 48
+    },
+    "zh": {
+      "total": 48,
+      "top1_correct": 44,
+      "top3_correct": 47
+    }
+  },
+  "latency": {
+    "requests": 288,
+    "concurrency": 1,
+    "p50_ms": 37.08,
+    "p95_ms": 46.67,
+    "p99_ms": 49.94,
+    "max_ms": 51.27
+  },
+  "cases": [
+    {
+      "index": 0,
+      "language": "en",
+      "context": "How much would comprehensive insurance for my car cost?",
+      "expected": "quote",
+      "actual": "quote",
+      "expected_rank": 1,
+      "top3": [
+        "quote",
+        "vehicle_change",
+        "claim_report"
+      ],
+      "similarity": 0.38724
+    },
+    {
+      "index": 1,
+      "language": "en",
+      "context": "Calculate the premium if I add third-party liability cover.",
+      "expected": "quote",
+      "actual": "quote",
+      "expected_rank": 1,
+      "top3": [
+        "quote",
+        "vehicle_change",
+        "renew_policy"
+      ],
+      "similarity": 0.40567
+    },
+    {
+      "index": 2,
+      "language": "zh",
+      "context": "给我的车算一下全险多少钱。",
+      "expected": "quote",
+      "actual": "quote",
+      "expected_rank": 1,
+      "top3": [
+        "quote",
+        "vehicle_change",
+        "coverage"
+      ],
+      "similarity": 0.45166
+    },
+    {
+      "index": 3,
+      "language": "zh",
+      "context": "刚才解释过免赔额了，现在我想知道加上三者险后的总保费。",
+      "expected": "quote",
+      "actual": "coverage",
+      "expected_rank": 5,
+      "top3": [
+        "coverage",
+        "cancel_policy",
+        "claim_status"
+      ],
+      "similarity": 0.47401
+    },
+    {
+      "index": 4,
+      "language": "en",
+      "context": "What does the deductible in this policy mean?",
+      "expected": "coverage",
+      "actual": "coverage",
+      "expected_rank": 1,
+      "top3": [
+        "coverage",
+        "vehicle_change",
+        "cancel_policy"
+      ],
+      "similarity": 0.39649
+    },
+    {
+      "index": 5,
+      "language": "en",
+      "context": "Does my coverage exclude damage caused by flooding?",
+      "expected": "coverage",
+      "actual": "coverage",
+      "expected_rank": 1,
+      "top3": [
+        "coverage",
+        "vehicle_change",
+        "quote"
+      ],
+      "similarity": 0.32782
+    },
+    {
+      "index": 6,
+      "language": "zh",
+      "context": "保单里的免赔额是什么意思？",
+      "expected": "coverage",
+      "actual": "coverage",
+      "expected_rank": 1,
+      "top3": [
+        "coverage",
+        "cancel_policy",
+        "claim_status"
+      ],
+      "similarity": 0.52343
+    },
+    {
+      "index": 7,
+      "language": "zh",
+      "context": "先不用算价格，我想弄清楚哪些事故保险不赔。",
+      "expected": "coverage",
+      "actual": "coverage",
+      "expected_rank": 1,
+      "top3": [
+        "coverage",
+        "quote",
+        "claim_status"
+      ],
+      "similarity": 0.45582
+    },
+    {
+      "index": 8,
+      "language": "en",
+      "context": "I just had a crash. Help me report it to the insurer.",
+      "expected": "claim_report",
+      "actual": "claim_report",
+      "expected_rank": 1,
+      "top3": [
+        "claim_report",
+        "vehicle_change",
+        "quote"
+      ],
+      "similarity": 0.51175
+    },
+    {
+      "index": 9,
+      "language": "en",
+      "context": "Where do I send photographs to start an accident claim?",
+      "expected": "claim_report",
+      "actual": "claim_report",
+      "expected_rank": 1,
+      "top3": [
+        "claim_report",
+        "vehicle_change",
+        "quote"
+      ],
+      "similarity": 0.52733
+    },
+    {
+      "index": 10,
+      "language": "zh",
+      "context": "刚出了交通事故，我要报案申请理赔。",
+      "expected": "claim_report",
+      "actual": "claim_report",
+      "expected_rank": 1,
+      "top3": [
+        "claim_report",
+        "claim_status",
+        "vehicle_change"
+      ],
+      "similarity": 0.4744
+    },
+    {
+      "index": 11,
+      "language": "zh",
+      "context": "这是第一次报这个事故，需要提供哪些照片和材料？",
+      "expected": "claim_report",
+      "actual": "claim_report",
+      "expected_rank": 1,
+      "top3": [
+        "claim_report",
+        "roadside",
+        "claim_status"
+      ],
+      "similarity": 0.37304
+    },
+    {
+      "index": 12,
+      "language": "en",
+      "context": "I already filed a claim last week. Has it been approved?",
+      "expected": "claim_status",
+      "actual": "claim_status",
+      "expected_rank": 1,
+      "top3": [
+        "claim_status",
+        "claim_report",
+        "refund_status"
+      ],
+      "similarity": 0.54179
+    },
+    {
+      "index": 13,
+      "language": "en",
+      "context": "Check when the compensation for my existing claim will be paid.",
+      "expected": "claim_status",
+      "actual": "claim_status",
+      "expected_rank": 1,
+      "top3": [
+        "claim_status",
+        "claim_report",
+        "refund_status"
+      ],
+      "similarity": 0.53995
+    },
+    {
+      "index": 14,
+      "language": "zh",
+      "context": "上周提交的理赔申请审核到哪一步了？",
+      "expected": "claim_status",
+      "actual": "claim_status",
+      "expected_rank": 1,
+      "top3": [
+        "claim_status",
+        "refund_status",
+        "claim_report"
+      ],
+      "similarity": 0.68177
+    },
+    {
+      "index": 15,
+      "language": "zh",
+      "context": "材料早就交齐了，我只想查一下这笔赔款什么时候到账。",
+      "expected": "claim_status",
+      "actual": "claim_status",
+      "expected_rank": 1,
+      "top3": [
+        "claim_status",
+        "refund_status",
+        "claim_report"
+      ],
+      "similarity": 0.64445
+    },
+    {
+      "index": 16,
+      "language": "en",
+      "context": "My car insurance expires next month. Help me renew it.",
+      "expected": "renew_policy",
+      "actual": "renew_policy",
+      "expected_rank": 1,
+      "top3": [
+        "renew_policy",
+        "vehicle_change",
+        "quote"
+      ],
+      "similarity": 0.6005
+    },
+    {
+      "index": 17,
+      "language": "en",
+      "context": "I want to extend the policy for another year.",
+      "expected": "renew_policy",
+      "actual": "renew_policy",
+      "expected_rank": 1,
+      "top3": [
+        "renew_policy",
+        "vehicle_change",
+        "coverage"
+      ],
+      "similarity": 0.5259
+    },
+    {
+      "index": 18,
+      "language": "zh",
+      "context": "车险下个月到期，帮我办理续保。",
+      "expected": "renew_policy",
+      "actual": "renew_policy",
+      "expected_rank": 1,
+      "top3": [
+        "renew_policy",
+        "vehicle_change",
+        "cancel_policy"
+      ],
+      "similarity": 0.53465
+    },
+    {
+      "index": 19,
+      "language": "zh",
+      "context": "还是这辆车和原来的保障，我想把保险再续一年。",
+      "expected": "renew_policy",
+      "actual": "vehicle_change",
+      "expected_rank": 2,
+      "top3": [
+        "vehicle_change",
+        "renew_policy",
+        "coverage"
+      ],
+      "similarity": 0.4679
+    },
+    {
+      "index": 20,
+      "language": "en",
+      "context": "I sold the car and want to terminate its insurance.",
+      "expected": "cancel_policy",
+      "actual": "cancel_policy",
+      "expected_rank": 1,
+      "top3": [
+        "cancel_policy",
+        "vehicle_change",
+        "renew_policy"
+      ],
+      "similarity": 0.43883
+    },
+    {
+      "index": 21,
+      "language": "en",
+      "context": "How do I cancel my policy and receive the unused premium?",
+      "expected": "cancel_policy",
+      "actual": "cancel_policy",
+      "expected_rank": 1,
+      "top3": [
+        "cancel_policy",
+        "renew_policy",
+        "vehicle_change"
+      ],
+      "similarity": 0.44973
+    },
+    {
+      "index": 22,
+      "language": "zh",
+      "context": "车已经卖掉了，我要退保。",
+      "expected": "cancel_policy",
+      "actual": "cancel_policy",
+      "expected_rank": 1,
+      "top3": [
+        "cancel_policy",
+        "vehicle_change",
+        "coverage"
+      ],
+      "similarity": 0.54095
+    },
+    {
+      "index": 23,
+      "language": "zh",
+      "context": "我不打算续保了，还想提前终止现在的保单，能退多少钱？",
+      "expected": "cancel_policy",
+      "actual": "cancel_policy",
+      "expected_rank": 1,
+      "top3": [
+        "cancel_policy",
+        "renew_policy",
+        "coverage"
+      ],
+      "similarity": 0.55645
+    },
+    {
+      "index": 24,
+      "language": "en",
+      "context": "I need to change the registration number on my policy.",
+      "expected": "vehicle_change",
+      "actual": "vehicle_change",
+      "expected_rank": 1,
+      "top3": [
+        "vehicle_change",
+        "renew_policy",
+        "claim_report"
+      ],
+      "similarity": 0.52791
+    },
+    {
+      "index": 25,
+      "language": "en",
+      "context": "My insured car details are wrong. Update the vehicle information.",
+      "expected": "vehicle_change",
+      "actual": "vehicle_change",
+      "expected_rank": 1,
+      "top3": [
+        "vehicle_change",
+        "appointment_change",
+        "claim_report"
+      ],
+      "similarity": 0.64495
+    },
+    {
+      "index": 26,
+      "language": "zh",
+      "context": "保单上车牌号写错了，帮我修改。",
+      "expected": "vehicle_change",
+      "actual": "vehicle_change",
+      "expected_rank": 1,
+      "top3": [
+        "vehicle_change",
+        "appointment_change",
+        "invoice_fix"
+      ],
+      "similarity": 0.54989
+    },
+    {
+      "index": 27,
+      "language": "zh",
+      "context": "保险继续保留，只需要把车辆信息更正一下。",
+      "expected": "vehicle_change",
+      "actual": "vehicle_change",
+      "expected_rank": 1,
+      "top3": [
+        "vehicle_change",
+        "appointment_change",
+        "cancel_policy"
+      ],
+      "similarity": 0.61201
+    },
+    {
+      "index": 28,
+      "language": "en",
+      "context": "My car will not start. Can you send someone to jump-start it?",
+      "expected": "roadside",
+      "actual": "appointment_new",
+      "expected_rank": 2,
+      "top3": [
+        "appointment_new",
+        "roadside",
+        "renew_policy"
+      ],
+      "similarity": 0.35342
+    },
+    {
+      "index": 29,
+      "language": "en",
+      "context": "I am stranded on the highway and need a tow truck.",
+      "expected": "roadside",
+      "actual": "roadside",
+      "expected_rank": 1,
+      "top3": [
+        "roadside",
+        "appointment_new",
+        "claim_report"
+      ],
+      "similarity": 0.43861
+    },
+    {
+      "index": 30,
+      "language": "zh",
+      "context": "车在路上抛锚了，帮我叫拖车。",
+      "expected": "roadside",
+      "actual": "roadside",
+      "expected_rank": 1,
+      "top3": [
+        "roadside",
+        "human_agent",
+        "appointment_new"
+      ],
+      "similarity": 0.5074
+    },
+    {
+      "index": 31,
+      "language": "zh",
+      "context": "不是事故理赔，我的电瓶没电了，需要有人来搭电。",
+      "expected": "roadside",
+      "actual": "roadside",
+      "expected_rank": 1,
+      "top3": [
+        "roadside",
+        "claim_report",
+        "human_agent"
+      ],
+      "similarity": 0.41227
+    },
+    {
+      "index": 32,
+      "language": "en",
+      "context": "How do I add your service account as a friend on WeChat?",
+      "expected": "wechat_add",
+      "actual": "wechat_add",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_add",
+        "wechat_message",
+        "human_agent"
+      ],
+      "similarity": 0.72356
+    },
+    {
+      "index": 33,
+      "language": "en",
+      "context": "Send me the steps for adding the adviser on WeChat.",
+      "expected": "wechat_add",
+      "actual": "wechat_add",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_add",
+        "wechat_message",
+        "human_agent"
+      ],
+      "similarity": 0.68609
+    },
+    {
+      "index": 34,
+      "language": "zh",
+      "context": "怎么把你们客服加为微信好友？",
+      "expected": "wechat_add",
+      "actual": "wechat_add",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_add",
+        "wechat_message",
+        "human_agent"
+      ],
+      "similarity": 0.64484
+    },
+    {
+      "index": 35,
+      "language": "zh",
+      "context": "我还没有加上顾问微信，能教我怎么添加吗？",
+      "expected": "wechat_add",
+      "actual": "wechat_add",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_add",
+        "wechat_message",
+        "human_agent"
+      ],
+      "similarity": 0.54177
+    },
+    {
+      "index": 36,
+      "language": "en",
+      "context": "Where is the service notification you sent in WeChat?",
+      "expected": "wechat_message",
+      "actual": "wechat_message",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_message",
+        "wechat_add",
+        "human_agent"
+      ],
+      "similarity": 0.53884
+    },
+    {
+      "index": 37,
+      "language": "en",
+      "context": "I already added you. Help me find the earlier WeChat message.",
+      "expected": "wechat_message",
+      "actual": "wechat_message",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_message",
+        "wechat_add",
+        "human_agent"
+      ],
+      "similarity": 0.53005
+    },
+    {
+      "index": 38,
+      "language": "zh",
+      "context": "微信里你们之前发的服务通知在哪里看？",
+      "expected": "wechat_message",
+      "actual": "wechat_message",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_message",
+        "wechat_add",
+        "appointment_change"
+      ],
+      "similarity": 0.66252
+    },
+    {
+      "index": 39,
+      "language": "zh",
+      "context": "好友已经加好了，只是找不到上次发来的那条消息。",
+      "expected": "wechat_message",
+      "actual": "wechat_message",
+      "expected_rank": 1,
+      "top3": [
+        "wechat_message",
+        "wechat_add",
+        "payment_failed"
+      ],
+      "similarity": 0.41994
+    },
+    {
+      "index": 40,
+      "language": "en",
+      "context": "I cannot remember my password. How can I reset it?",
+      "expected": "password",
+      "actual": "password",
+      "expected_rank": 1,
+      "top3": [
+        "password",
+        "unlock",
+        "privacy_delete"
+      ],
+      "similarity": 0.60074
+    },
+    {
+      "index": 41,
+      "language": "en",
+      "context": "Help me create a new password for my account.",
+      "expected": "password",
+      "actual": "password",
+      "expected_rank": 1,
+      "top3": [
+        "password",
+        "unlock",
+        "privacy_delete"
+      ],
+      "similarity": 0.52456
+    },
+    {
+      "index": 42,
+      "language": "zh",
+      "context": "登录密码忘记了，怎么重置？",
+      "expected": "password",
+      "actual": "password",
+      "expected_rank": 1,
+      "top3": [
+        "password",
+        "unlock",
+        "wechat_message"
+      ],
+      "similarity": 0.59883
+    },
+    {
+      "index": 43,
+      "language": "zh",
+      "context": "账号没有被锁，我只是记不起来密码了，想重新设置。",
+      "expected": "password",
+      "actual": "password",
+      "expected_rank": 1,
+      "top3": [
+        "password",
+        "unlock",
+        "wechat_message"
+      ],
+      "similarity": 0.50789
+    },
+    {
+      "index": 44,
+      "language": "en",
+      "context": "I know my password, but the account is locked after too many attempts.",
+      "expected": "unlock",
+      "actual": "unlock",
+      "expected_rank": 1,
+      "top3": [
+        "unlock",
+        "password",
+        "privacy_delete"
+      ],
+      "similarity": 0.52484
+    },
+    {
+      "index": 45,
+      "language": "en",
+      "context": "The login page says my account is frozen. Please unlock it.",
+      "expected": "unlock",
+      "actual": "unlock",
+      "expected_rank": 1,
+      "top3": [
+        "unlock",
+        "password",
+        "privacy_delete"
+      ],
+      "similarity": 0.56025
+    },
+    {
+      "index": 46,
+      "language": "zh",
+      "context": "密码我知道，但是输错几次后账户被锁住了。",
+      "expected": "unlock",
+      "actual": "unlock",
+      "expected_rank": 1,
+      "top3": [
+        "unlock",
+        "password",
+        "payment_failed"
+      ],
+      "similarity": 0.5832
+    },
+    {
+      "index": 47,
+      "language": "zh",
+      "context": "页面提示账号冻结，不是忘记密码，怎么解除限制？",
+      "expected": "unlock",
+      "actual": "unlock",
+      "expected_rank": 1,
+      "top3": [
+        "unlock",
+        "password",
+        "privacy_delete"
+      ],
+      "similarity": 0.5403
+    },
+    {
+      "index": 48,
+      "language": "en",
+      "context": "Where is my package now, and when will it arrive?",
+      "expected": "delivery",
+      "actual": "delivery",
+      "expected_rank": 1,
+      "top3": [
+        "delivery",
+        "delivery_address",
+        "refund_status"
+      ],
+      "similarity": 0.50897
+    },
+    {
+      "index": 49,
+      "language": "en",
+      "context": "Check the latest tracking update for this shipment.",
+      "expected": "delivery",
+      "actual": "delivery",
+      "expected_rank": 1,
+      "top3": [
+        "delivery",
+        "claim_status",
+        "delivery_address"
+      ],
+      "similarity": 0.54428
+    },
+    {
+      "index": 50,
+      "language": "zh",
+      "context": "我的包裹现在到哪里了，什么时候送到？",
+      "expected": "delivery",
+      "actual": "delivery",
+      "expected_rank": 1,
+      "top3": [
+        "delivery",
+        "delivery_address",
+        "refund_status"
+      ],
+      "similarity": 0.49072
+    },
+    {
+      "index": 51,
+      "language": "zh",
+      "context": "收货地址没变，我只想查一下快递运输进度。",
+      "expected": "delivery",
+      "actual": "delivery",
+      "expected_rank": 1,
+      "top3": [
+        "delivery",
+        "delivery_address",
+        "refund_status"
+      ],
+      "similarity": 0.43663
+    },
+    {
+      "index": 52,
+      "language": "en",
+      "context": "Change the shipping address before my order is dispatched.",
+      "expected": "delivery_address",
+      "actual": "delivery_address",
+      "expected_rank": 1,
+      "top3": [
+        "delivery_address",
+        "return_item",
+        "delivery"
+      ],
+      "similarity": 0.54553
+    },
+    {
+      "index": 53,
+      "language": "en",
+      "context": "The recipient phone number is wrong. Please update it.",
+      "expected": "delivery_address",
+      "actual": "delivery_address",
+      "expected_rank": 1,
+      "top3": [
+        "delivery_address",
+        "invoice_fix",
+        "vehicle_change"
+      ],
+      "similarity": 0.46346
+    },
+    {
+      "index": 54,
+      "language": "zh",
+      "context": "订单还没发货，帮我换一下收货地址。",
+      "expected": "delivery_address",
+      "actual": "delivery_address",
+      "expected_rank": 1,
+      "top3": [
+        "delivery_address",
+        "delivery",
+        "return_item"
+      ],
+      "similarity": 0.6043
+    },
+    {
+      "index": 55,
+      "language": "zh",
+      "context": "不是查物流，我填错了收件人的手机号，要修改。",
+      "expected": "delivery_address",
+      "actual": "delivery_address",
+      "expected_rank": 1,
+      "top3": [
+        "delivery_address",
+        "invoice_fix",
+        "vehicle_change"
+      ],
+      "similarity": 0.48078
+    },
+    {
+      "index": 56,
+      "language": "en",
+      "context": "I want to send this product back. How do I start a return?",
+      "expected": "return_item",
+      "actual": "return_item",
+      "expected_rank": 1,
+      "top3": [
+        "return_item",
+        "cancel_policy",
+        "invoice_new"
+      ],
+      "similarity": 0.73658
+    },
+    {
+      "index": 57,
+      "language": "en",
+      "context": "Where should I mail the item I no longer want?",
+      "expected": "return_item",
+      "actual": "return_item",
+      "expected_rank": 1,
+      "top3": [
+        "return_item",
+        "delivery_address",
+        "privacy_delete"
+      ],
+      "similarity": 0.44271
+    },
+    {
+      "index": 58,
+      "language": "zh",
+      "context": "这个商品我不想要了，怎么申请退货？",
+      "expected": "return_item",
+      "actual": "return_item",
+      "expected_rank": 1,
+      "top3": [
+        "return_item",
+        "cancel_policy",
+        "refund_status"
+      ],
+      "similarity": 0.55052
+    },
+    {
+      "index": 59,
+      "language": "zh",
+      "context": "退款还没申请，我先想知道退货寄回哪里。",
+      "expected": "return_item",
+      "actual": "refund_status",
+      "expected_rank": 2,
+      "top3": [
+        "refund_status",
+        "return_item",
+        "cancel_policy"
+      ],
+      "similarity": 0.50842
+    },
+    {
+      "index": 60,
+      "language": "en",
+      "context": "My return was accepted. When will the refund reach my bank?",
+      "expected": "refund_status",
+      "actual": "refund_status",
+      "expected_rank": 1,
+      "top3": [
+        "refund_status",
+        "claim_status",
+        "return_item"
+      ],
+      "similarity": 0.48777
+    },
+    {
+      "index": 61,
+      "language": "en",
+      "context": "Check the status of the refund I requested three days ago.",
+      "expected": "refund_status",
+      "actual": "refund_status",
+      "expected_rank": 1,
+      "top3": [
+        "refund_status",
+        "claim_status",
+        "return_item"
+      ],
+      "similarity": 0.58097
+    },
+    {
+      "index": 62,
+      "language": "zh",
+      "context": "退货已经收到了，退款什么时候到账？",
+      "expected": "refund_status",
+      "actual": "refund_status",
+      "expected_rank": 1,
+      "top3": [
+        "refund_status",
+        "return_item",
+        "cancel_policy"
+      ],
+      "similarity": 0.65066
+    },
+    {
+      "index": 63,
+      "language": "zh",
+      "context": "我已经申请退款三天了，现在处理到哪一步？",
+      "expected": "refund_status",
+      "actual": "refund_status",
+      "expected_rank": 1,
+      "top3": [
+        "refund_status",
+        "claim_status",
+        "cancel_policy"
+      ],
+      "similarity": 0.59437
+    },
+    {
+      "index": 64,
+      "language": "en",
+      "context": "Please issue an invoice for the order I paid for.",
+      "expected": "invoice_new",
+      "actual": "invoice_new",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_new",
+        "return_item",
+        "invoice_fix"
+      ],
+      "similarity": 0.61598
+    },
+    {
+      "index": 65,
+      "language": "en",
+      "context": "How can I get a receipt invoice for my purchase?",
+      "expected": "invoice_new",
+      "actual": "invoice_new",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_new",
+        "return_item",
+        "invoice_fix"
+      ],
+      "similarity": 0.5876
+    },
+    {
+      "index": 66,
+      "language": "zh",
+      "context": "这笔订单已经付款了，请帮我开发票。",
+      "expected": "invoice_new",
+      "actual": "invoice_new",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_new",
+        "payment_failed",
+        "invoice_fix"
+      ],
+      "similarity": 0.4924
+    },
+    {
+      "index": 67,
+      "language": "zh",
+      "context": "我还没有开过票，需要为这次购买申请电子发票。",
+      "expected": "invoice_new",
+      "actual": "invoice_new",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_new",
+        "invoice_fix",
+        "payment_failed"
+      ],
+      "similarity": 0.44764
+    },
+    {
+      "index": 68,
+      "language": "en",
+      "context": "The invoice has the wrong company name. Please correct it.",
+      "expected": "invoice_fix",
+      "actual": "invoice_fix",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_fix",
+        "invoice_new",
+        "delivery_address"
+      ],
+      "similarity": 0.45341
+    },
+    {
+      "index": 69,
+      "language": "en",
+      "context": "I received an invoice, but its tax identification number is incorrect.",
+      "expected": "invoice_fix",
+      "actual": "invoice_fix",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_fix",
+        "invoice_new",
+        "delivery_address"
+      ],
+      "similarity": 0.42182
+    },
+    {
+      "index": 70,
+      "language": "zh",
+      "context": "已经开的发票抬头错了，帮我更正。",
+      "expected": "invoice_fix",
+      "actual": "invoice_fix",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_fix",
+        "invoice_new",
+        "delivery_address"
+      ],
+      "similarity": 0.65461
+    },
+    {
+      "index": 71,
+      "language": "zh",
+      "context": "不是第一次开票，上次发票的税号填错了，需要重开。",
+      "expected": "invoice_fix",
+      "actual": "invoice_fix",
+      "expected_rank": 1,
+      "top3": [
+        "invoice_fix",
+        "invoice_new",
+        "delivery_address"
+      ],
+      "similarity": 0.59682
+    },
+    {
+      "index": 72,
+      "language": "en",
+      "context": "Can I book a car service appointment for next Monday?",
+      "expected": "appointment_new",
+      "actual": "appointment_new",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_new",
+        "appointment_change",
+        "wechat_add"
+      ],
+      "similarity": 0.58671
+    },
+    {
+      "index": 73,
+      "language": "en",
+      "context": "I need to reserve a workshop visit for an oil change.",
+      "expected": "appointment_new",
+      "actual": "appointment_new",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_new",
+        "appointment_change",
+        "vehicle_change"
+      ],
+      "similarity": 0.51943
+    },
+    {
+      "index": 74,
+      "language": "zh",
+      "context": "帮我预约下周一去店里保养汽车。",
+      "expected": "appointment_new",
+      "actual": "appointment_new",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_new",
+        "appointment_change",
+        "roadside"
+      ],
+      "similarity": 0.54696
+    },
+    {
+      "index": 75,
+      "language": "zh",
+      "context": "我还没有预约，想约一个换机油的时间。",
+      "expected": "appointment_new",
+      "actual": "appointment_change",
+      "expected_rank": 2,
+      "top3": [
+        "appointment_change",
+        "appointment_new",
+        "renew_policy"
+      ],
+      "similarity": 0.52611
+    },
+    {
+      "index": 76,
+      "language": "en",
+      "context": "Move my existing service appointment from Monday to Friday.",
+      "expected": "appointment_change",
+      "actual": "appointment_change",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_change",
+        "appointment_new",
+        "vehicle_change"
+      ],
+      "similarity": 0.47699
+    },
+    {
+      "index": 77,
+      "language": "en",
+      "context": "I cannot attend my scheduled workshop visit. Cancel that booking.",
+      "expected": "appointment_change",
+      "actual": "appointment_change",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_change",
+        "appointment_new",
+        "return_item"
+      ],
+      "similarity": 0.35915
+    },
+    {
+      "index": 78,
+      "language": "zh",
+      "context": "把我已经约好的保养时间改到周五。",
+      "expected": "appointment_change",
+      "actual": "appointment_change",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_change",
+        "appointment_new",
+        "delivery_address"
+      ],
+      "similarity": 0.6619
+    },
+    {
+      "index": 79,
+      "language": "zh",
+      "context": "周一的维修预约去不了了，帮我取消这次预约。",
+      "expected": "appointment_change",
+      "actual": "appointment_change",
+      "expected_rank": 1,
+      "top3": [
+        "appointment_change",
+        "appointment_new",
+        "human_agent"
+      ],
+      "similarity": 0.58274
+    },
+    {
+      "index": 80,
+      "language": "en",
+      "context": "Can I pay with a credit card instead of a bank transfer?",
+      "expected": "payment_methods",
+      "actual": "payment_methods",
+      "expected_rank": 1,
+      "top3": [
+        "payment_methods",
+        "invoice_new",
+        "payment_failed"
+      ],
+      "similarity": 0.34617
+    },
+    {
+      "index": 81,
+      "language": "en",
+      "context": "Which payment methods do you accept?",
+      "expected": "payment_methods",
+      "actual": "payment_methods",
+      "expected_rank": 1,
+      "top3": [
+        "payment_methods",
+        "payment_failed",
+        "invoice_new"
+      ],
+      "similarity": 0.52232
+    },
+    {
+      "index": 82,
+      "language": "zh",
+      "context": "你们支持哪些付款方式？可以刷信用卡吗？",
+      "expected": "payment_methods",
+      "actual": "payment_methods",
+      "expected_rank": 1,
+      "top3": [
+        "payment_methods",
+        "payment_failed",
+        "refund_status"
+      ],
+      "similarity": 0.46693
+    },
+    {
+      "index": 83,
+      "language": "zh",
+      "context": "还没有尝试付款，我想先了解能不能用银行转账。",
+      "expected": "payment_methods",
+      "actual": "payment_methods",
+      "expected_rank": 1,
+      "top3": [
+        "payment_methods",
+        "payment_failed",
+        "human_agent"
+      ],
+      "similarity": 0.34468
+    },
+    {
+      "index": 84,
+      "language": "en",
+      "context": "My card was charged, but the order still says unpaid.",
+      "expected": "payment_failed",
+      "actual": "payment_failed",
+      "expected_rank": 1,
+      "top3": [
+        "payment_failed",
+        "refund_status",
+        "invoice_new"
+      ],
+      "similarity": 0.47904
+    },
+    {
+      "index": 85,
+      "language": "en",
+      "context": "The payment keeps failing even though my card has enough funds.",
+      "expected": "payment_failed",
+      "actual": "payment_failed",
+      "expected_rank": 1,
+      "top3": [
+        "payment_failed",
+        "unlock",
+        "payment_methods"
+      ],
+      "similarity": 0.44879
+    },
+    {
+      "index": 86,
+      "language": "zh",
+      "context": "银行卡扣款了，但订单还显示未支付。",
+      "expected": "payment_failed",
+      "actual": "payment_failed",
+      "expected_rank": 1,
+      "top3": [
+        "payment_failed",
+        "refund_status",
+        "unlock"
+      ],
+      "similarity": 0.60901
+    },
+    {
+      "index": 87,
+      "language": "zh",
+      "context": "不是想了解付款方式，我刚刚支付失败了，要查一下原因。",
+      "expected": "payment_failed",
+      "actual": "payment_failed",
+      "expected_rank": 1,
+      "top3": [
+        "payment_failed",
+        "payment_methods",
+        "unlock"
+      ],
+      "similarity": 0.57651
+    },
+    {
+      "index": 88,
+      "language": "en",
+      "context": "Delete my account and remove my personal data.",
+      "expected": "privacy_delete",
+      "actual": "privacy_delete",
+      "expected_rank": 1,
+      "top3": [
+        "privacy_delete",
+        "password",
+        "return_item"
+      ],
+      "similarity": 0.6184
+    },
+    {
+      "index": 89,
+      "language": "en",
+      "context": "I want you to erase all the information stored about me.",
+      "expected": "privacy_delete",
+      "actual": "privacy_delete",
+      "expected_rank": 1,
+      "top3": [
+        "privacy_delete",
+        "password",
+        "appointment_change"
+      ],
+      "similarity": 0.5197
+    },
+    {
+      "index": 90,
+      "language": "zh",
+      "context": "我要注销账户，并删除保存的个人信息。",
+      "expected": "privacy_delete",
+      "actual": "privacy_delete",
+      "expected_rank": 1,
+      "top3": [
+        "privacy_delete",
+        "cancel_policy",
+        "unlock"
+      ],
+      "similarity": 0.60017
+    },
+    {
+      "index": 91,
+      "language": "zh",
+      "context": "不需要找回账号了，我想彻底删除这个账户和相关资料。",
+      "expected": "privacy_delete",
+      "actual": "privacy_delete",
+      "expected_rank": 1,
+      "top3": [
+        "privacy_delete",
+        "unlock",
+        "password"
+      ],
+      "similarity": 0.53069
+    },
+    {
+      "index": 92,
+      "language": "en",
+      "context": "Please transfer me to a human customer service agent.",
+      "expected": "human_agent",
+      "actual": "human_agent",
+      "expected_rank": 1,
+      "top3": [
+        "human_agent",
+        "wechat_add",
+        "return_item"
+      ],
+      "similarity": 0.49691
+    },
+    {
+      "index": 93,
+      "language": "en",
+      "context": "I would like a real adviser to call me back.",
+      "expected": "human_agent",
+      "actual": "human_agent",
+      "expected_rank": 1,
+      "top3": [
+        "human_agent",
+        "wechat_add",
+        "return_item"
+      ],
+      "similarity": 0.39039
+    },
+    {
+      "index": 94,
+      "language": "zh",
+      "context": "请转人工客服。",
+      "expected": "human_agent",
+      "actual": "human_agent",
+      "expected_rank": 1,
+      "top3": [
+        "human_agent",
+        "wechat_add",
+        "wechat_message"
+      ],
+      "similarity": 0.67853
+    },
+    {
+      "index": 95,
+      "language": "zh",
+      "context": "这些问题我想直接跟真人顾问说，安排回电吧。",
+      "expected": "human_agent",
+      "actual": "human_agent",
+      "expected_rank": 1,
+      "top3": [
+        "human_agent",
+        "return_item",
+        "refund_status"
+      ],
+      "similarity": 0.52793
+    }
+  ],
+  "peak_cuda_allocated_mib": 1237.3
+}

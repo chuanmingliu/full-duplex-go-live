@@ -1,0 +1,12 @@
+{
+  "stage": "dial_accepted",
+  "kind": "real",
+  "build": "45b5564",
+  "requested_at_utc": "2026-11-01T10:08:22.484633+00:00",
+  "server_recording_verified": true,
+  "physical_handset_capture_verified": false,
+  "owner_ready_at_utc": "2026-11-01T10:07:58.461643+00:00",
+  "previous_call": "out-mvxlfkke-kr5y",
+  "call_id": "out-mvxo348d-w5pb",
+  "accepted_at_utc": "2026-11-01T10:08:22.598484+00:00"
+}

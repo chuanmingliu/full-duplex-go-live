@@ -1,0 +1,12 @@
+=== RUN   TestEmbeddingLiveEndpoint
+    skill_embeddings_live_test.go:59: expected=quote actual=quote similarity=0.6735
+    skill_embeddings_live_test.go:59: expected=quote actual=quote similarity=0.7737
+    skill_embeddings_live_test.go:59: expected=wechat actual=wechat similarity=0.6940
+    skill_embeddings_live_test.go:59: expected=wechat actual=wechat similarity=0.8243
+    skill_embeddings_live_test.go:59: expected=password actual=password similarity=0.7176
+    skill_embeddings_live_test.go:59: expected=password actual=password similarity=0.7099
+    skill_embeddings_live_test.go:59: expected=delivery actual=delivery similarity=0.6413
+    skill_embeddings_live_test.go:59: expected=delivery actual=delivery similarity=0.6821
+    skill_embeddings_live_test.go:71: real model -> semantic search -> JavaScript resolve -> verified skill load passed
+--- PASS: TestEmbeddingLiveEndpoint (0.86s)
+PASS
