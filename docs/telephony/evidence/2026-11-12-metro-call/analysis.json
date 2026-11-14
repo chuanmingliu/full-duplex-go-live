@@ -1,0 +1,114 @@
+{
+  "call_id": "out-mwdh1b7g-p66i",
+  "build": "951a6b4",
+  "archive": {
+    "files_verified": 5,
+    "channels_with_signal": 2,
+    "seconds": 170.68,
+    "caller_lines": 15,
+    "assistant_lines": 17
+  },
+  "boundary": "server output",
+  "acoustic_handset_verified": false,
+  "analyzer_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50",
+  "normal_first_content": {
+    "n": 12,
+    "p50_ms": 1032.5,
+    "p95_ms": 1469,
+    "max_ms": 1469
+  },
+  "quotation_acknowledgment": {
+    "n": 1,
+    "p50_ms": 1156,
+    "p95_ms": 1156,
+    "max_ms": 1156
+  },
+  "quotation_result": {
+    "n": 2,
+    "p50_ms": 2365,
+    "p95_ms": 3582,
+    "max_ms": 3582
+  },
+  "quotation_readout": {
+    "n": 2,
+    "p50_ms": 2365,
+    "p90_ms": 3582,
+    "p95_ms": 3582,
+    "max_ms": 3582,
+    "at_or_above_target": 1
+  },
+  "first_audio_including_openers": {
+    "n": 14,
+    "p50_ms": 380.5,
+    "p90_ms": 667,
+    "p95_ms": 727,
+    "max_ms": 727,
+    "at_or_above_target": 0
+  },
+  "counts": {
+    "records": 17,
+    "answered": 14,
+    "non_speech": 3,
+    "cancelled": 0,
+    "interrupted_answers": 4,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 2,
+    "tool_results_joined": 1,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 1
+  },
+  "canonical_conversational_content": {
+    "n": 13,
+    "p50_ms": 1041,
+    "p90_ms": 1278,
+    "p95_ms": 1469,
+    "max_ms": 1469,
+    "at_or_above_target": 2
+  },
+  "gate": {
+    "passed": false,
+    "failure_count": 3,
+    "target_ms": 1200,
+    "minimum_caller_turns": 20,
+    "quote_sla": "separate",
+    "metric": "both"
+  },
+  "normal_gate": {
+    "passed": false,
+    "minimum_normal_turns": 20,
+    "target_ms": 1200
+  },
+  "interruptions": {
+    "boundary": "VAD utterance open to server playback cut",
+    "summary": {
+      "n": 3,
+      "p50_ms": 137,
+      "p95_ms": 554,
+      "max_ms": 554
+    },
+    "samples_ms": [
+      554,
+      128,
+      137
+    ],
+    "unpaired": 0,
+    "opened_during_playback": {
+      "n": 3,
+      "p50_ms": 137,
+      "p95_ms": 554,
+      "max_ms": 554
+    },
+    "non_barge_cancellations": 1,
+    "kept_acknowledgments": 1,
+    "detector_assists": 0,
+    "detector_fallbacks": 0
+  }
+}

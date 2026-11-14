@@ -1,0 +1,13 @@
+{
+  "stage": "verified_existing_binding",
+  "aria_backend": "local",
+  "aria_revision": 13,
+  "endpoint": "ws://127.0.0.1:8765/v1/realtime",
+  "restore_engine_version": "45b5564",
+  "restore_engine_sha256": "0af8a624053a706bc4f2f20ec2b9f847409eef2e6f502e21520cca60a8ec8a29",
+  "profile_sha256": "072ab8dbda962eff682fa56fcd049f70cd3717530e64a06bec97e66618878e7d",
+  "running_pid": 1287666,
+  "cwd": "/home/chuanming/golive-telephony",
+  "binding_changed": false,
+  "restore_only_on_owner_request": true
+}

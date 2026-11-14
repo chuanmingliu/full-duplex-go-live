@@ -1,0 +1,26 @@
+=== RUN   TestEmbeddingPoolLiveEndpoints
+    embedding_pool_live_test.go:82: phase=primary provider=bge result=quote elapsed_ms=21.31
+    embedding_pool_live_test.go:84: phase=primary-outage provider=qwen result=quote elapsed_ms=50.41
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=quote elapsed_ms=52.73
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=wechat elapsed_ms=50.27
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=wechat elapsed_ms=52.08
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=password elapsed_ms=49.91
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=password elapsed_ms=50.30
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=delivery elapsed_ms=50.25
+    embedding_pool_live_test.go:94: phase=backup-bilingual provider=qwen result=delivery elapsed_ms=50.80
+    embedding_pool_live_test.go:98: phase=primary-recovered provider=bge result=quote elapsed_ms=24.75
+    embedding_pool_live_test.go:100: phase=backup-outage provider=bge result=quote elapsed_ms=24.22
+    embedding_pool_live_test.go:113: phase=reverse-failover provider=bge result=quote
+--- PASS: TestEmbeddingPoolLiveEndpoints (5.86s)
+=== RUN   TestEmbeddingLiveEndpoint
+    skill_embeddings_live_test.go:52: expected=quote actual=quote similarity=0.6735
+    skill_embeddings_live_test.go:52: expected=quote actual=quote similarity=0.7737
+    skill_embeddings_live_test.go:52: expected=wechat actual=wechat similarity=0.6940
+    skill_embeddings_live_test.go:52: expected=wechat actual=wechat similarity=0.8243
+    skill_embeddings_live_test.go:52: expected=password actual=password similarity=0.7176
+    skill_embeddings_live_test.go:52: expected=password actual=password similarity=0.7099
+    skill_embeddings_live_test.go:52: expected=delivery actual=delivery similarity=0.6413
+    skill_embeddings_live_test.go:52: expected=delivery actual=delivery similarity=0.6821
+    skill_embeddings_live_test.go:64: real model -> semantic search -> JavaScript resolve -> verified skill load passed
+--- PASS: TestEmbeddingLiveEndpoint (0.86s)
+PASS

@@ -1,0 +1,7 @@
+{
+  "command": "GOLIVE_MOTOR_CACHE_SIM=1 go test -race ./internal/crm -run ^TestMotorCombinationCacheSimulation$ -count=1 -timeout 10m",
+  "result": "pass",
+  "elapsed_seconds": 224.68,
+  "tested_unique_combinations": 8498,
+  "note": "The test verifies returned selections, premium line sums, cache hits/misses, repeats and call/fact isolation. Zero calculation delay in this functional matrix; voice sims preserve the deployed delay."
+}

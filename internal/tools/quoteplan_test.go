@@ -13,7 +13,7 @@ func TestTheQuoteBriefListsThePlansFieldsForTheModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := b.Text("rules")
-	for _, want := range []string{"默认方案（三者险200万、交强险）", "不带 config", "交强险、三者险、座位险", "三者险档位 100万/200万", "vehicleAge：车用了几年了？（所有方案需要）", "seats：几座的？（选了座位险时需要）", "第二次报价"} {
+	for _, want := range []string{"默认方案（三者险200万、交强险）", "不带 config", "交强险、三者险、座位险", "三者险共2档，完整列表：100万、200万", "vehicleAge：车用了几年了？（所有方案需要）", "seats：几座的？（选了座位险时需要）", "第二次报价"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("brief lacks %q:\n%s", want, text)
 		}

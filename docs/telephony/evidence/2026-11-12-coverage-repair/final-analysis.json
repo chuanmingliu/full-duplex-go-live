@@ -1,0 +1,467 @@
+{
+  "normal_content": {
+    "n": 8,
+    "p50": 964.0,
+    "p95": 1078,
+    "max": 1078
+  },
+  "canonical_latency": {
+    "scope": "last_sound_to_golive_output",
+    "target_ms": 1200,
+    "percentile": "nearest_rank",
+    "counts": {
+      "records": 11,
+      "answered": 9,
+      "non_speech": 2,
+      "cancelled": 0,
+      "interrupted_answers": 2,
+      "missing": 0,
+      "unverified": 0,
+      "duplicates": 0,
+      "malformed": 0,
+      "content_fallbacks": 0,
+      "assumed_pause": 0,
+      "tool_result_links": 2,
+      "tool_results_joined": 1,
+      "invalid_tool_links": 0,
+      "quote_readouts_missing": 0,
+      "quote_readouts_unverified": 0,
+      "missing_output_records": 0,
+      "quote_only_responses": 1
+    },
+    "first_audio": {
+      "n": 9,
+      "p50_ms": 381,
+      "p90_ms": 985,
+      "p95_ms": 985,
+      "max_ms": 985,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 9,
+      "p50_ms": 973,
+      "p90_ms": 1172,
+      "p95_ms": 1172,
+      "max_ms": 1172,
+      "at_or_above_target": 0
+    },
+    "conversational_first_content": {
+      "n": 8,
+      "p50_ms": 964.0,
+      "p90_ms": 1078,
+      "p95_ms": 1078,
+      "max_ms": 1078,
+      "at_or_above_target": 0
+    },
+    "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+    "reply": {
+      "n": 9,
+      "p50_ms": 1,
+      "p90_ms": 605,
+      "p95_ms": 605,
+      "max_ms": 605,
+      "at_or_above_target": 0
+    },
+    "tool_result": {
+      "n": 2,
+      "p50_ms": 3823.5,
+      "p90_ms": 6475,
+      "p95_ms": 6475,
+      "max_ms": 6475,
+      "at_or_above_target": 1
+    },
+    "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+    "tool_result_rows": [
+      {
+        "session": "sess_b5ed2356de4e70116d8424cd",
+        "task": "t1",
+        "origin_turn": "item_4",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5877,
+        "child_first_content_ms": 218,
+        "total_ms": 6475,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "session": "sess_b5ed2356de4e70116d8424cd",
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 574,
+        "child_first_content_ms": 218,
+        "total_ms": 1172,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1",
+        "coalesced": true,
+        "primary_origin_turn": "item_4"
+      }
+    ],
+    "non_quote_tool_result": {
+      "n": 0,
+      "p50_ms": null,
+      "p90_ms": null,
+      "p95_ms": null,
+      "max_ms": null,
+      "at_or_above_target": 0
+    },
+    "quote_readout": {
+      "n": 2,
+      "p50_ms": 4790.5,
+      "p90_ms": 7442,
+      "p95_ms": 7442,
+      "max_ms": 7442,
+      "at_or_above_target": 2
+    },
+    "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+    "quote_readout_rows": [
+      {
+        "session": "sess_b5ed2356de4e70116d8424cd",
+        "task": "t1",
+        "origin_turn": "item_4",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5877,
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 1185,
+        "total_ms": 7442
+      },
+      {
+        "session": "sess_b5ed2356de4e70116d8424cd",
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 574,
+        "coalesced": true,
+        "primary_origin_turn": "item_4",
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 1185,
+        "total_ms": 2139
+      }
+    ]
+  },
+  "quote_tasks": [
+    {
+      "msg": "tools: task done",
+      "task": "t1",
+      "took_ms": "12"
+    },
+    {
+      "msg": "tools: delivering a task's result",
+      "task": "t1",
+      "turn": "item_7",
+      "origin_turn": "item_4",
+      "origin_to_result_start_ms": "5877"
+    }
+  ],
+  "call_id": "5dfdde49-4692-44f7-ab2e-fa913bb85d31",
+  "build": "coverage-repair-b",
+  "latency": {
+    "version": 5,
+    "first_audio": {
+      "n": 9,
+      "p50_ms": 381,
+      "p95_ms": 985,
+      "max_ms": 985,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 9,
+      "p50_ms": 973,
+      "p95_ms": 1172,
+      "max_ms": 1172,
+      "at_or_above_target": 3
+    },
+    "conversational_first_content": {
+      "n": 8,
+      "p50_ms": 964,
+      "p95_ms": 1078,
+      "max_ms": 1078,
+      "at_or_above_target": 2
+    },
+    "quote_only_responses": 1,
+    "tool_result": {
+      "n": 2,
+      "p50_ms": 3823.5,
+      "p95_ms": 6475,
+      "max_ms": 6475,
+      "at_or_above_target": 2
+    },
+    "tool_result_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_4",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5877,
+        "child_first_content_ms": 218,
+        "total_ms": 6475,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 574,
+        "child_first_content_ms": 218,
+        "total_ms": 1172,
+        "interrupted": false,
+        "coalesced": true,
+        "primary_origin_turn": "item_4",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readout": {
+      "n": 2,
+      "p50_ms": 4790.5,
+      "p95_ms": 7442,
+      "max_ms": 7442,
+      "at_or_above_target": 2
+    },
+    "quote_readout_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_4",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5877,
+        "child_first_readout_ms": 1185,
+        "total_ms": 7442,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_7",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 574,
+        "child_first_readout_ms": 1185,
+        "total_ms": 2139,
+        "status": "observed",
+        "coalesced": true,
+        "primary_origin_turn": "item_4",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "cancelled": 0,
+    "tool_results_joined": 1,
+    "invalid_tool_links": 0
+  },
+  "interruptions_ms": [],
+  "interruption_stats": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "backchannel": [
+    {
+      "msg": "backchannel: policy enabled"
+    },
+    {
+      "msg": "backchannel: connected"
+    },
+    {
+      "msg": "backchannel: stream closed",
+      "processed_chunks": "4293"
+    }
+  ],
+  "quote_requests": [
+    {
+      "compare_coverage": "三者险"
+    }
+  ],
+  "skill_events": [
+    {
+      "msg": "skills: prepare",
+      "turn": "item_2",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1458",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1423,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":16,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_3",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1442",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":12,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1404,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":18,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_4",
+      "status": "loaded",
+      "ms": "5",
+      "us": "5680",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":8,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1464,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":12,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":452,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":1030,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"digest\":\"sha256:7be8f041e781371c1b2c0033e44e0e4f9fdcf1714d549b9338e548da01694940\",\"us\":34,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":359,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":718,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"digest\":\"sha256:b80e78edc5a0e5e6b2eaa6393d64b1acef9ea00cfd5c6edc8672169cde10cb58\",\"us\":51,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1309,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":226,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_5",
+      "status": "loaded",
+      "ms": "3",
+      "us": "3819",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":14,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1008,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":470,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":749,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"digest\":\"sha256:7be8f041e781371c1b2c0033e44e0e4f9fdcf1714d549b9338e548da01694940\",\"us\":24,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1502,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":29,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_6",
+      "status": "loaded",
+      "ms": "4",
+      "us": "4106",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1454,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":409,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":469,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"digest\":\"sha256:7be8f041e781371c1b2c0033e44e0e4f9fdcf1714d549b9338e548da01694940\",\"us\":21,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1661,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":61,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_7",
+      "status": "loaded",
+      "ms": "4",
+      "us": "4517",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":33,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1278,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":440,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":943,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"digest\":\"sha256:7be8f041e781371c1b2c0033e44e0e4f9fdcf1714d549b9338e548da01694940\",\"us\":50,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1216,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":17,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":527,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_8",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1616",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":21,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1128,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":458,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_9",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2436",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":45,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1787,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":594,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_10",
+      "status": "loaded",
+      "ms": "4",
+      "us": "4890",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":11,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1335,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":526,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":1111,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"digest\":\"sha256:b80e78edc5a0e5e6b2eaa6393d64b1acef9ea00cfd5c6edc8672169cde10cb58\",\"us\":30,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":906,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":951,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_11",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1864",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1417,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":428,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_12",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2300",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":34,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1809,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":448,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_13",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1583",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":11,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1124,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":441,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_14",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2240",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1199,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":17,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":1009,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_15",
+      "status": "loaded",
+      "ms": "6",
+      "us": "6090",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":12,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1866,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":1769,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":643,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"digest\":\"sha256:b80e78edc5a0e5e6b2eaa6393d64b1acef9ea00cfd5c6edc8672169cde10cb58\",\"us\":38,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1014,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":729,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_16",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2563",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":20,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1720,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":813,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_17",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2086",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1018,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":1050,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_18",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2015",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":12,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1003,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":991,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_19",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2523",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1807,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":700,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_20",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1874",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":12,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1179,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":678,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_21",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2013",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":20,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1445,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":534,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_22",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2274",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":34,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1244,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":989,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_23",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1740",
+      "trace": "{\"revision\":4,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":8,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1075,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":649,\"outcome\":\"no_match\"}]}"
+    }
+  ]
+}

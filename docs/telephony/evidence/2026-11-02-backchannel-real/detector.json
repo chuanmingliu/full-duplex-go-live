@@ -1,0 +1,177 @@
+[
+  {
+    "time": "2026-11-02T23:49:48.630+08:00",
+    "msg": "backchannel: policy enabled",
+    "mode": "asr_assist"
+  },
+  {
+    "time": "2026-11-02T23:49:48.632+08:00",
+    "msg": "backchannel: connected"
+  },
+  {
+    "time": "2026-11-02T23:50:07.441+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "12080",
+    "floor_probability": "0.8532030582427979",
+    "backchannel_probability": "0.142062708735466",
+    "frames": "10",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:50:07.504+08:00",
+    "msg": "backchannel: earlier ASR final requested",
+    "utterance_start_ms": "12080",
+    "pause_ms": "40",
+    "original_pause_ms": "120"
+  },
+  {
+    "time": "2026-11-02T23:50:18.872+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "23480",
+    "floor_probability": "0.8526943325996399",
+    "backchannel_probability": "0.12974917888641357",
+    "frames": "11",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:50:20.668+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "25260",
+    "floor_probability": "0.7305441498756409",
+    "backchannel_probability": "0.26539167761802673",
+    "frames": "6",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:50:26.901+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "31480",
+    "floor_probability": "0.8650060892105103",
+    "backchannel_probability": "0.12394729256629944",
+    "frames": "9",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:50:51.951+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "56480",
+    "floor_probability": "0.839501142501831",
+    "backchannel_probability": "0.1404304951429367",
+    "frames": "10",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:51:06.980+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "71540",
+    "floor_probability": "0.8340166807174683",
+    "backchannel_probability": "0.15098504722118378",
+    "frames": "6",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:51:14.846+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "79600",
+    "floor_probability": "0.894017219543457",
+    "backchannel_probability": "0.09548076242208481",
+    "frames": "14",
+    "input_lag_ms": "20",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:51:42.229+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "106900",
+    "floor_probability": "0.846441388130188",
+    "backchannel_probability": "0.1404632329940796",
+    "frames": "5",
+    "input_lag_ms": "60",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:51:42.397+08:00",
+    "msg": "backchannel: earlier ASR final requested",
+    "utterance_start_ms": "106900",
+    "pause_ms": "40",
+    "original_pause_ms": "120"
+  },
+  {
+    "time": "2026-11-02T23:51:47.960+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "112660",
+    "floor_probability": "0.7440209984779358",
+    "backchannel_probability": "0.24795997142791748",
+    "frames": "14",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:51:48.025+08:00",
+    "msg": "backchannel: earlier ASR final requested",
+    "utterance_start_ms": "112660",
+    "pause_ms": "40",
+    "original_pause_ms": "120"
+  },
+  {
+    "time": "2026-11-02T23:52:05.303+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "129880",
+    "floor_probability": "0.8117051720619202",
+    "backchannel_probability": "0.17616498470306396",
+    "frames": "4",
+    "input_lag_ms": "20",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:52:12.711+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "137160",
+    "floor_probability": "0.7511867880821228",
+    "backchannel_probability": "0.23276206851005554",
+    "frames": "3",
+    "input_lag_ms": "20",
+    "asr_chars": "1"
+  },
+  {
+    "time": "2026-11-02T23:52:14.783+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "139380",
+    "floor_probability": "0.78844153881073",
+    "backchannel_probability": "0.19588735699653625",
+    "frames": "7",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:52:18.541+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "143220",
+    "floor_probability": "0.8735383749008179",
+    "backchannel_probability": "0.11114653944969177",
+    "frames": "5",
+    "input_lag_ms": "60",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:52:21.304+08:00",
+    "msg": "backchannel: floor evidence",
+    "utterance_start_ms": "145960",
+    "floor_probability": "0.8110811114311218",
+    "backchannel_probability": "0.18057288229465485",
+    "frames": "13",
+    "input_lag_ms": "40",
+    "asr_chars": "0"
+  },
+  {
+    "time": "2026-11-02T23:52:30.105+08:00",
+    "msg": "backchannel: stream closed",
+    "processed_chunks": "3883"
+  }
+]

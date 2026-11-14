@@ -1,0 +1,23 @@
+{
+  "databaseId": 42206853218,
+  "headSha": "40c20f638a8adf60b71850b60acde1e41c5c38ed",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "Go tests (race)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "quality",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "Go tests (normal)",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ]
+}

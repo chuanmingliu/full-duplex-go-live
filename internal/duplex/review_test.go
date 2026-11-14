@@ -164,10 +164,13 @@ func TestSpeakingAgainBeforeTheAnswerStartsCancelsIt(t *testing.T) {
 
 	waitFor(t, "the request for the whole of it", 3*time.Second, func() bool { return len(llm.requests()) == 2 })
 	msgs := llm.requests()[1].Messages
-	if last := msgs[len(msgs)-1]; !strings.Contains(last.Content, "我想查一下保单") || !strings.Contains(last.Content, "就是去年买的那个") {
+	if last := msgs[len(msgs)-1]; !strings.Contains(dump(msgs), "我想查一下保单") || !strings.Contains(last.Content, "就是去年买的那个") {
 		t.Errorf("the backend was asked %q", last.Content)
 	}
-	waitFor(t, "the answer", 5*time.Second, func() bool { return c.audioMS() > 0 })
+	// Wait for the identifying content as well as the first audio segment.
+	waitFor(t, "the answer", 5*time.Second, func() bool {
+		return c.audioMS() > 0 && strings.Contains(c.allOutput(), "我听到你说")
+	})
 	if said := c.allOutput(); strings.Count(said, "我听到你说") != 1 {
 		t.Errorf("want one answer; heard %q", said)
 	}

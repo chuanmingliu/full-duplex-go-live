@@ -1,0 +1,48 @@
+#timeout 45
+#pull /home/chuanming/golive-telephony/codex-latency/backchannel-zh-20261102/correlation-v2.json bcd-zh-correlation-v2-20261102.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import json,shlex,datetime,urllib.request,hashlib
+root=Path.home()/'golive-telephony/codex-latency/backchannel-zh-20261102'
+assert json.loads((root/'operation.json').read_text())['stage']=='completed'
+assert not (root/'correlation-v2.json').exists()
+def stamp(x):return datetime.datetime.fromisoformat(x.replace('Z','+00:00'))
+def parse(l):
+ try:return json.loads(l) if l.lstrip().startswith('{') else dict(w.split('=',1) for w in shlex.split(l) if '=' in w)
+ except ValueError:return {}
+result={'scope':'recording-clock correlation, not causal live control or handset latency','calls':[]}
+for cid in ['out-mvykfqfn-wibn','out-mvxuom0e-mp6l']:
+ with urllib.request.urlopen('http://192.168.71.9:8790/api/calls/'+cid,timeout=6) as r:d=json.load(r)
+ path=Path(d['archive']['dir']).resolve();assert path.is_relative_to(Path.home()/'golive-archive')
+ manifest=json.loads((path/'manifest.json').read_text());assert manifest['id']==cid
+ for name in ['golive.log','session.json']:
+  assert hashlib.sha256((path/name).read_bytes()).hexdigest()==manifest['files'][name]['sha256']
+ meta=json.loads((path/'session.json').read_text());assert meta['id']==manifest['session'] and meta.get('input_on_clock')
+ origin=stamp(meta['created_at']);frames=json.loads((root/(cid+'-frames.json')).read_text())
+ events=[parse(l) for l in (path/'golive.log').read_text().splitlines()]
+ events=[r for r in events if r.get('session')==manifest['session'] and r.get('time')]
+ pending=None;last_open=None;cuts=[];holds=[];unpaired=0
+ def yes(r,k):return r.get(k) in [True,'true']
+ def ms(r):return round((stamp(r['time'])-origin).total_seconds()*1000)
+ for r in events:
+  message=r.get('msg')
+  if message=='listen: utterance opened':
+   last_open=r;pending=r if yes(r,'barge_in') else None
+  elif message=='new query while answering: cutting the answer' and yes(r,'barge_in') and yes(r,'speaking'):
+   if pending is None:unpaired+=1;continue
+   start,end=ms(pending),ms(r)
+   before=[f for f in frames if start<=f['available_ms']<=end]
+   after=[f for f in frames if end<f['available_ms']<=end+1000]
+   cross=next((f['available_ms'] for f in before if f['p_floor']>=.7),None)
+   aftercross=next((f['available_ms'] for f in after if f['p_floor']>=.7),None)
+   cuts.append({'vad_open_recording_clock_ms':start,'server_cut_recording_clock_ms':end,'legacy_open_to_cut_ms':end-start,'model_floor_crossing_in_open_cut_window_ms':None if cross is None else cross-start,'model_peak_floor_in_open_cut_window':max((f['p_floor'] for f in before),default=None),'model_next_crossing_after_cut_within_1s_ms':None if aftercross is None else aftercross-end,'vad_active_ms_at_open':int(pending['active_ms'])})
+   pending=None
+  elif message in ['listen: backchannel, not an interruption; keeping the floor','listen: a hesitation over the answer; keeping the floor']:
+   start=ms(last_open) if last_open is not None else ms(r)
+   observed=[f for f in frames if start<=f['available_ms']<=ms(r)]
+   crossing=next((f['available_ms'] for f in observed if f['p_floor']>=.7),None)
+   holds.append({'event_recording_clock_ms':ms(r),'legacy_kept_floor':True,'last_vad_open_recording_clock_ms':start,'model_floor_crossing_after_open_ms':None if crossing is None else crossing-start,'model_peak_floor_in_open_keep_window':max((f['p_floor'] for f in observed),default=None),'model_peak_backchannel_in_open_keep_window':max((f['p_backchannel'] for f in observed),default=None)})
+ result['calls'].append({'call':cid,'kind':'real' if cid=='out-mvykfqfn-wibn' else 'Active_Call_simulator','input_on_clock':meta['input_on_clock'],'input_dropped_ms':meta.get('input_dropped_ms',0),'paired_cuts':cuts,'unpaired_cuts':unpaired,'legacy_confirmed_backchannels':holds,'alignment_caveat':'recording input is jitter-adjusted; model bot state approximated from output energy; no live model action'})
+(root/'correlation-v2.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
+PY

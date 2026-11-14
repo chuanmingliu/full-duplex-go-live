@@ -1,0 +1,203 @@
+{
+  "date": "2026-11-09",
+  "measurement": "synthetic text submission to mock TTS output, using real deepseek-chat completions",
+  "main_rows": 129,
+  "edge_rows": 10,
+  "benchmarks": {
+    "normal": {
+      "original": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 702.459,
+          "p95": 1206.551
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 603.511,
+          "p95": 1035.681
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 760.538,
+          "p95": 1088.664
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 670.122,
+          "p95": 904.381
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      }
+    },
+    "wechat": {
+      "original": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 933.603,
+          "p95": 1426.316
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 803.123,
+          "p95": 1010.594
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      },
+      "skills": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 758.779,
+          "p95": 1359.787
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 650.283,
+          "p95": 1179.091
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 1.0,
+          "p95": 1
+        },
+        "expected_skill_selection_passed": 20
+      }
+    },
+    "quotation": {
+      "original": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 1083.08,
+          "p95": 2371.052
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 932.545,
+          "p95": 2211.604
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 2.0,
+          "p95": 4
+        },
+        "expected_skill_selection_passed": 20,
+        "quote_start_ms": {
+          "n": 20,
+          "p50": 1089.104,
+          "p95": 1445.545
+        }
+      },
+      "skills": {
+        "first_audio_ms": {
+          "n": 20,
+          "p50": 1978.334,
+          "p95": 2580.617
+        },
+        "first_text_ms": {
+          "n": 20,
+          "p50": 1814.209,
+          "p95": 2534.823
+        },
+        "model_steps": {
+          "n": 20,
+          "p50": 2.0,
+          "p95": 2
+        },
+        "expected_skill_selection_passed": 20,
+        "quote_start_ms": {
+          "n": 20,
+          "p50": 1020.474,
+          "p95": 1580.648
+        }
+      }
+    }
+  },
+  "failed_checks": [],
+  "original_runtime_and_profile_preserved": true,
+  "runner_exit": 0,
+  "calculation_ms": {
+    "original": 3000.332,
+    "skills": 3000.864
+  },
+  "interruptions": [
+    {
+      "scenario": "interrupt_retrieval_recovery",
+      "mode": "skills",
+      "first_audio_ms": 886.871,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "interruption_phase_reached": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "recovery_answers_latest_question": true,
+        "recovery_does_not_resume_old_task": true,
+        "recovery_has_no_old_skill": true,
+        "response": true
+      }
+    },
+    {
+      "scenario": "interrupt_playback_recovery",
+      "mode": "original",
+      "first_audio_ms": 1245.418,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "interruption_phase_reached": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "recovery_answers_latest_question": true,
+        "recovery_does_not_resume_old_task": true,
+        "recovery_has_no_old_skill": true,
+        "response": true
+      }
+    },
+    {
+      "scenario": "interrupt_playback_recovery",
+      "mode": "skills",
+      "first_audio_ms": 964.879,
+      "cutoff_ms": 0,
+      "checks": {
+        "bounded_model_steps": true,
+        "interruption_phase_reached": true,
+        "model_chain_completed": true,
+        "no_old_audio_after_100ms": true,
+        "recovered_response": true,
+        "recovery_answers_latest_question": true,
+        "recovery_does_not_resume_old_task": true,
+        "recovery_has_no_old_skill": true,
+        "response": true
+      }
+    }
+  ],
+  "manual_review": {
+    "benchmark_issue": "Unknown-consent definition included an unsolicited follow-up question despite passing the earlier phrase-based assertion.",
+    "resolution": "Strengthened definition-only prompt and no-question assertion. Final-code confirmation passed with manually reviewed definition-only answers."
+  },
+  "confirmation": {
+    "job": "skills-fixed-confirm-5",
+    "scenario_and_state_rows": 15,
+    "edge_rows": 10,
+    "failed_checks": [],
+    "benchmark_path_change": "Only unknown-consent prompt and concept-answer assertion changed after the benchmark. Benchmark cases use consented state."
+  }
+}

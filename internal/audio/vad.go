@@ -710,6 +710,19 @@ func (v *VAD) CandidateMS() float64 {
 	return v.pendingMS
 }
 
+// CandidateSnapshot returns a copy of the exact prefix a confirmed utterance
+// would start with, including pre-roll. It never promotes or consumes audio.
+// Consumers must discard a speculative stream if the candidate disappears or
+// its start changes, and skip this prefix when adopting the opening snapshot.
+func (v *VAD) CandidateSnapshot() ([]float32, int64) {
+	if v.open || v.pendingMS == 0 {
+		return nil, 0
+	}
+	pcm := append(v.prerollAudio(), v.pending...)
+	start := int64(math.Max(0, v.clockMS-float64(len(pcm))*1000/float64(v.cfg.SampleRate)))
+	return pcm, start
+}
+
 // SetMinSilenceMS overrides how much trailing silence closes the utterance that
 // is open now. Zero or less restores the configured value, and so does the end
 // of the utterance: the override never outlives the turn it was set for.

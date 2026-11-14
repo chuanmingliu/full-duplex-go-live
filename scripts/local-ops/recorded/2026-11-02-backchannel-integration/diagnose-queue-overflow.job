@@ -1,0 +1,17 @@
+#timeout 40
+python3 -B - <<'PY'
+import json,urllib.request,shlex
+from pathlib import Path
+with urllib.request.urlopen('http://192.168.71.9:8790/api/calls/out-mvzf4ctp-jqjp',timeout=10) as r:d=json.load(r)
+print(json.dumps({'call':d['call']['id'],'session':d['call']['session'],'archived':d['archive']['archived']}))
+for path in [Path(d['archive']['dir'])/'golive.log',Path.home()/'golive-telephony/golive-telephony.log']:
+ rows=[]
+ for line in path.read_text().splitlines():
+  if 'backchannel:' not in line:continue
+  try:r=json.loads(line) if line.startswith('{') else dict(x.split('=',1) for x in shlex.split(line) if '=' in x)
+  except ValueError:continue
+  rows.append({k:r.get(k) for k in ('time','msg','session','reason','processed_chunks','mode','policy','language') if k in r})
+ print(json.dumps({'source':path.name,'events':rows[-20:]}))
+c=json.loads((Path.home()/'golive-telephony/configs/telephony.json').read_text())
+print(json.dumps({k:v for k,v in c['duplex'].items() if 'backchannel_detector' in k}))
+PY

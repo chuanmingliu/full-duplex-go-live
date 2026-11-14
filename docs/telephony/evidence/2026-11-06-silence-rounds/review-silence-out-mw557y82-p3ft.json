@@ -1,0 +1,90 @@
+{
+  "call_id": "out-mw557y82-p3ft",
+  "session": "sess_854b82b47c87fbc4dc8c46ec",
+  "events": [
+    {
+      "time": "2026-11-06T23:42:24.782+08:00",
+      "msg": "silence: config loaded"
+    },
+    {
+      "time": "2026-11-06T23:42:41.619+08:00",
+      "msg": "tools: task done",
+      "took_ms": "0"
+    },
+    {
+      "time": "2026-11-06T23:43:01.502+08:00",
+      "msg": "silence: re-engagement",
+      "attempt": "1",
+      "wait_ms": "5767",
+      "template_index": "0",
+      "config_version": "2"
+    },
+    {
+      "time": "2026-11-06T23:43:09.182+08:00",
+      "msg": "silence: re-engagement",
+      "attempt": "2",
+      "wait_ms": "5843",
+      "template_index": "0",
+      "config_version": "2"
+    },
+    {
+      "time": "2026-11-06T23:43:35.821+08:00",
+      "msg": "hangup: a rule applies",
+      "rule": "silence"
+    },
+    {
+      "time": "2026-11-06T23:43:39.936+08:00",
+      "msg": "session: the gateway was told to hang up",
+      "status": "200"
+    }
+  ],
+  "transcript_structure": [
+    {
+      "who": "assistant",
+      "chars": 41,
+      "reminder_template_indices": []
+    },
+    {
+      "who": "caller",
+      "turn": 1,
+      "chars": 6,
+      "reminder_template_indices": []
+    },
+    {
+      "who": "assistant",
+      "turn": 1,
+      "chars": 4,
+      "reminder_template_indices": []
+    },
+    {
+      "who": "assistant",
+      "chars": 83,
+      "reminder_template_indices": []
+    },
+    {
+      "who": "assistant",
+      "chars": 9,
+      "reminder_template_indices": [
+        0
+      ]
+    },
+    {
+      "who": "assistant",
+      "chars": 9,
+      "reminder_template_indices": [
+        0
+      ]
+    },
+    {
+      "who": "assistant",
+      "chars": 22,
+      "reminder_template_indices": []
+    }
+  ],
+  "log_message_counts": {
+    "silence: re-engagement": 2,
+    "listen: utterance opened": 1,
+    "listen: utterance closed": 1,
+    "new query while answering: cutting the answer": 0
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "recorded_on": "2026-10-31",
+  "purpose": "Exact successful operation bodies; historical references, not current jobs",
+  "files": [
+    {
+      "file": "real-call-f842928.sh",
+      "original_name": "codex-real-call-f842928-20261031-next1.job",
+      "bytes": 4076,
+      "sha256": "962e0799643d844f9f0181b9f453dea5a262858e2140d234d3fa1f2cb14f7750"
+    },
+    {
+      "file": "collect-real-out-mvw03ge0-j0y3.sh",
+      "original_name": "codex-collect-real-out-mvw03ge0-j0y3-20261031.job",
+      "bytes": 4880,
+      "sha256": "d913672c9599520cc6b24d55d4f6a51e240488a9409afe5dce3ec53f251f2ec1"
+    },
+    {
+      "file": "simulate-quotation-f842928.sh",
+      "original_name": "codex-stage-prequote-hit-gap-release-f842928-20261031-2.body.sh",
+      "bytes": 54583,
+      "sha256": "60751c87a740f1e8c3ab87e52bbccc75d2ebdd12a9903071698f6fb45eb51eca"
+    },
+    {
+      "file": "simulate-coverage-f842928.sh",
+      "original_name": "codex-stage-coverage-gap-release-f842928-20261031-2.body.sh",
+      "bytes": 54613,
+      "sha256": "8edf7226219eee5c80f0e35503403219155e25b6d25c5344e07833a40801dc7a"
+    },
+    {
+      "file": "preflight-9547d22.sh",
+      "original_name": "codex-stage-preflight-opener-release-20261031-5.body.sh",
+      "bytes": 73624,
+      "sha256": "575114edfcaf900130921079d51f3f2ebc9647395fb0ce777a91760eab4627f9"
+    },
+    {
+      "file": "deploy-9547d22.sh",
+      "original_name": "codex-stage-deploy-9547d22-opener-release-20261031-5.body.sh",
+      "bytes": 58398,
+      "sha256": "03af042cd4b0c5e51907b0f8e4829667b341d9ff7232da05b1fea09899962860"
+    },
+    {
+      "file": "verify-9547d22.sh",
+      "original_name": "codex-stage-verify-9547d22-opener-release-20261031-5.body.sh",
+      "bytes": 75935,
+      "sha256": "a6f89da03ce451badf6cc302ea28b5b7669818bdcf0d326e92e676ef9fb91273"
+    },
+    {
+      "file": "publish-notes-36e638e.sh",
+      "original_name": "codex-publish-notes-36e638e.job",
+      "bytes": 5375,
+      "sha256": "bb40a3f8c9bd79445c96df5825eef02afd2f835b9d90e267f76896b9e33ca134"
+    }
+  ]
+}

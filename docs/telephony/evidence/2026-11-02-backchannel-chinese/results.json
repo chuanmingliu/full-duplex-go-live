@@ -1,0 +1,609 @@
+{
+  "language": "zh",
+  "controller": "legacy",
+  "control_actions": 0,
+  "policy": "raw floor >=0.7 crossing; three consecutive frames separately",
+  "pace": "realtime",
+  "handset_latency_measured": false,
+  "synthetic_cases": [
+    {
+      "id": "ack_mm",
+      "codec": "pcm16",
+      "fixture_sha256": "a91d0ce052a49ea80fa00e33b57a9070c9791574b5fde61de1e3a645d3fd6800",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2200,
+      "floor_crossing_delay_ms": null,
+      "floor_three_frame_delay_ms": null,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.6098316311836243,
+      "peak_backchannel_during_speech": 0.5305624008178711,
+      "mean_backchannel_first_200ms_after_end": 0.46990078687667847,
+      "roundtrip": {
+        "n": 105,
+        "p50_ms": 2.056,
+        "p95_ms": 2.251,
+        "max_ms": 2.31
+      }
+    },
+    {
+      "id": "ack_mm",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "a91d0ce052a49ea80fa00e33b57a9070c9791574b5fde61de1e3a645d3fd6800",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2200,
+      "floor_crossing_delay_ms": null,
+      "floor_three_frame_delay_ms": null,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.6107945442199707,
+      "peak_backchannel_during_speech": 0.5338225364685059,
+      "mean_backchannel_first_200ms_after_end": 0.46745761145244946,
+      "roundtrip": {
+        "n": 105,
+        "p50_ms": 2.12,
+        "p95_ms": 2.366,
+        "max_ms": 2.639
+      }
+    },
+    {
+      "id": "ack_right",
+      "codec": "pcm16",
+      "fixture_sha256": "78a875487ffb07b773160e77b38e18322d6bd9e00b11c801ed9758dc811b09b4",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2720,
+      "floor_crossing_delay_ms": null,
+      "floor_three_frame_delay_ms": null,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.6861865520477295,
+      "peak_backchannel_during_speech": 0.623686671257019,
+      "mean_backchannel_first_200ms_after_end": 0.47852733731269836,
+      "roundtrip": {
+        "n": 118,
+        "p50_ms": 1.939,
+        "p95_ms": 2.315,
+        "max_ms": 2.43
+      }
+    },
+    {
+      "id": "ack_right",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "78a875487ffb07b773160e77b38e18322d6bd9e00b11c801ed9758dc811b09b4",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2720,
+      "floor_crossing_delay_ms": null,
+      "floor_three_frame_delay_ms": null,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.6971349716186523,
+      "peak_backchannel_during_speech": 0.6035842895507812,
+      "mean_backchannel_first_200ms_after_end": 0.45829707384109497,
+      "roundtrip": {
+        "n": 118,
+        "p50_ms": 2.104,
+        "p95_ms": 2.311,
+        "max_ms": 2.43
+      }
+    },
+    {
+      "id": "ack_ok",
+      "codec": "pcm16",
+      "fixture_sha256": "10f13aa95e4815871ea46c7ba9aad1ec2737580a8b3a19f6603ec0baec887664",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2260,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 180,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.846479594707489,
+      "peak_backchannel_during_speech": 0.46514132618904114,
+      "mean_backchannel_first_200ms_after_end": 0.1137506894089959,
+      "roundtrip": {
+        "n": 106,
+        "p50_ms": 2.047,
+        "p95_ms": 2.251,
+        "max_ms": 2.613
+      }
+    },
+    {
+      "id": "ack_ok",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "10f13aa95e4815871ea46c7ba9aad1ec2737580a8b3a19f6603ec0baec887664",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2260,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 180,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8553659319877625,
+      "peak_backchannel_during_speech": 0.4430985152721405,
+      "mean_backchannel_first_200ms_after_end": 0.10523295605724509,
+      "roundtrip": {
+        "n": 106,
+        "p50_ms": 2.094,
+        "p95_ms": 2.266,
+        "max_ms": 2.362
+      }
+    },
+    {
+      "id": "ack_understood",
+      "codec": "pcm16",
+      "fixture_sha256": "b00e81801fa1774dbf23959039afb010838e57d494024361517e1949ad8f83ca",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2320,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 180,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8759304285049438,
+      "peak_backchannel_during_speech": 0.6924243569374084,
+      "mean_backchannel_first_200ms_after_end": 0.15530376949093558,
+      "roundtrip": {
+        "n": 108,
+        "p50_ms": 2.087,
+        "p95_ms": 2.347,
+        "max_ms": 2.78
+      }
+    },
+    {
+      "id": "ack_understood",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "b00e81801fa1774dbf23959039afb010838e57d494024361517e1949ad8f83ca",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2320,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 180,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.865376353263855,
+      "peak_backchannel_during_speech": 0.6779782176017761,
+      "mean_backchannel_first_200ms_after_end": 0.16735265471718527,
+      "roundtrip": {
+        "n": 108,
+        "p50_ms": 2.061,
+        "p95_ms": 2.441,
+        "max_ms": 3.611
+      }
+    },
+    {
+      "id": "ack_continue",
+      "codec": "pcm16",
+      "fixture_sha256": "010b7b88d9ec27ec765cc82962d737bb8453b683501606b15099ad6048c1bca7",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2480,
+      "floor_crossing_delay_ms": 260,
+      "floor_three_frame_delay_ms": 300,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8876835703849792,
+      "peak_backchannel_during_speech": 0.502728283405304,
+      "mean_backchannel_first_200ms_after_end": 0.11681510982188312,
+      "roundtrip": {
+        "n": 112,
+        "p50_ms": 2.048,
+        "p95_ms": 2.283,
+        "max_ms": 2.721
+      }
+    },
+    {
+      "id": "ack_continue",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "010b7b88d9ec27ec765cc82962d737bb8453b683501606b15099ad6048c1bca7",
+      "expected": "backchannel",
+      "onset_ms": 2020,
+      "end_ms": 2480,
+      "floor_crossing_delay_ms": 260,
+      "floor_three_frame_delay_ms": 300,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8779580593109131,
+      "peak_backchannel_during_speech": 0.522433340549469,
+      "mean_backchannel_first_200ms_after_end": 0.13450979780067096,
+      "roundtrip": {
+        "n": 112,
+        "p50_ms": 2.072,
+        "p95_ms": 2.318,
+        "max_ms": 2.433
+      }
+    },
+    {
+      "id": "floor_wait",
+      "codec": "pcm16",
+      "fixture_sha256": "63ff8229b2ef9648a6c7b063f31629b76b758cb1e8a1ce32c39f0173e3734960",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3420,
+      "floor_crossing_delay_ms": 60,
+      "floor_three_frame_delay_ms": 100,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8779808282852173,
+      "peak_backchannel_during_speech": 0.4863811135292053,
+      "mean_backchannel_first_200ms_after_end": 0.11826687441630797,
+      "roundtrip": {
+        "n": 136,
+        "p50_ms": 2.061,
+        "p95_ms": 2.319,
+        "max_ms": 2.499
+      }
+    },
+    {
+      "id": "floor_wait",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "63ff8229b2ef9648a6c7b063f31629b76b758cb1e8a1ce32c39f0173e3734960",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3420,
+      "floor_crossing_delay_ms": 60,
+      "floor_three_frame_delay_ms": 100,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8792999982833862,
+      "peak_backchannel_during_speech": 0.4782448410987854,
+      "mean_backchannel_first_200ms_after_end": 0.11893239617347717,
+      "roundtrip": {
+        "n": 136,
+        "p50_ms": 2.11,
+        "p95_ms": 2.317,
+        "max_ms": 2.658
+      }
+    },
+    {
+      "id": "floor_correction",
+      "codec": "pcm16",
+      "fixture_sha256": "e40c9b8e4ca0b58de1eba03371912787bb9f00a49ad6a202ac2654dedfc06575",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3200,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 260,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8934933543205261,
+      "peak_backchannel_during_speech": 0.40477749705314636,
+      "mean_backchannel_first_200ms_after_end": 0.09706629541787234,
+      "roundtrip": {
+        "n": 131,
+        "p50_ms": 2.091,
+        "p95_ms": 2.311,
+        "max_ms": 2.466
+      }
+    },
+    {
+      "id": "floor_correction",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "e40c9b8e4ca0b58de1eba03371912787bb9f00a49ad6a202ac2654dedfc06575",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3200,
+      "floor_crossing_delay_ms": 100,
+      "floor_three_frame_delay_ms": 180,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.887270450592041,
+      "peak_backchannel_during_speech": 0.37300270795822144,
+      "mean_backchannel_first_200ms_after_end": 0.09903103045441887,
+      "roundtrip": {
+        "n": 131,
+        "p50_ms": 2.152,
+        "p95_ms": 2.361,
+        "max_ms": 2.744
+      }
+    },
+    {
+      "id": "floor_stop",
+      "codec": "pcm16",
+      "fixture_sha256": "e46da2d53bc426495625747063cab71e9f8d418a9e1821fc9817d7cab8861729",
+      "expected": "floor",
+      "onset_ms": 2060,
+      "end_ms": 3720,
+      "floor_crossing_delay_ms": 20,
+      "floor_three_frame_delay_ms": 60,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8715218305587769,
+      "peak_backchannel_during_speech": 0.5538504123687744,
+      "mean_backchannel_first_200ms_after_end": 0.13628409464250912,
+      "roundtrip": {
+        "n": 143,
+        "p50_ms": 2.082,
+        "p95_ms": 2.554,
+        "max_ms": 6.407
+      }
+    },
+    {
+      "id": "floor_stop",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "e46da2d53bc426495625747063cab71e9f8d418a9e1821fc9817d7cab8861729",
+      "expected": "floor",
+      "onset_ms": 2060,
+      "end_ms": 3720,
+      "floor_crossing_delay_ms": 100,
+      "floor_three_frame_delay_ms": 140,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8773297667503357,
+      "peak_backchannel_during_speech": 0.4647650718688965,
+      "mean_backchannel_first_200ms_after_end": 0.14258675480430777,
+      "roundtrip": {
+        "n": 143,
+        "p50_ms": 2.141,
+        "p95_ms": 2.36,
+        "max_ms": 2.626
+      }
+    },
+    {
+      "id": "floor_mm_then_question",
+      "codec": "pcm16",
+      "fixture_sha256": "0a736d15eadf822f2db21e3b2897091d80ba68e14266d03a42e7111153dfd5a4",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 4000,
+      "floor_crossing_delay_ms": 700,
+      "floor_three_frame_delay_ms": 740,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8835169076919556,
+      "peak_backchannel_during_speech": 0.5463550686836243,
+      "mean_backchannel_first_200ms_after_end": 0.09111414375630292,
+      "roundtrip": {
+        "n": 150,
+        "p50_ms": 2.135,
+        "p95_ms": 2.276,
+        "max_ms": 2.484
+      }
+    },
+    {
+      "id": "floor_mm_then_question",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "0a736d15eadf822f2db21e3b2897091d80ba68e14266d03a42e7111153dfd5a4",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 4000,
+      "floor_crossing_delay_ms": 700,
+      "floor_three_frame_delay_ms": 740,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8826680779457092,
+      "peak_backchannel_during_speech": 0.5956058502197266,
+      "mean_backchannel_first_200ms_after_end": 0.09468977322632616,
+      "roundtrip": {
+        "n": 150,
+        "p50_ms": 2.06,
+        "p95_ms": 2.281,
+        "max_ms": 2.57
+      }
+    },
+    {
+      "id": "floor_ok_then_change",
+      "codec": "pcm16",
+      "fixture_sha256": "46a750c32d5d43d0ad3a41ed6a3527ba92493fe0bf486c91c020c6e692890cae",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3920,
+      "floor_crossing_delay_ms": 100,
+      "floor_three_frame_delay_ms": 140,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8927288055419922,
+      "peak_backchannel_during_speech": 0.46779441833496094,
+      "mean_backchannel_first_200ms_after_end": 0.091220500794324,
+      "roundtrip": {
+        "n": 148,
+        "p50_ms": 2.119,
+        "p95_ms": 2.335,
+        "max_ms": 2.82
+      }
+    },
+    {
+      "id": "floor_ok_then_change",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "46a750c32d5d43d0ad3a41ed6a3527ba92493fe0bf486c91c020c6e692890cae",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3920,
+      "floor_crossing_delay_ms": 100,
+      "floor_three_frame_delay_ms": 140,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.889141321182251,
+      "peak_backchannel_during_speech": 0.46202343702316284,
+      "mean_backchannel_first_200ms_after_end": 0.09096912125294859,
+      "roundtrip": {
+        "n": 148,
+        "p50_ms": 2.021,
+        "p95_ms": 2.263,
+        "max_ms": 4.052
+      }
+    },
+    {
+      "id": "floor_question",
+      "codec": "pcm16",
+      "fixture_sha256": "a1ad47f9b20ab8081ae800da1ede0e1ca5ed72ffad271daf5024354a205ad5c0",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3080,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 380,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8826139569282532,
+      "peak_backchannel_during_speech": 0.5302385687828064,
+      "mean_backchannel_first_200ms_after_end": 0.09597352214834907,
+      "roundtrip": {
+        "n": 127,
+        "p50_ms": 1.971,
+        "p95_ms": 2.264,
+        "max_ms": 3.283
+      }
+    },
+    {
+      "id": "floor_question",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "a1ad47f9b20ab8081ae800da1ede0e1ca5ed72ffad271daf5024354a205ad5c0",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3080,
+      "floor_crossing_delay_ms": 140,
+      "floor_three_frame_delay_ms": 380,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8859301805496216,
+      "peak_backchannel_during_speech": 0.49756884574890137,
+      "mean_backchannel_first_200ms_after_end": 0.0995392684232105,
+      "roundtrip": {
+        "n": 127,
+        "p50_ms": 1.99,
+        "p95_ms": 2.297,
+        "max_ms": 2.534
+      }
+    },
+    {
+      "id": "floor_repeat",
+      "codec": "pcm16",
+      "fixture_sha256": "dd61b3c675df58decbd92ea4303091faff881b883c185278dcb2a51764acf383",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3560,
+      "floor_crossing_delay_ms": 100,
+      "floor_three_frame_delay_ms": 140,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8843896389007568,
+      "peak_backchannel_during_speech": 0.4317721426486969,
+      "mean_backchannel_first_200ms_after_end": 0.15708151798356662,
+      "roundtrip": {
+        "n": 140,
+        "p50_ms": 2.059,
+        "p95_ms": 2.347,
+        "max_ms": 2.88
+      }
+    },
+    {
+      "id": "floor_repeat",
+      "codec": "g711_alaw_8k_roundtrip",
+      "fixture_sha256": "dd61b3c675df58decbd92ea4303091faff881b883c185278dcb2a51764acf383",
+      "expected": "floor",
+      "onset_ms": 2020,
+      "end_ms": 3560,
+      "floor_crossing_delay_ms": 100,
+      "floor_three_frame_delay_ms": 140,
+      "floor_within_700ms": true,
+      "peak_floor_during_speech": 0.8865427374839783,
+      "peak_backchannel_during_speech": 0.36860573291778564,
+      "mean_backchannel_first_200ms_after_end": 0.15320471200076016,
+      "roundtrip": {
+        "n": 140,
+        "p50_ms": 2.1,
+        "p95_ms": 2.511,
+        "max_ms": 2.681
+      }
+    },
+    {
+      "id": "silence",
+      "codec": "pcm16",
+      "expected": "no_cut_control",
+      "onset_ms": 2000,
+      "end_ms": 3450,
+      "floor_crossing_delay_ms": null,
+      "floor_three_frame_delay_ms": null,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.13947683572769165,
+      "peak_backchannel_during_speech": 0.11626016348600388,
+      "mean_backchannel_first_200ms_after_end": 0.1169207975268364,
+      "roundtrip": {
+        "n": 136,
+        "p50_ms": 2.084,
+        "p95_ms": 2.314,
+        "max_ms": 2.379
+      }
+    },
+    {
+      "id": "echo_like_residual",
+      "codec": "pcm16",
+      "expected": "no_cut_control",
+      "onset_ms": 2000,
+      "end_ms": 3450,
+      "floor_crossing_delay_ms": 800,
+      "floor_three_frame_delay_ms": 920,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.876569926738739,
+      "peak_backchannel_during_speech": 0.38285031914711,
+      "mean_backchannel_first_200ms_after_end": 0.09322651773691178,
+      "roundtrip": {
+        "n": 136,
+        "p50_ms": 2.066,
+        "p95_ms": 2.276,
+        "max_ms": 2.461
+      }
+    },
+    {
+      "id": "quiet_bystander",
+      "codec": "pcm16",
+      "expected": "no_cut_control",
+      "onset_ms": 2000,
+      "end_ms": 3450,
+      "floor_crossing_delay_ms": 800,
+      "floor_three_frame_delay_ms": 840,
+      "floor_within_700ms": false,
+      "peak_floor_during_speech": 0.8799108266830444,
+      "peak_backchannel_during_speech": 0.4148476719856262,
+      "mean_backchannel_first_200ms_after_end": 0.09599524363875389,
+      "roundtrip": {
+        "n": 136,
+        "p50_ms": 2.129,
+        "p95_ms": 2.333,
+        "max_ms": 2.537
+      }
+    }
+  ],
+  "recorded_calls": [
+    {
+      "call": "out-mvykfqfn-wibn",
+      "frames": 6030,
+      "audio_seconds": 120.6208125,
+      "roundtrip": {
+        "n": 3015,
+        "p50_ms": 1.441,
+        "p95_ms": 1.811,
+        "max_ms": 44.352
+      },
+      "aec_verified": false,
+      "bot_state_source": "recording_energy_approximation",
+      "pace": "unpaced",
+      "ground_truth_labels": false
+    },
+    {
+      "call": "out-mvxuom0e-mp6l",
+      "frames": 950,
+      "audio_seconds": 19.009,
+      "roundtrip": {
+        "n": 475,
+        "p50_ms": 1.413,
+        "p95_ms": 1.643,
+        "max_ms": 2.285
+      },
+      "aec_verified": false,
+      "bot_state_source": "recording_energy_approximation",
+      "pace": "unpaced",
+      "ground_truth_labels": false
+    }
+  ],
+  "service_before": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 0,
+    "errors": 0
+  },
+  "service_after": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 6946,
+    "errors": 0
+  }
+}

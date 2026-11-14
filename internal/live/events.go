@@ -63,8 +63,10 @@ const (
 	// ExtMemory is golive.memory: the call's working memory was edited
 	// (Version after the edit, Patch what was merged). ExtTask is
 	// golive.task: a slow tool call was submitted, finished, or delivered.
-	ExtMemory = "golive.memory"
-	ExtTask   = "golive.task"
+	// ClientBusinessEvent carries a trusted backend notification on the session connection.
+	ClientBusinessEvent = "golive.business.event"
+	ExtMemory           = "golive.memory"
+	ExtTask             = "golive.task"
 	// ExtFocus says whose voice an answered utterance was, by the speaker-
 	// activity model, and whether its answer was dropped for it. See FocusEvent.
 	ExtFocus        = "golive.focus"

@@ -1,0 +1,14 @@
+{
+  "original_profile_unchanged": true,
+  "original_saved_call_unchanged": true,
+  "original_binary_unchanged": true,
+  "stopped_temporary_services": [
+    "aria",
+    "golive",
+    "catalog.test",
+    "crm",
+    "quotesvc"
+  ],
+  "journal_retained": true,
+  "journal_health": true
+}

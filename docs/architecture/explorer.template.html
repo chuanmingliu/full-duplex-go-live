@@ -1,0 +1,195 @@
+<div id="golive-architecture">
+  <header class="ga-heading">
+    <h2>golive · architecture explorer</h2>
+    <div class="text-small">42 components · phone, intelligence, business, evidence and operations</div>
+  </header>
+  <div class="viz-controls ga-controls">
+    <label class="form-label">Architecture view
+      <select class="form-select" id="ga-view" aria-label="Architecture view"></select>
+    </label>
+    <label class="form-label">Component
+      <select class="form-select" id="ga-component" aria-label="Component"></select>
+    </label>
+  </div>
+  <div class="ga-map-title">
+    <h3 id="ga-caption"></h3>
+    <div class="text-small">Select a component to trace its connections and read its documentation.</div>
+  </div>
+  <div class="ga-map" id="ga-map">
+    <svg class="ga-lines" id="ga-lines" aria-hidden="true"></svg>
+    <div class="ga-nodes" id="ga-nodes" role="group" aria-label="System components"></div>
+  </div>
+  <div class="ga-legend text-small"><span>→ Selected data flow</span><span>⇄ Bidirectional exchange</span><span>┄→ Control / request</span></div>
+  <section class="ga-detail" aria-labelledby="ga-detail-title">
+    <div class="ga-selected-heading">
+      <h3 id="ga-detail-title"></h3><span class="viz-badge" id="ga-boundary"></span>
+    </div>
+    <p id="ga-role" aria-live="polite"></p>
+    <dl class="ga-facts">
+      <dt>Runs / lives at</dt><dd id="ga-where"></dd>
+      <dt>Receives</dt><dd id="ga-input"></dd>
+      <dt>Produces</dt><dd id="ga-output"></dd>
+    </dl>
+    <details open class="ga-docs">
+      <summary class="cursor-interaction">How it works · operating notes · sources</summary>
+      <div class="ga-document-body">
+        <div><h3>Operation</h3><p id="ga-operation"></p></div>
+        <div id="ga-streaming-notes"></div>
+        <div><h3>Boundary / limitation</h3><p id="ga-limit"></p></div>
+        <div><h3>Connections in this view</h3><ul id="ga-connections"></ul></div>
+        <div><h3>Implementation and runbooks</h3><div class="ga-sources" id="ga-sources"></div><div id="ga-local-source" class="text-small"></div></div>
+        <a id="ga-guide" class="ga-standalone-link">Read the corresponding guide</a>
+        <a href="07-streaming-coordination.md" class="ga-standalone-link">Read the ASR → LLM → TTS walkthrough</a>
+      </div>
+    </details>
+  </section>
+  <footer class="ga-footer text-small">Source snapshot: 31 Oct 2026 · codex/telephony-latency · 9547d22<br>Code and documented topology; not a live health dashboard. Target: handset p95 &lt;1200 ms, still unverified.</footer>
+</div>
+<style>
+#golive-architecture { color:var(--foreground); }
+#golive-architecture .ga-heading { display:grid; gap:calc(var(--font-size-base)*.35); padding-right:90px; }
+#golive-architecture .ga-controls { margin-top:calc(var(--font-size-base)*1.2); }
+#golive-architecture .ga-map-title { display:grid; gap:calc(var(--font-size-base)*.35); margin-top:calc(var(--font-size-base)*1.2); }
+#golive-architecture .ga-map { position:relative; margin-top:calc(var(--font-size-base)*1.2); padding:18px; }
+#golive-architecture .ga-lines { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+#golive-architecture .ga-nodes { position:relative; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:48px 32px; }
+#golive-architecture .ga-node { display:grid; gap:calc(var(--font-size-base)*.35); align-content:start; min-width:0; }
+#golive-architecture .ga-node-zone { min-height:calc(var(--font-size-base)*1.1); text-align:center; color:var(--muted-foreground); }
+#golive-architecture .ga-node-surface { display:grid; background:var(--background); }
+#golive-architecture .ga-legend { display:flex; flex-wrap:wrap; gap:calc(var(--font-size-base)*1.2); margin-top:calc(var(--font-size-base)*1.5); color:var(--muted-foreground); }
+#golive-architecture .ga-detail { display:grid; gap:calc(var(--font-size-base)*.8); margin-top:calc(var(--font-size-base)*1.5); padding-top:calc(var(--font-size-base)*1.2); border-top:1px solid var(--border); }
+#golive-architecture .ga-selected-heading { display:flex; flex-wrap:wrap; align-items:center; gap:calc(var(--font-size-base)*.8); }
+#golive-architecture .ga-facts { display:grid; grid-template-columns:130px minmax(0,1fr); gap:calc(var(--font-size-base)*.6) calc(var(--font-size-base)*1.1); margin:0; }
+#golive-architecture dt { color:var(--muted-foreground); }
+#golive-architecture dd { margin:0; overflow-wrap:anywhere; }
+#golive-architecture .ga-document-body { display:grid; gap:calc(var(--font-size-base)*1.2); margin-top:calc(var(--font-size-base)*.8); }
+#golive-architecture .ga-document-body h3 { margin-bottom:calc(var(--font-size-base)*.25); }
+#golive-architecture #ga-streaming-notes:not([hidden]) { display:grid; gap:calc(var(--font-size-base)*1.2); }
+#golive-architecture .ga-document-body ul { margin:0; padding-left:calc(var(--font-size-base)*1.5); }
+#golive-architecture .ga-document-body li + li { margin-top:calc(var(--font-size-base)*.35); }
+#golive-architecture .ga-sources { display:flex; flex-wrap:wrap; gap:calc(var(--font-size-base)*.5) calc(var(--font-size-base)*1.2); overflow-wrap:anywhere; }
+#golive-architecture .ga-footer { margin-top:calc(var(--font-size-base)*1.8); padding-top:calc(var(--font-size-base)*.8); border-top:1px solid var(--border); color:var(--muted-foreground); }
+#golive-architecture .ga-standalone-link { display:none; }
+@media (max-width:560px) {
+ #golive-architecture .ga-nodes { grid-template-columns:repeat(2,minmax(0,1fr)); gap:42px 24px; }
+ #golive-architecture .ga-facts { grid-template-columns:1fr; gap:calc(var(--font-size-base)*.25); }
+ #golive-architecture .ga-facts dd + dt { margin-top:calc(var(--font-size-base)*.65); }
+}
+@media (max-width:360px) {
+ #golive-architecture .ga-nodes { grid-template-columns:minmax(0,1fr); gap:34px; }
+}
+</style>
+<script>
+(() => {
+  const root = document.getElementById('golive-architecture');
+  const data = /*__ARCHITECTURE_DATA__*/;
+  const views = /*__ARCHITECTURE_VIEWS__*/;
+  const byId = Object.fromEntries(data.components.map(c => [c.id, c]));
+  const $ = id => root.querySelector('#' + id);
+  const viewPicker = $('ga-view');
+  const componentPicker = $('ga-component');
+  let view = views.find(v => v.id === 'streaming') || views[0], selected = view.focus, drawPending = false;
+  const sourceBase = 'https://github.com/chuanmingliu/full-duplex-go-live/';
+  for (const v of views) viewPicker.add(new Option(v.title, v.id));
+  const save = () => {
+    if (window.openai && window.openai.setWidgetState) {
+      const result = window.openai.setWidgetState({modelContent:{view:view.id,component:selected},privateContent:{docsOpen:root.querySelector('details').open}});
+      if (result && result.catch) result.catch(() => {});
+    }
+  };
+  function restore(state) {
+    const s = state && state.modelContent;
+    if (!s) return;
+    const found = views.find(v => v.id === s.view);
+    if (found) view = found;
+    selected = view.nodes.includes(s.component) ? s.component : view.focus;
+    if (state.privateContent && typeof state.privateContent.docsOpen === 'boolean') root.querySelector('details').open = state.privateContent.docsOpen;
+  }
+  const escape = text => String(text).replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+  function buildView() {
+    viewPicker.value = view.id;
+    $('ga-caption').textContent = view.caption;
+    componentPicker.replaceChildren();
+    $('ga-nodes').replaceChildren();
+    for (const id of view.nodes) {
+      const c = byId[id];
+      componentPicker.add(new Option(c.name, id));
+      const node = document.createElement('div'); node.className = 'ga-node';
+      const zone = document.createElement('div'); zone.className = 'ga-node-zone text-small'; zone.textContent = c.boundary;
+      const surface = document.createElement('div'); surface.className = 'ga-node-surface';
+      const button = document.createElement('button');
+      button.className = 'btn viz-tile'; button.type = 'button'; button.dataset.node = id;
+      button.textContent = c.name; button.setAttribute('aria-label', c.name + ', ' + c.boundary);
+      button.addEventListener('click', () => choose(id));
+      surface.append(button); node.append(zone, surface); $('ga-nodes').append(node);
+    }
+    showSelection();
+  }
+  function choose(id) { selected = id; showSelection(); save(); }
+  function showSelection() {
+    const c = byId[selected];
+    componentPicker.value = selected;
+    root.querySelectorAll('[data-node]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.node === selected)));
+    for (const [target,key] of [['ga-detail-title','name'],['ga-role','role'],['ga-boundary','boundary'],['ga-where','where'],['ga-input','input'],['ga-output','output'],['ga-operation','operation'],['ga-limit','limit']]) $(target).textContent = c[key];
+    $('ga-streaming-notes').replaceChildren(...(c.streaming || []).map(note => {
+      const section = document.createElement('div');
+      const title = document.createElement('h3'); title.textContent = note.title;
+      const body = document.createElement('p'); body.textContent = note.text;
+      section.append(title, body); return section;
+    }));
+    $('ga-streaming-notes').hidden = !c.streaming;
+    const edges = view.edges.filter(e => e[0] === selected || e[1] === selected);
+    $('ga-connections').replaceChildren(...edges.map(e => {
+      const li=document.createElement('li');
+      li.textContent=byId[e[0]].name + (e[3]==='both' ? ' ⇄ ' : ' → ') + byId[e[1]].name + ': ' + e[2];
+      return li;
+    }));
+    if (!edges.length) { const li=document.createElement('li'); li.textContent='See the implementation references for detailed internal interfaces.'; $('ga-connections').append(li); }
+    $('ga-sources').replaceChildren(...c.sources.map(path => {
+      const a=document.createElement('a'); a.href=sourceBase+(data.directorySources.includes(path)?'tree/':'blob/')+data.commit+'/'+path; a.target='_blank'; a.rel='noopener noreferrer'; a.textContent=path; return a;
+    }));
+    $('ga-local-source').textContent=c.local_source ? 'Local integration source: '+c.local_source+' (not stored in this repository).' : '';
+    $('ga-guide').href=data.groups[c.group].file+'#'+c.id;
+    $('ga-guide').textContent='Read guide: '+data.groups[c.group].title;
+    scheduleDraw();
+  }
+  function scheduleDraw() { if (drawPending) return; drawPending=true; requestAnimationFrame(() => { drawPending=false; draw(); }); }
+  function draw() {
+    const svg=$('ga-lines'), box=$('ga-map').getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    svg.setAttribute('viewBox',`0 0 ${box.width} ${box.height}`);
+    const paths=[];
+    const edges=(view.id==='overview' || view.id==='streaming') ? view.edges : view.edges.filter(e => e[0]===selected || e[1]===selected);
+    for (let i=0;i<edges.length;i++) {
+      const e=edges[i];
+      const active=e[0]===selected || e[1]===selected;
+      const a=root.querySelector('[data-node="'+e[0]+'"]')?.getBoundingClientRect();
+      const b=root.querySelector('[data-node="'+e[1]+'"]')?.getBoundingClientRect();
+      if (!a || !b) continue;
+      const ax=a.x+a.width/2-box.x, ay=a.y+a.height/2-box.y;
+      const bx=b.x+b.width/2-box.x, by=b.y+b.height/2-box.y;
+      const wa=root.querySelector('[data-node="'+e[0]+'"]').closest('.ga-node').getBoundingClientRect();
+      const sameColumn=Math.abs(ax-bx)<8, sameRow=Math.abs(ay-by)<8;
+      const side=sameColumn ? (ax<box.width/2 ? -1 : 1) : (bx>ax ? 1 : -1);
+      const targetSide=sameColumn ? side : -side;
+      const x1=(side>0?a.right:a.left)-box.x, x2=(targetSide>0?b.right:b.left)-box.x;
+      const laneA=x1+side*14, laneB=x2+targetSide*14;
+      let d;
+      if(sameRow && Math.abs(ax-bx)<a.width*1.8) d=`M ${x1} ${ay} H ${x2}`;
+      else if(sameColumn) d=`M ${x1} ${ay} H ${laneA} V ${by} H ${x2}`;
+      else {
+        const gapY=(by>ay ? wa.bottom-box.y+20 : wa.top-box.y-14);
+        d=`M ${x1} ${ay} H ${laneA} V ${gapY} H ${laneB} V ${by} H ${x2}`;
+      }
+      paths.push(`<path d="${d}" fill="none" stroke="var(${active?'--viz-series-1':'--border'})" stroke-width="${active?'1.5':'1'}" ${e[3]==='control'?'stroke-dasharray="5 4"':''} ${active?'marker-end="url(#ga-arrow)"':''} ${active&&e[3]==='both'?'marker-start="url(#ga-arrow-start)"':''}><title>${escape(byId[e[0]].name+' → '+byId[e[1]].name+': '+e[2])}</title></path>`);
+    }
+    svg.innerHTML='<defs><marker id="ga-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--viz-series-1)"/></marker><marker id="ga-arrow-start" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--viz-series-1)"/></marker></defs>'+paths.join('');
+  }
+  viewPicker.addEventListener('change', () => { view=views.find(v=>v.id===viewPicker.value); selected=view.focus; buildView(); save(); });
+  componentPicker.addEventListener('change', () => choose(componentPicker.value));
+  restore(window.openai && window.openai.widgetState);
+  buildView();
+  new ResizeObserver(scheduleDraw).observe($('ga-map'));
+  window.addEventListener('openai:set_globals', e => { if (e.detail && e.detail.globals && e.detail.globals.widgetState) { restore(e.detail.globals.widgetState); buildView(); } });
+})();
+</script>

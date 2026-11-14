@@ -1,0 +1,12 @@
+#timeout 90
+#push preset-focus-collect.py /home/chuanming/golive/preset-focus-collect.py
+#pull /home/chuanming/golive-telephony/codex-latency/preset-focus-ab-20261101/sanitized-comparison.json preset-focus-ab-comparison.json
+#pull /home/chuanming/golive-telephony/codex-latency/preset-focus-ab-20261101/activecall-baseline-cuts.json preset-focus-activecall-baseline-cuts.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/preset-focus-collect.py').read_bytes()).hexdigest()=='76c9685d557cb8b82b2c1f815d24d9bf283c9aa66afa25a9f0d72943f6046ef3'
+assert hashlib.sha256((Path.home()/'golive/talker-call-latency.py').read_bytes()).hexdigest()=='c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50'
+PY
+python3 -B /home/chuanming/golive/preset-focus-collect.py
