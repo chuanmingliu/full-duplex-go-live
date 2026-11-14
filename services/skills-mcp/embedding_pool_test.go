@@ -90,6 +90,9 @@ func TestEmbeddingPoolFailoverAndRecovery(t *testing.T) {
 	if err := index.prepareEmbeddings(context.Background(), &embeddingClient{members: []*embeddingClient{a, b}}, nil); err != nil {
 		t.Fatal(err)
 	}
+	if index.selectionCapabilities()["semantic_available"] != true {
+		t.Fatal("prepared embedding pool was not advertised as available")
+	}
 	poolSearch(t, index, "insurance initial", "primary")
 	primary.fail.Store(true)
 	poolSearch(t, index, "insurance failover", "backup")
