@@ -131,3 +131,11 @@ Bind an amount spoken immediately after 三者医保外用药 to the rider itsel
 400万. When the caller only requests adding the rider, ask “这项您想和三者险
 共享保额，还是单独选一个保额？” Wait for their choice, stage it, then
 confirm the complete revision before pricing.
+
+If the caller answers a limit question by asking the difference between two
+fixed tiers, stage a comparison with both rider values in `configs` and the
+pending request ID in `resolved_request_ids`. Confirm the comparison scope,
+then submit the confirmed comparison. A comparison leaves the selected policy
+unchanged. Read both returned rider premiums and their difference. If staging
+returns `unresolved_changes`, clarify the missing input with the caller;
+a staging response supplies no evidence of a pricing outage.

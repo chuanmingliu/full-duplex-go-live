@@ -231,3 +231,50 @@ func TestMedicalLimitDoesNotBindOtherCoverageOrInformationalQuestions(t *testing
 		}
 	}
 }
+
+func TestMedicalClarificationByComparison(t *testing.T) {
+	e := confirmationEngine()
+	e.retainQuoteRequest(&Turn{ID: "add", Transcript: "你再加上三者医保外用药。", committed: true})
+	turn := &Turn{ID: "compare", Transcript: "呃，五十，五十五十五十差不多了，哎，你这个五十万跟那个一百万的差多少钱？"}
+	turn.committed = true
+	e.retainQuoteRequest(turn)
+	turn = &Turn{ID: "followup", Transcript: "只比这两档。"}
+	stage := func(second string) string {
+		_, reply := e.prepareQuoteRevision(turn, revisionCall(`{"configs":[{"医保外用药责任险-三者":"50万"},{"医保外用药责任险-三者":"`+second+`"}],"resolved_request_ids":["add"]}`))
+		return reply
+	}
+	if strings.Contains(stage("共享保额"), "awaiting_confirmation") {
+		t.Fatal("wrong tier staged")
+	}
+	if reply := stage("100万"); !strings.Contains(reply, "awaiting_confirmation") {
+		t.Fatal(reply)
+	}
+	call, reply := e.prepareQuoteRevision(&Turn{ID: "approval", Transcript: "啊对对对"}, revisionCall(confirmationArgs(e.tools.quoteRevision.ID, "confirm")))
+	if reply != "" || !strings.Contains(call.Arguments, "100万") {
+		t.Fatal(call, reply)
+	}
+	for input, want := range map[string]string{"呃，对，就按照单独四百万算吧。": "400万", "呃，改成共享保额。": "共享保额"} {
+		if got := spokenMedicalValue(strings.Trim(input, " 。！？?!")); got != want {
+			t.Fatalf("%s -> %s", input, got)
+		}
+	}
+}
+
+func TestMedicalComparisonGuardChecksBothTiersAndCoverage(t *testing.T) {
+	variants := []map[string]any{{thirdPartyMedical: "100万"}, {thirdPartyMedical: "50万"}}
+	for _, tc := range []struct {
+		text  string
+		match bool
+	}{
+		{"三者医保外用药五十万跟一百万差多少钱？", true},
+		{"单独的，五十万跟一百万，差多少钱？", true},
+		{"三者险五十万跟一百万差多少钱？", false},
+		{"五十万和三百万分别多少钱？", false},
+		{"五十万和五十万差多少钱？", false},
+		{"其他保障还需要调整吗？", false},
+	} {
+		if got := matchesMedicalComparison(requestedMedicalComparison(tc.text), variants); got != tc.match {
+			t.Errorf("%q matched=%v", tc.text, got)
+		}
+	}
+}

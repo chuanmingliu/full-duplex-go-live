@@ -255,3 +255,52 @@ for the separate approval at 107.8 seconds. The shared rider was read at
 simulations verified transcript speakers, audio in both directions and archive
 file integrity. Production binary, profile, saved call, CRM configurations
 and published MCP catalog matched their pre-test snapshots.
+
+## Comparing two fixed third-party medical limits
+
+On the subsequent real call with `ee70a53`, the quotation tool received two
+variants for the medical rider, 50万 and 100万. The clarification guard still
+expected a single answer to the earlier limit question and returned
+`unresolved_changes`. The revised requests never reached CRM. The existing
+mock backend supports both tiers.
+
+The engine now retains a recognized pair of limits on the outstanding rider
+request when the caller answers with a price comparison. The pair survives
+an interruption or a later “只比这两档”. Both tool variants must carry the
+requested rider values before that comparison resolves the request. A new
+caller turn must still confirm the staged revision before pricing. A
+comparison leaves the confirmed coverage selection intact.
+
+An initial full-media simulation exposed an ASR comma between “一百万” and
+“差多少钱”. The first candidate repeatedly asked for one tier. The updated
+guard accepts that punctuation and exposes the retained comparison to the
+model alongside the original request. Regression cases cover reversed tier
+order, wrong limits, a different named coverage, and fragmented confirmation.
+
+The final Active Call simulation `sim-a46021101715faf2dae35c7a` (Journal
+`ee494d7b-5431-496d-945d-d1dba08df211`) completed three confirmed revisions
+on the same synthetic policy. The table gives foreground CRM calculation
+times. Chat and both audio channels passed archive verification.
+
+| Revision | Spoken rider premium | Spoken total | Confirmation to first foreground CRM request | CRM calculation |
+| --- | --- | --- | --- | --- |
+| Compare 50万 and 100万 | 95元 and 190元 | 4,638元 and 4,733元 | 3 ms | 9,035 ms for both variants |
+| Select fixed 400万 | 760元 | 5,303元 | 4 ms | 4,006 ms |
+| Change to shared | 380元 | 4,923元 | 3 ms | 4,510 ms |
+
+The comparison readout gave both premiums and totals and compared each to the
+original quote. The 95元 difference between tiers can be calculated from
+either pair. The recording contains no separate sentence giving that
+tier-to-tier difference.
+
+The engine staged the fixed selection as revision 2 at 13:49:04.704 CST.
+After a seat-coverage question, the server logged an answer cut at
+13:49:28.107. The caller repeated 400万 when confirming. The engine
+confirmed the same revision at 13:49:31.514 without restaging it. The
+simulator's scheduled cut-in was skipped; the cut above came from the
+conversation itself. This demonstrates retained revision state, while an
+unprompted spoken recall after interruption was outside this run.
+
+The simulator's prior run inventory was restored. Production stayed on
+`ee70a53-rider-limit`; the saved call, original profile, binary, six CRM
+configurations and published MCP catalog matched their pre-run snapshots.
