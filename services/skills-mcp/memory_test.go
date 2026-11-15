@@ -52,12 +52,14 @@ func TestDreamToPublishedMCPSkill(t *testing.T) {
 			}
 			e := dreaming.Episode{ID: "completed-call", Mode: "real", ClosedAt: time.Now().Add(-time.Hour), Evidence: []dreaming.Evidence{{ID: "user1", Kind: "user", Text: "Please repeat just the price"}, {ID: "agent1", Kind: "assistant", Text: "A long and unhelpful replay"}}, AudioRefs: []string{"/private/audio.wav"}}
 			adminMemory(t, f, "POST", "/episodes", e, 200)
+			t.Logf("CAPTURE: synthetic completed episode %s saved in local SQLite", e.ID)
 			request := dreaming.DreamRequest{ID: "overnight-review", EpisodeIDs: []string{e.ID}}
 			adminMemory(t, f, "POST", "/dreams", request, 409)
 			adminMemory(t, f, "POST", "/feedback", dreaming.Feedback{EpisodeID: e.ID, ID: "feedback1", Text: "OWNER PRIVATE: repeat only the detail requested"}, 200)
 			adminMemory(t, f, "POST", "/episodes/"+e.ID+"/release", obj{"owner_done": false}, 400)
 			adminMemory(t, f, "POST", "/episodes/"+e.ID+"/release", obj{"owner_done": true}, 200)
 			adminMemory(t, f, "POST", "/dreams", request, 200)
+			t.Log("QUEUE: explicit release and owner-feedback fixture included in immutable review snapshot")
 			p := dreaming.Proposal{Title: "Repeat only the requested detail", Observation: "The assistant replayed too much after a narrow request.", Lesson: "When asked to repeat just the price, repeat only the price from the current verified quote. If none is available, retrieve it using the normal quote workflow.", Evidence: []dreaming.Reference{{EpisodeID: e.ID, EvidenceID: "feedback1"}}, Match: []string{`(?i)repeat.*price`}, Cases: []dreaming.RoutingCase{{Utterance: "repeat just the price", Match: true}, {Utterance: "how does insurance work?", Match: false}}}
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var in struct {
@@ -86,11 +88,13 @@ func TestDreamToPublishedMCPSkill(t *testing.T) {
 			if len(f.result("skills/list", obj{})["skills"].([]any)) != 2 {
 				t.Fatal("draft leaked into runtime")
 			}
+			t.Logf("DREAM: validated candidate %s is available for review; runtime catalog still has only its two seed skills", lessons[0].ID)
 			path := "/lessons/" + lessons[0].ID + "/publish"
 			adminMemory(t, f, "POST", path, obj{"revision": 2, "reviewed": false}, 400)
 			adminMemory(t, f, "POST", path, obj{"revision": 1, "reviewed": true}, 409)
 			adminMemory(t, f, "POST", path, obj{"revision": 2, "reviewed": true}, 200)
 			adminMemory(t, f, "POST", path, obj{"revision": 2, "reviewed": true}, 200) // retry after lost response
+			t.Log("PUBLISH: rejected unreviewed and stale-revision requests; simulated owner approval published revision 3; identical retry succeeded")
 			if f.s.catalog.Revision != 3 {
 				t.Fatal("idempotent publication bumped revision")
 			}
@@ -109,6 +113,7 @@ func TestDreamToPublishedMCPSkill(t *testing.T) {
 			if digest != fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(body))) || !strings.Contains(body, p.Lesson) || strings.Contains(body, "OWNER PRIVATE") {
 				t.Fatal("runtime content or integrity mismatch")
 			}
+			t.Logf("RECALL: prompts/get selected %s; skills/get and resources/read verified %s\n%s", uri, digest, body)
 			meta := prompt["_meta"].(obj)[slotKey].(obj)
 			if meta["prompt_rendering"].(obj)["version"] != float64(version) {
 				t.Fatal(meta)
@@ -117,6 +122,7 @@ func TestDreamToPublishedMCPSkill(t *testing.T) {
 			if len(noMatch["messages"].([]any)) != 0 {
 				t.Fatal("unrelated turn recalled lesson")
 			}
+			t.Log("NO MATCH: unrelated utterance selected zero memories")
 			// Disable using the existing catalog control; a publish retry cannot undo it.
 			c = f.s.catalog
 			c.Skills = append([]Skill(nil), c.Skills...)
@@ -125,6 +131,7 @@ func TestDreamToPublishedMCPSkill(t *testing.T) {
 				t.Fatal(err)
 			}
 			adminMemory(t, f, "POST", path, obj{"revision": 4, "reviewed": true}, 409)
+			t.Log("DISABLE: catalog update revoked the skill; retrying publication returned conflict")
 			if f.rpc("skills/get", obj{"uri": uri})["error"] == nil {
 				t.Fatal("disabled memory remains exposed")
 			}
