@@ -125,6 +125,9 @@ func (e *Engine) prepareQuoteRevision(turn *Turn, call provider.ToolCall) (provi
 	if args.Action != "" || args.ID != "" {
 		return e.resolveQuoteRevision(turn, call, args.Action, args.ID, len(args.Config) > 0 || len(args.Configs) > 0)
 	}
+	if note := e.medicalLimitClarification(turn, args.Resolved, args.Config, args.Configs); note != "" {
+		return call, revisionReply("unresolved_changes", note, e.tools.quoteRevision)
+	}
 	if !e.resolutionIncludesRequestedCoverages(turn, args.Resolved, args.Config, args.Configs) {
 		return call, revisionReply("unresolved_changes", "本次 config/configs 未包含所处理要求的全部 required_coverages。请登记对应保障的实际变化，不得只修改主险后将附加险要求标为已处理。", e.tools.quoteRevision)
 	}

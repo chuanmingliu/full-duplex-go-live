@@ -211,3 +211,47 @@ Production remains on `26e0bd7-quote-flow`. The existing rollback directory is
 The simulator used separate ports, storage and copies of the original CRM,
 opening, speech, hangup, silence and MCP settings. No production deployment or
 real call is part of this change.
+
+## Fixed versus shared medical limits
+
+The next real call on `a16de3a-quote-reconcile` exposed an earlier boundary.
+The caller requested third-party medical coverage at 400万. Before the seat
+coverage discussion, the first staging request already contained 共享保额.
+The engine correctly retained and later priced that staged selection after
+confirmation. Checking only the coverage key could not detect the wrong value.
+
+The correction checks the caller's selection when staging a revision.
+For “再加上三者医保外用药，四百万多少钱？”, the required rider value is
+`医保外用药责任险-三者: 400万`. A shared limit requires an explicit choice.
+A request such as “加上三者医保外用药” stays unresolved until the caller
+chooses a limit. The existing quotation confirmation guard then requires a
+later confirmation of the staged scope. The retained request survives an
+interruption. The check focuses on explicit third-party medical selection
+phrases; the existing model and coverage catalog handle general insurance
+questions, comparisons and option validity.
+
+The caller's selection, correction and confirmation use the existing
+call-scoped revision and pricing paths. This change targets quotation
+correctness. It introduces no change to CRM calculation delay, cache policy
+or the confirmation setting. The active service and original saved call
+configuration are the rollback baseline. To roll this into a service with an
+existing published catalog, apply the added quotation skill guidance to that
+catalog alongside the engine update.
+
+Two isolated full-media simulations exercised the new behavior. In the first
+(`75511143-e837-4614-ad1f-16c636352104`), the caller omitted the rider limit
+and the assistant asked whether to share or choose a separate amount. The
+clarified fixed amount was part of the first quote. This run also exercised
+the later switch to shared coverage.
+
+In the final call (`589df5a3-ec0f-4492-a1dc-3d4e4111e060`), a default quote
+completed first. At 30.6 seconds the caller requested 三者医保外用药四百万.
+The engine staged revision 1, retained it during a seat-coverage detour and
+confirmed it after the caller's approval at 60.6 seconds. The fixed rider
+was read at 760元. Revision 2 changed the rider to shared coverage and waited
+for the separate approval at 107.8 seconds. The shared rider was read at
+380元. These are simulator premiums. The respective CRM calculations took
+4,008 and 3,506 ms. The trace contained two server playback cuts. Both
+simulations verified transcript speakers, audio in both directions and archive
+file integrity. Production binary, profile, saved call, CRM configurations
+and published MCP catalog matched their pre-test snapshots.

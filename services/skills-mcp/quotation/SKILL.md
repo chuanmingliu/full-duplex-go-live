@@ -124,3 +124,10 @@ caller actually cancels the pending adjustments.
 
 Keep confirmation concise. Until confirmation has been accepted, describe the
 changes and ask about further adjustments without saying pricing has started.
+
+Bind an amount spoken immediately after 三者医保外用药 to the rider itself.
+“三者医保外用药，四百万多少钱？” selects 医保外用药责任险-三者 = 400万.
+“共享保额” is a distinct choice even when the main liability limit is also
+400万. When the caller only requests adding the rider, ask “这项您想和三者险
+共享保额，还是单独选一个保额？” Wait for their choice, stage it, then
+confirm the complete revision before pricing.

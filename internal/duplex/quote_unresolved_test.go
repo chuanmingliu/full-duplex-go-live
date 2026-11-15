@@ -75,22 +75,24 @@ func TestInterruptedRequestCanBeCancelledWithoutPendingRevision(t *testing.T) {
 }
 
 func TestInterruptedQuoteCapturedThroughInterruptionEntryPoints(t *testing.T) {
-	for _, soft := range []bool{false, true} {
-		e := confirmationEngine()
-		e.opts.Cfg = testConfig()
-		e.opts.Cfg.Duplex.ResetTTSOnInterrupt = false
-		e.tracker = NewTracker(&e.gen)
-		e.player = NewPlayer(PlayerConfig{}, func(string, []byte, time.Time) {})
-		turn := e.tracker.Begin("三者医保外调成最高", false)
-		turn.MarkTranscriptFinal()
-		turn.commit(e.deps.Emit)
-		if soft {
-			e.softInterrupt()
-		} else {
-			e.interrupt()
-		}
-		if len(e.tools.unresolvedQuoteRequests) != 1 || e.tools.unresolvedQuoteRequests[0].ID != turn.ID {
-			t.Fatalf("soft=%v request not retained", soft)
+	for _, request := range []string{"三者医保外调成最高", "三者医保外用药四百万", "三者医保外用药选共享保额", "加上三者医保外用药。"} {
+		for _, soft := range []bool{false, true} {
+			e := confirmationEngine()
+			e.opts.Cfg = testConfig()
+			e.opts.Cfg.Duplex.ResetTTSOnInterrupt = false
+			e.tracker = NewTracker(&e.gen)
+			e.player = NewPlayer(PlayerConfig{}, func(string, []byte, time.Time) {})
+			turn := e.tracker.Begin(request, false)
+			turn.MarkTranscriptFinal()
+			turn.commit(e.deps.Emit)
+			if soft {
+				e.softInterrupt()
+			} else {
+				e.interrupt()
+			}
+			if len(e.tools.unresolvedQuoteRequests) != 1 || e.tools.unresolvedQuoteRequests[0].ID != turn.ID {
+				t.Fatalf("soft=%v request %q not retained", soft, request)
+			}
 		}
 	}
 }
@@ -172,5 +174,60 @@ func TestPendingRevisionOverridesOlderReadoutInstructions(t *testing.T) {
 	e.tools.quoteRevision = nil
 	if e.quoteRevisionRecoveryNote(nil) != "" {
 		t.Fatal("confirmation note survived the pending request")
+	}
+}
+
+func TestMedicalLimitAfterInterruptedQuotation(t *testing.T) {
+	for _, tc := range []struct{ request, answer, want, wrong string }{
+		{"再加上三者医保外用药，四百万多少钱？", "", "400万", "共享保额"},
+		{"三者医保外用药四百万", "", "400万", "共享保额"},
+		{"三者医保外用药选共享保额", "", "共享保额", "400万"},
+		{"加上三者医保外用药。", "四百万。", "400万", "共享保额"},
+		{"我想加上三者医保外用药。", "先按单独的，四百万多少钱？", "400万", "共享保额"},
+	} {
+		e := confirmationEngine()
+		turn := &Turn{ID: "rider", Transcript: tc.request, committed: true}
+		e.retainQuoteRequest(turn)
+		if len(e.tools.unresolvedQuoteRequests) != 1 {
+			t.Fatal(tc.request)
+		}
+		stage := func(value string) string {
+			_, reply := e.prepareQuoteRevision(turn, revisionCall(`{"config":{"医保外用药责任险-三者":"`+value+`"},"resolved_request_ids":["rider"]}`))
+			return reply
+		}
+		if !strings.Contains(stage(tc.wrong), "unresolved_changes") || e.tools.quoteRevision != nil {
+			t.Fatal("accepted wrong selection", tc)
+		}
+		e.history = nil
+		if tc.answer != "" {
+			if !strings.Contains(stage(tc.want), "问清") {
+				t.Fatal("guessed ambiguous choice")
+			}
+			turn = &Turn{ID: "clarified", Transcript: tc.answer}
+		}
+		if reply := stage(tc.want); !strings.Contains(reply, "awaiting_confirmation") {
+			t.Fatal(reply)
+		}
+		p := e.tools.quoteRevision
+		if p.Config[thirdPartyMedical] != tc.want {
+			t.Fatal(p)
+		}
+		_, reply := e.prepareQuoteRevision(&Turn{ID: "approval", Transcript: "确认，算吧"}, revisionCall(confirmationArgs(p.ID, "confirm")))
+		if reply != "" {
+			t.Fatal(reply)
+		}
+	}
+}
+
+func TestMedicalLimitDoesNotBindOtherCoverageOrInformationalQuestions(t *testing.T) {
+	for _, text := range []string{
+		"三者四百万，再加上车损险。",
+		"三者医保外用药四百万和共享保额有什么区别？",
+		"不要再加三者医保外用药四百万。",
+		"对比三者医保外用药四百万和共享保额。",
+	} {
+		if _, applies := medicalLimitRequest(text); applies {
+			t.Errorf("unexpected rider selection for %q", text)
+		}
 	}
 }
