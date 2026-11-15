@@ -44,12 +44,13 @@ type toolState struct {
 	pool   *tools.Pool
 	memory *tools.Memory
 	// The requested quote contains changes to an as-yet-unmaterialized default.
-	quoteBaseDefault    bool
-	quoteRevision       *pendingQuoteRevision
-	quoteRevisionSerial int
-	confirmedRevision   string
-	quotedSelection     bool
-	quoteBrief          *tools.QuoteBrief
+	quoteBaseDefault        bool
+	unresolvedQuoteRequests []unresolvedQuoteRequest
+	quoteRevision           *pendingQuoteRevision
+	quoteRevisionSerial     int
+	confirmedRevision       string
+	quotedSelection         bool
+	quoteBrief              *tools.QuoteBrief
 	// tasks are the async tool calls in flight, by task id; latest is the
 	// newest per tool, which supersedes older ones of the same tool.
 	tasks  map[string]*tools.Task

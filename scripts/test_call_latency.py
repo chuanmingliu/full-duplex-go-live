@@ -81,6 +81,29 @@ class CallLatencyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 2, result.stderr)
         return result.returncode, json.loads(result.stdout)
 
+    def test_input_only_confirmation_counted_once(self):
+        _, child = tool_pair(first_audio_out_ms=824, first_content_ms=824)
+        link = input_delivery(msg="tools: continuing with function results", origin_to_result_start_ms=436)
+        _, report = self.run_report([link, child])
+        self.assertEqual(report["counts"]["input_only_continuations"], 1)
+        self.assertEqual(report["conversational_first_content"]["n"], 1)
+        self.assertEqual(report["conversational_first_content"]["p95_ms"], 1640)
+        _, report = self.run_report([link, link, child])
+        self.assertEqual(report["counts"]["input_only_continuations"], 0)
+        next_child = dict(child, turn="item_3")
+        next_link = dict(link, turn="item_3", origin_to_result_start_ms=2000)
+        _, report = self.run_report([next_link, next_child, link, child])
+        self.assertEqual(report["conversational_first_content"]["n"], 1)
+        self.assertEqual(report["conversational_first_content"]["p95_ms"], 1640)
+        next_child.update(first_audio_out_ms=100, first_content_ms=2000)
+        next_link["origin_to_result_start_ms"] = 100
+        _, report = self.run_report([next_link, next_child, link, child])
+        self.assertEqual(report["first_audio"]["p95_ms"], 580)
+        self.assertEqual(report["first_content"]["p95_ms"], 1640)
+        next_link["origin_speech_end_ms"] = 2000
+        _, report = self.run_report([link, child, next_link, next_child])
+        self.assertEqual(report["counts"]["input_only_continuations"], 0)
+
     def test_synchronous_confirmation_chain_is_measured(self):
         origin, child = tool_pair(first_content_ms=655)
         link = input_delivery(msg="tools: continuing with function results", origin_to_result_start_ms=508)

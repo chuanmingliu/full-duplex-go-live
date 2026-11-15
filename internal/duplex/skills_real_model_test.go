@@ -37,6 +37,7 @@ type modelProbeCall struct {
 	OriginalPrompt bool                `json:"original_prompt_preserved,omitempty"`
 	Request        string              `json:"rendered_user_request,omitempty"`
 	Recovery       bool                `json:"recovery_policy,omitempty"`
+	QuoteOutputs   []string            `json:"quote_outputs,omitempty"`
 	Calls          []provider.ToolCall `json:"calls,omitempty"`
 	Guides         []skillOutput       `json:"guidance,omitempty"`
 	Text           string              `json:"text,omitempty"`
@@ -66,6 +67,9 @@ func (p *modelProbe) Stream(ctx context.Context, req provider.LLMRequest) (<-cha
 		}
 		if m.Role == provider.RoleSystem && strings.Contains(m.Content, "上一轮回答被来电人打断") {
 			entry.Recovery = true
+		}
+		if m.Role == provider.RoleTool && m.Name == "quote_total" {
+			entry.QuoteOutputs = append(entry.QuoteOutputs, m.Content)
 		}
 		if m.Name == skillsmcp.ToolName {
 			var guide skillOutput
@@ -211,7 +215,7 @@ func (s *realSkillSession) observeTurn(t *testing.T, scenario, mode string, acti
 		if quiet {
 			settled := make(chan bool, 1)
 			s.e.post(func() {
-				settled <- s.e.backendPending.Load() == 0 && len(s.e.pending) == 0 && len(s.e.continuations) == 0 && (s.e.tools == nil || (len(s.e.tools.tasks) == 0 && len(s.e.tools.deliveries) == 0))
+				settled <- !s.e.player.Speaking() && s.e.player.PendingMS() == 0 && s.e.backendPending.Load() == 0 && len(s.e.pending) == 0 && len(s.e.continuations) == 0 && (s.e.tools == nil || (len(s.e.tools.tasks) == 0 && len(s.e.tools.deliveries) == 0))
 			})
 			quiet = <-settled
 		}

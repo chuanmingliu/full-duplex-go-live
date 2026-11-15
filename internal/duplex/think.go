@@ -307,6 +307,12 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 	e.backendCancel = cancel
 	e.backendPending.Add(1)
 	request := e.backendRequest(e.snapshotMessages(turn, front), front)
+	if turn.waitingTask != "" {
+		// This completion only acknowledges an already submitted task.
+		// New caller requests get their own turn and retain tool access.
+		request.Tools = nil
+		request.ToolChoice = nil
+	}
 	if !front && reason != "tool_result" {
 		e.requireQuoteScopeControl(turn, &request)
 	}
@@ -363,6 +369,9 @@ func (e *Engine) systemPrompt(front bool) string {
 	parts = append(parts, strings.TrimSpace(e.opts.Cfg.InstructionsAppend))
 	if front {
 		parts = append(parts, delegationPolicy)
+	}
+	if !front && e.confirmsQuoteRevisions() {
+		parts = append(parts, "你正在直接与来电人通话，称呼对方为您。只输出对方应听到的话，不播报内部分析、计划、角色标签。不要用‘客户要的是’‘用户想要’‘我先说明一下’描述对方；例如说‘您想选五百万，目前最高支持四百万。’")
 	}
 	// The working memory last: everything before it is the same from one
 	// turn to the next and stays in the provider's prefix cache.
@@ -427,8 +436,13 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 		}
 	}
 	if !front {
-		if note := e.quoteRecoveryPrompt(turn); note != "" {
-			msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Name: "golive_quote_delivery", Content: note})
+		if turn == nil || turn.waitingTask == "" {
+			if note := e.quoteRecoveryPrompt(turn); note != "" {
+				msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Name: "golive_quote_delivery", Content: note})
+			}
+		}
+		if turn != nil && turn.waitingTask != "" {
+			msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: "当前只生成一句给来电人听的自然确认话。报价任务已经提交并在运行，不能再次调用任何工具，也不要输出代码或工具标签。根据刚确认的保障简短回应一次，不重复上一句，不报尚未返回的价格。"})
 		}
 	}
 	return msgs
@@ -469,7 +483,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		}, e.deps.Emit)
 	}
 
-	if !job.front {
+	if !job.front && turn.waitingTask == "" {
 		req = e.prepareSkills(ctx, job, req)
 	}
 	if ctx.Err() != nil {

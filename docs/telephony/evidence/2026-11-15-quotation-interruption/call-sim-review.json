@@ -1,0 +1,626 @@
+{
+  "quotation_tools": [
+    {
+      "turn": "item_3",
+      "arguments": {}
+    },
+    {
+      "turn": "item_19",
+      "arguments": {
+        "configs": [
+          {
+            "三者险": "200万"
+          },
+          {
+            "三者险": "300万"
+          },
+          {
+            "三者险": "400万"
+          }
+        ]
+      }
+    },
+    {
+      "turn": "item_19",
+      "arguments": {
+        "revision_action": "confirm",
+        "revision_id": "revision-1"
+      }
+    },
+    {
+      "turn": "item_25",
+      "arguments": {
+        "config": {
+          "三者险": "400万"
+        }
+      }
+    },
+    {
+      "turn": "item_25",
+      "arguments": {
+        "revision_action": "confirm",
+        "revision_id": "revision-2"
+      }
+    },
+    {
+      "turn": "item_28",
+      "arguments": {
+        "config": {
+          "医保外用药责任险-三者": "400万"
+        }
+      }
+    },
+    {
+      "turn": "item_33",
+      "arguments": {
+        "revision_action": "confirm",
+        "revision_id": "revision-3"
+      }
+    }
+  ],
+  "pending_revisions": [
+    {
+      "revision_id": "revision-1",
+      "configs": [
+        {
+          "三者险": "200万"
+        },
+        {
+          "三者险": "300万"
+        },
+        {
+          "三者险": "400万"
+        }
+      ]
+    },
+    {
+      "revision_id": "revision-2",
+      "config": {
+        "三者险": "400万"
+      }
+    },
+    {
+      "revision_id": "revision-3",
+      "config": {
+        "医保外用药责任险-三者": "400万"
+      }
+    }
+  ],
+  "events": [
+    {
+      "time": "2026-11-15T12:42:38.120+08:00",
+      "msg": "tools: task done",
+      "task": "t1",
+      "took_ms": "3"
+    },
+    {
+      "time": "2026-11-15T12:42:38.120+08:00",
+      "msg": "tools: task result",
+      "task": "t1",
+      "status": "quote",
+      "total": "4543",
+      "source": "quote-api"
+    },
+    {
+      "time": "2026-11-15T12:42:38.145+08:00",
+      "msg": "tools: delivering a task's result",
+      "task": "t1",
+      "turn": "item_3",
+      "waited_for_gap_ms": "25"
+    },
+    {
+      "time": "2026-11-15T12:43:53.341+08:00",
+      "msg": "quote: revision awaiting confirmation",
+      "revision": "revision-1",
+      "turn": "item_15",
+      "coverages": "0",
+      "variants": "3"
+    },
+    {
+      "time": "2026-11-15T12:43:58.015+08:00",
+      "msg": "quote: revision confirmed",
+      "revision": "revision-1",
+      "turn": "item_18",
+      "coverages": "0",
+      "variants": "3"
+    },
+    {
+      "time": "2026-11-15T12:43:58.019+08:00",
+      "msg": "tools: task done",
+      "task": "t2",
+      "took_ms": "4"
+    },
+    {
+      "time": "2026-11-15T12:43:58.020+08:00",
+      "msg": "tools: task result",
+      "task": "t2",
+      "status": "quote",
+      "total": "4543",
+      "source": "quote-api"
+    },
+    {
+      "time": "2026-11-15T12:44:01.843+08:00",
+      "msg": "tools: the task finished within the ack's grace; not saying the ack",
+      "task": "t2"
+    },
+    {
+      "time": "2026-11-15T12:44:01.844+08:00",
+      "msg": "tools: delivering a task's result",
+      "task": "t2",
+      "turn": "item_19",
+      "waited_for_gap_ms": "3823"
+    },
+    {
+      "time": "2026-11-15T12:44:46.550+08:00",
+      "msg": "quote: revision awaiting confirmation",
+      "revision": "revision-2",
+      "turn": "item_23",
+      "coverages": "1",
+      "variants": "0"
+    },
+    {
+      "time": "2026-11-15T12:44:47.665+08:00",
+      "msg": "quote: revision confirmed",
+      "revision": "revision-2",
+      "turn": "item_24",
+      "coverages": "1",
+      "variants": "0"
+    },
+    {
+      "time": "2026-11-15T12:44:47.668+08:00",
+      "msg": "tools: task done",
+      "task": "t3",
+      "took_ms": "2"
+    },
+    {
+      "time": "2026-11-15T12:44:47.668+08:00",
+      "msg": "tools: task result",
+      "task": "t3",
+      "status": "quote",
+      "total": "4970.5",
+      "source": "quote-api"
+    },
+    {
+      "time": "2026-11-15T12:44:48.963+08:00",
+      "msg": "tools: the task finished within the ack's grace; not saying the ack",
+      "task": "t3"
+    },
+    {
+      "time": "2026-11-15T12:44:48.963+08:00",
+      "msg": "tools: delivering a task's result",
+      "task": "t3",
+      "turn": "item_25",
+      "waited_for_gap_ms": "1295"
+    },
+    {
+      "time": "2026-11-15T12:45:08.383+08:00",
+      "msg": "quote: unprocessed change retained",
+      "turn": "item_27"
+    },
+    {
+      "time": "2026-11-15T12:45:09.463+08:00",
+      "msg": "quote: revision awaiting confirmation",
+      "revision": "revision-3",
+      "turn": "item_27",
+      "coverages": "1",
+      "variants": "0"
+    },
+    {
+      "time": "2026-11-15T12:45:44.724+08:00",
+      "msg": "quote: revision confirmed",
+      "revision": "revision-3",
+      "turn": "item_32",
+      "coverages": "1",
+      "variants": "0"
+    },
+    {
+      "time": "2026-11-15T12:45:48.249+08:00",
+      "msg": "tools: task done",
+      "task": "t4",
+      "took_ms": "3525"
+    },
+    {
+      "time": "2026-11-15T12:45:48.249+08:00",
+      "msg": "tools: task result",
+      "task": "t4",
+      "status": "quote",
+      "total": "5730.5",
+      "source": "quote-api"
+    },
+    {
+      "time": "2026-11-15T12:45:49.917+08:00",
+      "msg": "tools: delivering a task's result",
+      "task": "t4",
+      "turn": "item_36",
+      "waited_for_gap_ms": "1667"
+    }
+  ],
+  "hold_to_yield_ms": [
+    165,
+    295,
+    699,
+    196,
+    332,
+    337,
+    294
+  ],
+  "calculation_phases": [
+    {
+      "ahead": "false",
+      "total_ms": "3509",
+      "before_ms": "2",
+      "submit_ms": "1",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3502"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3005",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "2",
+      "poll_wait_ms": "3001"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "4006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4002"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "2",
+      "poll_wait_ms": "3002"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3506",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3502"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "4508",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "4503"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3509",
+      "before_ms": "2",
+      "submit_ms": "1",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "3501"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "4009",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4005"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "4006",
+      "before_ms": "1",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4001"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "4007",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "4002"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "2",
+      "poll_wait_ms": "3002"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "4506",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "5",
+      "poll_wait_ms": "4500"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503"
+    },
+    {
+      "ahead": "true",
+      "total_ms": "3006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "2",
+      "poll_wait_ms": "3002"
+    },
+    {
+      "ahead": "false",
+      "total_ms": "3506",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3501"
+    }
+  ],
+  "speech_checks": [
+    {
+      "t_s": 12.586,
+      "medical_rider": false,
+      "amounts": [
+        "200万",
+        "1378元",
+        "2万",
+        "68元",
+        "2万",
+        "17元",
+        "15万",
+        "1710元",
+        "950元",
+        "420元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 25.761,
+      "medical_rider": false,
+      "amounts": [
+        "200万",
+        "1378元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 42.361,
+      "medical_rider": false,
+      "amounts": [
+        "200万",
+        "50万",
+        "100万",
+        "150万",
+        "300万",
+        "400万"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 57.442,
+      "medical_rider": false,
+      "amounts": [
+        "200万",
+        "1378元",
+        "200万",
+        "1378元",
+        "2万",
+        "68元",
+        "2万",
+        "17元",
+        "15万",
+        "1710元",
+        "950元",
+        "420元",
+        "4543元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 86.761,
+      "medical_rider": false,
+      "amounts": [],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 91.341,
+      "medical_rider": false,
+      "amounts": [
+        "300万"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 96.461,
+      "medical_rider": false,
+      "amounts": [
+        "4543元",
+        "200万",
+        "1378元",
+        "4543元",
+        "300万",
+        "1615元",
+        "4780元",
+        "238元",
+        "400万",
+        "1805元",
+        "4970元",
+        "428元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 141.202,
+      "medical_rider": false,
+      "amounts": [
+        "四百万"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 143.599,
+      "medical_rider": false,
+      "amounts": [
+        "400万",
+        "1805元",
+        "2万",
+        "68元",
+        "2万",
+        "17元",
+        "15万",
+        "1710元",
+        "950元",
+        "420元",
+        "4970元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 162.821,
+      "medical_rider": true,
+      "amounts": [
+        "400万"
+      ],
+      "confirmation_question": true,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 177.201,
+      "medical_rider": true,
+      "amounts": [
+        "2万",
+        "400万",
+        "400万"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 197.244,
+      "medical_rider": false,
+      "amounts": [],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 201.701,
+      "medical_rider": false,
+      "amounts": [],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 204.358,
+      "medical_rider": true,
+      "amounts": [
+        "400万",
+        "1805元",
+        "2万",
+        "68元",
+        "400万",
+        "760元",
+        "2万",
+        "17元",
+        "15万",
+        "1710元",
+        "950元",
+        "420元",
+        "5730元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": true,
+      "internal_narration": false
+    },
+    {
+      "t_s": 265.54,
+      "medical_rider": true,
+      "amounts": [
+        "400万",
+        "760元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 267.441,
+      "medical_rider": true,
+      "amounts": [
+        "400万",
+        "760元"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    },
+    {
+      "t_s": 281.681,
+      "medical_rider": true,
+      "amounts": [
+        "四百万",
+        "四百万",
+        "四百万"
+      ],
+      "confirmation_question": false,
+      "waiting_phrase": false,
+      "internal_narration": false
+    }
+  ],
+  "call_id": "7900ae5a-28c7-4cab-bf6e-509632c8e7f8"
+}

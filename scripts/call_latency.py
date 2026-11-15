@@ -139,7 +139,7 @@ def quote_readout(child, link, result, counts):
     return row
 
 
-def join_tool_results(records, links, counts):
+def join_tool_results(records, links, counts, output_identities=()):
     """Fill missing caller content only with an explicit monotonic handoff.
 
     The offset starts at the originating turn's close, not its last sound.
@@ -247,10 +247,23 @@ def join_tool_results(records, links, counts):
     continuation_rows = []
     continuation_links = [link for link in links if link["msg"] == CONTINUATION]
     continuation_children = Counter((link.get("session"), link.get("turn")) for link in continuation_links)
+    input_only = {}
+    blocked_inputs = set(output_identities)
+    input_clocks = {}
+    conflicting_clocks = set()
+    for link in continuation_links:
+        key = (link.get("session"), link.get("origin_turn"))
+        clock = (canonical_integer(link, "origin_speech_end_ms"), canonical_integer(link, "origin_end_silence_ms"))
+        if key in input_clocks and input_clocks[key] != clock and key not in conflicting_clocks:
+            conflicting_clocks.add(key)
+            blocked_inputs.add(key)
+            invalid()
+        input_clocks[key] = clock
     for link in sorted(continuation_links, key=lambda item: canonical_integer(item, "origin_to_result_start_ms") or 0):
         identity = (link.get("session"), link.get("turn"))
         validated = validate(link, continuation=True)
         if validated is None or continuation_children[identity] != 1:
+            blocked_inputs.add((link.get("session"), link.get("origin_turn")))
             invalid()
             continue
         origin, child, result = validated
@@ -258,6 +271,25 @@ def join_tool_results(records, links, counts):
             continue
         result.pop("task")
         continuation_rows.append(result)
+        key = (link["session"], link["origin_turn"])
+        if not origin:
+            # Evidence belongs to the child's actual output and the original
+            # caller clock. This is a derived response, not origin playback.
+            candidate = dict(msg=MESSAGE, session=key[0], turn=key[1],
+                             response_to_speech=True, first_audio_present=True,
+                             first_content_present=True, opened=False, truncated=False,
+                             end_silence_ms=result["end_silence_ms"],
+                             first_audio_out_ms=result["origin_to_result_start_ms"] + canonical_integer(child, "first_audio_out_ms"),
+                             first_content_ms=result["origin_to_result_start_ms"] + result["child_first_content_ms"],
+                             _continuation_input_only=True,
+                             _continuation_interrupted=result["interrupted"])
+            previous = input_only.get(key)
+            if previous is not None:
+                first_audio = min(previous["first_audio_out_ms"], candidate["first_audio_out_ms"])
+                if previous["first_content_ms"] < candidate["first_content_ms"]:
+                    candidate = previous
+                candidate["first_audio_out_ms"] = first_audio
+            input_only[key] = candidate
         if origin and boolean(origin, "truncated") is False:
             audio_offset = result["origin_to_result_start_ms"] + canonical_integer(child, "first_audio_out_ms")
             if boolean(origin, "first_audio_present") is False:
@@ -276,6 +308,11 @@ def join_tool_results(records, links, counts):
             elif origin.get("_continuation_joined") and offset < origin["first_content_ms"]:
                 origin["first_content_ms"] = offset
                 origin["_continuation_interrupted"] = result["interrupted"]
+
+    for key, row in input_only.items():
+        if key not in blocked_inputs:
+            records.append(row)
+            counts["input_only_continuations"] += 1
 
     def add(link, validated):
         origin, child, result = validated
@@ -349,7 +386,7 @@ def analyse(lines, pause, target):
         "missing", "unverified", "duplicates", "malformed", "content_fallbacks", "assumed_pause",
         "tool_result_links", "tool_results_joined", "invalid_tool_links",
         "quote_readouts_missing", "quote_readouts_unverified", "missing_output_records",
-        "quote_only_responses", "continuations_joined")})
+        "quote_only_responses", "continuations_joined", "input_only_continuations")})
     seen, rows, audio, content, reply = set(), [], [], [], []
     conversational_content = []
     records, links = [], []
@@ -379,7 +416,7 @@ def analyse(lines, pause, target):
                       if not identity[1].startswith("bc_")}
     counts["missing_output_records"] = len(missing_output)
     counts["unverified"] += len(missing_output)
-    tool_results, quote_readouts, continuations = join_tool_results(records, links, counts)
+    tool_results, quote_readouts, continuations = join_tool_results(records, links, counts, output)
     for row in records:
         counts["records"] += 1
         identity = (str(row.get("session", "")), str(row.get("turn", "")))

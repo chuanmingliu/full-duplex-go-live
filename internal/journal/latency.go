@@ -11,15 +11,17 @@ import (
 // LatencyEvidence separates heard fillers from answer content. These are
 // server-output measurements; neither distribution includes handset playout.
 type LatencyEvidence struct {
-	Version                    int                   `json:"version"`
-	Recomputed                 bool                  `json:"recomputed,omitempty"`
-	FirstAudio                 LatencyDistribution   `json:"first_audio"`
-	FirstContent               LatencyDistribution   `json:"first_content"`
-	ConversationalFirstContent LatencyDistribution   `json:"conversational_first_content"`
-	QuoteOnlyResponses         int                   `json:"quote_only_responses"`
-	ToolResult                 LatencyDistribution   `json:"tool_result"`
-	ResultRows                 []ToolResultLatency   `json:"tool_result_rows"`
-	ContinuationRows           []ToolResultLatency   `json:"continuation_rows"`
+	Version                    int                 `json:"version"`
+	Recomputed                 bool                `json:"recomputed,omitempty"`
+	FirstAudio                 LatencyDistribution `json:"first_audio"`
+	FirstContent               LatencyDistribution `json:"first_content"`
+	ConversationalFirstContent LatencyDistribution `json:"conversational_first_content"`
+	QuoteOnlyResponses         int                 `json:"quote_only_responses"`
+	ToolResult                 LatencyDistribution `json:"tool_result"`
+	ResultRows                 []ToolResultLatency `json:"tool_result_rows"`
+	ContinuationRows           []ToolResultLatency `json:"continuation_rows"`
+	InputOnlyContinuations     int                 `json:"input_only_continuations"`
+	continuationInputs         map[string]continuationInput
 	ContinuationsJoined        int                   `json:"continuations_joined"`
 	QuoteReadout               LatencyDistribution   `json:"quote_readout"`
 	QuoteRows                  []QuoteReadoutLatency `json:"quote_readout_rows"`
@@ -42,6 +44,7 @@ type ToolResultLatency struct {
 	ResultTurn        string `json:"result_turn"`
 	PauseMS           int    `json:"end_silence_ms"`
 	OffsetMS          int    `json:"origin_to_result_start_ms"`
+	ChildAudioMS      int    `json:"child_first_audio_ms"`
 	ChildContentMS    int    `json:"child_first_content_ms"`
 	TotalMS           int    `json:"total_ms"`
 	Interrupted       bool   `json:"interrupted"`
@@ -206,6 +209,12 @@ func (cb *callBuild) latencyEvidence() LatencyEvidence {
 			e.Missing++
 		}
 	}
+	for _, row := range e.continuationInputs {
+		audio = append(audio, row.AudioMS)
+		content = append(content, row.ContentMS)
+		conversational = append(conversational, row.ContentMS)
+	}
+	e.InputOnlyContinuations = len(e.continuationInputs)
 	e.FirstAudio, e.FirstContent = latencyDistribution(audio), latencyDistribution(content)
 	e.ConversationalFirstContent = latencyDistribution(conversational)
 	var results []int
@@ -237,12 +246,12 @@ func (cb *callBuild) missingOutputLatencyRecords() int {
 }
 
 func withOutputLatencyEvidence(c *Call) *Call {
-	if !c.outputLatencyChecked || c.Latency == nil || c.Latency.Version >= 6 {
+	if !c.outputLatencyChecked || c.Latency == nil || c.Latency.Version >= 7 {
 		return c
 	}
 	copy := *c
 	evidence := *c.Latency
-	evidence.Version = 6
+	evidence.Version = 7
 	evidence.MissingOutputRecords = c.missingOutputRecords
 	evidence.Unverified += c.missingOutputRecords - c.Latency.MissingOutputRecords
 	copy.Latency = &evidence
@@ -343,7 +352,7 @@ func (cb *callBuild) linkedContent(l Line) (ToolResultLatency, bool) {
 	}
 	result = ToolResultLatency{
 		Task: l.Get("task"), OriginTurn: l.Get("origin_turn"), ResultTurn: l.Get("turn"),
-		PauseMS: pause, OffsetMS: offset, ChildContentMS: cc,
+		PauseMS: pause, OffsetMS: offset, ChildAudioMS: c.N("first_audio_out_ms"), ChildContentMS: cc,
 		TotalMS: total, Interrupted: c.Get("truncated") == "true",
 	}
 	if input {
@@ -358,7 +367,7 @@ func (s *Server) withLatencyEvidence(c *Call) *Call {
 	if c.outputLatencyChecked {
 		return withOutputLatencyEvidence(c)
 	}
-	if (c.Latency != nil && c.Latency.Version >= 6) || s.archive == nil || c.Session == "" {
+	if (c.Latency != nil && c.Latency.Version >= 7) || s.archive == nil || c.Session == "" {
 		return c
 	}
 	f, err := os.Open(s.archive.Path(c.ID, archLog))

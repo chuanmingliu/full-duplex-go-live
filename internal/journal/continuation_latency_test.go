@@ -61,3 +61,34 @@ func TestSilentContinuationStillValidatesLink(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestInputOnlyConfirmationCountedOnce(t *testing.T) {
+	_, child := latencyToolPair()
+	child.kv["first_content_ms"] = "824"
+	child.kv["first_audio_out_ms"] = "824"
+	link := continuationLink("item_2", "436")
+	got := latencyCall(t, link, child).Latency
+	if got.InputOnlyContinuations != 1 || got.ConversationalFirstContent.N != 1 || *got.FirstContent.P95 != 1640 {
+		t.Fatalf("%+v", got)
+	}
+	next := latencyMetric("item_3", map[string]string{"response_to_speech": "false", "end_silence_ms": "0", "first_audio_out_ms": "100", "first_content_ms": "200"})
+	got = latencyCall(t, continuationLink("item_3", "2000"), next, link, child).Latency
+	if got.ConversationalFirstContent.N != 1 || *got.FirstContent.P95 != 1640 {
+		t.Fatalf("%+v", got)
+	}
+	next.kv["first_content_ms"] = "2000"
+	got = latencyCall(t, continuationLink("item_3", "100"), next, link, child).Latency
+	if got.FirstAudio.N != 1 || *got.FirstAudio.P95 != 580 || *got.FirstContent.P95 != 1640 {
+		t.Fatalf("audio and content must retain independent first boundaries: %+v", got)
+	}
+	got = latencyCall(t, link, link, child).Latency
+	if got.InputOnlyContinuations != 0 || got.InvalidLinks != 2 {
+		t.Fatalf("%+v", got)
+	}
+	wrong := continuationLink("item_3", "2000")
+	wrong.kv["origin_speech_end_ms"] = "2000"
+	got = latencyCall(t, wrong, next, link, child).Latency
+	if got.InputOnlyContinuations != 0 || got.InvalidLinks != 1 {
+		t.Fatalf("inconsistent caller clocks: %+v", got)
+	}
+}

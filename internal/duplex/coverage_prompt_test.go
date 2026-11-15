@@ -113,3 +113,38 @@ func TestPendingConfirmationSkillRoutingDoesNotDecideConsent(t *testing.T) {
 		t.Fatal("caller text created pending confirmation state", got)
 	}
 }
+
+func TestNaturalQuotationFollowupsFromInterruptedCall(t *testing.T) {
+	history := []provider.Message{{Role: provider.RoleAssistant, Content: "三者险有六个档位。"}}
+	for _, input := range []string{"你选个主要的，就是两百万、三百万、四百万，分别对比一下。", "调成最高吧。"} {
+		if got := coverageSelectionText(history, input); !strings.HasPrefix(got, "三者险。") {
+			t.Fatal(got)
+		}
+	}
+	for _, input := range []string{"这三者险，除了两百万，还能选其他的吗？", "座位还能调高吗？"} {
+		if got := coverageSelectionText(nil, input); !strings.Contains(got, "有哪些选项") {
+			t.Fatal(got)
+		}
+	}
+	if got := coverageSelectionText(nil, "座位还能调高吗？"); !strings.HasPrefix(got, "座位险有哪些选项？") {
+		t.Fatal(got)
+	}
+	pending := []provider.Message{{Role: provider.RoleSystem, Content: "【待确认报价范围，尚未计算】revision-2"}}
+	for _, input := range []string{"嗯，你就按照这三种，然后你给我做个对比，看多少钱。", "可以，就这样吧，你帮我做个报价单。"} {
+		if got := coverageSelectionText(pending, input); !strings.HasPrefix(got, "待确认报价。") {
+			t.Fatal(got)
+		}
+	}
+}
+
+func TestFragmentedQuoteApprovalRouting(t *testing.T) {
+	messages := []provider.Message{{Role: provider.RoleSystem, Content: "【待确认报价范围，尚未计算】"}}
+	for _, text := range []string{"你算吧。", "我等着。", "就这三档。", "其他不动。"} {
+		if got := coverageSelectionText(messages, text); got != "待确认报价。"+text {
+			t.Fatal(text, got)
+		}
+		if got := coverageSelectionText(nil, text); got != text {
+			t.Fatal("unrelated statement routed as approval", text, got)
+		}
+	}
+}

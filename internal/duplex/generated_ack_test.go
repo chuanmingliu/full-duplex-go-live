@@ -2,6 +2,10 @@ package duplex
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+
+	"github.com/chuanmingliu/golive/internal/provider/mock"
 	"log/slog"
 	"strings"
 	"testing"
@@ -97,5 +101,35 @@ func TestContinuationOriginSurvivesChain(t *testing.T) {
 	origin := taskOriginFromTurn(third)
 	if origin.turnID != first.ID || !origin.speechEndAt.Equal(first.Timings().SpeechEndAt) || origin.endSilenceMS != 380 {
 		t.Fatal("lost caller clock")
+	}
+}
+
+func TestGeneratedAckCannotRepeatTools(t *testing.T) {
+	for _, waiting := range []bool{false, true} {
+		cfg := testConfig()
+		rec := &recordLLM{}
+		c := newCollector(cfg.ClientRate)
+		e := New(Options{Cfg: cfg, Instructions: "合成应答测试", Tools: []json.RawMessage{json.RawMessage(`{"type":"function","function":{"name":"quote_total"}}`)}}, Deps{ASR: mock.NewASR(""), LLM: rec, TTS: mock.NewTTS(), Emit: c.emit})
+		e.Start(context.Background())
+		t.Cleanup(e.Close)
+		e.post(func() {
+			turn := e.tracker.Begin("", false)
+			if waiting {
+				turn.waitingTask = "t1"
+			}
+			e.commitTurn(turn)
+			e.startBackend(turn, "tool_result")
+		})
+		waitFor(t, "backend request", time.Second, func() bool {
+			rec.mu.Lock()
+			defer rec.mu.Unlock()
+			return len(rec.last.Messages) > 0
+		})
+		rec.mu.Lock()
+		toolCount := len(rec.last.Tools)
+		rec.mu.Unlock()
+		if (toolCount == 0) != waiting {
+			t.Fatalf("waiting=%v toolCount=%v", waiting, toolCount)
+		}
 	}
 }

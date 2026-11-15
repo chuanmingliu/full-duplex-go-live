@@ -1239,6 +1239,7 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 // answer to.
 func (e *Engine) commitTurn(turn *Turn) {
 	turn.commit(e.deps.Emit)
+	e.retainQuoteRequest(turn)
 	if turn.Transcript == "" {
 		return
 	}

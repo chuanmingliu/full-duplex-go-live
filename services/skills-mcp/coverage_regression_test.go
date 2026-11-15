@@ -15,7 +15,7 @@ func TestCoverageReviewOptionQueries(t *testing.T) {
 	if code, _ := f.request("PUT", "/admin/catalog", "admin-private", c, nil); code != 200 {
 		t.Fatal(code)
 	}
-	for _, text := range []string{"划痕险有哪些档位？", "三者险有哪几档？", "司机责任险可选档位？", "乘客责任险有几档？", "车船税能代缴吗？", "假日三者翻倍险周末也算吗？", "医保外用药怎么选？", "司机医保有哪些档位？", "列出乘客医保全部选项", "麻烦回答一下假日三者翻倍险的问题。"} {
+	for _, text := range []string{"座位险有哪些选项？座位还能调高吗？", "司机责任险有哪些选项？司机还能调高吗？", "划痕险有哪些档位？", "三者险有哪几档？", "司机责任险可选档位？", "乘客责任险有几档？", "车船税能代缴吗？", "假日三者翻倍险周末也算吗？", "医保外用药怎么选？", "司机医保有哪些档位？", "列出乘客医保全部选项", "麻烦回答一下假日三者翻倍险的问题。"} {
 		t.Run(text, func(t *testing.T) {
 			out := f.result("prompts/get", obj{"name": "outbound-turn", "arguments": obj{"event": "auto", "utterance": text}})
 			found := false
@@ -189,7 +189,7 @@ func TestQuotationConfirmationRouting(t *testing.T) {
 
 func TestContextualQuotationFollowupRouting(t *testing.T) {
 	c := defaults()
-	for _, text := range []string{"就是最低报价多少钱啊。", "三者险。你这样吧，帮我调整到三百万吧。", "三者险。提高到四百万。", "我还想去掉车损险。", "车损险不要了。", "不带车损。", "待确认报价。没有其他要改的了。", "待确认报价。有。"} {
+	for _, text := range []string{"三者的医保外调的调成最高吧。", "三者险。两百万、三百万、四百万，分别对比一下。", "待确认报价。嗯，你就按照这三种给我做个对比。", "就是最低报价多少钱啊。", "三者险。你这样吧，帮我调整到三百万吧。", "三者险。提高到四百万。", "我还想去掉车损险。", "车损险不要了。", "不带车损。", "待确认报价。没有其他要改的了。", "待确认报价。有。"} {
 		skills, _, err := c.selectTurn(turnInput{Event: "auto", Utterance: text})
 		if err != nil || len(skills) != 1 || skills[0].Name != "motor-quotation" {
 			t.Errorf("%s: skills=%v err=%v", text, skills, err)

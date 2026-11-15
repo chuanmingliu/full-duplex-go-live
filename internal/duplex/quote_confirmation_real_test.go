@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/live"
+	"github.com/chuanmingliu/golive/internal/motorcatalog"
 
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/skillsmcp"
@@ -37,7 +38,7 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 		if enabled {
 			mode = "confirmation"
 		}
-		for _, scenario := range []string{"accumulate", "clarify", "cancel", "compare", "interrupt"} {
+		for _, scenario := range []string{"accumulate", "clarify", "cancel", "compare", "interrupt", "lost_rider"} {
 			cfg := skillsmcp.Config{}
 			if enabled && os.Getenv("QUOTE_CONFIRMATION_MCP_URL") != "" {
 				cfg = skillsmcp.Config{URL: os.Getenv("QUOTE_CONFIRMATION_MCP_URL"), TokenFile: os.Getenv("QUOTE_CONFIRMATION_MCP_TOKEN_FILE"), TimeoutMS: 150}
@@ -46,6 +47,17 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 			}
 			s := newSkillSessionWithPrompt(t, llm, cfg, prompt)
 			s.e.post(func() {
+				brief := tools.QuoteBrief{Plan: "motor-full", Options: map[string][]string{}, Details: map[string]motorcatalog.Detail{}}
+				aliases := map[string]string{}
+				for _, entry := range motorcatalog.Entries() {
+					brief.Coverages = append(brief.Coverages, entry.Name)
+					brief.Options[entry.Name], brief.Details[entry.Name] = entry.Options, entry.Detail
+					for _, alias := range entry.Aliases {
+						aliases[alias] = entry.Name
+					}
+				}
+				brief.Plans = map[string]tools.QuoteSelectionSchema{"motor-full": {Options: brief.Options, Details: brief.Details, Aliases: aliases}}
+				s.e.tools.quoteBrief = &brief
 				tool := s.e.tools.byName["quote_total"]
 				var schema map[string]any
 				_ = json.Unmarshal(tool.Parameters, &schema)
@@ -63,6 +75,10 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 				}
 				memory, version := s.e.memorySnapshot()
 				s.e.tools.lastResult = &tools.Task{ID: "prior", Tool: tool, Request: tools.Request{Memory: memory, MemoryVersion: version}, Result: tools.Result{Output: json.RawMessage(`{"status":"quote","total":4500,"selection":{"三者险":"200万","车损险":true,"交强险":true},"lines":[{"coverage":"三者险","choice":"200万","premium":1300}]}`)}}
+				s.e.opts.Cfg.Duplex.QuoteInterruptionRecovery = enabled
+				if enabled {
+					s.e.tools.quoteDelivery = &quoteDelivery{task: s.e.tools.lastResult, status: "complete"}
+				}
 				s.e.history = []provider.Message{{Role: provider.RoleUser, Content: "之前那份报价我知道了，我们看看怎么调整。"}, {Role: provider.RoleAssistant, Content: "目前是三者险两百万，加车损和交强险，总共4500元。"}}
 			})
 			probeBarrier(s.e)
@@ -88,6 +104,31 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 				continue
 			}
 			switch scenario {
+			case "lost_rider":
+				s.e.post(func() {
+					s.e.commitTurn(&Turn{ID: "interrupted-medical", Transcript: "三者的医保外调的调成最高吧。"})
+				})
+				probeBarrier(s.e)
+				clarification := s.turn(t, "rider_interrupted_by_seat_question", mode, "座位还能调高吗？")
+				clarification.Checks["no_pricing_during_clarification"] = len(clarification.Quotes) == 0
+				clarification.Checks["seat_concepts_loaded"] = skillLoaded(clarification)
+				rows = append(rows, clarification)
+				reconcile := s.turn(t, "reconcile_interrupted_rider", mode, "座位不用改。刚才三者的医保外用药责任险要最高四百万，其他按刚才的。先核对完整方案，先不要提交计算。")
+				reconcile.Checks["no_pricing_before_reconfirmed_scope"] = len(reconcile.Quotes) == 0
+				s.e.post(func() {
+					p := s.e.tools.quoteRevision
+					reconcile.Checks["medical_rider_staged"] = p != nil && p.Config["医保外用药责任险-三者"] == "400万" && p.Config["三者险"] == "300万"
+					reconcile.Checks["interrupted_request_resolved"] = len(s.e.tools.unresolvedQuoteRequests) == 0
+				})
+				probeBarrier(s.e)
+				rows = append(rows, reconcile)
+				final := s.turn(t, "confirm_recovered_rider", mode, "没有其他调整，就按这两项算吧。")
+				final.Checks["one_calculation_with_rider"] = len(final.Quotes) == 1 && strings.Contains(string(final.Quotes[0].Memory), `"医保外用药责任险-三者":"400万"`)
+				rows = append(rows, final)
+				unsupported := s.turn(t, "unsupported_limit_direct_address", mode, "三者险五百万能选吗？")
+				unsupported.Checks["unsupported_did_not_calculate"] = len(unsupported.Quotes) == 0
+				unsupported.Checks["states_configured_maximum"] = strings.Contains(unsupported.ResponseText, "四百万") || strings.Contains(unsupported.ResponseText, "400万")
+				rows = append(rows, unsupported)
 			case "accumulate":
 				yes := s.turn(t, "yes_means_more", mode, "有。")
 				yes.Checks["no_calculation_on_more_changes"] = len(yes.Quotes) == 0
@@ -177,7 +218,7 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 				more.Checks["no_pricing_before_scope_confirmation"] = len(more.Quotes) == 0
 				more.Checks["confirmation_wording_varied"] = confirmationQuestion(more.ResponseText) != confirmationQuestion(initial.ResponseText)
 				rows = append(rows, more)
-				final := s.turn(t, "confirm_comparison", mode, "没有其他的了，就比较这三个方案。")
+				final := s.turn(t, "confirm_comparison", mode, "就这三档，其他不动。你算吧，我等着。")
 				final.Checks["one_confirmed_comparison"] = len(final.Quotes) == 1
 				if len(final.Quotes) == 1 {
 					var args struct {
@@ -204,16 +245,20 @@ func TestQuoteConfirmationRealModel(t *testing.T) {
 			s.e.Close()
 		}
 	}
-	raw, _ := json.MarshalIndent(rows, "", "  ")
-	if err := os.WriteFile(report, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
 	for _, row := range rows {
+		if row.Mode == "confirmation" {
+			row.Checks["no_internal_tool_markup"] = !strings.Contains(row.ResponseText, "DSML") && !strings.Contains(row.ResponseText, "<tool")
+			row.Checks["direct_customer_address"] = !strings.Contains(row.ResponseText, "客户要的是") && !strings.Contains(row.ResponseText, "用户想要") && !strings.Contains(row.ResponseText, "我先说明一下")
+		}
 		for check, ok := range row.Checks {
 			if !ok {
 				t.Errorf("%s/%s: %s", row.Mode, row.Scenario, check)
 			}
 		}
+	}
+	raw, _ := json.MarshalIndent(rows, "", "  ")
+	if err := os.WriteFile(report, raw, 0600); err != nil {
+		t.Fatal(err)
 	}
 }
 

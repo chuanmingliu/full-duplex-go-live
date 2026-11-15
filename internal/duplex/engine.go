@@ -2187,6 +2187,7 @@ func (e *Engine) resumedWithinOpener(t *Turn) bool {
 // being spoken finish. The generation is not bumped here: the player holds a
 // grace on that turn so the sentence survives the bump the new turn will make.
 func (e *Engine) softInterrupt() {
+	e.retainQuoteRequest(e.tracker.Current())
 	if turn := e.tracker.Current(); turn != nil {
 		e.player.GraceFinishSegment(turn.ID)
 	}
@@ -2198,6 +2199,7 @@ func (e *Engine) softInterrupt() {
 // interrupt is barge-in: stop generating, stop speaking, and let the
 // truncation callback fix history.
 func (e *Engine) interrupt() {
+	e.retainQuoteRequest(e.tracker.Current())
 	e.hasInterrupted = true
 	e.cancelBackend()
 	gen := e.gen.Bump()

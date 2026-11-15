@@ -297,3 +297,28 @@ func TestQuoteConfirmationComparisonLegacyAndFirstQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestQuoteDirectAddressPreservesToolSequence(t *testing.T) {
+	e := confirmationEngine()
+	e.opts.Cfg = testConfig()
+	e.history = []provider.Message{
+		{Role: provider.RoleUser, Content: "三者五百万能选吗？"},
+		{Role: provider.RoleAssistant, ToolCalls: []provider.ToolCall{{ID: "lookup", Name: "lookup"}}},
+		{Role: provider.RoleTool, ToolCallID: "lookup", Content: "当前最高四百万"},
+	}
+	messages := e.snapshotMessages(nil, false)
+	if messages[0].Role != provider.RoleSystem || !strings.Contains(messages[0].Content, "称呼对方为您") {
+		t.Fatal("direct-address guidance missing from system prompt")
+	}
+	if messages[len(messages)-1].Role != provider.RoleTool {
+		t.Fatal("static speech guidance interrupted the tool-result sequence")
+	}
+}
+
+func TestQuoteStageReplyDescribesCompletedAction(t *testing.T) {
+	e := confirmationEngine()
+	_, reply := e.prepareQuoteRevision(&Turn{ID: "stage"}, revisionCall(`{"config":{"三者险":"300万"}}`))
+	if !strings.Contains(reply, quoteRevisionSaved) || strings.Contains(reply, quoteConfirmationInstructions) {
+		t.Fatal("staging success must describe the saved action instead of restarting the procedure", reply)
+	}
+}

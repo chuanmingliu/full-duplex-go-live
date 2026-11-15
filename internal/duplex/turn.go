@@ -75,6 +75,8 @@ type Turn struct {
 	continuationOrigin taskOrigin
 	// A generated quote acknowledgment finishes naturally unless the caller interrupts.
 	waitingTask string
+	// Loop-owned, set only when this caller request has reached the revision tool.
+	quoteRevisionHandled bool
 
 	// Transcript is the user text this revision was generated from.
 	Transcript string
