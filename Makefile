@@ -52,9 +52,9 @@ fmt:
 tidy:
 	go mod tidy
 
-## run: start with the real provider stack (needs .env.local)
+## run: start with the real provider stack, all DeepSeek (needs .env.local)
 run: build
-	$(BIN)/golive -profile configs/tencent-deepseek-minimax.json -env .env.local
+	$(BIN)/golive -profile configs/deepseek-speech.json -env .env.local
 
 ## run-prod: production profile (auth required, no demo page, json logs)
 run-prod: build

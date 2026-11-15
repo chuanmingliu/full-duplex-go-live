@@ -397,7 +397,7 @@ Credentials live **only** in the environment, which is what makes a profile
 committable.
 
 ```
-bin/golive -profile configs/tencent-deepseek-minimax.json -env .env.local
+bin/golive -profile configs/deepseek-speech.json -env .env.local
 bin/golive -print-config            # resolved settings, then exit
 ```
 
@@ -444,10 +444,49 @@ with the variable's name.
 | Name | Kind | Credentials |
 | --- | --- | --- |
 | `tencent` | ASR | `TENCENT_ASR_APP_ID`, `TENCENT_ASR_SECRET_ID`, `TENCENT_ASR_SECRET_KEY` |
+| `deepseek` | ASR | `DEEPSEEK_API_KEY` (or `DEEPSEEK_ASR_API_KEY`) |
 | `deepseek` | LLM | `DEEPSEEK_API_KEY` (+ `GOLIVE_BACKEND_BASE_URL`, `GOLIVE_BACKEND_MODEL`) |
 | `openai-compatible` | LLM | `OPENAI_API_KEY`, same overrides |
+| `deepseek` | TTS | `DEEPSEEK_API_KEY` (or `DEEPSEEK_TTS_API_KEY`) |
 | `minimax` | TTS | `MINIMAX_TTS_API_KEY`, `MINIMAX_TTS_VOICE_ID` |
 | `mock` | all three | none |
+
+### DeepSeek speech
+
+One DeepSeek platform key serves the chat backend and both speech tools, so
+`configs/deepseek-speech.json` runs the whole cascade against one vendor —
+`configs/telephony.json` and `configs/production.json` select it too, and the
+older Tencent/MiniMax stack stays available as
+`configs/tencent-deepseek-minimax.json` (Tencent ASR, DeepSeek LLM, MiniMax
+TTS) for comparison. The two DeepSeek speech tools are not alike, and only one
+of them is streaming:
+
+* **TTS is streaming.** `wss://api.deepseek.com/v1/tools/tts` takes the text in
+  chunks and streams raw PCM16 mono at 24 kHz as it synthesizes. A session
+  synthesizes one segment and ends on `finish_text`, so the adapter dials the
+  next segment's session in the background while the current one's audio plays,
+  and prewarms on the engine's prewarm path. Voices are `stella` (female,
+  default) and `tide`; `DEEPSEEK_TTS_VOICE` chooses. There is no speed control
+  in this API, so the profile's `speed` is ignored by this vendor, and the
+  optional quote-readout background connection (`duplex.quote_readout_warm_max`)
+  is a MiniMax capability this vendor skips: quote speech is synthesized in the
+  turn instead of ahead of it.
+* **ASR is batch, not streaming.** The guide is explicit — one
+  `POST /v1/tools/asr` carries the *whole* utterance (16-bit PCM WAV, at most
+  120 s and 8 MiB) and returns the finished transcript; streaming recognition
+  is not supported. The engine's recognizer contract is streaming, and its
+  transcript, interruption, endpointing and pause logic all read partials, so
+  the adapter buffers the audio and re-transcribes the growing buffer every
+  `DEEPSEEK_ASR_PARTIAL_MS` (400 ms by default) as a pseudo-partial, then sends
+  the whole utterance once more when the turn closes. Consequences worth
+  knowing before deploying it on a line: partials lag by a request instead of a
+  few frames; the final costs the vendor's decode plus a round trip after the
+  turn instead of ~100 ms on a warm socket; and each partial is billed as audio.
+  The engine degrades the way it is documented to — early finals still work but
+  start later, mid-utterance speculation is weaker — and a realtime recognizer
+  (Tencent) remains the lower-latency choice at the turn boundary. Set
+  `GOLIVE_ASR=tencent` to go back without touching the profile, or
+  `DEEPSEEK_ASR_PARTIAL_MS=0` to spend nothing on partials.
 
 ### Making the MiniMax voice sound less like a machine
 

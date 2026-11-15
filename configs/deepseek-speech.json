@@ -1,0 +1,8 @@
+{
+  "addr": ":8080",
+  "asr": "deepseek",
+  "llm": "deepseek",
+  "tts": "deepseek",
+  "client_rate": 24000,
+  "voice": "stella"
+}
