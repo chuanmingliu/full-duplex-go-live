@@ -1,6 +1,7 @@
 # golive
 
 [![Built with Codex](https://img.shields.io/badge/Built_with-Codex-000000?style=flat)](https://openai.com/codex/)
+[![Built with DeepSeek](https://img.shields.io/badge/Built_with-DeepSeek-000000?style=flat&logo=deepseek&logoColor=white)](https://www.deepseek.com/)
 
 `codex/telephony-latency` is the active branch for optimizing the original
 GoLive service through **Active Call**. Shared improvements from the SIP/RTP
