@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "golive": {
+      "command": "uv",
+      "args": ["run", "--frozen", "--no-dev", "golive-mcp"],
+      "cwd": "."
+    }
+  }
+}

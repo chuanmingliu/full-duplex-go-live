@@ -1,0 +1,107 @@
+{
+  "kind": "simulated",
+  "build": "b51e959",
+  "scenario": "set-a-01-barge-in",
+  "scenario_sha256": "3d2f3fbffb27759bf84e551944b99bef19b4489d83035ff734940ef1dd496c1a",
+  "context_sha256": {
+    "instructions": "639dcecf24dddc73274a7412c017e36258b51679c2fd3ad4e72a595453aa8d25",
+    "voice": "65d9d6c5c7c2d5c29e38b777edf8da1dbd764f67deeeaa230724967cafe4e684",
+    "greeting": "fa7c33a6b9c732413d932a7453c5c85d4936fcdd8515822bf92e3fc07e2f4df8"
+  },
+  "stage": "verified",
+  "run_id": "sim-2457b19d85d8a9055361b9f3",
+  "call_id": "out-mvzfoloq-k0yg",
+  "session": "sess_681b0040ca82f3f65db0c97d",
+  "seconds": 14.6503125,
+  "archive_files_verified": 5,
+  "channels_with_signal": 2,
+  "caller_lines": 3,
+  "assistant_lines": 5,
+  "counts": {
+    "records": 5,
+    "answered": 3,
+    "non_speech": 2,
+    "cancelled": 0,
+    "interrupted_answers": 3,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 1,
+    "tool_results_joined": 1,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 1
+  },
+  "gate": {
+    "enabled": true,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "passed": false,
+    "reasons": [
+      "first_audio: 3 samples, need 20",
+      "conversational_first_content: 2 samples, need 20"
+    ]
+  },
+  "handset_target_proven": false,
+  "receiver_gap_n": 0,
+  "receiver_gap_p95_ms": null,
+  "receiver_failure_count": 0,
+  "receiver_warning_count": 0,
+  "first_audio": {
+    "n": 3,
+    "p50_ms": 380,
+    "p90_ms": 380,
+    "p95_ms": 380,
+    "max_ms": 380,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 3,
+    "p50_ms": 813,
+    "p90_ms": 897,
+    "p95_ms": 897,
+    "max_ms": 897,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 2,
+    "p50_ms": 832.0,
+    "p90_ms": 897,
+    "p95_ms": 897,
+    "max_ms": 897,
+    "at_or_above_target": 0
+  },
+  "tool_result": {
+    "n": 1,
+    "p50_ms": 813,
+    "p90_ms": 813,
+    "p95_ms": 813,
+    "max_ms": 813,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 1,
+    "p50_ms": 813,
+    "p90_ms": 813,
+    "p95_ms": 813,
+    "max_ms": 813,
+    "at_or_above_target": 0
+  },
+  "vad_open_to_server_cut_ms": [
+    309.0,
+    234.0,
+    182.0
+  ],
+  "unpaired_playback_cuts": 0,
+  "detector_connected": 1,
+  "detector_processed_chunks": 341,
+  "detector_fallbacks": [],
+  "detector_evidence": 3,
+  "detector_assists": 0
+}

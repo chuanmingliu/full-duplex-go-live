@@ -1,0 +1,68 @@
+name: golive-embeddings-gpu
+services:
+  embeddings:
+    image: golive-embeddings:pascal-20261114-runtime
+    entrypoint: [python3, -m, vllm.entrypoints.openai.api_server]
+    restart: unless-stopped
+    container_name: golive-skill-embeddings-gpu
+    network_mode: host
+    cpus: 2
+    mem_limit: 8g
+    shm_size: 256m
+    environment:
+      LD_LIBRARY_PATH: /usr/local/nvidia/lib64
+      VLLM_USE_V1: "0"
+      VLLM_ATTENTION_BACKEND: XFORMERS
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+      HF_HUB_OFFLINE: "1"
+      OMP_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - /home/chuanming/golive-embeddings/models/bge-m3-5617a9f:/model:ro
+      - /home/chuanming/golive-embeddings/gpu-cache:/root/.cache
+      - /usr/lib/x86_64-linux-gnu/libcuda.so.580.178.04:/usr/local/nvidia/lib64/libcuda.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.580.178.04:/usr/local/nvidia/lib64/libnvidia-ml.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.580.178.04:/usr/local/nvidia/lib64/libnvidia-ptxjitcompiler.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.580.178.04:/usr/local/nvidia/lib64/libnvidia-nvvm.so.4:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.580.178.04:/usr/local/nvidia/lib64/libnvidia-gpucomp.so.580.178.04:ro
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+    command:
+      - --model
+      - /model
+      - --served-model-name
+      - bge-m3
+      - --task
+      - embed
+      - --dtype
+      - float32
+      - --enforce-eager
+      - --host
+      - 127.0.0.1
+      - --port
+      - "8796"
+      - --max-model-len
+      - "512"
+      - --max-num-seqs
+      - "8"
+      - --max-num-batched-tokens
+      - "2048"
+      - --gpu-memory-utilization
+      - "0.35"
+      - --override-pooler-config
+      - '{"pooling_type":"CLS","normalize":true}'
+      - --disable-log-requests
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8796/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

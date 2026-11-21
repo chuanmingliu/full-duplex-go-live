@@ -1,0 +1,52 @@
+{
+  "payload_sha256": "c437fafef3414af1042c4b50193de72630d30e2325c79f6a3e3caa63ed71fe99",
+  "files": {
+    "inventory.job": {
+      "source": "bcd-matrix-inventory-20261102.job",
+      "bytes": 849,
+      "sha256": "fd2a7eda6c0c2606f9816fc7882f61193ff905d982d9f8afd6f54b894253c203"
+    },
+    "test.py": {
+      "source": "bcd-matrix-test-20261102.py",
+      "bytes": 8297,
+      "sha256": "55370158005a6d6ac71deafae4f954639e4195004cbcb42e2e670b5886d435ab"
+    },
+    "test.job": {
+      "source": "bcd-matrix-test-20261102.job",
+      "bytes": 762,
+      "sha256": "fddb1976b04b72da8b4aaf1f04f20205e0b3f00b4ad7fbf8bf4671e117611faa"
+    },
+    "services/backchannel-detector/chinese_matrix_eval.py": {
+      "bytes": 8385,
+      "sha256": "2ac2fa38d2cfb12882a0c04156d8d82669a9707e963d05163ef6b08f93cec2a0"
+    },
+    "services/backchannel-detector/chinese_archive_eval.py": {
+      "bytes": 4270,
+      "sha256": "82183264ed3ce03f38159a278b31b6fd810b9e9791ae5bded954237783e46e29"
+    },
+    "services/backchannel-detector/chinese_matrix.json": {
+      "bytes": 9364,
+      "sha256": "3ad7bac88e0eac4e9d2e13f2272a69a48ab0db64e8c4d0cf1b95c3321dd7eb10"
+    },
+    "services/backchannel-detector/test_chinese_matrix.py": {
+      "bytes": 2893,
+      "sha256": "41d1ccf2a0af169936e77982a6cce2e9be5cccac2bbe1e757422345004797153"
+    },
+    "services/backchannel-detector/chinese_eval.py": {
+      "bytes": 8824,
+      "sha256": "23dec4552ae3e56ff66bc43ead1462022835a3a15d4bb8b66de915d489aa91c6"
+    },
+    "services/backchannel-detector/chinese_cases.json": {
+      "bytes": 982,
+      "sha256": "9b862be418443b4858faf2d49d5936a319bb81a431e35f3afa4812e3f535e55d"
+    },
+    "services/backchannel-detector/probe.py": {
+      "bytes": 5578,
+      "sha256": "98fc53fada726d086241b53246a7c81a3f3c593c2a07013aab48e94baf241511"
+    },
+    "services/backchannel-detector/test_chinese_eval.py": {
+      "bytes": 1412,
+      "sha256": "b83a937ad0991f8ccf370156ab84c4d0b0a80993384fd0bf6e2b213fb26cb5f8"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "status": "completed",
+  "conclusion": "success",
+  "headSha": "60dbe53bb7c3ae75b47260cfb5d2d7a07b495c76",
+  "databaseId": 41467549715,
+  "jobs": [
+    {
+      "name": "Go tests (race)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "quality",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "Go tests (normal)",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ]
+}

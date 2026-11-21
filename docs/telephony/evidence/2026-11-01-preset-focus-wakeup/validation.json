@@ -1,0 +1,44 @@
+{
+  "source_baseline": "411b6d02300902b5549e71a4bdd124deeb027a97",
+  "checks": {
+    "full_normal": {
+      "status": "passed",
+      "command": "go test -timeout=25m ./...",
+      "log_sha256": "b724b3384f27ead06470d57ae163b56416a932a0160706fea5357f6323fcf3ab"
+    },
+    "full_race": {
+      "status": "passed",
+      "command": "go test -race -timeout=25m ./...",
+      "log_sha256": "766548f471fc46f38f9d2430df5e05374c155ac384ad4c11f242d1545c7e07d8"
+    },
+    "focused_race": {
+      "status": "passed",
+      "packages": [
+        "internal/duplex",
+        "internal/focus",
+        "internal/tools",
+        "internal/server"
+      ]
+    },
+    "focus_wakeup_regression_race": {
+      "status": "passed",
+      "repetitions": 5
+    },
+    "go_vet": {
+      "status": "passed",
+      "command": "go vet ./..."
+    }
+  },
+  "final_source_sha256": {
+    "internal/duplex/engine.go": "e48e0c40d98615652f833e58bd0a0dced2c7fe1a6d7e6a25efd26ffdd9dba5b3",
+    "internal/duplex/focus.go": "edc7a54d89c552530e9fa0f961fa28cea7fbe134e0e412cc814eb18a302dc2a3",
+    "internal/duplex/listen.go": "cc0c5e3dd7fc79dce3bd47395a140bd6379508f93f1097ee294b081f821778f6",
+    "internal/duplex/latency_scheduling_sim_test.go": "4d673a8cd0abc63c484a1235eb63f34e564aec35ebda88d76c96791d006b9b88"
+  },
+  "private_transcripts_or_audio_committed": false,
+  "production_deployment": false,
+  "notes": [
+    "After full-suite launch only explanatory comments changed in runtime files; executable code is unchanged.",
+    "Controlled benchmark measures label scheduling, not acoustic interruption delay."
+  ]
+}

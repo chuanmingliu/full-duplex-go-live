@@ -1,0 +1,13 @@
+{
+  "call": "out-mvxo348d-w5pb",
+  "stage": "verified",
+  "normal_n": 32,
+  "content_p95_ms": 1078,
+  "content_max_ms": 1081,
+  "handset_verified": false,
+  "issue_id": "ISS-095",
+  "issues_sha256": "197bd79418185d596125cb80f34bcbd6a5902bc3af1dbfc8ab6e194aa7e8c509",
+  "retro_sha256": "653ad45898a72479933e962321277caf2a126c94a52de32f278cc2aed440a4db",
+  "desk_lines_added": 1,
+  "desk_control_preserved": true
+}

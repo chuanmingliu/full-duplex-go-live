@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Handset acoustic recorder</title>
+<style>
+  :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+  body { max-width: 760px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 1.7rem; line-height: 1.2; }
+  p { max-width: 68ch; }
+  label { display: block; margin: 20px 0 6px; }
+  input[type=text] { box-sizing: border-box; font: inherit; width: 100%; padding: 9px; }
+  button, .download { display: inline-block; font: inherit; margin: 8px 8px 8px 0; padding: 8px 14px; }
+  .panel { border: 1px solid #8886; border-radius: 8px; padding: 16px; margin: 20px 0; }
+  #elapsed { font-size: 2rem; font-variant-numeric: tabular-nums; }
+  #status { font-weight: 600; }
+  .muted { opacity: .75; font-size: .9rem; }
+  #issues { white-space: pre-wrap; overflow-wrap: anywhere; }
+  [hidden] { display: none !important; }
+</style>
+<h1>Handset acoustic recorder</h1>
+<p>Place this computer’s microphone beside the phone on speakerphone, so it hears your questions and the phone’s replies together. Start before the call and stop after it ends. Keep the computer awake.</p>
+<p>This records locally in this tab. Nothing is uploaded. Save both files before closing the tab. A recording alone does not prove latency: the caller and reply boundaries must still be reviewed in the audio.</p>
+<label for="call">Call ID <span class="muted">— you can fill this in after the call starts</span></label>
+<input id="call" type="text" placeholder="out-…" maxlength="84" autocomplete="off" spellcheck="false">
+<label><input id="placement" type="checkbox"> The microphone is beside the handset and will hear both me and its speaker.</label>
+<div class="panel">
+  <div id="elapsed">00:00.0</div>
+  <p id="status" role="status">Ready. No microphone is open.</p>
+  <p id="source" class="muted"></p>
+  <button id="start" type="button">Start recording</button>
+  <button id="stop" type="button" disabled>Stop recording</button>
+  <p class="muted">Mono PCM16 WAV, maximum 15 minutes. Echo cancellation, noise suppression and automatic gain are requested off. Unsupported or interrupted capture is marked incomplete.</p>
+</div>
+<section id="result" hidden>
+  <h2>Save the capture</h2>
+  <p id="integrity"></p>
+  <p id="issues"></p>
+  <p id="save-hint">Enter the matching out-… call ID to enable both downloads.</p>
+  <a id="wav" class="download" hidden>Download WAV</a>
+  <a id="metadata" class="download" hidden>Download metadata JSON</a>
+  <p class="muted">These files contain private call audio and device information. Keep them with your private call evidence, outside Git.</p>
+</section>
+<script type="module" src="./app.mjs"></script>
+</html>

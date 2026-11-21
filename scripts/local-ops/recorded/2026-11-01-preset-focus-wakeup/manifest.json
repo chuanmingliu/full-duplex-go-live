@@ -1,0 +1,19 @@
+{
+  "purpose": "Historical simulation operations; no real dialing or production deployment",
+  "executed_sha256": {
+    "box-ab.py": "bb8324a61d40ba0df1183c2f3152c4a7a2fa59aad8fa6f50ffa38a2aa430d204",
+    "box-ab.job": "2aa8bccb0a0b81b0bad0608e4ec5f57c521339087a849835201e936d71bfd0d2",
+    "collect.py": "76c9685d557cb8b82b2c1f815d24d9bf283c9aa66afa25a9f0d72943f6046ef3",
+    "collect.job": "af6f3a32d2b44881058c6c8ca6b0326f4fcdc8d1af80ff862814fec306429362",
+    "activecall-baseline.sh": "fb5e67c719afe17779f325e44a0f6111f7dfe2a4d6a0e5271baf244d419f93fd",
+    "activecall-baseline.job": "9c262577d6b9dd575e74881935b77c7588eb0a162e9d90ab89c5b83425cc0751"
+  },
+  "saved_sha256": {
+    "box-ab.py": "3c9f2ade0e673f60529db1b2384666417aafbc92348316ea95e063e0bde7a922",
+    "box-ab.job": "f95979e51d3a4f9c848391e73af95543d78dceab6c3808e021c79c97ccf54301",
+    "collect.py": "76c9685d557cb8b82b2c1f815d24d9bf283c9aa66afa25a9f0d72943f6046ef3",
+    "collect.job": "af6f3a32d2b44881058c6c8ca6b0326f4fcdc8d1af80ff862814fec306429362",
+    "activecall-baseline.sh": "fb5e67c719afe17779f325e44a0f6111f7dfe2a4d6a0e5271baf244d419f93fd",
+    "activecall-baseline.job": "9c262577d6b9dd575e74881935b77c7588eb0a162e9d90ab89c5b83425cc0751"
+  }
+}

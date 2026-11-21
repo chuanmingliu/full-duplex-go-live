@@ -1,0 +1,18 @@
+{
+  "stage": "verified",
+  "candidate": "f1fd9a6",
+  "calls": [
+    "out-mvxor222-6g7h",
+    "out-mvxpmcug-bpqi",
+    "out-mvxpoc4i-ta7z"
+  ],
+  "issue_id": "ISS-095",
+  "issue_status": "open",
+  "live_improvement_proven": false,
+  "issues_sha256": "236e33344d07c5a8968d719b6e1fba7739b0edee70d57409e884f392a0bb4948",
+  "retros_sha256": {
+    "out-mvxor222-6g7h": "f32e27a6f4a5bb480f525f8caaf726493de6a859834c6cd60c6ce4192e187140",
+    "out-mvxpmcug-bpqi": "217d8d4628fec0460f984413a599d918cd671c478813a9d3d24cc42b3611975a",
+    "out-mvxpoc4i-ta7z": "da3f7b34b36f55771483c391586d1718890c9844dd40d9c71de82004f7aa8d13"
+  }
+}

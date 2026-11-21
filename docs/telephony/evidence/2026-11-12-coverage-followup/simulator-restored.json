@@ -1,0 +1,9 @@
+{
+  "original_run": "sim-885cc31843af14821313c549",
+  "image": "sha256:253d4a6fb11f7c5a860cac25ab1bb56ee328d93d31461f92084043ad66e835c9",
+  "volume": "golive-user-simulator_run-data",
+  "stage": "restored",
+  "original_runs": 128,
+  "new_test_runs_saved": 1,
+  "original_manifest_verified": true
+}

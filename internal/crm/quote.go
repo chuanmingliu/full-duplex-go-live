@@ -198,6 +198,7 @@ const DefaultQuoteRules = `{
 // QuoteRequest is what the assistant asks for: the coverages chosen and
 // what is known about the vehicle and the policyholder.
 type QuoteRequest struct {
+	Strict bool `json:"-"` // resolved by the selected plan, never trusted from the caller
 	// Config is the coverage selection: coverage → true, a table key, or false.
 	Config map[string]any `json:"config"`
 	// Vars are the lead's variables the rules may read: vehiclePrice, seats,
@@ -208,6 +209,7 @@ type QuoteRequest struct {
 	MemoryVersion int `json:"memory_version,omitempty"`
 	// RulesVersion pins the rules; 0 is the latest.
 	RulesVersion int `json:"rules_version,omitempty"`
+	PlanVersion  int `json:"quote_plan_version,omitempty"`
 	// Call names the call this is for, when there is one.
 	Call string `json:"call,omitempty"`
 	// Skipped are coverages the intake left out (the customer could not
@@ -228,13 +230,15 @@ type QuoteRequest struct {
 // toolCall is the shape golive's tool executor posts (internal/tools
 // Request): the call's working memory and the model's arguments.
 type toolCall struct {
-	Tool          string          `json:"tool"`
-	CallID        string          `json:"call_id"`
-	Session       string          `json:"session"`
-	Call          string          `json:"call"` // the phone call, when golive knows it
-	Arguments     json.RawMessage `json:"arguments"`
-	Memory        map[string]any  `json:"memory"`
-	MemoryVersion int             `json:"memory_version"`
+	Tool             string          `json:"tool"`
+	CallID           string          `json:"call_id"`
+	Session          string          `json:"session"`
+	Call             string          `json:"call"` // the phone call, when golive knows it
+	Arguments        json.RawMessage `json:"arguments"`
+	Memory           map[string]any  `json:"memory"`
+	MemoryVersion    int             `json:"memory_version"`
+	QuoteBaseDefault bool            `json:"quote_base_default,omitempty"`
+	PlanVersion      int             `json:"quote_plan_version,omitempty"`
 }
 
 // quoteRequestFrom reads either a QuoteRequest or golive's tool call. From
@@ -250,14 +254,14 @@ func quoteRequestFrom(raw []byte) (QuoteRequest, error) {
 		if err := json.Unmarshal(raw, &tc); err != nil {
 			return QuoteRequest{}, errors.New("the tool call is not readable")
 		}
-		req := QuoteRequest{Config: map[string]any{}, Vars: map[string]any{}, MemoryVersion: tc.MemoryVersion, Call: tc.Session}
+		req := QuoteRequest{Config: map[string]any{}, Vars: map[string]any{}, MemoryVersion: tc.MemoryVersion, PlanVersion: tc.PlanVersion, Call: tc.Session}
 		if tc.Call != "" {
 			req.Call = tc.Call
 		}
 		for k, v := range tc.Memory {
 			if k == "quote" {
 				if m, ok := v.(map[string]any); ok {
-					req.PlanInMemory = len(m) > 0
+					req.PlanInMemory = len(m) > 0 && !tc.QuoteBaseDefault
 					for ck, cv := range m {
 						req.Config[ck] = cv
 					}
@@ -399,6 +403,9 @@ func (r *QuoteRules) Compute(req QuoteRequest) (*Quote, error) {
 		}
 		raw, ok := r.Coverages[name]
 		if !ok {
+			if req.Strict {
+				return nil, fmt.Errorf("no pricing rule for requested coverage %s", name)
+			}
 			q.Skipped = append(q.Skipped, name)
 			continue
 		}
@@ -492,7 +499,7 @@ func (r *QuoteRules) factor(vars map[string]any) float64 {
 	return f
 }
 
-func sortedKeys(m map[string]float64) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

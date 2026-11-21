@@ -1,0 +1,22 @@
+{
+  "files": {
+    "README.md": "4b4494ec0d2571c241beef87a398683cd14e059e35a0824b23817a21cf5bded1",
+    "box-ab.job": "d1c557db818387c69ad9705b4975656ecaf81367ded23ea345ec486fb2a944bc",
+    "box-ab.py": "dee82bc610398025fe425ae01e884b33acabf00b503869169bbf7ba6c002a113",
+    "collect-c.job": "fe1080bbc61d134d6a81b33e13fd9ed3d3af8eb9304234a5753618e881a3aaae",
+    "collect-c.py": "ac7e22e4f3495e052506da78265a8bacb71bc05ad1c293cfc9834d1329fb6714",
+    "collect.job": "e7895c16ab35774fc8c8acb5732707de4b19177d19077d9a51fb7cd4d0009bc3",
+    "collect.py": "aac597fe063f857102e8ec643aa79e116873e99ecc2ae2ccf6d3a3a280b205b9",
+    "diagnostic-c.job": "5d25f5a5829cf0bb8bfda567597e3de0d095c47690d1ba85a4353bb0165828d8",
+    "diagnostic-c.py": "c6215cc5fcad0d235f5a75864819a58e0d97fcacb910727aafafe55d93fb6ed0"
+  },
+  "candidate_binary_sha256": "3fc049f09c1b25b8c57d7c226d2c05d317a735bf06e1d0c8b404034783fbf1fc",
+  "latency_parser_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50",
+  "benchmark_binary_sha256": "f5acf9b4daf2e3e1a810779cd457149473eed8ff7e7b59149048aca0abfe1a37",
+  "executed_before_whitespace_normalization": {
+    "box-ab.py": "2cac3b1c59cfa462c344ac98cd7b24a5f65f429e19a87a675480022753cb35bf",
+    "box-ab.job": "6f77e7a246a14899ff8ef5059372097242003099cddbfcf6d35ff77c4082a7a9",
+    "diagnostic-c.py": "70c078b02c798d7ec2b5a9e00e8627c4ad4e396cd674f2ca6ca8b17689fe0001",
+    "diagnostic-c.job": "7fb435b9497968929edd00dd5742caae504d3cd1543d5418fe9dde04488b10eb"
+  }
+}

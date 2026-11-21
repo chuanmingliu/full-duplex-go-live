@@ -1,0 +1,31 @@
+{
+  "request_id": "1d908cf8-2100-4949-8d2b-0aa8898adf74",
+  "state": "completed",
+  "result": {
+    "request_id": "1d908cf8-2100-4949-8d2b-0aa8898adf74",
+    "ok": true,
+    "data": {
+      "call": {
+        "id": "out-mw557y82-p3ft",
+        "session": "sess_854b82b47c87fbc4dc8c46ec",
+        "build": "40c20f6",
+        "started_at": "2026-11-06T23:42:24.784+08:00",
+        "ended_at": "2026-11-06T23:43:39.94+08:00",
+        "duration_s": 75.2
+      },
+      "kind": "real",
+      "run_id": "",
+      "archive": {
+        "archived": true,
+        "audio": true
+      },
+      "transcript_lines": {
+        "caller": 1,
+        "assistant": 6
+      },
+      "journal_url": "http://192.168.71.9:8790/#/call/out-mw557y82-p3ft",
+      "audio_url": "http://192.168.71.9:8790/api/calls/out-mw557y82-p3ft/audio.wav?raw=1",
+      "archive_verified": false
+    }
+  }
+}

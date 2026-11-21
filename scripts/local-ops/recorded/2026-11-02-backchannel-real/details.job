@@ -1,0 +1,10 @@
+#timeout 45
+#push backchannel-real-details.py /home/chuanming/golive/backchannel-real-details.py
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/details.json backchannel-real-details.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/backchannel-real-details.py').read_bytes()).hexdigest()=='7db325e112a2d3313411e01a43298e08c1d4c3971c6b07542b5bfce49b18d3b9'
+PY
+python3 -B /home/chuanming/golive/backchannel-real-details.py

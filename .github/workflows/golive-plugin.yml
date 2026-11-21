@@ -1,0 +1,29 @@
+name: GoLive plugin
+on:
+  push:
+    branches: [codex/telephony-latency]
+    paths: ['plugins/golive/**', 'scripts/call_latency.py', '.github/workflows/golive-plugin.yml']
+  pull_request:
+    paths: ['plugins/golive/**', 'scripts/call_latency.py', '.github/workflows/golive-plugin.yml']
+jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: plugins/golive
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.21'
+          enable-cache: true
+      - run: uv sync --frozen --python 3.12 --group dev
+      - run: uv run --frozen pytest
+      - run: uv build
+      - run: python3 scripts/package.py
+      - run: uv run --frozen python scripts/verify_dist.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golive-plugin
+          path: plugins/golive/dist/

@@ -1,0 +1,519 @@
+{
+  "candidate": "quote-reconcile-r10",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "steps": 30,
+  "assertions": 208,
+  "passed": true,
+  "baseline_definition": "confirmation disabled in the model fixture",
+  "rows": [
+    {
+      "scenario": "accumulate_request",
+      "mode": "baseline",
+      "first_text_ms": 4450.857,
+      "first_audio_ms": 1317.336,
+      "quote_start_ms": 916.315,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "clarify_request",
+      "mode": "baseline",
+      "first_text_ms": 781.206,
+      "first_audio_ms": 941.519,
+      "quote_start_ms": 1089.714,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "cancel_request",
+      "mode": "baseline",
+      "first_text_ms": 4311.258,
+      "first_audio_ms": 1240.944,
+      "quote_start_ms": 839.698,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "compare_request",
+      "mode": "baseline",
+      "first_text_ms": 4839.225,
+      "first_audio_ms": 1690.733,
+      "quote_start_ms": 1290.566,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "interrupt_request",
+      "mode": "baseline",
+      "first_text_ms": 4528.812,
+      "first_audio_ms": 1471.952,
+      "quote_start_ms": 1071.053,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "lost_rider_request",
+      "mode": "baseline",
+      "first_text_ms": 5006.665,
+      "first_audio_ms": 1739.514,
+      "quote_start_ms": 1339.266,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "accumulate_request",
+      "mode": "confirmation",
+      "first_text_ms": 1321.094,
+      "first_audio_ms": 1481.154,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "yes_means_more",
+      "mode": "confirmation",
+      "first_text_ms": 635.294,
+      "first_audio_ms": 828.593,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_calculation_on_more_changes": true,
+        "no_internal_tool_markup": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "more_changes",
+      "mode": "confirmation",
+      "first_text_ms": 1601.291,
+      "first_audio_ms": 1760.036,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "changes_accumulated": true,
+        "confirmation_wording_varied": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_invented_change_count": true,
+        "removal_skill_loaded": true,
+        "response": true,
+        "yes_means_more_changes": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_all",
+      "mode": "confirmation",
+      "first_text_ms": 2156.645,
+      "first_audio_ms": 2359.465,
+      "quote_start_ms": 1063.857,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmation_skill_loaded": true,
+        "direct_customer_address": true,
+        "merged_selection_submitted": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "one_confirmed_calculation": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "repeat_confirmation",
+      "mode": "confirmation",
+      "first_text_ms": 311.077,
+      "first_audio_ms": 456.355,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_duplicate_calculation": true,
+        "no_internal_tool_markup": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "second_revision",
+      "mode": "confirmation",
+      "first_text_ms": 1725.044,
+      "first_audio_ms": 1877.79,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmation_wording_varied": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "response": true,
+        "second_revision_waits": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "second_confirmation",
+      "mode": "confirmation",
+      "first_text_ms": 2076.527,
+      "first_audio_ms": 2246.93,
+      "quote_start_ms": 1029.817,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "response": true,
+        "second_revision_calculated_once": true,
+        "second_revision_memory": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "clarify_request",
+      "mode": "confirmation",
+      "first_text_ms": 1337.437,
+      "first_audio_ms": 1497.081,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "clarification",
+      "mode": "confirmation",
+      "first_text_ms": 798.122,
+      "first_audio_ms": 945.704,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "clarification_did_not_calculate": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "pending_survived": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_after_clarification",
+      "mode": "confirmation",
+      "first_text_ms": 1889.13,
+      "first_audio_ms": 2040.164,
+      "quote_start_ms": 1178.302,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_after_clarification": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "cancel_request",
+      "mode": "confirmation",
+      "first_text_ms": 1641.078,
+      "first_audio_ms": 1750.563,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "cancel_pending",
+      "mode": "confirmation",
+      "first_text_ms": 524.326,
+      "first_audio_ms": 706.441,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "cancel_did_not_calculate": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "pending_removed": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "compare_request",
+      "mode": "confirmation",
+      "first_text_ms": 2054.216,
+      "first_audio_ms": 2202.723,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "unspecified_damage_change",
+      "mode": "confirmation",
+      "first_text_ms": 737.806,
+      "first_audio_ms": 988.703,
+      "quote_start_ms": null,
+      "checks": {
+        "asks_for_details": true,
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_on_unspecified_change": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "comparison_damage_removed",
+      "mode": "confirmation",
+      "first_text_ms": 2034.63,
+      "first_audio_ms": 2158.72,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmation_wording_varied": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_scope_confirmation": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_comparison",
+      "mode": "confirmation",
+      "first_text_ms": 1840.763,
+      "first_audio_ms": 2091.603,
+      "quote_start_ms": 658.985,
+      "checks": {
+        "bounded_model_steps": true,
+        "comparison_kept_original_policy": true,
+        "comparison_preserves_requested_scope": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "one_confirmed_comparison": true,
+        "response": true,
+        "three_alternatives": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "interrupt_request",
+      "mode": "confirmation",
+      "first_text_ms": 1486.622,
+      "first_audio_ms": 1608.114,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "interrupt_waiting_phrase",
+      "mode": "confirmation",
+      "first_text_ms": 2029.239,
+      "first_audio_ms": 2146.009,
+      "quote_start_ms": 817.116,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_retained": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "one_quote_despite_interruption": true,
+        "response": true,
+        "waiting_phrase_interrupted_without_stale_audio": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "recover_after_interruption",
+      "mode": "confirmation",
+      "first_text_ms": 533.962,
+      "first_audio_ms": 668.551,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_duplicate_after_interruption": true,
+        "no_internal_tool_markup": true,
+        "recalls_confirmed_selection": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "lost_rider_request",
+      "mode": "confirmation",
+      "first_text_ms": 1782.117,
+      "first_audio_ms": 1862.058,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "rider_interrupted_by_seat_question",
+      "mode": "confirmation",
+      "first_text_ms": 2607.613,
+      "first_audio_ms": 2828.772,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_during_clarification": true,
+        "response": true,
+        "seat_concepts_loaded": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "reconcile_interrupted_rider",
+      "mode": "confirmation",
+      "first_text_ms": 1113.488,
+      "first_audio_ms": 1273.514,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "interrupted_request_resolved": true,
+        "medical_rider_staged": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "no_pricing_before_reconfirmed_scope": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_recovered_rider",
+      "mode": "confirmation",
+      "first_text_ms": 2061.325,
+      "first_audio_ms": 2239.707,
+      "quote_start_ms": 1206.276,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "one_calculation_with_rider": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "unsupported_limit_direct_address",
+      "mode": "confirmation",
+      "first_text_ms": 577.882,
+      "first_audio_ms": 743.631,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "direct_customer_address": true,
+        "model_chain_completed": true,
+        "no_internal_tool_markup": true,
+        "response": true,
+        "states_configured_maximum": true,
+        "unsupported_did_not_calculate": true
+      },
+      "quote_requests": 0
+    }
+  ]
+}

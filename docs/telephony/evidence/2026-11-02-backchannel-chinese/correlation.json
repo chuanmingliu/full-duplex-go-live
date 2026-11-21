@@ -1,0 +1,72 @@
+{
+  "scope": "recording-clock correlation, not causal live control or handset latency",
+  "calls": [
+    {
+      "call": "out-mvykfqfn-wibn",
+      "kind": "real",
+      "input_on_clock": true,
+      "input_dropped_ms": 0,
+      "paired_cuts": [
+        {
+          "vad_open_recording_clock_ms": 8229,
+          "server_cut_recording_clock_ms": 8341,
+          "legacy_open_to_cut_ms": 112,
+          "model_floor_crossing_in_open_cut_window_ms": 11,
+          "model_peak_floor_in_open_cut_window": 0.8218331336975098,
+          "model_next_crossing_after_cut_within_1s_ms": 19,
+          "vad_active_ms_at_open": 320
+        },
+        {
+          "vad_open_recording_clock_ms": 54913,
+          "server_cut_recording_clock_ms": 55271,
+          "legacy_open_to_cut_ms": 358,
+          "model_floor_crossing_in_open_cut_window_ms": 7,
+          "model_peak_floor_in_open_cut_window": 0.8738136291503906,
+          "model_next_crossing_after_cut_within_1s_ms": 9,
+          "vad_active_ms_at_open": 320
+        }
+      ],
+      "unpaired_cuts": 0,
+      "legacy_confirmed_backchannels": [
+        {
+          "event_recording_clock_ms": 111732,
+          "legacy_kept_floor": true,
+          "last_vad_open_recording_clock_ms": 111164,
+          "model_floor_crossing_after_open_ms": null,
+          "model_peak_floor_in_open_keep_window": 0.4292706251144409,
+          "model_peak_backchannel_in_open_keep_window": 0.7346315383911133
+        }
+      ],
+      "alignment_caveat": "recording input is jitter-adjusted; model bot state approximated from output energy; no live model action"
+    },
+    {
+      "call": "out-mvxuom0e-mp6l",
+      "kind": "Active_Call_simulator",
+      "input_on_clock": true,
+      "input_dropped_ms": 1140,
+      "paired_cuts": [
+        {
+          "vad_open_recording_clock_ms": 6001,
+          "server_cut_recording_clock_ms": 6151,
+          "legacy_open_to_cut_ms": 150,
+          "model_floor_crossing_in_open_cut_window_ms": 39,
+          "model_peak_floor_in_open_cut_window": 0.7778218984603882,
+          "model_next_crossing_after_cut_within_1s_ms": 249,
+          "vad_active_ms_at_open": 320
+        },
+        {
+          "vad_open_recording_clock_ms": 14623,
+          "server_cut_recording_clock_ms": 14798,
+          "legacy_open_to_cut_ms": 175,
+          "model_floor_crossing_in_open_cut_window_ms": null,
+          "model_peak_floor_in_open_cut_window": 0.3648659884929657,
+          "model_next_crossing_after_cut_within_1s_ms": 162,
+          "vad_active_ms_at_open": 320
+        }
+      ],
+      "unpaired_cuts": 0,
+      "legacy_confirmed_backchannels": [],
+      "alignment_caveat": "recording input is jitter-adjusted; model bot state approximated from output energy; no live model action"
+    }
+  ]
+}

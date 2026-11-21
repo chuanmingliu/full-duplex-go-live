@@ -38,6 +38,11 @@ type PrequotePolicy struct {
 	// Max is how many single changes to price per call; 0 is none. A plan
 	// that says nothing gets DefaultPrequoteMax.
 	Max *int `json:"max,omitempty"`
+	// FollowSelectionMax bounds additional new background prices per call
+	// after a caller selects a nondefault plan. Zero keeps this disabled.
+	FollowSelectionMax int `json:"follow_selection_max,omitempty"`
+	// Priority names coverages whose alternate tiers are warmed first. Empty preserves catalog order.
+	Priority []string `json:"priority,omitempty"`
 	// Keep names coverages never dropped in a variant (交强险 is compulsory).
 	Keep []string `json:"keep,omitempty"`
 	// Concurrency is how many are started at once; 1 unless said. Through
@@ -69,6 +74,7 @@ func (p PrequotePolicy) concurrency() int {
 
 // prequoted is one quotation priced ahead (or on demand and kept).
 type prequoted struct {
+	ready   *readyQuote // immutable after done closes
 	key     string
 	started time.Time
 	done    chan struct{}
@@ -87,10 +93,14 @@ func selectionKey(call, pricing string, plan QuotePlan, config, vars map[string]
 	b.WriteString(call)
 	b.WriteString("|")
 	b.WriteString(pricing)
+	if plan.Strict {
+		raw, _ := json.Marshal(plan)
+		b.WriteString(shortSHA(string(raw)))
+	}
 	b.WriteString("|")
 	covs := make([]string, 0, len(config))
 	for c, v := range config {
-		if selected(v) {
+		if selected(v) || (c == "车船税" && v == false) {
 			covs = append(covs, c)
 		}
 	}
@@ -177,9 +187,13 @@ func (s *Service) prequoteFor(key string, claim bool) (p *prequoted, claimed boo
 
 // forget drops a claimed key whose pricing did not produce a quote worth
 // keeping (a need, an error): the next ask prices it again.
-func (s *Service) forgetPrequote(key string) {
+func (s *Service) forgetPrequote(key string, expected *prequoted) {
 	s.mu.Lock()
-	delete(s.prequotes, key)
+	// A completed, expired entry may already have been replaced by a new
+	// background claim. Only its owner may remove the current entry.
+	if s.prequotes[key] == expected {
+		delete(s.prequotes, key)
+	}
 	s.mu.Unlock()
 }
 
@@ -234,8 +248,16 @@ func (p QuotePlan) prequoteVariants(def map[string]any) []map[string]any {
 		}
 		out = append(out, m)
 	}
-	// Other tiers of the coverages that have tiers, in the plan's order.
-	for _, c := range p.Coverages {
+	// Priority affects tier warming only; the catalog and selection stay unchanged.
+	order := make([]string, 0, len(p.Coverages))
+	seen := map[string]bool{}
+	for _, c := range append(append([]string(nil), p.Prequote.Priority...), p.Coverages...) {
+		if !seen[c] {
+			order = append(order, c)
+			seen[c] = true
+		}
+	}
+	for _, c := range order {
 		opts, has := p.Options[c]
 		if !has {
 			continue

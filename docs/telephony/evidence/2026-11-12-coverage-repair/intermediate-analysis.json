@@ -1,0 +1,377 @@
+{
+  "normal_content": {
+    "n": 4,
+    "p50": 877.0,
+    "p95": 1121,
+    "max": 1121
+  },
+  "canonical_latency": {
+    "scope": "last_sound_to_golive_output",
+    "target_ms": 1200,
+    "percentile": "nearest_rank",
+    "counts": {
+      "records": 7,
+      "answered": 4,
+      "non_speech": 3,
+      "cancelled": 0,
+      "interrupted_answers": 3,
+      "missing": 0,
+      "unverified": 1,
+      "duplicates": 0,
+      "malformed": 0,
+      "content_fallbacks": 0,
+      "assumed_pause": 0,
+      "tool_result_links": 3,
+      "tool_results_joined": 0,
+      "invalid_tool_links": 1,
+      "quote_readouts_missing": 0,
+      "quote_readouts_unverified": 0,
+      "missing_output_records": 0,
+      "quote_only_responses": 0
+    },
+    "first_audio": {
+      "n": 4,
+      "p50_ms": 877.0,
+      "p90_ms": 1121,
+      "p95_ms": 1121,
+      "max_ms": 1121,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 4,
+      "p50_ms": 877.0,
+      "p90_ms": 1121,
+      "p95_ms": 1121,
+      "max_ms": 1121,
+      "at_or_above_target": 0
+    },
+    "conversational_first_content": {
+      "n": 4,
+      "p50_ms": 877.0,
+      "p90_ms": 1121,
+      "p95_ms": 1121,
+      "max_ms": 1121,
+      "at_or_above_target": 0
+    },
+    "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+    "reply": {
+      "n": 4,
+      "p50_ms": 497.0,
+      "p90_ms": 741,
+      "p95_ms": 741,
+      "max_ms": 741,
+      "at_or_above_target": 0
+    },
+    "tool_result": {
+      "n": 2,
+      "p50_ms": 5047.0,
+      "p90_ms": 6408,
+      "p95_ms": 6408,
+      "max_ms": 6408,
+      "at_or_above_target": 2
+    },
+    "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+    "tool_result_rows": [
+      {
+        "session": "sess_c7cfd9aff6da92e2695e6a0a",
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5844,
+        "child_first_content_ms": 184,
+        "total_ms": 6408,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "session": "sess_c7cfd9aff6da92e2695e6a0a",
+        "task": "t1",
+        "origin_turn": "item_7",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 3122,
+        "child_first_content_ms": 184,
+        "total_ms": 3686,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1",
+        "coalesced": true,
+        "primary_origin_turn": "item_6"
+      }
+    ],
+    "non_quote_tool_result": {
+      "n": 0,
+      "p50_ms": null,
+      "p90_ms": null,
+      "p95_ms": null,
+      "max_ms": null,
+      "at_or_above_target": 0
+    },
+    "quote_readout": {
+      "n": 2,
+      "p50_ms": 6014.0,
+      "p90_ms": 7375,
+      "p95_ms": 7375,
+      "max_ms": 7375,
+      "at_or_above_target": 2
+    },
+    "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+    "quote_readout_rows": [
+      {
+        "session": "sess_c7cfd9aff6da92e2695e6a0a",
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5844,
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 1151,
+        "total_ms": 7375
+      },
+      {
+        "session": "sess_c7cfd9aff6da92e2695e6a0a",
+        "task": "t1",
+        "origin_turn": "item_7",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 3122,
+        "coalesced": true,
+        "primary_origin_turn": "item_6",
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 1151,
+        "total_ms": 4653
+      }
+    ]
+  },
+  "quote_tasks": [
+    {
+      "msg": "tools: task done",
+      "task": "t1",
+      "took_ms": "13"
+    },
+    {
+      "msg": "tools: delivering a task's result",
+      "task": "t1",
+      "turn": "item_9",
+      "origin_turn": "item_6",
+      "origin_to_result_start_ms": "5844"
+    },
+    {
+      "msg": "tools: task done",
+      "task": "t2",
+      "took_ms": "7"
+    },
+    {
+      "msg": "tools: delivering a task's result",
+      "task": "t2",
+      "turn": "item_10"
+    }
+  ],
+  "call_id": "e8dc7881-a9b7-4aa7-abf2-5df7c2dd3215",
+  "build": "coverage-repair-a",
+  "latency": {
+    "version": 5,
+    "first_audio": {
+      "n": 4,
+      "p50_ms": 877,
+      "p95_ms": 1121,
+      "max_ms": 1121,
+      "at_or_above_target": 1
+    },
+    "first_content": {
+      "n": 4,
+      "p50_ms": 877,
+      "p95_ms": 1121,
+      "max_ms": 1121,
+      "at_or_above_target": 1
+    },
+    "conversational_first_content": {
+      "n": 4,
+      "p50_ms": 877,
+      "p95_ms": 1121,
+      "max_ms": 1121,
+      "at_or_above_target": 1
+    },
+    "quote_only_responses": 0,
+    "tool_result": {
+      "n": 2,
+      "p50_ms": 5047,
+      "p95_ms": 6408,
+      "max_ms": 6408,
+      "at_or_above_target": 2
+    },
+    "tool_result_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5844,
+        "child_first_content_ms": 184,
+        "total_ms": 6408,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t1",
+        "origin_turn": "item_7",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 3122,
+        "child_first_content_ms": 184,
+        "total_ms": 3686,
+        "interrupted": false,
+        "coalesced": true,
+        "primary_origin_turn": "item_6",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readout": {
+      "n": 2,
+      "p50_ms": 6014,
+      "p95_ms": 7375,
+      "max_ms": 7375,
+      "at_or_above_target": 2
+    },
+    "quote_readout_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_6",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5844,
+        "child_first_readout_ms": 1151,
+        "total_ms": 7375,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t1",
+        "origin_turn": "item_7",
+        "result_turn": "item_9",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 3122,
+        "child_first_readout_ms": 1151,
+        "total_ms": 4653,
+        "status": "observed",
+        "coalesced": true,
+        "primary_origin_turn": "item_6",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing": 0,
+    "unverified": 1,
+    "duplicates": 0,
+    "cancelled": 0,
+    "tool_results_joined": 0,
+    "invalid_tool_links": 1
+  },
+  "interruptions_ms": [],
+  "interruption_stats": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "backchannel": [
+    {
+      "msg": "backchannel: policy enabled"
+    },
+    {
+      "msg": "backchannel: connected"
+    },
+    {
+      "msg": "backchannel: legacy fallback",
+      "reason": "audio_gap"
+    },
+    {
+      "msg": "backchannel: stream closed",
+      "processed_chunks": "246"
+    }
+  ],
+  "quote_requests": [
+    {
+      "compare_coverage": "三者险"
+    }
+  ],
+  "skill_events": [
+    {
+      "msg": "skills: prepare",
+      "turn": "item_2",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1960",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":11,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1916,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":21,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_3",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1094",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":13,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1031,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":11,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":34,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_4",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1566",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1523,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":22,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_5",
+      "status": "loaded",
+      "ms": "4",
+      "us": "4227",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":70,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1543,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":24,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":504,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":739,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"digest\":\"sha256:b80e78edc5a0e5e6b2eaa6393d64b1acef9ea00cfd5c6edc8672169cde10cb58\",\"us\":27,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1242,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":66,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_6",
+      "status": "loaded",
+      "ms": "3",
+      "us": "3546",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1256,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":441,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":452,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"digest\":\"sha256:7be8f041e781371c1b2c0033e44e0e4f9fdcf1714d549b9338e548da01694940\",\"us\":19,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1321,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":30,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_7",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1417",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1379,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":22,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_8",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1767",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":8,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1726,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":26,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_9",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2078",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":21,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1139,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":890,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_10",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1952",
+      "trace": "{\"revision\":3,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":8,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1535,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":399,\"outcome\":\"no_match\"}]}"
+    }
+  ]
+}

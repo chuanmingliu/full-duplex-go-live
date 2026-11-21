@@ -1,0 +1,182 @@
+package duplex
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"github.com/chuanmingliu/golive/internal/crm"
+	"github.com/chuanmingliu/golive/internal/provider"
+	"github.com/chuanmingliu/golive/internal/tools"
+)
+
+// These prices are synthetic. A custom spoken comparison omits individual
+// premiums, but those source amounts must survive a later history trim.
+func TestRecentQuoteMemoryRetainsPricesBeyondTheCustomReadout(t *testing.T) {
+	qs, err := tools.ParseQuoteSpeech([]byte(`{"posthook_status":"quote","template":"CUSTOM total {{ total }}","compare_template":"CUSTOM comparison"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := func(choice string, premium float64) []crm.QuoteLine {
+		return []crm.QuoteLine{{Coverage: "liability", Choice: choice, Premium: premium}, {Coverage: "other", Premium: 50}}
+	}
+	raw, err := json.Marshal(map[string]any{"status": "quote", "currency": "CNY", "compare": true, "total": 150,
+		"lines": lines("low", 100), "variants": []crm.Variant{
+			{Label: "liability medium", Total: 170, Lines: lines("medium", 120)},
+			{Label: "liability high", Total: 230, Lines: lines("high", 180)},
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTrip any
+	if err := json.Unmarshal(raw, &roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = json.Marshal(roundTrip)
+	task := &tools.Task{Tool: tools.Tool{Name: "quote_total"}.WithSpeech(qs), Result: tools.Result{Output: raw}}
+	e := &Engine{tools: &toolState{lastResult: task, lastResultCut: true, lastResultHeard: "CUSTOM"}}
+	block := e.memoryBlock() // No conversation history remains.
+	for _, want := range []string{"CUSTOM comparison", "liability", "low", "100", "medium", "120", "high", "180"} {
+		if !strings.Contains(block, want) {
+			t.Errorf("recent-result memory lost %q after serialization/history trim: %s", want, block)
+		}
+	}
+	if strings.Contains(block, "先把总价和改动的险种复述一遍") {
+		t.Error("an interrupted result still forces total-price repetition regardless of the question")
+	}
+	if got := task.Tool.ReadoutFor(raw); got != "CUSTOM comparison" {
+		t.Fatalf("retaining prices changed the custom spoken readout: %q", got)
+	}
+	t.Logf("synthetic two-option comparison: extra price facts=%d characters; retained block=%d characters", utf8.RuneCountInString(quoteMemoryFacts(raw)), utf8.RuneCountInString(block))
+}
+
+func TestQuoteMemoryDoesNotInventMissingOrFailedPrices(t *testing.T) {
+	raw := []byte(`{"status":"quote","total":20,"lines":[{"coverage":"known free","premium":0},{"coverage":"missing"},{"coverage":"declined","premium":0}],"skipped":["declined"],"variants":[{"label":"failed option","error":"service unavailable","total":0,"lines":[{"coverage":"untrusted failed line","premium":0}]},{"label":"missing total","lines":[{"coverage":"known","premium":12.34}]},{"label":"same option","same":true,"total":20,"lines":[{"coverage":"known free","premium":0}]}]}`)
+	got := quoteMemoryFacts(raw)
+	for _, want := range []string{"已报价部分合计=20", "known free=0", "missing=未返回保费", "未报价=declined", "failed option：未能报价", "known=12.34", "same option：合计=20"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing accurate fact %q: %s", want, got)
+		}
+	}
+	for _, wrong := range []string{"missing=0", "declined=0", "untrusted failed line", "failed option：合计=0", "missing total：合计=0"} {
+		if strings.Contains(got, wrong) {
+			t.Errorf("unavailable price represented as valid: %q in %s", wrong, got)
+		}
+	}
+}
+
+func TestQuoteMemoryPreservesReadoutAndNonQuoteFallbacks(t *testing.T) {
+	for _, raw := range []string{`{"status":"need","missing":["vehicle"]}`, `{"status":"error","error":"offline"}`, `not-json`} {
+		task := &tools.Task{Result: tools.Result{Output: []byte(raw)}}
+		if got := lastResultLine(task); got != raw {
+			t.Errorf("non-quote result changed: %q -> %q", raw, got)
+		}
+	}
+	// No speech template: retain the compact quote facts rather than losing
+	// the structured prices or bringing service identifiers into memory.
+	raw := []byte(`{"status":"quote","total":12.34,"lines":[{"coverage":"sample","premium":12.34}],"insure_flow_code":"not-needed-in-memory"}`)
+	got := lastResultLine(&tools.Task{Result: tools.Result{Output: raw}})
+	if !strings.Contains(got, "sample=12.34") || strings.Contains(got, "not-needed-in-memory") {
+		t.Fatalf("untemplated quote lost prices or retained irrelevant metadata: %s", got)
+	}
+}
+
+func TestExtraQuoteMemoryHasAnExplicitSizeBound(t *testing.T) {
+	variant := map[string]any{"label": "sample option", "total": 100, "lines": []any{map[string]any{"coverage": "liability", "choice": "high", "premium": 100}}}
+	var variants []any
+	for i := 0; i < 500; i++ {
+		variants = append(variants, variant)
+	}
+	raw, err := json.Marshal(map[string]any{"status": "quote", "total": 50, "lines": []any{map[string]any{"coverage": "liability", "choice": "low", "premium": 50}}, "variants": variants})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := quoteMemoryFacts(raw)
+	if utf8.RuneCountInString(got) > maxQuoteMemoryChars || !strings.Contains(got, "其余明细未保留") || !strings.Contains(got, "liability[low]=50") {
+		t.Fatalf("oversized facts were not bounded and marked: chars=%d", utf8.RuneCountInString(got))
+	}
+	if strings.Contains(got, "liability[high]=100") && !strings.Contains(got, "sample option：合计=100；liability[high]=100。") {
+		t.Fatal("an option was cut into an ambiguous partial record")
+	}
+	t.Logf("oversized comparison: retained facts=%d characters; limit=%d", utf8.RuneCountInString(got), maxQuoteMemoryChars)
+}
+
+// This checks the actual request context after history trimming, not a model's
+// compliance. Whole and split follow-ups must carry the total-only instruction
+// without losing facts needed for requested coverage details or comparisons.
+func TestQuoteFollowupRequestCarriesScopeAndPrices(t *testing.T) {
+	qs, err := tools.ParseQuoteSpeech([]byte(`{"posthook_status":"quote","template":"CUSTOM total {{ total }}","compare_template":"CUSTOM comparison"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"status":"quote","currency":"CNY","compare":true,"total":150,"lines":[{"coverage":"liability","choice":"low","premium":100},{"coverage":"other","premium":50}],"variants":[{"label":"higher limit","total":170,"lines":[{"coverage":"liability","choice":"high","premium":120},{"coverage":"other","premium":50}]}]}`)
+	task := &tools.Task{Tool: tools.Tool{Name: "quote_total"}.WithSpeech(qs), Result: tools.Result{Output: raw}}
+	for _, state := range []struct {
+		name string
+		cut  bool
+	}{{"completed", false}, {"interrupted", true}} {
+		for _, question := range []struct {
+			name  string
+			parts []string
+		}{
+			{"repeat_total", []string{"这个方案合计多少，再说一下。"}},
+			{"split_repeat_total", []string{"这个方案合计多少。", "再说一下就好。"}},
+			{"line_item", []string{"请告诉我 liability 这一项的保费。"}},
+			{"coverage_limit", []string{"这个方案合计多少，liability 的保障额度是多少？"}},
+			{"split_configuration", []string{"这个方案合计多少。", "也确认一下包含哪些保障。"}},
+			{"comparison", []string{"请比较两个方案的合计和每项明细。"}},
+		} {
+			t.Run(state.name+"/"+question.name, func(t *testing.T) {
+				const ownerPrompt = "SAVED BUSINESS INSTRUCTIONS"
+				e := &Engine{instr: ownerPrompt, tools: &toolState{lastResult: task, lastResultCut: state.cut, lastResultHeard: "CUSTOM"}, recordedUser: map[string]bool{}}
+				if len(question.parts) > 1 {
+					// A prior fragment with no audible answer stays in history.
+					e.ensureUserRecorded(&Turn{ID: "prior-fragment", Transcript: question.parts[0]})
+				}
+				turn := &Turn{ID: "followup", Transcript: question.parts[len(question.parts)-1]}
+				req := e.backendRequest(e.snapshotMessages(turn, false), false)
+				if len(req.Messages) != 2 || req.Messages[0].Role != provider.RoleSystem || req.Messages[1].Role != provider.RoleUser || req.Messages[1].Content != strings.Join(question.parts, "\n") {
+					t.Fatalf("follow-up question missing from trimmed request: %+v", req.Messages)
+				}
+				context := req.Messages[0].Content
+				for _, guidance := range []string{
+					"仅问总价或合计（包括要求重复）时，只答所问方案的合计及必要的未报价说明，不逐项重报险种",
+					"只问合计时，保障额度、保额及“包含某项保障”的配置确认也属于不应附带补充的明细",
+					"同时要求明细、单项价格、保障额度、配置确认或方案比较时，按其要求补充对应内容",
+					"金额只用工具明细",
+					"未返回的明细须查询",
+				} {
+					if !strings.Contains(context, guidance) {
+						t.Errorf("follow-up request lacks scope or authoritative-price guidance: %q", guidance)
+					}
+				}
+				for _, fact := range []string{"CUSTOM comparison", "当前方案：合计=150", "liability[low]=100", "other=50", "higher limit：合计=170", "liability[high]=120"} {
+					if !strings.Contains(context, fact) {
+						t.Errorf("scoped follow-up lost required quotation fact: %q", fact)
+					}
+				}
+				if e.instr != ownerPrompt || !strings.HasPrefix(context, ownerPrompt+"\n\n") {
+					t.Error("follow-up policy changed or displaced the saved business instructions")
+				}
+				if got := task.Tool.ReadoutFor(raw); got != "CUSTOM comparison" {
+					t.Fatalf("follow-up policy changed initial custom readout: %q", got)
+				}
+			})
+		}
+	}
+}
+
+// A partial quotation must still identify its missing items in the request;
+// suppressing extra coverage detail must not turn a partial total into a full one.
+func TestTotalOnlyGuidanceKeepsPartialQuoteWarning(t *testing.T) {
+	raw := []byte(`{"status":"quote","total":50,"lines":[{"coverage":"known","premium":50}],"skipped":["not-priced"]}`)
+	e := &Engine{tools: &toolState{lastResult: &tools.Task{Result: tools.Result{Output: raw}}}}
+	req := e.backendRequest(e.snapshotMessages(&Turn{ID: "total", Transcript: "只说这个方案的合计。"}, false), false)
+	context := req.Messages[0].Content
+	for _, want := range []string{"合计及必要的未报价说明", "已报价部分合计=50", "未报价=not-priced", "known=50"} {
+		if !strings.Contains(context, want) {
+			t.Errorf("total-only context lost partial-quote warning or source fact %q", want)
+		}
+	}
+}

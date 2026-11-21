@@ -1,0 +1,290 @@
+{
+  "call": "out-mvykfqfn-wibn",
+  "interruption_traces": [
+    {
+      "open_to_cut_ms": 112.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: this barge-in looks like the assistant's own voice returning",
+          "active_ms": "320"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "1",
+          "connected": "true",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 112,
+          "msg": "asr: partial",
+          "run": "1",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 112,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "0",
+          "voiced_ms": "0",
+          "coverage": "0.89",
+          "waited_ms": "112",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 112,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 112,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 112,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 358.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "15",
+          "connected": "true",
+          "prefed_ms": "640"
+        },
+        {
+          "offset_ms": 34,
+          "msg": "asr: partial",
+          "run": "15",
+          "text_chars": 1
+        },
+        {
+          "offset_ms": 253,
+          "msg": "asr: stream opened",
+          "run": "16",
+          "connected": "false",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 253,
+          "msg": "asr: asking for a final on the words so far; a continuation is listening",
+          "run": "15"
+        },
+        {
+          "offset_ms": 358,
+          "msg": "asr: final for the words so far",
+          "run": "15",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 358,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "700",
+          "voiced_ms": "700",
+          "coverage": "0.94",
+          "waited_ms": "357",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 358,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 358,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 358,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    }
+  ],
+  "quote_phases": [
+    {
+      "time": "2026-11-02T09:14:02.952+08:00",
+      "ahead": "false",
+      "failed": "false",
+      "total_ms": "4007",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4003",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:06.972+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4004",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4000",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:10.993+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4001",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:15.014+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4001",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:18.533+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3504",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "3498",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:21.555+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "3001",
+      "polls": "7",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:24.577+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3005",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3002",
+      "polls": "7",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:28.093+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T09:14:32.133+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4007",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4002",
+      "polls": "9",
+      "phase": "complete"
+    }
+  ],
+  "quote_breakdown": [
+    {
+      "task": "t1",
+      "tool_execution_ms": 0,
+      "ready_to_delivery_wait_ms": 1294,
+      "last_sound_to_result_content_ms": 2787,
+      "readout": [
+        {
+          "session": "sess_749754e3759ab2f59f2c1816",
+          "task": "t1",
+          "origin_turn": "item_3",
+          "result_turn": "item_4",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 2406,
+          "origin_evidence": "caller_input_v1",
+          "status": "observed",
+          "child_first_readout_ms": 1,
+          "total_ms": 2787
+        }
+      ]
+    },
+    {
+      "task": "t2",
+      "tool_execution_ms": 1,
+      "ready_to_delivery_wait_ms": 0,
+      "last_sound_to_result_content_ms": 1870,
+      "readout": [
+        {
+          "session": "sess_749754e3759ab2f59f2c1816",
+          "task": "t2",
+          "origin_turn": "item_11",
+          "result_turn": "item_12",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1285,
+          "origin_evidence": "caller_input_v1",
+          "status": "observed",
+          "child_first_readout_ms": 205,
+          "total_ms": 1870
+        }
+      ]
+    }
+  ],
+  "saved_original_context_preserved": true,
+  "original_profile_preserved": true
+}

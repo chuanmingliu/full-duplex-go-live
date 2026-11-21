@@ -1,0 +1,36 @@
+{
+  "call": "out-mvxor222-6g7h",
+  "scope": "Server VAD utterance-open to cut decision while playback was active; excludes pre-detection voice time, transport and audible playout stop. One cut per latest open; unpaired events retained separately.",
+  "barge_in_opens": 2,
+  "paired_playback_cuts": 2,
+  "unpaired_playback_cuts": 0,
+  "p50_ms": 128.0,
+  "p95_ms": 147.0,
+  "max_ms": 147.0,
+  "rows": [
+    {
+      "detection_to_cut_ms": 109.0,
+      "vad_active_ms": "320"
+    },
+    {
+      "detection_to_cut_ms": 147.0,
+      "vad_active_ms": "320"
+    }
+  ],
+  "focus_decisions": [
+    {
+      "verdict": "yield",
+      "primary_ms": "0",
+      "voiced_ms": "0",
+      "coverage": "0.98",
+      "waited_ms": "108"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "300",
+      "voiced_ms": "500",
+      "coverage": "0.91",
+      "waited_ms": "145"
+    }
+  ]
+}

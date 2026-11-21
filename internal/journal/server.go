@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -30,11 +31,13 @@ type Config struct {
 	// (store_dir); empty when calls are not recorded.
 	LogPath  string
 	StoreDir string
+	// RequestLogDir is the private, persistent rendered-request store.
+	RequestLogDir string
 	// DataDir is the journal's own: each call as last read (so a call outlives
 	// the log it was read from) and the owner's notes.
 	DataDir string
 	// NotesDir holds what is written about the calls rather than measured:
-	// retros/<call id>.md, issues.json, decisions.json. It ships with golive's
+	// retros/<call id>.md, issues.json, decisions.json, dreaming.json. It ships with golive's
 	// bundle, so it is versioned with the code it describes.
 	NotesDir string
 	// RepoURL turns a commit hash into a link.
@@ -57,7 +60,13 @@ type Config struct {
 	// tell such a call from a real one, since the line looks the same to
 	// golive. Empty means every call is taken to be real.
 	SimDials string
-	Log      *slog.Logger
+	// TalkerURL is a fixed local model endpoint used only for an on-demand
+	// status check. TalkerPlayground is the owner's existing desk page.
+	DreamMemoryURL      string
+	DreamAdminTokenFile string
+	TalkerURL           string
+	TalkerPlayground    string
+	Log                 *slog.Logger
 }
 
 // Server serves the journal.
@@ -532,8 +541,19 @@ func (s *Server) archiveOf(c *Call) map[string]any {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/overview", s.handleOverview)
+	mux.HandleFunc("GET /api/requests/sessions", s.handleRequestSessions)
+	mux.HandleFunc("GET /api/requests/sessions/{session}", s.handleSessionRequests)
+	mux.HandleFunc("GET /api/requests/sessions/{session}/{request}", s.handleRecordedRequest)
 	mux.HandleFunc("/api/calls/", s.handleCall)
+	mux.HandleFunc("GET /api/talker-status", s.handleTalkerStatus)
 	mux.HandleFunc("/api/issues", s.handleFile("issues.json", `{"issues":[]}`))
+	mux.HandleFunc("/api/dreaming", s.handleDreaming)
+	mux.HandleFunc("GET /api/dreaming/source", s.handleDreamSource)
+	mux.HandleFunc("GET /api/dreaming/source/{id}", s.handleDreamEvidence)
+	mux.HandleFunc("GET /api/dreaming/live", s.handleDreamProxy)
+	mux.HandleFunc("GET /api/dreaming/jobs/{id}", s.handleDreamProxy)
+	mux.HandleFunc("PUT /api/dreaming/settings", s.handleDreamProxy)
+	mux.HandleFunc("POST /api/dreaming/jobs/{id}/retry", s.handleDreamProxy)
 	mux.HandleFunc("/api/decisions", s.handleFile("decisions.json", `{"decisions":[]}`))
 	mux.HandleFunc("/api/benchmarks", func(w http.ResponseWriter, r *http.Request) {
 		// The standing evaluation's records: journal/benchmarks/*.json,
@@ -555,11 +575,14 @@ func (s *Server) Handler() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"benchmarks": rows})
 	})
 	var static http.Handler
+	var assets fs.FS
 	if s.cfg.UIDir != "" {
-		static = http.FileServer(http.Dir(s.cfg.UIDir))
+		assets = os.DirFS(s.cfg.UIDir)
+		static = http.FileServer(http.FS(assets))
 	} else {
 		sub, _ := fs.Sub(uiFiles, "ui")
-		static = http.FileServer(http.FS(sub))
+		assets = sub
+		static = http.FileServer(http.FS(assets))
 	}
 	// The page's script and style are revalidated on every load: a browser
 	// that kept the old app.js showed a journal without its newest sections
@@ -567,6 +590,15 @@ func (s *Server) Handler() http.Handler {
 	// until a hard refresh.
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
+		if r.URL.Path == "/" {
+			index, err := versionedIndex(assets)
+			if err != nil {
+				http.Error(w, "Journal assets unavailable", 503)
+				return
+			}
+			http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(index))
+			return
+		}
 		static.ServeHTTP(w, r)
 	}))
 	return mux
@@ -731,7 +763,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 	switch what {
 	case "":
 		writeJSON(w, http.StatusOK, map[string]any{
-			"call":          c,
+			"call":          s.withFillerEvidence(s.withLatencyEvidence(c)),
 			"target_ms":     TargetMS,
 			"repo_url":      s.cfg.RepoURL,
 			"audio":         s.audioOf(c),
@@ -782,7 +814,7 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("download") != "" {
 			w.Header().Set("Content-Disposition", `attachment; filename="`+fileStem(c)+`.txt"`)
 		}
-		_, _ = io.WriteString(w, TranscriptText(c))
+		_, _ = io.WriteString(w, TranscriptText(s.withLatencyEvidence(c)))
 	case "peaks":
 		rec, err := s.recording(c)
 		if err != nil {

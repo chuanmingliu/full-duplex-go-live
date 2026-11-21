@@ -1,0 +1,1275 @@
+{
+  "call": "out-mvzfq218-qbqy",
+  "interruption_traces": [
+    {
+      "open_to_cut_ms": 167.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: this barge-in looks like the assistant's own voice returning",
+          "active_ms": "320"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "3",
+          "connected": "true",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 63,
+          "msg": "backchannel: earlier ASR final requested"
+        },
+        {
+          "offset_ms": 64,
+          "msg": "asr: stream opened",
+          "run": "4",
+          "connected": "false",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 64,
+          "msg": "asr: asking for a final on the words so far; a continuation is listening",
+          "run": "3"
+        },
+        {
+          "offset_ms": 166,
+          "msg": "asr: final for the words so far",
+          "run": "3",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 166,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "500",
+          "voiced_ms": "500",
+          "coverage": "0.97",
+          "waited_ms": "166",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 166,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 166,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 167,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 7.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "7",
+          "connected": "true",
+          "prefed_ms": "580"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 7,
+          "msg": "asr: partial",
+          "run": "7",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 7,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "200",
+          "voiced_ms": "300",
+          "coverage": "0.84",
+          "waited_ms": "7",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 7,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 7,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 7,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 190.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "9",
+          "connected": "true",
+          "prefed_ms": "600"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 190,
+          "msg": "asr: partial",
+          "run": "9",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 190,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "400",
+          "voiced_ms": "500",
+          "coverage": "0.95",
+          "waited_ms": "190",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 190,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 190,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 190,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 168.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "11",
+          "connected": "true",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 1,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 168,
+          "msg": "asr: partial",
+          "run": "11",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 168,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "300",
+          "voiced_ms": "500",
+          "coverage": "0.92",
+          "waited_ms": "167",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 168,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 168,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 168,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 2.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "16",
+          "connected": "true",
+          "prefed_ms": "660"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: partial",
+          "run": "16",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 0,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "400",
+          "voiced_ms": "500",
+          "coverage": "0.89",
+          "waited_ms": "0",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 2,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 2,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 2,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 225.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "27",
+          "connected": "true",
+          "prefed_ms": "440"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 225,
+          "msg": "asr: partial",
+          "run": "27",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 225,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "500",
+          "voiced_ms": "500",
+          "coverage": "0.91",
+          "waited_ms": "224",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 225,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 225,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 225,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 129.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "37",
+          "connected": "true",
+          "prefed_ms": "480"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 65,
+          "msg": "backchannel: earlier ASR final requested"
+        },
+        {
+          "offset_ms": 65,
+          "msg": "asr: stream opened",
+          "run": "38",
+          "connected": "false",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 65,
+          "msg": "asr: asking for a final on the words so far; a continuation is listening",
+          "run": "37"
+        },
+        {
+          "offset_ms": 129,
+          "msg": "asr: final for the words so far",
+          "run": "37",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 129,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "400",
+          "voiced_ms": "400",
+          "coverage": "0.84",
+          "waited_ms": "129",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 129,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 129,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 129,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 407.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "39",
+          "connected": "true",
+          "prefed_ms": "580"
+        },
+        {
+          "offset_ms": 18,
+          "msg": "focus: the open utterance is not the caller's",
+          "voiced_ms": "400",
+          "coverage": "1"
+        },
+        {
+          "offset_ms": 72,
+          "msg": "asr: partial",
+          "run": "39",
+          "text_chars": 1
+        },
+        {
+          "offset_ms": 407,
+          "msg": "focus: the caller's voice joined the utterance; taking it up",
+          "primary_ms": "400"
+        },
+        {
+          "offset_ms": 407,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 407,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 219.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "50",
+          "connected": "true",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 8,
+          "msg": "focus: the open utterance is not the caller's",
+          "voiced_ms": "300",
+          "coverage": "1"
+        },
+        {
+          "offset_ms": 113,
+          "msg": "asr: partial",
+          "run": "50",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 219,
+          "msg": "focus: the caller's voice joined the utterance; taking it up",
+          "primary_ms": "300"
+        },
+        {
+          "offset_ms": 219,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 219,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 117.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "52",
+          "connected": "true",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 117,
+          "msg": "asr: partial",
+          "run": "52",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 117,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "200",
+          "voiced_ms": "400",
+          "coverage": "0.91",
+          "waited_ms": "117",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 117,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 3
+        },
+        {
+          "offset_ms": 117,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 117,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    },
+    {
+      "open_to_cut_ms": 193.0,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 1,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 1,
+          "msg": "asr: stream opened",
+          "run": "54",
+          "connected": "true",
+          "prefed_ms": "0"
+        },
+        {
+          "offset_ms": 1,
+          "msg": "backchannel: floor evidence"
+        },
+        {
+          "offset_ms": 131,
+          "msg": "asr: partial",
+          "run": "54",
+          "text_chars": 2
+        },
+        {
+          "offset_ms": 193,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "300",
+          "voiced_ms": "600",
+          "coverage": "1",
+          "waited_ms": "192",
+          "text_chars": 0
+        },
+        {
+          "offset_ms": 193,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 193,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        }
+      ]
+    }
+  ],
+  "quote_phases": [
+    {
+      "time": "2026-11-02T23:49:51.640+08:00",
+      "ahead": "false",
+      "failed": "false",
+      "total_ms": "3005",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "2",
+      "poll_wait_ms": "3002",
+      "polls": "7",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:49:55.660+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4004",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4000",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:49:59.682+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4002",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:50:03.203+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3506",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3502",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:50:06.712+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:50:11.232+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4505",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "4499",
+      "polls": "10",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:50:14.773+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3508",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:50:19.296+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "4502",
+      "polls": "10",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:50:23.317+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4006",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "4001",
+      "polls": "9",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:51:51.392+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3506",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3502",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:51:54.914+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3505",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3500",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:51:59.437+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "4507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "4",
+      "poll_wait_ms": "4501",
+      "polls": "10",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:52:02.458+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3005",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3001",
+      "polls": "7",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:52:05.980+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3505",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3501",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:52:09.005+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3006",
+      "before_ms": "1",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3001",
+      "polls": "7",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:52:12.528+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3508",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "3",
+      "poll_wait_ms": "3503",
+      "polls": "8",
+      "phase": "complete"
+    },
+    {
+      "time": "2026-11-02T23:52:16.051+08:00",
+      "ahead": "true",
+      "failed": "false",
+      "total_ms": "3507",
+      "before_ms": "0",
+      "submit_ms": "0",
+      "poll_http_ms": "2",
+      "poll_wait_ms": "3503",
+      "polls": "8",
+      "phase": "complete"
+    }
+  ],
+  "quote_breakdown": [
+    {
+      "task": "t1",
+      "tool_execution_ms": 0,
+      "ready_to_delivery_wait_ms": 0,
+      "last_sound_to_result_content_ms": 989,
+      "readout": [
+        {
+          "session": "sess_b5342cf6011ea05e73e38e53",
+          "task": "t1",
+          "origin_turn": "item_2",
+          "result_turn": "item_3",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 606,
+          "origin_evidence": "caller_input_v1",
+          "status": "observed",
+          "child_first_readout_ms": 3,
+          "total_ms": 989
+        }
+      ]
+    },
+    {
+      "task": "t2",
+      "tool_execution_ms": 2,
+      "ready_to_delivery_wait_ms": 0,
+      "last_sound_to_result_content_ms": 1111,
+      "readout": [
+        {
+          "session": "sess_b5342cf6011ea05e73e38e53",
+          "task": "t2",
+          "origin_turn": "item_8",
+          "result_turn": "item_9",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 536,
+          "origin_evidence": "caller_input_v1",
+          "status": "observed",
+          "child_first_readout_ms": 195,
+          "total_ms": 1111
+        }
+      ]
+    },
+    {
+      "task": "t3",
+      "tool_execution_ms": 4,
+      "ready_to_delivery_wait_ms": 759,
+      "last_sound_to_result_content_ms": 1608,
+      "readout": [
+        {
+          "session": "sess_b5342cf6011ea05e73e38e53",
+          "task": "t3",
+          "origin_turn": "item_15",
+          "result_turn": "item_17",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1227,
+          "origin_evidence": "caller_input_v1",
+          "status": "observed",
+          "child_first_readout_ms": 966,
+          "total_ms": 2573
+        }
+      ]
+    },
+    {
+      "task": "t4",
+      "tool_execution_ms": 1,
+      "ready_to_delivery_wait_ms": 1545,
+      "last_sound_to_result_content_ms": 2819,
+      "readout": [
+        {
+          "session": "sess_b5342cf6011ea05e73e38e53",
+          "task": "t4",
+          "origin_turn": "item_16",
+          "result_turn": "item_18",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1856,
+          "origin_evidence": "caller_input_v1",
+          "status": "unverified",
+          "child_first_readout_ms": null,
+          "total_ms": null
+        }
+      ]
+    }
+  ],
+  "saved_original_context_preserved": true,
+  "enabled_trial_profile_preserved": true,
+  "assisted_utterances": [
+    {
+      "utterance_start_ms": 12080,
+      "opened_at": "2026-11-02T23:50:07.441+08:00",
+      "assist_after_open_ms": 63,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: this barge-in looks like the assistant's own voice returning",
+          "active_ms": "320"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "3"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence",
+          "utterance_start_ms": "12080"
+        },
+        {
+          "offset_ms": 63,
+          "msg": "backchannel: earlier ASR final requested",
+          "pause_ms": "40",
+          "original_pause_ms": "120",
+          "utterance_start_ms": "12080"
+        },
+        {
+          "offset_ms": 64,
+          "msg": "asr: stream opened",
+          "run": "4"
+        },
+        {
+          "offset_ms": 64,
+          "msg": "asr: asking for a final on the words so far; a continuation is listening",
+          "run": "3",
+          "pause_ms": "40"
+        },
+        {
+          "offset_ms": 166,
+          "msg": "asr: final for the words so far",
+          "run": "3",
+          "pause_ms": "160",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 166,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "500",
+          "voiced_ms": "500",
+          "coverage": "0.97",
+          "waited_ms": "166",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 166,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 166,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 167,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        },
+        {
+          "offset_ms": 209,
+          "msg": "listen: the caller seems to be mid-thought; waiting longer before taking the turn",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 376,
+          "msg": "listen: the assistant's voice coming back was not timed"
+        },
+        {
+          "offset_ms": 701,
+          "msg": "listen: utterance closed",
+          "active_ms": "340",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 701,
+          "msg": "asr: the turn closed on words already final",
+          "run": "4",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 743,
+          "msg": "focus: utterance attributed",
+          "voiced_ms": "0",
+          "coverage": "1"
+        },
+        {
+          "offset_ms": 2466,
+          "msg": "listen: the assistant's voice coming back was not timed"
+        }
+      ]
+    },
+    {
+      "utterance_start_ms": 106900,
+      "opened_at": "2026-11-02T23:51:42.229+08:00",
+      "assist_after_open_ms": 168,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "33"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence",
+          "utterance_start_ms": "106900"
+        },
+        {
+          "offset_ms": 168,
+          "msg": "backchannel: earlier ASR final requested",
+          "pause_ms": "40",
+          "original_pause_ms": "120",
+          "utterance_start_ms": "106900"
+        },
+        {
+          "offset_ms": 168,
+          "msg": "asr: stream opened",
+          "run": "34"
+        },
+        {
+          "offset_ms": 168,
+          "msg": "asr: asking for a final on the words so far; a continuation is listening",
+          "run": "33",
+          "pause_ms": "40"
+        },
+        {
+          "offset_ms": 245,
+          "msg": "asr: final for the words so far",
+          "run": "33",
+          "pause_ms": "120",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 512,
+          "msg": "listen: utterance closed",
+          "active_ms": "440",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 512,
+          "msg": "asr: the turn closed on words already final",
+          "run": "34",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 512,
+          "msg": "listen: backchannel, not an interruption; keeping the floor",
+          "text_chars": 4
+        }
+      ]
+    },
+    {
+      "utterance_start_ms": 112660,
+      "opened_at": "2026-11-02T23:51:47.960+08:00",
+      "assist_after_open_ms": 65,
+      "events": [
+        {
+          "offset_ms": 0,
+          "msg": "listen: utterance opened",
+          "active_ms": "320",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "listen: holding the floor while the transcript decides",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "asr: stream opened",
+          "run": "37"
+        },
+        {
+          "offset_ms": 0,
+          "msg": "backchannel: floor evidence",
+          "utterance_start_ms": "112660"
+        },
+        {
+          "offset_ms": 65,
+          "msg": "backchannel: earlier ASR final requested",
+          "pause_ms": "40",
+          "original_pause_ms": "120",
+          "utterance_start_ms": "112660"
+        },
+        {
+          "offset_ms": 65,
+          "msg": "asr: stream opened",
+          "run": "38"
+        },
+        {
+          "offset_ms": 65,
+          "msg": "asr: asking for a final on the words so far; a continuation is listening",
+          "run": "37",
+          "pause_ms": "40"
+        },
+        {
+          "offset_ms": 129,
+          "msg": "asr: final for the words so far",
+          "run": "37",
+          "pause_ms": "100",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 129,
+          "msg": "focus: a sound over the answer was judged",
+          "verdict": "yield",
+          "primary_ms": "400",
+          "voiced_ms": "400",
+          "coverage": "0.84",
+          "waited_ms": "129",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 129,
+          "msg": "listen: not a backchannel; yielding the floor",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 129,
+          "msg": "listen: releasing the floor hold"
+        },
+        {
+          "offset_ms": 129,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "true",
+          "speaking": "true"
+        },
+        {
+          "offset_ms": 374,
+          "msg": "listen: utterance closed",
+          "active_ms": "360",
+          "barge_in": "true"
+        },
+        {
+          "offset_ms": 375,
+          "msg": "asr: the turn closed on words already final",
+          "run": "38",
+          "text_chars": 4
+        },
+        {
+          "offset_ms": 415,
+          "msg": "focus: utterance attributed",
+          "voiced_ms": "0",
+          "coverage": "1"
+        },
+        {
+          "offset_ms": 2226,
+          "msg": "listen: the assistant's voice coming back was not timed"
+        },
+        {
+          "offset_ms": 2231,
+          "msg": "new query while answering: cutting the answer",
+          "barge_in": "false",
+          "speaking": "true"
+        },
+        {
+          "offset_ms": 2825,
+          "msg": "listen: the assistant's voice coming back was not timed"
+        },
+        {
+          "offset_ms": 2834,
+          "msg": "listen: the assistant's voice coming back was not timed"
+        },
+        {
+          "offset_ms": 5281,
+          "msg": "listen: the assistant's voice came back"
+        }
+      ]
+    }
+  ],
+  "legacy_acknowledgments_kept": [
+    {
+      "time": "2026-11-02T23:51:07.658+08:00",
+      "text_chars": 5
+    },
+    {
+      "time": "2026-11-02T23:51:42.741+08:00",
+      "text_chars": 4
+    },
+    {
+      "time": "2026-11-02T23:52:13.027+08:00",
+      "text_chars": 3
+    }
+  ],
+  "message_counts": {
+    "listen: backchannel, not an interruption; keeping the floor": 3,
+    "listen: not a backchannel; yielding the floor": 9
+  }
+}

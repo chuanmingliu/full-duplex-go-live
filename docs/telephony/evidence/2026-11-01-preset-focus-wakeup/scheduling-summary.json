@@ -1,0 +1,71 @@
+{
+  "scope": "Controlled Go scheduling fixture; no real ASR, Active Call transport or handset",
+  "baseline_source": "411b6d0",
+  "candidate": "same source plus focus-evidence loop wakeup",
+  "modes": {
+    "baseline": {
+      "label_delivery_to_cut": {
+        "n": 20,
+        "p50_ms": 79,
+        "p95_ms": 109,
+        "max_ms": 109
+      },
+      "short_reply_first_content": {
+        "n": 20,
+        "p50_ms": 555,
+        "p95_ms": 557,
+        "max_ms": 559
+      },
+      "controls": {
+        "background": {
+          "n": 20,
+          "false_cuts": 0
+        },
+        "echo": {
+          "n": 20,
+          "false_cuts": 0
+        },
+        "below_threshold": {
+          "n": 20,
+          "false_cuts": 0
+        },
+        "acknowledgment": {
+          "n": 20,
+          "false_cuts": 0
+        }
+      }
+    },
+    "candidate": {
+      "label_delivery_to_cut": {
+        "n": 20,
+        "p50_ms": 1,
+        "p95_ms": 1,
+        "max_ms": 1
+      },
+      "short_reply_first_content": {
+        "n": 20,
+        "p50_ms": 554,
+        "p95_ms": 557,
+        "max_ms": 558
+      },
+      "controls": {
+        "background": {
+          "n": 20,
+          "false_cuts": 0
+        },
+        "echo": {
+          "n": 20,
+          "false_cuts": 0
+        },
+        "below_threshold": {
+          "n": 20,
+          "false_cuts": 0
+        },
+        "acknowledgment": {
+          "n": 20,
+          "false_cuts": 0
+        }
+      }
+    }
+  }
+}

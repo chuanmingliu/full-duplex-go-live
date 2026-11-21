@@ -1,0 +1,529 @@
+{
+  "normal_content": {
+    "n": 10,
+    "p50": 1047.5,
+    "p95": 1137,
+    "max": 1137
+  },
+  "canonical_latency": {
+    "scope": "last_sound_to_golive_output",
+    "target_ms": 1200,
+    "percentile": "nearest_rank",
+    "counts": {
+      "records": 17,
+      "answered": 13,
+      "non_speech": 4,
+      "cancelled": 0,
+      "interrupted_answers": 5,
+      "missing": 0,
+      "unverified": 0,
+      "duplicates": 0,
+      "malformed": 0,
+      "content_fallbacks": 0,
+      "assumed_pause": 0,
+      "tool_result_links": 3,
+      "tool_results_joined": 2,
+      "invalid_tool_links": 0,
+      "quote_readouts_missing": 0,
+      "quote_readouts_unverified": 0,
+      "missing_output_records": 0,
+      "quote_only_responses": 2
+    },
+    "first_audio": {
+      "n": 13,
+      "p50_ms": 380,
+      "p90_ms": 383,
+      "p95_ms": 600,
+      "max_ms": 600,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 13,
+      "p50_ms": 1043,
+      "p90_ms": 1137,
+      "p95_ms": 2979,
+      "max_ms": 2979,
+      "at_or_above_target": 1
+    },
+    "conversational_first_content": {
+      "n": 11,
+      "p50_ms": 1043,
+      "p90_ms": 1112,
+      "p95_ms": 1137,
+      "max_ms": 1137,
+      "at_or_above_target": 0
+    },
+    "conversational_content_scope": "first_content_excluding_verified_quote_only_handoffs",
+    "reply": {
+      "n": 13,
+      "p50_ms": 0,
+      "p90_ms": 0,
+      "p95_ms": 3,
+      "max_ms": 3,
+      "at_or_above_target": 0
+    },
+    "tool_result": {
+      "n": 3,
+      "p50_ms": 2979,
+      "p90_ms": 6088,
+      "p95_ms": 6088,
+      "max_ms": 6088,
+      "at_or_above_target": 2
+    },
+    "tool_result_scope": "last_sound_to_linked_result_first_content_may_include_posthook",
+    "tool_result_rows": [
+      {
+        "session": "sess_0efa60e47d70335bb7bc0dee",
+        "task": "t1",
+        "origin_turn": "item_3",
+        "result_turn": "item_4",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 605,
+        "child_first_content_ms": 2,
+        "total_ms": 987,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "session": "sess_0efa60e47d70335bb7bc0dee",
+        "task": "t2",
+        "origin_turn": "item_6",
+        "result_turn": "item_8",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2582,
+        "child_first_content_ms": 17,
+        "total_ms": 2979,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "session": "sess_0efa60e47d70335bb7bc0dee",
+        "task": "t3",
+        "origin_turn": "item_11",
+        "result_turn": "item_12",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5528,
+        "child_first_content_ms": 180,
+        "total_ms": 6088,
+        "quotation": true,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "non_quote_tool_result": {
+      "n": 0,
+      "p50_ms": null,
+      "p90_ms": null,
+      "p95_ms": null,
+      "max_ms": null,
+      "at_or_above_target": 0
+    },
+    "quote_readout": {
+      "n": 3,
+      "p50_ms": 3878,
+      "p90_ms": 6088,
+      "p95_ms": 6088,
+      "max_ms": 6088,
+      "at_or_above_target": 2
+    },
+    "quote_readout_scope": "last_sound_to_deterministic_quote_readout_output",
+    "quote_readout_rows": [
+      {
+        "session": "sess_0efa60e47d70335bb7bc0dee",
+        "task": "t1",
+        "origin_turn": "item_3",
+        "result_turn": "item_4",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 605,
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 2,
+        "total_ms": 987
+      },
+      {
+        "session": "sess_0efa60e47d70335bb7bc0dee",
+        "task": "t2",
+        "origin_turn": "item_6",
+        "result_turn": "item_8",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2582,
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 916,
+        "total_ms": 3878
+      },
+      {
+        "session": "sess_0efa60e47d70335bb7bc0dee",
+        "task": "t3",
+        "origin_turn": "item_11",
+        "result_turn": "item_12",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5528,
+        "origin_evidence": "caller_input_v1",
+        "status": "observed",
+        "child_first_readout_ms": 180,
+        "total_ms": 6088
+      }
+    ]
+  },
+  "quote_tasks": [
+    {
+      "msg": "tools: task done",
+      "task": "t1",
+      "took_ms": "2"
+    },
+    {
+      "msg": "tools: delivering a task's result",
+      "task": "t1",
+      "turn": "item_4",
+      "origin_turn": "item_3",
+      "origin_to_result_start_ms": "605"
+    },
+    {
+      "msg": "tools: task done",
+      "task": "t2",
+      "took_ms": "13"
+    },
+    {
+      "msg": "tools: delivering a task's result",
+      "task": "t2",
+      "turn": "item_8",
+      "origin_turn": "item_6",
+      "origin_to_result_start_ms": "2582"
+    },
+    {
+      "msg": "tools: task done",
+      "task": "t3",
+      "took_ms": "2"
+    },
+    {
+      "msg": "tools: delivering a task's result",
+      "task": "t3",
+      "turn": "item_12",
+      "origin_turn": "item_11",
+      "origin_to_result_start_ms": "5528"
+    }
+  ],
+  "call_id": "496945cf-72de-48b4-ac4a-a2b64a6da22e",
+  "build": "3970624",
+  "latency": {
+    "version": 5,
+    "first_audio": {
+      "n": 13,
+      "p50_ms": 380,
+      "p95_ms": 600,
+      "max_ms": 600,
+      "at_or_above_target": 0
+    },
+    "first_content": {
+      "n": 13,
+      "p50_ms": 1043,
+      "p95_ms": 2979,
+      "max_ms": 2979,
+      "at_or_above_target": 8
+    },
+    "conversational_first_content": {
+      "n": 11,
+      "p50_ms": 1043,
+      "p95_ms": 1137,
+      "max_ms": 1137,
+      "at_or_above_target": 7
+    },
+    "quote_only_responses": 2,
+    "tool_result": {
+      "n": 3,
+      "p50_ms": 2979,
+      "p95_ms": 6088,
+      "max_ms": 6088,
+      "at_or_above_target": 2
+    },
+    "tool_result_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_3",
+        "result_turn": "item_4",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 605,
+        "child_first_content_ms": 2,
+        "total_ms": 987,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_6",
+        "result_turn": "item_8",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2582,
+        "child_first_content_ms": 17,
+        "total_ms": 2979,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t3",
+        "origin_turn": "item_11",
+        "result_turn": "item_12",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5528,
+        "child_first_content_ms": 180,
+        "total_ms": 6088,
+        "interrupted": false,
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readout": {
+      "n": 3,
+      "p50_ms": 3878,
+      "p95_ms": 6088,
+      "max_ms": 6088,
+      "at_or_above_target": 2
+    },
+    "quote_readout_rows": [
+      {
+        "task": "t1",
+        "origin_turn": "item_3",
+        "result_turn": "item_4",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 605,
+        "child_first_readout_ms": 2,
+        "total_ms": 987,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t2",
+        "origin_turn": "item_6",
+        "result_turn": "item_8",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 2582,
+        "child_first_readout_ms": 916,
+        "total_ms": 3878,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      },
+      {
+        "task": "t3",
+        "origin_turn": "item_11",
+        "result_turn": "item_12",
+        "end_silence_ms": 380,
+        "origin_to_result_start_ms": 5528,
+        "child_first_readout_ms": 180,
+        "total_ms": 6088,
+        "status": "observed",
+        "origin_evidence": "caller_input_v1"
+      }
+    ],
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "cancelled": 0,
+    "tool_results_joined": 2,
+    "invalid_tool_links": 0
+  },
+  "interruptions_ms": [],
+  "interruption_stats": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "backchannel": [
+    {
+      "msg": "backchannel: policy enabled"
+    },
+    {
+      "msg": "backchannel: connected"
+    },
+    {
+      "msg": "backchannel: legacy fallback",
+      "reason": "audio_gap"
+    },
+    {
+      "msg": "backchannel: stream closed",
+      "processed_chunks": "271"
+    }
+  ],
+  "quote_requests": [
+    {
+      "config": {
+        "三者险": "400万"
+      }
+    },
+    {}
+  ],
+  "skill_events": [
+    {
+      "msg": "skills: prepare",
+      "turn": "item_2",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2497",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":2454,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":24,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_3",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1623",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":18,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1576,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":22,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_4",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1453",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1118,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":316,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_5",
+      "status": "loaded",
+      "ms": "8",
+      "us": "8841",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":14,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":4881,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":33,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":785,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":1341,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"digest\":\"sha256:111fb25511d176d7507c8b24cc762ac860850ff7afbb04584c60e20766aa605d\",\"us\":51,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1196,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":525,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_6",
+      "status": "loaded",
+      "ms": "5",
+      "us": "5013",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":25,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1465,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":385,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"us\":710,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://motor-quotation/SKILL.md\",\"digest\":\"sha256:451e2f0366192b64d8cf7463f5148d7008ed9bd4afce6bf14ecabc789291be56\",\"us\":29,\"outcome\":\"ok\"},{\"stage\":\"skills/get\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":301,\"outcome\":\"ok\"},{\"stage\":\"verify manifest\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"resources/read\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"us\":727,\"outcome\":\"ok\"},{\"stage\":\"verify digest and frontmatter\",\"uri\":\"skill://vehicle_insurance_concepts/SKILL.md\",\"digest\":\"sha256:111fb25511d176d7507c8b24cc762ac860850ff7afbb04584c60e20766aa605d\",\"us\":24,\"outcome\":\"ok\"},{\"stage\":\"prompts/get revision recheck\",\"us\":1133,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":18,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":181,\"outcome\":\"loaded\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_7",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1964",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1634,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":311,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_8",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1662",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":27,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1208,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":420,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_9",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1559",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":9,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1022,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":516,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_10",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2856",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":16,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":2069,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":756,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_11",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2077",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1006,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":28,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":22,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":1009,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_12",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1268",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1121,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":133,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_13",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1678",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1474,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":7,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":182,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_14",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1720",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":13,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1482,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":217,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_15",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1459",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":11,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1213,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":224,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_16",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1500",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1316,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":4,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":166,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_17",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1306",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":10,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1157,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":131,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_18",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1584",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":13,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1368,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":195,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_19",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1894",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":13,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1651,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":5,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":220,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_20",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1555",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":8,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1404,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":3,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":137,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_21",
+      "status": "no_match",
+      "ms": "1",
+      "us": "1362",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":44,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1051,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":1,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":260,\"outcome\":\"no_match\"}]}"
+    },
+    {
+      "msg": "skills: prepare",
+      "turn": "item_22",
+      "status": "no_match",
+      "ms": "2",
+      "us": "2049",
+      "trace": "{\"revision\":2,\"steps\":[{\"stage\":\"snapshot turn\",\"us\":11,\"outcome\":\"ok\"},{\"stage\":\"prompts/get\",\"us\":1766,\"outcome\":\"ok\"},{\"stage\":\"validate selection\",\"us\":2,\"outcome\":\"ok\"},{\"stage\":\"wait for engine loop\",\"us\":6,\"outcome\":\"ok\"},{\"stage\":\"recheck memory and render\",\"us\":262,\"outcome\":\"no_match\"}]}"
+    }
+  ]
+}

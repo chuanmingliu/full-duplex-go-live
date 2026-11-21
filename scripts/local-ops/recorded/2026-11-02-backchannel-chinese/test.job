@@ -1,0 +1,12 @@
+#timeout 1000
+#push bcd-zh-source-20261102.tar.gz /home/chuanming/golive/bcd-zh-source-20261102.tar.gz
+#push bcd-zh-test-20261102.py /home/chuanming/golive/bcd-zh-test-20261102.py
+#pull /home/chuanming/golive-telephony/codex-latency/backchannel-zh-20261102/operation.json bcd-zh-operation-20261102.json
+#pull /home/chuanming/golive-telephony/codex-latency/backchannel-zh-20261102/results.json bcd-zh-results-20261102.json
+set -eu
+python3 -B - <<'VERIFY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive/bcd-zh-test-20261102.py').read_bytes()).hexdigest()=='ddbc43a6e5765661f6584e83b26a95a16cd75a2ff1775af06a19e17af6fefa70'
+VERIFY
+python3 -B /home/chuanming/golive/bcd-zh-test-20261102.py

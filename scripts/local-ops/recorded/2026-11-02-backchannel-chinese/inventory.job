@@ -1,0 +1,14 @@
+#timeout 40
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import json,urllib.request,subprocess,re,hashlib
+h=Path.home();root=h/'golive-telephony'
+def get(url):
+ with urllib.request.urlopen(url,timeout=5) as r:return json.load(r)
+r={'engine':get('http://127.0.0.1:8765/healthz'),'detector':get('http://127.0.0.1:18087/healthz'),'aria':get('http://127.0.0.1:3000/api/realtime/brain'),'available_ports':subprocess.check_output(['ss','-lntH','sport = :18765 or sport = :18766'],text=True),'fixture_dirs':[{'dir':str(p),'wav_count':len(list(p.glob('*.wav')))} for p in (root/'codex-latency').glob('*/clips')],'bench_exists':(h/'golive/golive-talker-bench-d').exists()}
+for cid in ['out-mvykfqfn-wibn','out-mvxuom0e-mp6l']:
+ d=get('http://192.168.71.9:8790/api/calls/'+cid)
+ r[cid]={'archive_dir':d.get('archive',{}).get('dir'),'archived':d.get('archive',{}).get('archived'),'build':d['call'].get('build'),'ended':bool(d['call'].get('ended_at'))}
+print(json.dumps(r))
+PY

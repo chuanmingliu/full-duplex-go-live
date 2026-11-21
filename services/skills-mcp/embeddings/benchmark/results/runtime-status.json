@@ -1,0 +1,10 @@
+{
+  "running": true,
+  "health": "healthy",
+  "restart_policy": "unless-stopped",
+  "image": "sha256:de2b15617ecebafa1ed137fb6323ecc99bf4e6f7b07977b7408f343511f8c3ea",
+  "started_at": "2026-11-14T09:03:59.081452865Z",
+  "served_models": [
+    "bge-m3"
+  ]
+}

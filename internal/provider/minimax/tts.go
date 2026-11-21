@@ -273,6 +273,12 @@ func supportedRate(want int) int {
 
 // Open implements provider.TTS.
 func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSStream, error) {
+	return t.OpenObserved(ctx, opts, nil)
+}
+
+// OpenObserved keeps the observer on the stream so failovers and later internal
+// reconnects charge their actual destination before making a physical request.
+func (t *TTS) OpenObserved(ctx context.Context, opts provider.TTSOptions, observe func(int)) (provider.TTSStream, error) {
 	rate := supportedRate(opts.SampleRate)
 	if opts.Voice == "" && t.VoiceID == "" {
 		return nil, fmt.Errorf("minimax tts: no voice configured; set MINIMAX_TTS_VOICE_ID or session.audio.output.voice")
@@ -282,9 +288,10 @@ func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSS
 		speed = t.Speed
 	}
 	s := &stream{
-		tts:   t,
-		rate:  rate,
-		speed: speed,
+		tts:       t,
+		rate:      rate,
+		speed:     speed,
+		onConnect: observe,
 	}
 	// One account after another until one takes the session: a key that is
 	// refused — wrong, out of credit, without this voice — is rested and the
@@ -309,10 +316,14 @@ func (t *TTS) Open(ctx context.Context, opts provider.TTSOptions) (provider.TTSS
 }
 
 type stream struct {
-	tts   *TTS
-	rate  int
-	voice string
-	speed float64
+	onConnect       func(int)
+	background      bool
+	backgroundStart map[string]any
+	identity        provider.AudioIdentity
+	tts             *TTS
+	rate            int
+	voice           string
+	speed           float64
 	// key is the account this session is on, and account its place in the
 	// pool. A reconnect stays on it.
 	key     string
@@ -457,6 +468,9 @@ func orDefault(v, def float64) float64 {
 }
 
 func (s *stream) connect(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dialer := websocket.Dialer{
 		HandshakeTimeout: s.tts.OpenTimeout,
 		ReadBufferSize:   64 << 10,
@@ -470,6 +484,9 @@ func (s *stream) connect(ctx context.Context) error {
 	header.Set("Authorization", "Bearer "+key)
 
 	dialStarted := time.Now()
+	if s.onConnect != nil {
+		s.onConnect(s.account)
+	}
 	conn, resp, err := dialer.DialContext(ctx, s.tts.Endpoint, header)
 	if err != nil {
 		if resp != nil {
@@ -478,10 +495,17 @@ func (s *stream) connect(ctx context.Context) error {
 		return fmt.Errorf("minimax tts: dial failed: %w", err)
 	}
 
-	s.setConn(conn)
+	if !s.setConn(conn) {
+		_ = conn.Close()
+		return fmt.Errorf("minimax tts: stream closed while connecting")
+	}
+	start := s.taskStart()
+	if s.background {
+		start = s.backgroundStart
+	}
 	for _, step := range []func() error{
 		func() error { return s.expect(ctx, "connected_success", s.tts.OpenTimeout) },
-		func() error { return s.send(s.taskStart()) },
+		func() error { return s.send(start) },
 		func() error { return s.expect(ctx, "task_started", s.tts.OpenTimeout) },
 	} {
 		if err := step(); err != nil {
@@ -516,7 +540,17 @@ func (s *stream) Synthesize(ctx context.Context, text string) (<-chan provider.T
 		s.busy.Unlock()
 		return nil, fmt.Errorf("minimax tts: stream is closed")
 	}
+	// A previous segment may have held busy while draining after a barge-in.
+	// A queued hedge that lost during that wait must not start another task.
+	if err := ctx.Err(); err != nil {
+		s.busy.Unlock()
+		return nil, err
+	}
 	if s.needsReconnect() {
+		if s.background {
+			s.busy.Unlock()
+			return nil, fmt.Errorf("minimax tts: background connection cannot reconnect")
+		}
 		s.dropConn()
 		if err := s.connect(ctx); err != nil {
 			s.busy.Unlock()
@@ -647,6 +681,9 @@ func (s *stream) Prewarm(ctx context.Context) error {
 	}
 	if !s.needsReconnect() {
 		return nil
+	}
+	if s.background {
+		return fmt.Errorf("minimax tts: background connection cannot reconnect")
 	}
 	s.dropConn()
 	return s.connect(ctx)
@@ -910,10 +947,7 @@ func (s *stream) resync(ctx context.Context) {
 // consumer that has gone away entirely, and it degrades to what a cancellation
 // would have done — abandon the task, resynchronize, carry on.
 func (s *stream) emit(ctx context.Context, out chan<- provider.TTSChunk, chunk provider.TTSChunk) bool {
-	stall := s.tts.ReceiveTimeout
-	if stall <= 0 {
-		stall = 30 * time.Second
-	}
+	stall := s.ConsumerTimeout()
 	timer := time.NewTimer(stall)
 	defer timer.Stop()
 	select {
@@ -926,6 +960,14 @@ func (s *stream) emit(ctx context.Context, out chan<- provider.TTSChunk, chunk p
 			"stall", stall)
 		return false
 	}
+}
+
+// ConsumerTimeout lets PCM proxies preserve the raw stream's abandonment bound.
+func (s *stream) ConsumerTimeout() time.Duration {
+	if s.tts.ReceiveTimeout > 0 {
+		return s.tts.ReceiveTimeout
+	}
+	return 30 * time.Second
 }
 
 func (s *stream) send(payload map[string]any) error {
@@ -1014,11 +1056,15 @@ func (s *stream) currentConn() *websocket.Conn {
 	return s.conn
 }
 
-func (s *stream) setConn(conn *websocket.Conn) {
+func (s *stream) setConn(conn *websocket.Conn) bool {
 	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if s.closed {
+		return false
+	}
 	s.conn = conn
 	s.lastUse = time.Now()
-	s.connMu.Unlock()
+	return true
 }
 
 func (s *stream) touch() {
@@ -1063,6 +1109,9 @@ func (s *stream) Close() error {
 
 	if conn == nil {
 		return nil
+	}
+	if s.background {
+		return conn.Close()
 	}
 	_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 	if data, err := json.Marshal(map[string]any{"event": "task_finish"}); err == nil {

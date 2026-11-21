@@ -1,0 +1,15 @@
+#timeout 1800
+#push talker-box-ab-c.py /home/chuanming/golive/talker-box-ab-c.py
+#push golive-talker-candidate-c /home/chuanming/golive/golive-talker-candidate-c
+#push golive-talker-bench-c /home/chuanming/golive/golive-talker-bench-c
+#pull /home/chuanming/golive-telephony/codex-latency/talker-ab-20261101-c/summary.json talker-ab-20261101-c-summary.json
+set -eu
+python3 -B - <<'VERIFY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256(Path('/home/chuanming/golive/talker-box-ab-c.py').read_bytes()).hexdigest()=='c6215cc5fcad0d235f5a75864819a58e0d97fcacb910727aafafe55d93fb6ed0'
+assert hashlib.sha256(Path('/home/chuanming/golive/golive-talker-candidate-c').read_bytes()).hexdigest()=='eb26097501e59f77a3c00821f5bf9be33526c32e178727382ef6521f87dd44ca'
+assert hashlib.sha256(Path('/home/chuanming/golive/golive-talker-bench-c').read_bytes()).hexdigest()=='883b30bb61851a0c3384f29ec7f641511127fbddd53497e1bc99f1113258100f'
+VERIFY
+chmod 700 /home/chuanming/golive/golive-talker-candidate-c /home/chuanming/golive/golive-talker-bench-c
+python3 -B /home/chuanming/golive/talker-box-ab-c.py

@@ -1,0 +1,426 @@
+{
+  "call": {
+    "call_id": "90786112-6950-4cdf-9169-6ef4b1a3acfc",
+    "run_id": "sim-3042e328b69f57c8e0af102d",
+    "phase": "completed",
+    "build": "motorfull-20261112-a",
+    "duration_s": 169.7,
+    "transcript_turns": {
+      "assistant": 24,
+      "caller": 23
+    },
+    "audio_channels_with_signal": [
+      true,
+      true
+    ],
+    "archive_verified": true,
+    "original_profile_and_saved_prompt_preserved": true,
+    "journal_url": "http://192.168.71.9:18780/#/call/90786112-6950-4cdf-9169-6ef4b1a3acfc",
+    "latency": {
+      "version": 5,
+      "first_audio": {
+        "n": 14,
+        "p50_ms": 380,
+        "p95_ms": 1170,
+        "max_ms": 1170,
+        "at_or_above_target": 1
+      },
+      "first_content": {
+        "n": 14,
+        "p50_ms": 1020.5,
+        "p95_ms": 7144,
+        "max_ms": 7144,
+        "at_or_above_target": 7
+      },
+      "conversational_first_content": {
+        "n": 9,
+        "p50_ms": 954,
+        "p95_ms": 1170,
+        "max_ms": 1170,
+        "at_or_above_target": 3
+      },
+      "quote_only_responses": 5,
+      "tool_result": {
+        "n": 13,
+        "p50_ms": 3679,
+        "p95_ms": 7144,
+        "max_ms": 7144,
+        "at_or_above_target": 12
+      },
+      "tool_result_rows": [
+        {
+          "task": "t1",
+          "origin_turn": "item_3",
+          "result_turn": "item_4",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 352,
+          "child_first_content_ms": 2,
+          "total_ms": 734,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t3",
+          "origin_turn": "item_6",
+          "result_turn": "item_10",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 4144,
+          "child_first_content_ms": 219,
+          "total_ms": 4743,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t4",
+          "origin_turn": "item_11",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 5760,
+          "child_first_content_ms": 3,
+          "total_ms": 6143,
+          "interrupted": true,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t6",
+          "origin_turn": "item_18",
+          "result_turn": "item_22",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 6763,
+          "child_first_content_ms": 1,
+          "total_ms": 7144,
+          "interrupted": true,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t7",
+          "origin_turn": "item_27",
+          "result_turn": "item_30",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 5567,
+          "child_first_content_ms": 20,
+          "total_ms": 5967,
+          "interrupted": true,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t8",
+          "origin_turn": "item_29",
+          "result_turn": "item_31",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 2094,
+          "child_first_content_ms": 1138,
+          "total_ms": 3612,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t9",
+          "origin_turn": "item_34",
+          "result_turn": "item_36",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1723,
+          "child_first_content_ms": 1,
+          "total_ms": 2104,
+          "interrupted": true,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t3",
+          "origin_turn": "item_8",
+          "result_turn": "item_10",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1462,
+          "child_first_content_ms": 219,
+          "total_ms": 2061,
+          "interrupted": false,
+          "coalesced": true,
+          "primary_origin_turn": "item_6",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t3",
+          "origin_turn": "item_9",
+          "result_turn": "item_10",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 492,
+          "child_first_content_ms": 219,
+          "total_ms": 1091,
+          "interrupted": false,
+          "coalesced": true,
+          "primary_origin_turn": "item_6",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t4",
+          "origin_turn": "item_12",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 4693,
+          "child_first_content_ms": 3,
+          "total_ms": 5076,
+          "interrupted": true,
+          "coalesced": true,
+          "primary_origin_turn": "item_11",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t4",
+          "origin_turn": "item_13",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 3296,
+          "child_first_content_ms": 3,
+          "total_ms": 3679,
+          "interrupted": true,
+          "coalesced": true,
+          "primary_origin_turn": "item_11",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t6",
+          "origin_turn": "item_20",
+          "result_turn": "item_22",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 4662,
+          "child_first_content_ms": 1,
+          "total_ms": 5043,
+          "interrupted": true,
+          "coalesced": true,
+          "primary_origin_turn": "item_18",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t9",
+          "origin_turn": "item_35",
+          "result_turn": "item_36",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 677,
+          "child_first_content_ms": 1,
+          "total_ms": 1058,
+          "interrupted": true,
+          "coalesced": true,
+          "primary_origin_turn": "item_34",
+          "origin_evidence": "caller_input_v1"
+        }
+      ],
+      "quote_readout": {
+        "n": 9,
+        "p50_ms": 3335,
+        "p95_ms": 7374,
+        "max_ms": 7374,
+        "at_or_above_target": 8
+      },
+      "quote_readout_rows": [
+        {
+          "task": "t1",
+          "origin_turn": "item_3",
+          "result_turn": "item_4",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 352,
+          "child_first_readout_ms": 2,
+          "total_ms": 734,
+          "status": "observed",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t3",
+          "origin_turn": "item_6",
+          "result_turn": "item_10",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 4144,
+          "child_first_readout_ms": 1452,
+          "total_ms": 5976,
+          "status": "observed",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t4",
+          "origin_turn": "item_11",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 5760,
+          "child_first_readout_ms": 1234,
+          "total_ms": 7374,
+          "status": "observed",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t6",
+          "origin_turn": "item_18",
+          "result_turn": "item_22",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 6763,
+          "child_first_readout_ms": null,
+          "total_ms": null,
+          "status": "missing",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t7",
+          "origin_turn": "item_27",
+          "result_turn": "item_30",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 5567,
+          "child_first_readout_ms": null,
+          "total_ms": null,
+          "status": "missing",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t8",
+          "origin_turn": "item_29",
+          "result_turn": "item_31",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 2094,
+          "child_first_readout_ms": null,
+          "total_ms": null,
+          "status": "unverified",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t9",
+          "origin_turn": "item_34",
+          "result_turn": "item_36",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1723,
+          "child_first_readout_ms": 1232,
+          "total_ms": 3335,
+          "status": "observed",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t3",
+          "origin_turn": "item_8",
+          "result_turn": "item_10",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 1462,
+          "child_first_readout_ms": 1452,
+          "total_ms": 3294,
+          "status": "observed",
+          "coalesced": true,
+          "primary_origin_turn": "item_6",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t3",
+          "origin_turn": "item_9",
+          "result_turn": "item_10",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 492,
+          "child_first_readout_ms": 1452,
+          "total_ms": 2324,
+          "status": "observed",
+          "coalesced": true,
+          "primary_origin_turn": "item_6",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t4",
+          "origin_turn": "item_12",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 4693,
+          "child_first_readout_ms": 1234,
+          "total_ms": 6307,
+          "status": "observed",
+          "coalesced": true,
+          "primary_origin_turn": "item_11",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t4",
+          "origin_turn": "item_13",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 3296,
+          "child_first_readout_ms": 1234,
+          "total_ms": 4910,
+          "status": "observed",
+          "coalesced": true,
+          "primary_origin_turn": "item_11",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t6",
+          "origin_turn": "item_20",
+          "result_turn": "item_22",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 4662,
+          "child_first_readout_ms": null,
+          "total_ms": null,
+          "status": "missing",
+          "coalesced": true,
+          "primary_origin_turn": "item_18",
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "task": "t9",
+          "origin_turn": "item_35",
+          "result_turn": "item_36",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 677,
+          "child_first_readout_ms": 1232,
+          "total_ms": 2289,
+          "status": "observed",
+          "coalesced": true,
+          "primary_origin_turn": "item_34",
+          "origin_evidence": "caller_input_v1"
+        }
+      ],
+      "quote_readouts_missing": 3,
+      "quote_readouts_unverified": 1,
+      "missing": 0,
+      "unverified": 0,
+      "duplicates": 0,
+      "cancelled": 0,
+      "tool_results_joined": 5,
+      "invalid_tool_links": 0
+    }
+  },
+  "seeded_policy_labels": [
+    "default",
+    "driver_shared"
+  ],
+  "runtime_api_calculations": 4,
+  "runtime_mock_calculation_ms": [
+    4144,
+    2862,
+    4356,
+    3673
+  ],
+  "cache_lookup_events": 6,
+  "cache_lookup_events_note": "Includes startup/default preparation and comparison lookups",
+  "post_call_business_api_probes": [
+    {
+      "name": "preseeded_common_policy",
+      "cached": true,
+      "http_ms": 2.26,
+      "api_submissions": 0,
+      "total": 4543
+    },
+    {
+      "name": "new_less_common_policy",
+      "cached": false,
+      "http_ms": 4241.42,
+      "api_submissions": 1,
+      "total": 4932.5
+    },
+    {
+      "name": "repeat_less_common_policy",
+      "cached": true,
+      "http_ms": 1.8,
+      "api_submissions": 0,
+      "total": 4932.5
+    }
+  ],
+  "dialogue_followup": "The restored policy total was provided after the caller asked for the total again.",
+  "stopped_candidate_services": [
+    "aria",
+    "golive",
+    "crm",
+    "quotesvc"
+  ],
+  "still_stopping": [],
+  "original_service": "951a6b4"
+}

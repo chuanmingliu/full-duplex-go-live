@@ -1,0 +1,14 @@
+[
+  {
+    "turn": "item_15",
+    "first_content_total_ms": 803,
+    "interrupted": true,
+    "end_silence_ms": 380,
+    "asr_final_ms": 0,
+    "turn_start_ms": -148,
+    "llm_first_token_ms": 204,
+    "first_segment_ms": 0,
+    "tts_first_audio_ms": 0,
+    "first_content_ms": 423
+  }
+]

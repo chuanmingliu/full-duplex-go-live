@@ -44,7 +44,10 @@ func TestTheWorkLogIsAppendedAndTailedLive(t *testing.T) {
 	if code, _ := do("", "POST", "/api/logs/local-talker", "text/plain", "x"); code != 401 {
 		t.Fatalf("no token: %d", code)
 	}
-	if code, _ := do("codex", "POST", "/api/logs/../etc", "text/plain", "x"); code != 400 && code != 404 {
+	// Depending on the standard library, path cleaning may reject directly,
+	// redirect to a missing route, or preserve POST on a redirect (Go 1.26),
+	// which the GET-only fallback rejects with 405. None may accept the write.
+	if code, _ := do("codex", "POST", "/api/logs/../etc", "text/plain", "x"); code != 400 && code != 404 && code != 405 {
 		t.Fatalf("a bad name: %d", code)
 	}
 	// The owner reads it: three lines, the number masked, the author kept.

@@ -1,0 +1,7 @@
+FROM qwen3-asr-ws:0.6b
+RUN python3 -m pip uninstall -y vllm triton xformers flash-attn flashinfer-python flashinfer-cubin
+COPY wheels /wheels
+RUN python3 -m pip install --no-index --find-links=/wheels /wheels/vllm_pascal-0.8.5.post1+cu121-cp38-abi3-linux_x86_64.whl sentence-transformers==5.1.1 transformers==4.57.6
+RUN python3 -c "import torch; print(torch.__version__,torch.version.cuda,torch._C._cuda_getArchFlags())"
+ENV VLLM_USE_V1=0 VLLM_ATTENTION_BACKEND=TORCH_SDPA VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1 OMP_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false
+ENTRYPOINT ["python3","-m","vllm.entrypoints.openai.api_server"]

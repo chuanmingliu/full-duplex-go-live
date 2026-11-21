@@ -1,0 +1,25 @@
+{
+  "payload_sha256": "4f59bcd28518f3e9e50b51ba9642a5b9033d774429513e294946b941ef92289e",
+  "executed_files": {
+    "inventory.job": "3433dc6d015d064b68a1bfd87299bdea9489e4c14b47b6bd0ccef3c89b7095c5",
+    "deploy.py": "3c993dd54021a12ad54d884f279b56fd434b5f7922fb475dd4d2cc74fff02030",
+    "deploy.job": "9ac0e02b2f9a10c6e1ac60f0db32972adf7b1a26bddce4a8a5cd19babb42dd3c",
+    "verify.job": "4f8d688ac642fa41c462b93b784aded186c22c71d77304dab1b8209aa142bec6"
+  },
+  "deployed_source_sha256": {
+    ".dockerignore": "6fd6aafd21dfd595b935538fb642e5168847969b5760098e1f79372f6b2e0827",
+    ".gitignore": "1a1d631eccc6c5dd83a84cb9a27dc89e11eda3b8fc0befd07935033518d9f1f8",
+    "Dockerfile": "31f209fec1ce950e6f36d43951c61df83b96a32ba73510e5adb69b412d1535a6",
+    "README.md": "fa80eb2ae6ce9275d0e0aee320420c31516930f9bb64bf33180101be40ee7f19",
+    "compose.yaml": "28acacbd4b5128fbbb4875a47891d5566382af67eb6030fa2ffec18e210fd40b",
+    "detector.py": "409723517ee465b57a67484dba6d9f243540c2d13b4ac48608b025dd36584797",
+    "fetch_model.py": "113391ac2d5fd6513cb7a073d011e8f0a9b395b3f2e23a3f04d7da7666e25a3b",
+    "model.lock.json": "64d4f871ee920520eac42736f0c56016102a6ad36ed799f0b95196cb9de4948a",
+    "probe.py": "98fc53fada726d086241b53246a7c81a3f3c593c2a07013aab48e94baf241511",
+    "requirements.txt": "8b000cf9ac0598970dd76caefe50123c043fbc11ee6de0d4cdeb2a8c11106ad7",
+    "server.py": "fcca6565f1c90c410b31632d32ac86801ab3ae2e34897efc8063cb28d1d98ccd",
+    "test_service.py": "e234fa352402f110c9c835432db40a25021d1926e23b7ff29f1b7a918d947416",
+    "models/backchannel-fp32.onnx": "3e5d47740e5f75211cc78c5df701be9afe7b76c4115144212a18598766909240",
+    "models/model.json": "db970ffd0367225c0482c962e9b70c6553700582c720e35c3dda551ed31b7073"
+  }
+}

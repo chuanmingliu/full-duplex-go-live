@@ -1,0 +1,56 @@
+{
+  "candidate": "f1fd9a648544c131600958323961bebad563c6b8",
+  "baseline": "eb8a48c",
+  "ci": {
+    "push": 41298313932,
+    "pr": 41298317591,
+    "normal": "pass",
+    "race": "pass",
+    "quality": "pass"
+  },
+  "local_full_race": [
+    {
+      "result": "fail",
+      "duplex_seconds": 646.055,
+      "failed_test": "TestConversationContinuesWhileAFunctionIsPending",
+      "data_race_reported": false
+    },
+    {
+      "result": "fail",
+      "duplex_seconds": 636.857,
+      "failed_test": "TestTheSilenceRuleDoesNotCountTheAssistantsOwnAnswer",
+      "data_race_reported": false
+    }
+  ],
+  "focused_rechecks": {
+    "continuation_baseline": {
+      "count": 3,
+      "result": "pass"
+    },
+    "continuation_candidate": {
+      "count": 3,
+      "result": "pass"
+    },
+    "silence_baseline": {
+      "count": 3,
+      "result": "pass"
+    },
+    "silence_candidate": {
+      "count": 3,
+      "result": "pass"
+    }
+  },
+  "local_full_failures_resolved": false,
+  "local_vet": "pass",
+  "prefeed_focused_race": "pass",
+  "log_hashes": {
+    "golive-interrupt-full-race.txt": "6b79b3084b2ff94374f598adfa9286b472022c6a74ddde7f540df2a1c63f89bd",
+    "golive-interrupt-full-race-repeat.txt": "2e663d572da34dda46cbac6799bc42b96ac8dd36f2185b7c7f06261d8efdfbde",
+    "golive-interrupt-ack-candidate.txt": "e5ba8fad7d5df5da3e615518244c988df395f89a109932ce582837e83661a2aa",
+    "golive-interrupt-ack-baseline.txt": "2c3a4d44e74b22e7ceb6c38083c089ba952b4e08c4a9510fc22ff9ad2e505f6b",
+    "golive-interrupt-silence-candidate.txt": "3ced9a471582b66c611dc5cae6e61f12824df71519dd9b5e9bdeae62db502ca5",
+    "golive-interrupt-silence-baseline.txt": "846a6a72a6df086e2c69543f5e74d4b24b46e84bef7599361d0f5b7578c0e0ec",
+    "golive-interrupt-prefix-race.txt": "e158f2f3adc504f1295a7f51af54e054efba4d628dd9e0ff14cb721c0e8a63e2",
+    "golive-interrupt-vet.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

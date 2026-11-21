@@ -1,0 +1,95 @@
+{
+  "kind": "exact reviewed runner operation bodies",
+  "files": [
+    {
+      "file": "baseline-9547d22.sh",
+      "sha256": "9813aed83c33392aaa874950841074ca6bc8d95ac486613c3ed36587bcaadfd1",
+      "bytes": 10036,
+      "source": "/tmp/activecall-baseline-20261101-c.sh"
+    },
+    {
+      "file": "preflight-45b5564.sh",
+      "sha256": "ef4611d67197d7ae532d4d25dc6255eed9b85d61e9ccf5c236cfbb6f7ea25bb6",
+      "bytes": 11994,
+      "source": "/tmp/activecall-preflight-45b5564.sh"
+    },
+    {
+      "file": "deploy-45b5564.sh",
+      "sha256": "4e5893f7a36692a5c623461dae68f7e99e8ff86914831b3ddf90c34d84b17fa9",
+      "bytes": 53846,
+      "source": "/tmp/activecall-deploy-45b5564.sh"
+    },
+    {
+      "file": "reconcile-45b5564.sh",
+      "sha256": "b36af360a69e4fe211ef32ce8a10697dad88ea209fbbfb61c2332c0c650af1c4",
+      "bytes": 13458,
+      "source": "/tmp/activecall-reconcile-45b5564.sh"
+    },
+    {
+      "file": "candidate-45b5564.sh",
+      "sha256": "c9ee58c3916f298af45691ecf0b88225479bf156a773b307495d8486d988e947",
+      "bytes": 10301,
+      "source": "/tmp/activecall-candidate-20261101-b.sh"
+    },
+    {
+      "file": "interruptions-45b5564.sh",
+      "sha256": "4a3875165c817dd4faf705e1d6c6cf6a526e3586183c28925a4a4fde336f71d2",
+      "bytes": 10304,
+      "source": "/tmp/activecall-interrupt-20261101-a.sh"
+    },
+    {
+      "file": "collect-interruptions.py",
+      "sha256": "c41c335065459616bb1b7f4ad58792a73109f25e52e344b942d53345287e640c",
+      "bytes": 6334,
+      "source": "/tmp/activecall-interrupt-collect-readonly.py"
+    },
+    {
+      "file": "cut-decisions.py",
+      "sha256": "449dda8bfdadab1e6280c8b36a3d69a3f92c73275dc53795a11626210a32405d",
+      "bytes": 2208,
+      "source": "/tmp/activecall-interruption-readonly.py"
+    },
+    {
+      "file": "normal-content-tail.py",
+      "sha256": "4a6d61277e94a40ab5c48f9fd631b6a40cc4b045b19aeebaee0af430de03aa59",
+      "bytes": 1539,
+      "source": "/tmp/activecall-normal-tail.py"
+    },
+    {
+      "file": "publish-0c2ba18.sh",
+      "sha256": "54506a9fb54adf7d3604305dac13af9df47bd4d9e0628c50d851e566fd179034",
+      "bytes": 10053,
+      "source": "/tmp/activecall-publish-0c2ba18.sh"
+    },
+    {
+      "file": "deploy-journal-0c2ba18.sh",
+      "sha256": "8bf6ac2e51d52dc6d8fe24eabc72200c995369ebd03f369d7fbaa7a0880254e1",
+      "bytes": 9094,
+      "source": "/tmp/activecall-journal-0c2ba18-b.sh"
+    },
+    {
+      "file": "repeat-45b5564.sh",
+      "sha256": "8b7116df20f437732037473b5c1d8d166822656facc599c1b06b50e9575cf847",
+      "bytes": 10579,
+      "source": "/tmp/activecall-repeat-20261101-a.sh"
+    },
+    {
+      "file": "provider-phases.py",
+      "sha256": "9534a9198e69c1fbefb9a931960547feb3b820990bc94831dec721ee3216d311",
+      "bytes": 1986,
+      "source": "/tmp/activecall-provider-phases.py"
+    },
+    {
+      "file": "publish-repeat.sh",
+      "sha256": "6523749f9e22502c6ba73b3c2fbf27b134e4a22e6473d00e9ae59e3fc524c5c1",
+      "bytes": 8147,
+      "source": "/tmp/activecall-publish-repeat.sh"
+    },
+    {
+      "file": "preflight-rejected-journal-0c2ba18.sh",
+      "sha256": "4397107f54f947a9bc3df3c0424b727355851ec187dd43f7de41653c21966932",
+      "bytes": 9103,
+      "source": "/tmp/activecall-journal-0c2ba18.sh"
+    }
+  ]
+}

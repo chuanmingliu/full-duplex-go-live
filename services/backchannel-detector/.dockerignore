@@ -1,0 +1,7 @@
+models
+__pycache__
+*.wav
+*.jsonl
+test_*
+replay.py
+smoke.py

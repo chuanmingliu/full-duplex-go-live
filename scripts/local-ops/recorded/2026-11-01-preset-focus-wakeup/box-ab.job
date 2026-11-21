@@ -1,0 +1,14 @@
+#timeout 1800
+#push preset-focus-ab-20261101.py /home/chuanming/golive/preset-focus-ab-20261101.py
+#push golive-preset-focus-candidate /home/chuanming/golive/golive-preset-focus-candidate
+#pull /home/chuanming/golive-telephony/codex-latency/preset-focus-ab-20261101/summary.json preset-focus-ab-20261101-summary.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+assert hashlib.sha256((Path.home()/'golive'/'preset-focus-ab-20261101.py').read_bytes()).hexdigest()=='3c9f2ade0e673f60529db1b2384666417aafbc92348316ea95e063e0bde7a922'
+assert hashlib.sha256((Path.home()/'golive'/'golive-preset-focus-candidate').read_bytes()).hexdigest()=='fd21eb7b2e9a50ae4d106ea57b3cb5d6e8de91c2dfabb8435109101e5fcba5b8'
+assert hashlib.sha256((Path.home()/'golive'/'golive-talker-bench-d').read_bytes()).hexdigest()=='f5acf9b4daf2e3e1a810779cd457149473eed8ff7e7b59149048aca0abfe1a37'
+PY
+chmod 700 /home/chuanming/golive/golive-preset-focus-candidate
+python3 -B /home/chuanming/golive/preset-focus-ab-20261101.py

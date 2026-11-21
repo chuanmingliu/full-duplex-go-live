@@ -1,0 +1,7 @@
+{
+  "cases": 14,
+  "dimensions": 1024,
+  "minimum_reference_cosine": 0.9999999403953552,
+  "maximum_reference_absolute_error": 1.8998980522155762e-07,
+  "maximum_batch_single_error": 1.341104507446289e-07
+}

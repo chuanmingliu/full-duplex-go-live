@@ -1,0 +1,379 @@
+{
+  "scope": "Synthetic text input, real DeepSeek model and isolated MCP router, mock audio and 3000 ms quotation worker",
+  "summary": {
+    "turns": 24,
+    "checks": 129,
+    "failures": []
+  },
+  "turns": [
+    {
+      "scenario": "accumulate_request",
+      "mode": "baseline",
+      "first_text_ms": 4085.15,
+      "first_audio_ms": 1028.104,
+      "quote_start_ms": 627.274,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "clarify_request",
+      "mode": "baseline",
+      "first_text_ms": 747.179,
+      "first_audio_ms": 760.624,
+      "quote_start_ms": 985.241,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "cancel_request",
+      "mode": "baseline",
+      "first_text_ms": 470.945,
+      "first_audio_ms": 598.356,
+      "quote_start_ms": 751.817,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "compare_request",
+      "mode": "baseline",
+      "first_text_ms": 4338.658,
+      "first_audio_ms": 1294.424,
+      "quote_start_ms": 893.842,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "interrupt_request",
+      "mode": "baseline",
+      "first_text_ms": 490.86,
+      "first_audio_ms": 610.864,
+      "quote_start_ms": 744.647,
+      "checks": {
+        "baseline_calculates_immediately": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "accumulate_request",
+      "mode": "confirmation",
+      "first_text_ms": 972.074,
+      "first_audio_ms": 1078.434,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "model_chain_completed": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "yes_means_more",
+      "mode": "confirmation",
+      "first_text_ms": 908.047,
+      "first_audio_ms": 1114.729,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "no_calculation_on_more_changes": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "more_changes",
+      "mode": "confirmation",
+      "first_text_ms": 1373.846,
+      "first_audio_ms": 1484.581,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "changes_accumulated": true,
+        "confirmation_wording_varied": true,
+        "model_chain_completed": true,
+        "no_invented_change_count": true,
+        "removal_skill_loaded": true,
+        "response": true,
+        "yes_means_more_changes": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_all",
+      "mode": "confirmation",
+      "first_text_ms": 1696.947,
+      "first_audio_ms": 1777.638,
+      "quote_start_ms": 910.96,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmation_skill_loaded": true,
+        "merged_selection_submitted": true,
+        "model_chain_completed": true,
+        "one_confirmed_calculation": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "repeat_confirmation",
+      "mode": "confirmation",
+      "first_text_ms": 344.3,
+      "first_audio_ms": 561.004,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "no_duplicate_calculation": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "second_revision",
+      "mode": "confirmation",
+      "first_text_ms": 1738.72,
+      "first_audio_ms": 2217.595,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmation_wording_varied": true,
+        "model_chain_completed": true,
+        "response": true,
+        "second_revision_waits": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "second_confirmation",
+      "mode": "confirmation",
+      "first_text_ms": 1642.124,
+      "first_audio_ms": 1688.886,
+      "quote_start_ms": 800.695,
+      "checks": {
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "response": true,
+        "second_revision_calculated_once": true,
+        "second_revision_memory": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "clarify_request",
+      "mode": "confirmation",
+      "first_text_ms": 1575.159,
+      "first_audio_ms": 1715.002,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "model_chain_completed": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "clarification",
+      "mode": "confirmation",
+      "first_text_ms": 251.205,
+      "first_audio_ms": 420.172,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "clarification_did_not_calculate": true,
+        "model_chain_completed": true,
+        "pending_survived": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_after_clarification",
+      "mode": "confirmation",
+      "first_text_ms": 1178.851,
+      "first_audio_ms": 1320.321,
+      "quote_start_ms": 470.08,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_after_clarification": true,
+        "model_chain_completed": true,
+        "response": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "cancel_request",
+      "mode": "confirmation",
+      "first_text_ms": 877.033,
+      "first_audio_ms": 992.951,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "model_chain_completed": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "cancel_pending",
+      "mode": "confirmation",
+      "first_text_ms": 1245.759,
+      "first_audio_ms": 1499.817,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "cancel_did_not_calculate": true,
+        "model_chain_completed": true,
+        "pending_removed": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "compare_request",
+      "mode": "confirmation",
+      "first_text_ms": 1725.049,
+      "first_audio_ms": 1858.432,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "model_chain_completed": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "unspecified_damage_change",
+      "mode": "confirmation",
+      "first_text_ms": 719.25,
+      "first_audio_ms": 917.951,
+      "quote_start_ms": null,
+      "checks": {
+        "asks_for_details": true,
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "no_pricing_on_unspecified_change": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "comparison_damage_removed",
+      "mode": "confirmation",
+      "first_text_ms": 1604.615,
+      "first_audio_ms": 1741.697,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmation_wording_varied": true,
+        "model_chain_completed": true,
+        "no_pricing_before_scope_confirmation": true,
+        "response": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "confirm_comparison",
+      "mode": "confirmation",
+      "first_text_ms": 1997.289,
+      "first_audio_ms": 2068.31,
+      "quote_start_ms": 802.679,
+      "checks": {
+        "bounded_model_steps": true,
+        "comparison_kept_original_policy": true,
+        "comparison_preserves_requested_scope": true,
+        "model_chain_completed": true,
+        "one_confirmed_comparison": true,
+        "response": true,
+        "three_alternatives": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "interrupt_request",
+      "mode": "confirmation",
+      "first_text_ms": 1179.554,
+      "first_audio_ms": 1310.288,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_unchanged": true,
+        "model_chain_completed": true,
+        "no_pricing_before_confirmation": true,
+        "quotation_skill_loaded": true,
+        "response": true,
+        "revision_staged": true
+      },
+      "quote_requests": 0
+    },
+    {
+      "scenario": "interrupt_waiting_phrase",
+      "mode": "confirmation",
+      "first_text_ms": 1578.668,
+      "first_audio_ms": 1736.501,
+      "quote_start_ms": 654.211,
+      "checks": {
+        "bounded_model_steps": true,
+        "confirmed_memory_retained": true,
+        "model_chain_completed": true,
+        "one_quote_despite_interruption": true,
+        "response": true,
+        "waiting_phrase_interrupted_without_stale_audio": true
+      },
+      "quote_requests": 1
+    },
+    {
+      "scenario": "recover_after_interruption",
+      "mode": "confirmation",
+      "first_text_ms": 685.088,
+      "first_audio_ms": 842.317,
+      "quote_start_ms": null,
+      "checks": {
+        "bounded_model_steps": true,
+        "model_chain_completed": true,
+        "no_duplicate_after_interruption": true,
+        "recalls_confirmed_selection": true,
+        "response": true
+      },
+      "quote_requests": 0
+    }
+  ]
+}

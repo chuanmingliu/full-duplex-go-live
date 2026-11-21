@@ -32,6 +32,7 @@ var errASROpen = errors.New("asr open failed")
 // late.
 type lazyASR struct {
 	results chan provider.ASRResult
+	done    chan struct{}
 
 	mu        sync.Mutex
 	stream    provider.ASRStream
@@ -39,6 +40,7 @@ type lazyASR struct {
 	sendDone  bool
 	closed    bool
 	failed    bool
+	ended     bool
 	startedAt time.Time
 	readyIn   time.Duration
 }
@@ -47,6 +49,7 @@ type lazyASR struct {
 func dialLazyASR(ctx context.Context, asr provider.ASR, opts provider.ASROptions) *lazyASR {
 	l := &lazyASR{
 		results:   make(chan provider.ASRResult, 32),
+		done:      make(chan struct{}),
 		startedAt: time.Now(),
 	}
 	go l.open(ctx, asr, opts)
@@ -54,7 +57,12 @@ func dialLazyASR(ctx context.Context, asr provider.ASR, opts provider.ASROptions
 }
 
 func (l *lazyASR) open(ctx context.Context, asr provider.ASR, opts provider.ASROptions) {
-	defer close(l.results)
+	defer func() {
+		l.mu.Lock()
+		l.ended = true
+		l.mu.Unlock()
+		close(l.results)
+	}()
 
 	stream, err := asr.Open(ctx, opts)
 	if err != nil && ctx.Err() == nil && !l.isClosed() {
@@ -127,6 +135,8 @@ func (l *lazyASR) forward(ctx context.Context, r provider.ASRResult) bool {
 		return true
 	case <-ctx.Done():
 		return false
+	case <-l.done:
+		return false
 	}
 }
 
@@ -170,6 +180,30 @@ func (l *lazyASR) Write(pcm []byte) error {
 // Results implements provider.ASRStream.
 func (l *lazyASR) Results() <-chan provider.ASRResult { return l.results }
 
+// bufferedResults keeps the latest hypothesis available at VAD confirmation.
+// Replaying an already superseded pre-VAD partial could turn a corrected
+// acknowledgment into an interruption. Final results and errors are barriers
+// and are never swallowed. The bounded drain cannot starve the engine loop.
+func (l *lazyASR) bufferedResults() []provider.ASRResult {
+	var out []provider.ASRResult
+	for i := 0; i < cap(l.results); i++ {
+		select {
+		case r, ok := <-l.results:
+			if !ok {
+				return out
+			}
+			if n := len(out); n > 0 && !out[n-1].Final && out[n-1].Err == nil && r.Err == nil {
+				out[n-1] = r
+			} else {
+				out = append(out, r)
+			}
+		default:
+			return out
+		}
+	}
+	return out
+}
+
 // CloseSend implements provider.ASRStream. Before the connection is up it is
 // remembered and sent as soon as the buffered audio has been.
 func (l *lazyASR) CloseSend() error {
@@ -195,6 +229,7 @@ func (l *lazyASR) Close() error {
 		return nil
 	}
 	l.closed = true
+	close(l.done)
 	l.pending = nil
 	stream := l.stream
 	l.mu.Unlock()
@@ -210,7 +245,7 @@ func (l *lazyASR) Close() error {
 func (l *lazyASR) usable(maxAge time.Duration) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return !l.closed && !l.failed && time.Since(l.startedAt) < maxAge
+	return !l.closed && !l.failed && !l.ended && time.Since(l.startedAt) < maxAge
 }
 
 // didFail reports whether the connection could not be opened.

@@ -1,0 +1,565 @@
+[
+  {
+    "scenario": "normal",
+    "mode": "original",
+    "first_audio_ms": 1027.455,
+    "first_text_ms": 894.177,
+    "workflow_text_ms": 894.177,
+    "trace": [
+      {
+        "text": "保险生效时间以保单上载明的时间为准。",
+        "elapsed_ms": 1027.081,
+        "first_text_at": "2026-11-09T13:45:06.730286653+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "expected_skill_selection": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "normal",
+    "mode": "skills",
+    "first_audio_ms": 1020.665,
+    "first_text_ms": 927.899,
+    "workflow_text_ms": 927.899,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "no_match",
+            "scope": "item_1",
+            "memory_version": 1
+          }
+        ],
+        "text": "生效时间以保单上载明的时间为准。",
+        "elapsed_ms": 1039.078,
+        "first_text_at": "2026-11-09T13:45:08.193493049+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "expected_skill_selection": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "quotation",
+    "mode": "original",
+    "first_audio_ms": 1820.163,
+    "first_text_ms": 1717.625,
+    "workflow_text_ms": 1717.625,
+    "quote_start_ms": 775.517,
+    "trace": [
+      {
+        "calls": [
+          {
+            "id": "call_00_d4yE2UoOaIKKxJGU1H5e0930",
+            "name": "quote_total",
+            "arguments": "{\"config\": {\"三者险\": \"300万\"}}"
+          }
+        ],
+        "elapsed_ms": 775.231,
+        "first_text_at": "0001-01-01T00:00:00Z"
+      },
+      {
+        "text": "好的，三者险改成300万，其他不变，正在为您重新计算，请稍等。",
+        "elapsed_ms": 1103.212,
+        "first_text_at": "2026-11-09T13:45:10.425656007+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "quote_requests": [
+      {
+        "tool": "quote_total",
+        "call_id": "call_00_d4yE2UoOaIKKxJGU1H5e0930",
+        "session": "synthetic-skills",
+        "call": "synthetic-skills",
+        "arguments": {
+          "config": {
+            "三者险": "300万"
+          }
+        },
+        "memory": {
+          "quote": {
+            "三者险": "200万",
+            "交强险": true,
+            "车损险": true
+          },
+          "wechat": {
+            "status": "consented"
+          }
+        },
+        "memory_version": 1
+      }
+    ],
+    "checks": {
+      "bounded_model_steps": true,
+      "expected_skill_selection": true,
+      "model_chain_completed": true,
+      "plan_preserved": true,
+      "quote_requested": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "quotation",
+    "mode": "skills",
+    "first_audio_ms": 1775.276,
+    "first_text_ms": 1678.581,
+    "workflow_text_ms": 1678.581,
+    "quote_start_ms": 989.165,
+    "trace": [
+      {
+        "calls": [
+          {
+            "id": "call_00_SbYtm147UkxxIpV2GFhI1219",
+            "name": "quote_total",
+            "arguments": "{\"config\": {\"三者险\": \"300万\"}}"
+          }
+        ],
+        "guidance": [
+          {
+            "status": "loaded",
+            "scope": "item_1",
+            "memory_version": 1,
+            "source": "configured-business-mcp",
+            "guidance": [
+              {
+                "uri": "skill://motor-quotation/SKILL.md",
+                "digest": "sha256:065f6d0d45a0a8be35640ea5885522372655f98d5d9e635619a9ee0ae8786073",
+                "text": ""
+              }
+            ]
+          }
+        ],
+        "elapsed_ms": 985.88,
+        "first_text_at": "0001-01-01T00:00:00Z"
+      },
+      {
+        "guidance": [
+          {
+            "status": "loaded",
+            "scope": "item_1",
+            "memory_version": 1,
+            "source": "configured-business-mcp",
+            "guidance": [
+              {
+                "uri": "skill://motor-quotation/SKILL.md",
+                "digest": "sha256:065f6d0d45a0a8be35640ea5885522372655f98d5d9e635619a9ee0ae8786073",
+                "text": ""
+              }
+            ]
+          }
+        ],
+        "text": "好的，三者险改成300万，其他不变，正在重新计算，请稍等一下。",
+        "elapsed_ms": 790.589,
+        "first_text_at": "2026-11-09T13:45:12.667856506+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "quote_requests": [
+      {
+        "tool": "quote_total",
+        "call_id": "call_00_SbYtm147UkxxIpV2GFhI1219",
+        "session": "synthetic-skills",
+        "call": "synthetic-skills",
+        "arguments": {
+          "config": {
+            "三者险": "300万"
+          }
+        },
+        "memory": {
+          "quote": {
+            "三者险": "200万",
+            "交强险": true,
+            "车损险": true
+          },
+          "wechat": {
+            "status": "consented"
+          }
+        },
+        "memory_version": 1
+      }
+    ],
+    "checks": {
+      "bounded_model_steps": true,
+      "expected_skill_selection": true,
+      "model_chain_completed": true,
+      "plan_preserved": true,
+      "quote_requested": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "wechat",
+    "mode": "original",
+    "first_audio_ms": 862.162,
+    "first_text_ms": 721.508,
+    "workflow_text_ms": 721.508,
+    "trace": [
+      {
+        "text": "请在微信聊天列表页下拉，看有没有“服务通知”这一栏。",
+        "elapsed_ms": 992.687,
+        "first_text_at": "2026-11-09T13:45:13.947740045+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "expected_skill_selection": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "wechat",
+    "mode": "skills",
+    "first_audio_ms": 817.419,
+    "first_text_ms": 703.744,
+    "workflow_text_ms": 703.744,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "loaded",
+            "scope": "item_1",
+            "memory_version": 1,
+            "source": "configured-business-mcp",
+            "guidance": [
+              {
+                "uri": "skill://wechat-service-notification/SKILL.md",
+                "digest": "sha256:248adac50b2c9a58ab6e869d46c7e818ff5b013a0dbea99057cda8f2b744cb75",
+                "text": ""
+              }
+            ]
+          }
+        ],
+        "text": "您在微信聊天列表页面，点一下顶部的搜索框，输入“服务通知”，然后看看搜索结果里有没有。",
+        "elapsed_ms": 919.405,
+        "first_text_at": "2026-11-09T13:45:15.353564424+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "expected_skill_selection": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "before_addV",
+    "mode": "original",
+    "first_audio_ms": 710.554,
+    "first_text_ms": 580.177,
+    "workflow_text_ms": 580.177,
+    "trace": [
+      {
+        "text": "请在微信聊天列表里，找一下有没有“服务通知”，找到后跟我说一声。",
+        "elapsed_ms": 787.708,
+        "first_text_at": "2026-11-09T13:45:16.568172554+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "after_addV",
+    "mode": "original",
+    "first_audio_ms": 449.875,
+    "first_text_ms": 393.431,
+    "workflow_text_ms": 393.431,
+    "trace": [
+      {
+        "text": "微信已经添加成功了，这边就不再教您操作了。接下来咱们还是说车险方案吧，您看三者险200万、车损险和交强险这个组合，还有需要调整的吗？",
+        "elapsed_ms": 786.624,
+        "first_text_at": "2026-11-09T13:45:17.570226198+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "added"
+      }
+    },
+    "checks": {
+      "acknowledges_completion": true,
+      "backend_completion_retained": true,
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "no_added_workflow_loaded": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "before_addV",
+    "mode": "skills",
+    "first_audio_ms": 922.508,
+    "first_text_ms": 772.908,
+    "workflow_text_ms": 772.908,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "loaded",
+            "scope": "item_1",
+            "memory_version": 1,
+            "source": "configured-business-mcp",
+            "guidance": [
+              {
+                "uri": "skill://wechat-service-notification/SKILL.md",
+                "digest": "sha256:248adac50b2c9a58ab6e869d46c7e818ff5b013a0dbea99057cda8f2b744cb75",
+                "text": ""
+              }
+            ]
+          }
+        ],
+        "text": "您在聊天列表里看一下有没有“服务通知”，找到后告诉我看到了什么。",
+        "elapsed_ms": 932.003,
+        "first_text_at": "2026-11-09T13:45:19.161320299+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "after_addV",
+    "mode": "skills",
+    "first_audio_ms": 746.544,
+    "first_text_ms": 644.534,
+    "workflow_text_ms": 0,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "no_match",
+            "scope": "item_2",
+            "memory_version": 2
+          }
+        ],
+        "text": "微信已经添加成功了，不用再操作了。咱们继续看保险方案吧，您刚才三者险是200万，还需要调整吗？",
+        "elapsed_ms": 1028.887,
+        "first_text_at": "2026-11-09T13:45:20.36231414+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "added"
+      }
+    },
+    "checks": {
+      "acknowledges_completion": true,
+      "backend_completion_retained": true,
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "no_added_workflow_loaded": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "wechat_declined",
+    "mode": "skills",
+    "first_audio_ms": 566.487,
+    "first_text_ms": 437.208,
+    "workflow_text_ms": 0,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "no_match",
+            "scope": "item_1",
+            "memory_version": 2
+          }
+        ],
+        "text": "服务通知是微信里的一个官方通知入口，有些服务消息会通过它发送。不过您刚才说不需要加微信，这个就不影响了，还有其他想了解的保险问题吗？",
+        "elapsed_ms": 814.051,
+        "first_text_at": "2026-11-09T13:45:21.602338659+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "declined"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "no_ineligible_workflow_loaded": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "wechat_unknown",
+    "mode": "skills",
+    "first_audio_ms": 838.148,
+    "first_text_ms": 744.014,
+    "workflow_text_ms": 0,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "no_match",
+            "scope": "item_1",
+            "memory_version": 2
+          }
+        ],
+        "text": "微信里的“服务通知”是微信官方的消息入口，像我们这样通过微信发来的通知会在那里显示，通常在聊天列表里就能找到。",
+        "elapsed_ms": 1044.58,
+        "first_text_at": "2026-11-09T13:45:23.136815069+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "unknown"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "no_ineligible_workflow_loaded": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "discovery_outage",
+    "mode": "skills",
+    "first_audio_ms": 949.011,
+    "first_text_ms": 885.685,
+    "workflow_text_ms": 0,
+    "trace": [
+      {
+        "guidance": [
+          {
+            "status": "unavailable",
+            "scope": "item_1",
+            "memory_version": 1
+          }
+        ],
+        "text": "微信聊天列表顶部有个搜索框，您看到搜索框了吗？",
+        "elapsed_ms": 1002.712,
+        "first_text_at": "2026-11-09T13:45:24.717357167+08:00"
+      }
+    ],
+    "final_memory": {
+      "quote": {
+        "三者险": "200万",
+        "交强险": true,
+        "车损险": true
+      },
+      "wechat": {
+        "status": "consented"
+      }
+    },
+    "checks": {
+      "bounded_model_steps": true,
+      "fallback_without_loaded_skill": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  }
+]
