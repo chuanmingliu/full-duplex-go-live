@@ -125,6 +125,10 @@ func (e *Engine) prepareQuoteRevision(turn *Turn, call provider.ToolCall) (provi
 	if args.Action != "" || args.ID != "" {
 		return e.resolveQuoteRevision(turn, call, args.Action, args.ID, len(args.Config) > 0 || len(args.Configs) > 0)
 	}
+	if note := e.unsupportedRevisionTier(args.Config, args.Configs); note != "" {
+		return call, revisionReply("unsupported_selection", note, e.tools.quoteRevision)
+	}
+
 	if note := e.medicalLimitClarification(turn, args.Resolved, args.Config, args.Configs); note != "" {
 		return call, revisionReply("unresolved_changes", note, e.tools.quoteRevision)
 	}

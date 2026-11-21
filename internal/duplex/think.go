@@ -315,6 +315,7 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 	}
 	if !front && reason != "tool_result" {
 		e.requireQuoteScopeControl(turn, &request)
+		e.applyQuoteTurnPolicy(turn, &request)
 	}
 	e.wechatTurn = nil
 	latest := job.request
@@ -439,6 +440,11 @@ func (e *Engine) snapshotMessages(turn *Turn, front bool) []provider.Message {
 		if turn == nil || turn.waitingTask == "" {
 			if note := e.quoteRecoveryPrompt(turn); note != "" {
 				msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Name: "golive_quote_delivery", Content: note})
+			}
+		}
+		if turn != nil && turn.waitingTask == "" {
+			if note := e.quotePricingStateNote(); note != "" {
+				msgs = append(msgs, provider.Message{Role: provider.RoleSystem, Content: note})
 			}
 		}
 		if turn != nil && turn.waitingTask != "" {

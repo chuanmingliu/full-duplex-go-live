@@ -69,6 +69,7 @@ func (e *Engine) reconcileQuoteRequests(turn *Turn, ids []string) {
 // Match explicit names longest first so a rider does not also select its parent.
 // These labels constrain reconciliation, never choose a limit or mutate memory.
 func interruptedCoverageNames(text string) []string {
+	text = joinMedicalCoverageName(text)
 	for _, scope := range []string{"三者", "司机", "乘客"} {
 		text = strings.ReplaceAll(text, scope+"的医保外", "医保外用药责任险-"+scope+" ")
 		text = strings.ReplaceAll(text, scope+"医保外", "医保外用药责任险-"+scope+" ")

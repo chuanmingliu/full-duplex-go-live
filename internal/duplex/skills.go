@@ -97,6 +97,13 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		}
 		fresh.Messages = quoteRecoveryLast(fresh.Messages)
 		e.prepareQuoteClarification(job.turn, out.Guidance, &fresh)
+		if job.turn != nil && job.turn.Transcript != "" {
+			// Selection rebuilds the messages from current engine state.
+			// Recompute the quote tool requirement and its matching guidance.
+			fresh.ToolChoice = e.backend.ToolChoice
+			e.requireQuoteScopeControl(job.turn, &fresh)
+			e.applyQuoteTurnPolicy(job.turn, &fresh)
+		}
 		ready <- rendered{fresh, started, out.Status, current}
 	})
 	var result rendered

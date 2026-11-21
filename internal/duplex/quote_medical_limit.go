@@ -12,7 +12,7 @@ const thirdPartyMedical = "医保外用药责任险-三者"
 
 // Only bind a limit in a selection clause naming the rider. The preceding
 // main-policy amount is never evidence for a fixed or shared rider limit.
-var medicalSelection = regexp.MustCompile(`(?:^|[，,。 ]|我想|我要|请|再|还)(?:加上|加个|加|把|选)?(?:三者的?医保外(?:用药)?(?:责任险)?|医保外用药责任险-三者)[，, ]*(?:改成|调成|选|要|单独)?([^。？！?!]*)[。？！?!]*$`)
+var medicalSelection = regexp.MustCompile(`(?:^|[，,。 ]|我想|我要|请|再|还)(?:加上|加个|加|把|选)?(?:三者的?医保外(?:用药)?(?:责任险)?|医保外用药责任险-三者)[，, ]*(?:改成|调成|选|要|单独)?[，, ]*([^。？！?!]*)[。？！?!]*$`)
 var medicalNegation = regexp.MustCompile(`(?:不要|不想|不用|不需要|别)(?:再)?加`)
 var medicalValue = regexp.MustCompile(`^(?:(?:呃|嗯|对)[，, ]*)*(?:先按|就按照|就按|改成|我选|选|要)?(?:单独(?:的|保额)?[，, ]*)?(共享(?:保额)?|[0-9]+万|[一二两三四五六七八九十百]+万)(?:多少钱|算吧|吧|就行|，其他不变)?$`)
 
@@ -31,8 +31,17 @@ func spokenMedicalValue(s string) string {
 	return m[1]
 }
 
+// ASR can insert a pause inside the compound coverage name.
+var medicalNamePause = regexp.MustCompile(`(?:三者|司机|乘客)的?[，, ]+医保外(?:[，, ]+用药)?|医保外[，, ]+用药`)
+
+var removeMedicalNamePause = strings.NewReplacer("，", "", ",", "", " ", "")
+
+func joinMedicalCoverageName(text string) string {
+	return medicalNamePause.ReplaceAllStringFunc(text, removeMedicalNamePause.Replace)
+}
+
 func medicalLimitRequest(text string) (value string, applies bool) {
-	m := medicalSelection.FindStringSubmatch(text)
+	m := medicalSelection.FindStringSubmatch(joinMedicalCoverageName(text))
 	if m == nil || strings.ContainsAny(text, "比或") || medicalNegation.MatchString(text) {
 		return "", false
 	}
