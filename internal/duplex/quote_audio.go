@@ -133,7 +133,7 @@ type quoteBackgroundStream interface {
 func prepareQuoteAudio(ctx context.Context, speech quoteBackgroundStream, text string) (preparedQuoteAudio, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	chunks, attempted, err := speech.TrySynthesize(ctx, text)
+	chunks, attempted, err := speech.TrySynthesize(ctx, textForSynthesis(text))
 	if errors.Is(err, provider.ErrBackgroundClosed) {
 		return preparedQuoteAudio{}, attempted, errQuoteAudioRetired
 	}

@@ -1418,7 +1418,7 @@ func (p *speechPipe) speak(text string) bool {
 		p.begun = true
 		synthCtx = provider.WithUrgent(segCtx)
 	}
-	chunks, err := stream.Synthesize(synthCtx, text)
+	chunks, err := stream.Synthesize(synthCtx, textForSynthesis(text))
 	if err != nil {
 		p.e.log.Error("tts synthesize failed", "err", err)
 		p.e.deps.Emit(live.NewError("server_error", "tts_error", err.Error(), ""))
