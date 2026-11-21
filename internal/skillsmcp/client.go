@@ -164,18 +164,22 @@ type selection struct {
 	} `json:"messages"`
 }
 
-func (c *Client) selectSkills(ctx context.Context, event string, utterance string, memory json.RawMessage) (selection, error) {
+func (c *Client) selectSkills(ctx context.Context, event, utterance, recentContext string, memory json.RawMessage) (selection, error) {
 	state, _ := json.Marshal(c.projection(memory))
 	var out selection
-	err := c.rpc(ctx, "prompts/get", map[string]any{"name": "outbound-turn", "arguments": map[string]string{"event": event, "utterance": utterance, "state": string(state)}}, &out)
+	args := map[string]string{"event": event, "utterance": utterance, "state": string(state)}
+	if recentContext != "" {
+		args["recent_context"] = recentContext
+	}
+	err := c.rpc(ctx, "prompts/get", map[string]any{"name": "outbound-turn", "arguments": args}, &out)
 	return out, err
 }
 func (c *Client) Load(ctx context.Context, event string, memory json.RawMessage) ([]Guidance, error) {
-	return c.load(ctx, event, "", memory, nil, nil)
+	return c.load(ctx, event, "", "", memory, nil, nil)
 }
 
 func (c *Client) LoadForTurn(ctx context.Context, utterance string, memory json.RawMessage) ([]Guidance, error) {
-	return c.load(ctx, "auto", utterance, memory, nil, nil)
+	return c.load(ctx, "auto", utterance, "", memory, nil, nil)
 }
 
 // PrepareForTurn retrieves guidance and its catalog-owned rendering mode in one
@@ -185,12 +189,16 @@ func (c *Client) PrepareForTurn(ctx context.Context, utterance string, memory js
 }
 
 func (c *Client) PrepareWithTrace(ctx context.Context, utterance string, memory json.RawMessage, trace *Trace) ([]Guidance, int, error) {
+	return c.PrepareContextWithTrace(ctx, utterance, "", memory, trace)
+}
+
+func (c *Client) PrepareContextWithTrace(ctx context.Context, utterance, recentContext string, memory json.RawMessage, trace *Trace) ([]Guidance, int, error) {
 	version := 1
-	guides, err := c.load(ctx, "auto", utterance, memory, &version, trace)
+	guides, err := c.load(ctx, "auto", utterance, recentContext, memory, &version, trace)
 	return guides, version, err
 }
 
-func (c *Client) load(ctx context.Context, event, utterance string, memory json.RawMessage, renderingVersion *int, trace *Trace) (_ []Guidance, loadErr error) {
+func (c *Client) load(ctx context.Context, event, utterance, recentContext string, memory json.RawMessage, renderingVersion *int, trace *Trace) (_ []Guidance, loadErr error) {
 	phase := func(name, uri string) {
 		if trace != nil {
 			trace.Begin(name, uri, time.Now())
@@ -206,7 +214,7 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 	phase("prompts/get", "")
 	ctx, cancel := c.deadline(ctx)
 	defer cancel()
-	selected, err := c.selectSkills(ctx, event, utterance, memory)
+	selected, err := c.selectSkills(ctx, event, utterance, recentContext, memory)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +295,7 @@ func (c *Client) load(ctx context.Context, event, utterance string, memory json.
 		return out, nil
 	}
 	phase("prompts/get revision recheck", "")
-	latest, err := c.selectSkills(ctx, event, utterance, memory)
+	latest, err := c.selectSkills(ctx, event, utterance, recentContext, memory)
 	if err != nil || latest.Meta[routeKey].Revision != selected.Meta[routeKey].Revision {
 		return nil, errors.New("skill catalog changed during retrieval")
 	}

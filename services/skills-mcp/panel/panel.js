@@ -31,6 +31,9 @@ function renderSkills() {
   }
 }
 function render() {
+  el('recallMode').value = catalog.skill_selection?.mode || 'auto';
+  el('recallThreshold').value = catalog.skill_selection?.threshold ?? 50;
+  el('recallThresholdField').hidden = el('recallMode').value !== 'auto';
   el('renderingVersion').value = String(catalog.prompt_rendering?.version || 1);
   const response = (catalog.event_responses || {}).addV || {enabled:false, templates:[]};
   el('addVOn').checked = response.enabled;
@@ -51,7 +54,8 @@ el('login').onsubmit = async e => {
   e.preventDefault(); token = el('token').value.trim();
   try { await load(); el('token').value = ''; } catch (err) { status(err.message); }
 };
-el('editor').oninput = e => { if (!['choose','original','event','state'].includes(e.target.id)) dirty = true; };
+el('editor').oninput = e => { if (!['choose','original','event','utterance','recentContext','state'].includes(e.target.id)) dirty = true; };
+el('recallMode').onchange = () => { el('recallThresholdField').hidden = el('recallMode').value !== 'auto'; };
 el('choose').onchange = () => { if (!updateSkill()) { el('choose').value = selected; return; } selected = Number(el('choose').value); renderSkills(); };
 el('add').onclick = () => {
   if (!updateSkill()) return;
@@ -66,6 +70,13 @@ el('save').onclick = async () => {
   if ((el('addVOn').checked && !templates.length) || templates.length > 12 || templates.some(text => [...text].length > 300) || new Set(templates).size !== templates.length) {
     status('Provide 1–12 distinct response lines when enabled, each at most 300 characters.'); return;
   }
+  if (!el('recallThreshold').checkValidity()) { el('recallThreshold').reportValidity(); return; }
+  const mode = el('recallMode').value;
+  const threshold = Number(el('recallThreshold').value);
+  const currentSelection = catalog.skill_selection;
+  if (mode !== (currentSelection?.mode || 'auto') || threshold !== (currentSelection?.threshold ?? 50)) {
+    catalog.skill_selection = {...currentSelection, mode, threshold};
+  }
   catalog.event_responses = {...catalog.event_responses, addV:{enabled:el('addVOn').checked, templates}};
   catalog.prompt_rendering = {version:Number(el('renderingVersion').value)};
   catalog.quote_total = {description:el('toolDesc').value, enabled:el('toolOn').checked, timeout_seconds:Number(el('timeout').value)};
@@ -78,9 +89,10 @@ el('save').onclick = async () => {
 el('preview').onclick = async () => {
   try {
     const state = JSON.parse(el('state').value);
-    const selection = await api('POST', {event:el('event').value, utterance:el('utterance').value, state}, '/admin/preview');
+    const selection = await api('POST', {event:el('event').value, utterance:el('utterance').value, recent_context:el('recentContext').value, state}, '/admin/preview');
     const slots = [
       'Published revision ' + selection.revision,
+      'Retrieval ' + (selection.retrieval || 'rules') + (selection.fallback_reason ? ' (' + selection.fallback_reason + ')' : ''),
       'Rendering version ' + (selection.prompt_rendering?.version || 1),
       'Original prompt\n' + el('original').value,
       'Business state\n' + JSON.stringify(state),

@@ -40,7 +40,7 @@ Existing catalogs without the object use `auto` and threshold 50.
 any catalog size. `off` disables it. `threshold` accepts an integer from zero
 to 100,000 and is used by `auto`. Edit the object through the existing
 `GET /admin/catalog` and `PUT /admin/catalog` flow with the current revision.
-The existing panel preserves this field when publishing other edits.
+The panel exposes these settings under **Skill recall** and preserves unedited settings when publishing other changes.
 
 The gate covers the four companion MCP methods and their JavaScript wrappers.
 When disabled, discovery reports `enabled: false` and an empty `methods` array,
@@ -61,6 +61,31 @@ general default still requires end-to-end skill-selection comparisons on small
 catalogs, including selection accuracy, model tokens, and latency. Threshold 50
 is an operator policy supplied for this implementation.
 
+## GoLive LLM integration
+
+Active Call handles phone transport and RTP playback. Within GoLive,
+`internal/duplex/think.go` prepares the backend completion, and
+`internal/duplex/skills.go` selects and renders guidance before GoLive opens
+the LLM stream. The same preparation path is used on other GoLive entry
+points that run the backend completion with Skills MCP enabled. Skills are
+independent of dialing, SIP, RTP, and handset playback.
+
+```mermaid
+flowchart LR
+    ASR["GoLive caller transcript"] --> LLM["GoLive LLM request preparation"]
+    LLM --> MCP["MCP skill description search and load"]
+    MCP --> LLM
+    LLM --> Model["Backend LLM stream"]
+```
+
+The negotiated `outbound-turn` request keeps the rules-first path. A rule
+miss can rank skill descriptions using the latest caller text and up to 256
+characters of the preceding caller turn. The server applies state guards and
+current-utterance exclusions. It then loads instructions for the selected
+skill and its dependencies from the same catalog revision. GoLive verifies
+their digests and injects the guidance through its configured renderer before
+the model runs. [Runtime and panel contract](../../services/skills-mcp/API.md#contextual-recall-and-progressive-disclosure).
+
 ## Request flow
 
 Check the selection extension's `enabled` flag before using the following flow.
@@ -78,14 +103,14 @@ const selection = await tools.skills_resolve({
   revision: found.revision,
   uris: found.matches.map(skill => skill.uri),
   max_skills: 4,
-  max_bytes: 12288
+  max_bytes: 16384
 });
 if (!selection.selected?.length) return selection;
 return await tools.skills_load({
   revision: selection.revision,
   uris: selection.selected,
   max_skills: 4,
-  max_bytes: 12288
+  max_bytes: 16384
 });
 ```
 
@@ -223,7 +248,7 @@ latency is additional to scan time.
 | Search results, `limit` | 20 | 50 |
 | Candidate URIs per request | Caller supplied | 50 |
 | Selected skills including dependencies, `max_skills` | 4 | 16 |
-| Encoded selection reply, `max_bytes` | 12,288 bytes | 16,384 bytes |
+| Encoded selection reply, `max_bytes` | 16,384 bytes | 16,384 bytes |
 | Query | Caller supplied | 2,048 bytes |
 | Conversation context | Caller supplied | 8,192 bytes |
 | Catalog skills | Existing catalog | 100,000 |
@@ -355,3 +380,53 @@ The `execute_code` outer `state` object is the host's confirmed string-state
 projection. Every nested `skills_*` call receives that projection, overriding
 script-provided state. Omitted outer state means an empty projection. Business
 call identity and memory retain their existing outer-argument binding.
+
+## ThinkPad call simulation with contextual recall
+
+On November 21, 2026 the isolated test used the existing BGE-M3 and
+Qwen3-Embedding-0.6B pool, the original GoLive prompt and voice, and a copy
+of the published skill catalog. The rules-only and recall modes used the same
+MCP client request for each timing probe. The utterance was “我就按这。”
+with a synthetic preceding caller turn that established intent to purchase
+the accepted quote through the WeChat product page.
+
+| MCP response time | Rules only | Contextual recall |
+| --- | ---: | ---: |
+| Median, 8 new purchase-context variants | 1.6 ms | 25.7 ms |
+| Maximum, same 8 variants | 2.0 ms | 27.9 ms |
+| Median, 19 repeats of the exact query | 1.6 ms | 2.5 ms |
+| p95, same 19 repeats | 2.2 ms | 2.7 ms |
+| `place-order` selected, new variants | 0 of 8 | 8 of 8 |
+
+BGE served every successful timed semantic probe. The first exact semantic
+query took 30.3 ms. An explicit order question still used rules in both modes.
+The refusal “我暂时不想下单。” returned no guidance in both modes. The first
+diagnostic run showed that excluding only the matching skill could let recall
+select an unrelated quotation workflow. The final implementation treats that
+exclusion as a direct decision when no other rule matches. It also skips
+recall for standalone greetings and bare refusals.
+
+Blocking both embedding endpoints through proxies owned by the test fixture
+returned lexical fallback in 4.1 ms, with no skill selected. This is a
+fail-fast outage measurement. A slow provider can use the separate 100 ms
+semantic deadline. These are loopback MCP response timings, including
+selection and delivery of the prepared result. They exclude ASR, LLM, speech
+synthesis and handset playout.
+
+Both full-media calls recognized “我就按这。” after the caller accepted a
+quote and asked about ordering. In the rules-only call, the model provided
+guidance from the conversation with no selected skill. In the recall call,
+GoLive's skill trace loaded `place-order` with BGE in 36 ms before the response.
+The caller's later refusal loaded no skill. Both archives verified transcript
+and stereo audio integrity. The live engine binary, profile, saved call
+configuration and catalog matched the pre-test snapshots.
+
+| Full-media server first content | Rules only | Contextual recall |
+| --- | ---: | ---: |
+| Responses | 4 | 4 |
+| Median | 1,284 ms | 1,051 ms |
+| p95 | 1,457 ms | 1,238 ms |
+
+The independent simulator dialogues and small sample count do not establish a
+response-latency improvement. Use the matched MCP timing table for the isolated
+retrieval overhead.

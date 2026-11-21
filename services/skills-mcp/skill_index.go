@@ -48,7 +48,7 @@ type skillRequest struct {
 	Revision          int               `json:"revision,omitempty" jsonschema:"Expected catalog revision. Required for describe, resolve and load."`
 	Limit             int               `json:"limit,omitempty" jsonschema:"Search result count, default 20 and maximum 50."`
 	MaxSkills         int               `json:"max_skills,omitempty" jsonschema:"Selected skill count including dependencies, default 4 and maximum 16."`
-	MaxBytes          int               `json:"max_bytes,omitempty" jsonschema:"Maximum encoded JSON reply bytes, default 12288 and range 1024 to 16384."`
+	MaxBytes          int               `json:"max_bytes,omitempty" jsonschema:"Maximum encoded JSON reply bytes, default 16384 and range 1024 to 16384."`
 }
 
 type skillSummary struct {
@@ -185,7 +185,7 @@ func selectionLimit(in skillRequest, requireRevision bool, revision int) (int, e
 	}
 	budget := in.MaxBytes
 	if budget == 0 {
-		budget = 12 << 10
+		budget = maxSelectionBytes
 	}
 	if budget < 1024 || budget > maxSelectionBytes {
 		return 0, errors.New("max_bytes must be between 1024 and 16384")

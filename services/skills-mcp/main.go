@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
@@ -102,15 +103,28 @@ func handler(s *store, adminToken, runtimeToken string, memory ...*memoryAPI) ht
 			return
 		}
 		s.mu.RLock()
-		c := s.catalog
+		c, index := s.catalog, s.index
 		s.mu.RUnlock()
 		skills, tools, err := c.selectTurn(turn)
+		retrieval, fallback := "rules", ""
+		if err == nil && index != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 150*time.Millisecond)
+			defer cancel()
+			prepared, prepareErr := index.prepareTurn(ctx, turn, skills, nil)
+			if prepareErr == nil && prepared != nil {
+				skills, tools = index.selectedSkills(prepared)
+				retrieval, fallback = prepared.Retrieval, prepared.FallbackReason
+			} else if prepareErr != nil && !errors.Is(prepareErr, errPreparedTooLarge) {
+				err = prepareErr
+			}
+		}
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
+		mode, threshold := c.selectionSettings()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"revision": c.Revision, "skills": skills, "tools": tools, "prompt_rendering": PromptRendering{Version: c.renderingVersion()}})
+		json.NewEncoder(w).Encode(map[string]any{"revision": c.Revision, "skills": skills, "tools": tools, "retrieval": retrieval, "fallback_reason": fallback, "selection_mode": mode, "selection_threshold": threshold, "prompt_rendering": PromptRendering{Version: c.renderingVersion()}})
 	})))
 	mux.Handle("/admin/catalog", protect(adminToken, http.HandlerFunc(s.admin)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ready\n") })

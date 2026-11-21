@@ -65,13 +65,14 @@ func (s Skill) matches(event string, state map[string]string) bool {
 }
 
 type turnInput struct {
-	Event     string            `json:"event"`
-	Utterance string            `json:"utterance"`
-	State     map[string]string `json:"state"`
+	Event         string            `json:"event"`
+	Utterance     string            `json:"utterance"`
+	RecentContext string            `json:"recent_context,omitempty"`
+	State         map[string]string `json:"state"`
 }
 
 func (c Catalog) selectTurn(t turnInput) ([]Skill, []string, error) {
-	if (t.Event != "auto" && !signalName.MatchString(t.Event)) || len(t.Event) > 96 || len(t.Utterance) > 24000 {
+	if (t.Event != "auto" && !signalName.MatchString(t.Event)) || len(t.Event) > 96 || len(t.Utterance) > 24000 || len(t.RecentContext) > 2048 {
 		return nil, nil, errors.New("invalid business event")
 	}
 	skills := []Skill{}
@@ -98,6 +99,7 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog, index *skillIndex) {
 	server.AddPrompt(&mcp.Prompt{Name: "outbound-turn", Description: "Select skill references for the current outbound event and confirmed business state.", Arguments: []*mcp.PromptArgument{
 		{Name: "event", Required: true, Description: "A normalized business event such as wechat.notification_help."},
 		{Name: "utterance", Description: "Current user text for event auto; matched using operator-maintained regular expressions."},
+		{Name: "recent_context", Description: "Bounded previous caller text for semantic fallback only."},
 		{Name: "state", Description: "JSON object of projected string state values, e.g. {\"wechat.status\":\"consented\"}."},
 	}}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		args := req.Params.Arguments
@@ -107,7 +109,7 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog, index *skillIndex) {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "invalid projected state"}
 		}
 		messages := []*mcp.PromptMessage{}
-		input := turnInput{Event: event, State: state, Utterance: args["utterance"]}
+		input := turnInput{Event: event, State: state, Utterance: args["utterance"], RecentContext: args["recent_context"]}
 		skills, tools, err := c.selectTurn(input)
 		var prepared *preparedTurn
 		if supportsPreparedTurn(req) {
@@ -116,15 +118,7 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog, index *skillIndex) {
 				prepared, err = nil, nil
 			}
 			if err == nil && prepared != nil {
-				skills = nil
-				tools = nil
-				for _, resource := range prepared.Resources {
-					item := index.items[index.byURI[resource.Manifest.URI]].skill
-					skills = append(skills, item)
-					if item.Tool != "" && !slices.Contains(tools, item.Tool) {
-						tools = append(tools, item.Tool)
-					}
-				}
+				skills, tools = index.selectedSkills(prepared)
 			}
 		}
 		if err != nil {
@@ -149,10 +143,10 @@ func (s Skill) excludesText(text string) bool {
 }
 
 func (s Skill) matchesText(text string) bool {
-	if s.excludesText(text) {
-		return false
-	}
+	return !s.excludesText(text) && s.matchesPositiveRule(text)
+}
 
+func (s Skill) matchesPositiveRule(text string) bool {
 	for _, pattern := range s.Match {
 		if regexp.MustCompile(pattern).MatchString(text) {
 			return true

@@ -360,6 +360,7 @@ Call `prompts/get` with `name=outbound-turn`. All prompt argument values are str
 | `event` | Yes | `auto` or an explicit event matching `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`, at most 96 bytes |
 | `utterance` | For useful automatic matching | Current user text, at most 24,000 bytes |
 | `state` | Optional | Serialized flat JSON object of string values, at most 8,192 bytes, default empty object |
+| `recent_context` | Optional | Previous caller text for negotiated semantic recall, at most 2,048 UTF-8 bytes |
 
 Use `{"wechat.status":"consented"}` as projected state. A nested `wechat` object is incompatible with the prompt's string-valued map. Explicit event matching uses exact event membership and all state guards. Automatic selection evaluates each skill's exclusion patterns, requires a match pattern, requires at least one event binding, then checks availability and state. The implementation uses that skill's first configured event for the internal membership check. It does not classify the utterance into a specific event among that skill's bindings.
 
@@ -490,7 +491,7 @@ Evaluates the currently published catalog using plain JSON.
 }
 ```
 
-Here `state` is an object. The response contains `revision`, `skills` as complete matching catalog skill objects, `tools` as dependent names and `prompt_rendering` with the effective `version`. Preview performs selection only. For v2, the panel also displays its entered original prompt followed by selected skill bodies in `<additional_skill_instructions>`. The engine supplies its own current host policy and working memory during actual rendering. Generation and quotation execution require their own APIs.
+Here `state` is an object. The response contains `revision`, `skills` as complete matching catalog skill objects, `tools` as dependent names and `prompt_rendering` with the effective `version`. Preview uses the same published rules and recall path as negotiated turn preparation. Supply optional `recent_context` and inspect `retrieval` and `fallback_reason`. Preview performs selection only. For v2, the panel also displays its entered original prompt followed by selected skill bodies in `<additional_skill_instructions>`. The engine supplies its own current host policy and working memory during actual rendering. Generation and quotation execution require their own APIs.
 
 For a read-only check of the published insurance skill, preview `{"event":"auto","utterance":"交强险一般保障什么？","state":{}}`. On ThinkPad revision 8 the response contains one skill named `vehicle_insurance_concepts` and an empty `tools` array. A fresh installation must publish the skill or restore a catalog containing it to reproduce this result. [Skill instructions](vehicle_insurance_concepts/SKILL.md) · [Routing rules](vehicle_insurance_concepts/routing.json).
 
@@ -769,16 +770,48 @@ and explicit no-quotation requests retain the quotation exclusions.
 Matching `医保费` is routing evidence, not an authoritative correction to the
 caller's selection. The quotation instructions require the recent explicit
 三者/司机/乘客 scope or a clarification before executing an ambiguous change.
-Routing is still configured pattern matching, not a general semantic classifier.
+These patterns provide the direct routing path. Negotiated contextual recall can search skill descriptions on a rule miss.
 Updating the server binary does not overwrite published skill edits. Publish
 the revised matchers and bodies through the panel using its current revision,
 retain the previous catalog, and verify both `prompts/get` and `resources/read`.
 
 ## Negotiated turn preparation
 
-Active Call advertises `ai.liuchuanming.golive/turn-preparation` version `"1"`
+GoLive’s LLM integration advertises `ai.liuchuanming.golive/turn-preparation` version `"1"`
 in client capabilities. `prompts/get` for `outbound-turn` then includes
 `prepared` under its turn metadata, containing exact manifests and bodies from
 one catalog snapshot. The host verifies those resources directly. Older clients
 continue receiving resource links. See the selection architecture for routing,
 state, deadline and fallback behavior.
+
+### Contextual recall and progressive disclosure
+
+Use **Skill recall** in the panel to choose Rules only, Automatic by catalog size,
+or Semantic fallback on rule miss. Automatic keeps the existing default threshold
+of 50 enabled skills and activates recall when the count exceeds the threshold.
+Publishing a mode changes the next request. Semantic recall requires a configured
+embedding provider. On unavailability or timeout the server uses lexical search
+over the current utterance within the remaining request deadline.
+
+On an explicit event or regex match the server keeps the direct routing path.
+On a rule miss, a compatible GoLive client can supply the current utterance
+and up to 256 characters of the preceding caller turn. The original prompt,
+assistant messages, raw tool output and working-memory contents are outside that
+search text. Projected state is applied separately as an eligibility filter.
+Exclusions always evaluate the current utterance. When a direct match is
+excluded and no other direct rule matches, the server skips semantic recall
+so a declined workflow cannot be replaced by a neighboring one. Standalone
+greetings, farewells and bare refusals also skip recall on a rule miss. When recall calls an embedding
+provider, that provider receives the search text and indexed skill descriptions.
+
+The server ranks the compact skill descriptions, resolves the selected URI
+against the same revision, loads the selected body and required dependencies,
+then returns manifests, digests and Markdown for host verification. This reuses
+the search/resolve/load pipeline within the negotiated MCP response and avoids
+sending every skill body to the model. The selected guidance flows into either
+the appended instructions or the v2 slot. Selecting a skill grants no new tool
+or business permission.
+
+The progressive disclosure shape follows the
+[Claude skill authoring guide](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
+and [Agent Skills best practices](https://agentskills.io/skill-creation/best-practices#structure-large-skills-with-progressive-disclosure).

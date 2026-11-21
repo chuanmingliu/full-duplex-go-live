@@ -45,7 +45,7 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		text = job.request
 	}
 	out := skillOutput{Status: "no_match", Scope: skillScope(job.turn), MemoryVersion: version}
-	docs, renderingVersion, err := e.skills.PrepareWithTrace(ctx, coverageSelectionText(req.Messages, text), memory, &trace)
+	docs, renderingVersion, err := e.skills.PrepareContextWithTrace(ctx, coverageSelectionText(req.Messages, text), recentCallerContext(req.Messages, text), memory, &trace)
 	if err != nil {
 		out.Status = "unavailable"
 	} else if len(docs) > 0 {
@@ -145,6 +145,34 @@ func businessStateNote(memory json.RawMessage) string {
 		return "微信添加尚未获得确认同意。若用户只问概念，仅简短解释概念，不推测界面路径，不主动询问或邀请添加微信。仅问概念时在定义后结束回答，不追加任何问题，包括是否需要帮忙或添加微信。只有用户明确要求或同意添加时，才调用 update_memory，以 patch={\"wechat\":{\"status\":\"consented\"}} 记录同意，再开始操作指引。用户拒绝时记录 status=declined。不能把用户说已添加当成后端 addV 确认。"
 	}
 	return ""
+}
+
+// Only the preceding caller turn is available for semantic recall. Exclude
+// assistant guesses, tools, prompts and working memory from the search text.
+func recentCallerContext(messages []provider.Message, current string) string {
+	current = strings.TrimSpace(current)
+	previous := ""
+	seenLatest := false
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != provider.RoleUser || strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		text := strings.TrimSpace(msg.Content)
+		if !seenLatest {
+			seenLatest = true
+			// Unanswered consecutive caller turns share one model message.
+			if prefix, ok := strings.CutSuffix(text, "\n"+current); ok && current != "" {
+				previous = prefix
+				break
+			}
+			continue
+		}
+		previous = text
+		break
+	}
+	runes := []rune(previous)
+	return string(runes[max(0, len(runes)-256):])
 }
 
 func latestUserText(messages []provider.Message) string {

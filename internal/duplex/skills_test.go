@@ -455,3 +455,21 @@ func TestSkillsLegacyServiceFallsBack(t *testing.T) {
 		t.Fatal("old service silently accepted automatic selection")
 	}
 }
+
+func TestRecentCallerContextExcludesAssistantAndSystemText(t *testing.T) {
+	messages := []provider.Message{
+		{Role: provider.RoleSystem, Content: "private host instructions"},
+		{Role: provider.RoleUser, Content: "这个保单我要怎么买？"},
+		{Role: provider.RoleAssistant, Content: "帮您转接办理专员"},
+		{Role: provider.RoleTool, Content: "raw tool output"},
+		{Role: provider.RoleUser, Content: "我就按这。"},
+	}
+	if got := recentCallerContext(messages, "我就按这。"); got != messages[1].Content {
+		t.Fatal(got)
+	}
+	merged := []provider.Message{{Role: provider.RoleUser, Content: "这个保单我要怎么买？\n我就按这。"}}
+	if got := recentCallerContext(merged, "我就按这。"); got != messages[1].Content {
+		t.Fatal(got)
+	}
+
+}
