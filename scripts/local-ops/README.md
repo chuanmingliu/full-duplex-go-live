@@ -122,6 +122,17 @@ revision cases. `edges` can replace `all` for the edge suite. The iteration coun
 accepts 1–20. These measurements cover real-model generation and mock-TTS output.
 Full audio and telephony timing require the separate media simulator.
 
+For the async working-memory comparison, run the `recall` phase with the
+isolated fixture. It alternates recall on and off for each paired trial using the
+same synthetic host prompt and v2 renderer. It checks quotation, WeChat,
+multi-skill formatting and response dispatch with a deliberately held selector.
+The report separates ASR-final-to-request dispatch, mock audio and mock quotation
+calculation.
+
+```sh
+python3 simulate.py "$PWD/duplex.test" 3 recall fixture
+```
+
 For a comparison using the owner's saved default prompt, run the explicit `slot`
 phase in a fresh output directory with the isolated fixture.
 

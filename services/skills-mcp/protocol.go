@@ -72,6 +72,7 @@ func buildMCPServerWithIndex(c Catalog, b backend, codeMode bool, index *skillIn
 		registry.Register()
 	}
 	registerOutboundPrompt(s, c, index)
+	registerWorkingMemoryRecall(s, c)
 	registerEventResponses(s, c)
 	for _, item := range index.items {
 		sk := item.skill

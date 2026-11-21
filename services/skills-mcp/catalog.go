@@ -49,13 +49,14 @@ type ToolConfig struct {
 }
 
 type Catalog struct {
-	SkillSelection  *SkillSelectionConfig    `json:"skill_selection,omitempty"`
-	Schema          int                      `json:"schema"`
-	Revision        int                      `json:"revision"`
-	Skills          []Skill                  `json:"skills"`
-	Quote           ToolConfig               `json:"quote_total"`
-	EventResponses  map[string]EventResponse `json:"event_responses,omitempty"`
-	PromptRendering *PromptRendering         `json:"prompt_rendering,omitempty"`
+	WorkingMemoryRecall *workingMemoryRecall     `json:"working_memory_recall,omitempty"`
+	SkillSelection      *SkillSelectionConfig    `json:"skill_selection,omitempty"`
+	Schema              int                      `json:"schema"`
+	Revision            int                      `json:"revision"`
+	Skills              []Skill                  `json:"skills"`
+	Quote               ToolConfig               `json:"quote_total"`
+	EventResponses      map[string]EventResponse `json:"event_responses,omitempty"`
+	PromptRendering     *PromptRendering         `json:"prompt_rendering,omitempty"`
 }
 
 type PromptRendering struct {
@@ -123,6 +124,9 @@ func (c *Catalog) migrate() {
 var skillName = regexp.MustCompile("^[a-z0-9]+([-_][a-z0-9]+)*$")
 
 func (c Catalog) validate() error {
+	if err := c.validateWorkingMemoryRecall(); err != nil {
+		return err
+	}
 	if err := c.validateSelectionSettings(); err != nil {
 		return err
 	}

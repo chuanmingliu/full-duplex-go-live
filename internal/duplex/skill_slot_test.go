@@ -29,9 +29,9 @@ func TestSkillSlotLiteralSubstitution(t *testing.T) {
 	if fillSkillContentSlot(fresh, nil) || fresh[0].Content != original {
 		t.Fatal("empty selection changed the original prompt")
 	}
-	guides := []skillsmcp.Guidance{{Text: "first body"}, {Text: "second body"}}
+	guides := []skillsmcp.Guidance{{URI: "skill://first/SKILL.md", Text: "first body"}, {URI: "skill://second/SKILL.md", Text: "second body"}}
 	fillSkillContentSlot(fresh, guides)
-	if !strings.Contains(fresh[0].Content, "first body\n\nsecond body") || guides[0].Text != "first body" || guides[1].Text != "second body" {
+	if !strings.Contains(fresh[0].Content, "### first\n\nfirst body\n\n### second\n\nsecond body") || guides[0].Text != "first body" || guides[1].Text != "second body" {
 		t.Fatal("multiple skills lost ordering or changed the source guidance")
 	}
 }

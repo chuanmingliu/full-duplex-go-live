@@ -222,7 +222,7 @@ Subsequent JSON examples show method parameters or result bodies as labeled. Wra
 | `skills/get` | `uri` | `resultType: complete`, one `skill` entry |
 | `resources/list` | SDK list parameters | Available resource metadata |
 | `resources/read` | `uri` | `contents` with resource text and MIME type |
-| `prompts/list` | SDK list parameters | `outbound-turn` metadata and argument descriptions |
+| `prompts/list` | SDK list parameters | `outbound-turn` and `working-memory-recall` metadata and argument descriptions |
 | `prompts/get` | `name`, `arguments` | Selected skill resource links and selection metadata |
 | `tools/list` | SDK list parameters | Currently enabled tools and generated JSON schemas |
 | `tools/call` | `name`, `arguments` | Tool content, structured result or tool error |
@@ -815,3 +815,40 @@ or business permission.
 The progressive disclosure shape follows the
 [Claude skill authoring guide](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
 and [Agent Skills best practices](https://agentskills.io/skill-creation/best-practices#structure-large-skills-with-progressive-disclosure).
+
+### Background working-memory recall
+
+Publish the **Working-memory recall** settings in the admin panel to opt in.
+The catalog accepts this object as `working_memory_recall`.
+
+```json
+{
+  "enabled": true,
+  "function": "recall_business_guidance",
+  "selector_prompt": "Choose all relevant candidates for the current caller request. Abstain when the intent is unclear.",
+  "candidates": ["motor-quotation", "wechat-service-notification", "tool:quote_total"]
+}
+```
+
+`prompts/get` for `working-memory-recall` returns configuration, candidate
+descriptions and the catalog revision in `_meta["ai.liuchuanming.golive/turn"]`.
+It requires the runtime credential. GoLive refreshes this registration in
+the background every five seconds. Only published, enabled candidates appear.
+The selector uses the configured GoLive LLM and receives candidate descriptions
+and bounded caller text. Its output is a JSON array of up to four allowed IDs.
+
+GoLive prepares rules and embedding guidance in parallel with the selector.
+Both paths use negotiated `outbound-turn`, passing the catalog revision as
+`recall_revision` and selected IDs as a JSON string in `recall_ids`. The
+server checks revision, exclusions, state, dependencies and conflicts before
+returning manifests and bodies for verification. `tool:quote_total` can recall
+eligible quotation guidance associated with the registered tool. Pricing and
+confirmation still use the existing GoLive tool contract.
+
+The response uses guidance already in memory for the same caller text, context
+and working-memory version. Accepted skills share the default prompt's
+`skill_content` slot, with one Markdown heading per skill when several apply.
+If guidance is pending, empty or stale, generation starts with the default
+prompt. Disabling background recall restores the catalog's configured renderer
+and existing preparation path. The panel's turn preview exercises synchronous
+routing.

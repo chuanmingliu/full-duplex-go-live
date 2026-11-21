@@ -34,6 +34,10 @@ function render() {
   el('recallMode').value = catalog.skill_selection?.mode || 'auto';
   el('recallThreshold').value = catalog.skill_selection?.threshold ?? 50;
   el('recallThresholdField').hidden = el('recallMode').value !== 'auto';
+  const recall = catalog.working_memory_recall;
+  el('wmRecallOn').checked = recall?.enabled ?? false;
+  el('wmCandidates').value = recall?.candidates?.join(', ') ?? '';
+  el('wmSelectorPrompt').value = recall?.selector_prompt ?? 'Select every candidate that directly helps with the current caller request. Use the previous turn to resolve references. Select none if the caller declines or intent is unclear.';
   el('renderingVersion').value = String(catalog.prompt_rendering?.version || 1);
   const response = (catalog.event_responses || {}).addV || {enabled:false, templates:[]};
   el('addVOn').checked = response.enabled;
@@ -78,6 +82,9 @@ el('save').onclick = async () => {
     catalog.skill_selection = {...currentSelection, mode, threshold};
   }
   catalog.event_responses = {...catalog.event_responses, addV:{enabled:el('addVOn').checked, templates}};
+  const wmEnabled = el('wmRecallOn').checked;
+  const wmCandidates = el('wmCandidates').value.split(',').map(value => value.trim()).filter(Boolean);
+  catalog.working_memory_recall = {enabled:wmEnabled, function:'recall_business_guidance', selector_prompt:el('wmSelectorPrompt').value.trim(), candidates:wmCandidates};
   catalog.prompt_rendering = {version:Number(el('renderingVersion').value)};
   catalog.quote_total = {description:el('toolDesc').value, enabled:el('toolOn').checked, timeout_seconds:Number(el('timeout').value)};
   el('editor').inert = true;
@@ -100,9 +107,12 @@ el('preview').onclick = async () => {
       'Available workflow tools\n' + (selection.tools.join(', ') || 'None for this turn')
     ];
     if (selection.prompt_rendering?.version === 2) {
-      const skillContent = selection.skills.map(skill => skill.body.trim()).join('\n\n');
+      const skillContent = selection.skills.map(skill => (selection.skills.length > 1 ? '### ' + skill.name + '\n\n' : '') + skill.body.trim()).join('\n\n');
       const rendered = skillContent ? el('original').value + '\n\n<additional_skill_instructions>\n' + skillContent + '\n</additional_skill_instructions>' : el('original').value;
       slots.push('Rendered prompt component\n' + rendered);
+    }
+    if (catalog.working_memory_recall?.enabled) {
+      slots.push('This preview shows synchronous routing. Background LLM recall runs in GoLive during a call.');
     }
     el('output').textContent = slots.join('\n\n');
   } catch (err) { el('output').textContent = err.message; }

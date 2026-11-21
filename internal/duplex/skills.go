@@ -69,34 +69,9 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 		if current != version {
 			out.Status, out.Guidance, out.MemoryVersion = "expired", nil, current
 		}
-		for _, guide := range out.Guidance {
-			if _, guarded := guide.State["wechat.status"]; guarded {
-				e.wechatTurn = job.turn
-			}
-		}
 		fresh := req
 		fresh.Messages = e.snapshotMessages(job.turn, false)
-		if renderingVersion == 2 && len(out.Guidance) > 0 && fillSkillContentSlot(fresh.Messages, out.Guidance) {
-			out.RenderingVersion = 2
-			// The body now resides in the first system message. Keep only its
-			// provenance here, without modifying the retrieved guidance slice.
-			out.Guidance = append([]skillsmcp.Guidance(nil), out.Guidance...)
-			for i := range out.Guidance {
-				out.Guidance[i].Text = ""
-			}
-		}
-		if out.Status != "no_match" {
-			raw, _ := json.Marshal(out)
-			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Name: skillsmcp.ToolName, Content: string(raw)})
-		}
-		if out.Status == "unavailable" || out.Status == "expired" {
-			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Content: "当前业务指导未能加载。只使用原始提示已明确提供的业务步骤，不要自行编造页面入口、按钮或业务结果。信息不足时询问用户当前状态。"})
-		}
-		if len(out.Guidance) > 0 {
-			fresh.Messages = append(fresh.Messages, provider.Message{Role: provider.RoleSystem, Content: "Apply this turn's configured business guidance to the latest user request only, subject to original instructions, current business state and tool permissions. Use existing tools directly when needed. Ask for clarification if the request is ambiguous."})
-		}
-		fresh.Messages = quoteRecoveryLast(fresh.Messages)
-		e.prepareQuoteClarification(job.turn, out.Guidance, &fresh)
+		e.renderSkillOutput(job.turn, &fresh, out, renderingVersion)
 		if job.turn != nil && job.turn.Transcript != "" {
 			// Selection rebuilds the messages from current engine state.
 			// Recompute the quote tool requirement and its matching guidance.
@@ -122,6 +97,36 @@ func (e *Engine) prepareSkills(ctx context.Context, job backendJob, req provider
 	}
 	e.log.Info("skills: prepare", "turn", turnID, "response", job.responseID, "status", result.outcome, "rendering_version", renderingVersion, "memory_version_start", version, "memory_version_end", result.memoryVersion, "ms", ended.Sub(began).Milliseconds(), "us", ended.Sub(began).Microseconds(), "trace", string(detail))
 	return result.req
+}
+
+// renderSkillOutput mutates only the request's message snapshot.
+func (e *Engine) renderSkillOutput(turn *Turn, req *provider.LLMRequest, out skillOutput, renderingVersion int) {
+	for _, guide := range out.Guidance {
+		if _, guarded := guide.State["wechat.status"]; guarded {
+			e.wechatTurn = turn
+		}
+	}
+	if renderingVersion == 2 && len(out.Guidance) > 0 && fillSkillContentSlot(req.Messages, out.Guidance) {
+		out.RenderingVersion = 2
+		// The body now resides in the first system message. Keep only its
+		// provenance here, without modifying the retrieved guidance slice.
+		out.Guidance = append([]skillsmcp.Guidance(nil), out.Guidance...)
+		for i := range out.Guidance {
+			out.Guidance[i].Text = ""
+		}
+	}
+	if out.Status != "no_match" {
+		raw, _ := json.Marshal(out)
+		req.Messages = append(req.Messages, provider.Message{Role: provider.RoleSystem, Name: skillsmcp.ToolName, Content: string(raw)})
+	}
+	if out.Status == "unavailable" || out.Status == "expired" {
+		req.Messages = append(req.Messages, provider.Message{Role: provider.RoleSystem, Content: "当前业务指导未能加载。只使用原始提示已明确提供的业务步骤，不要自行编造页面入口、按钮或业务结果。信息不足时询问用户当前状态。"})
+	}
+	if len(out.Guidance) > 0 {
+		req.Messages = append(req.Messages, provider.Message{Role: provider.RoleSystem, Content: "Apply this turn's configured business guidance to the latest user request only, subject to original instructions, current business state and tool permissions. Use existing tools directly when needed. Ask for clarification if the request is ambiguous."})
+	}
+	req.Messages = quoteRecoveryLast(req.Messages)
+	e.prepareQuoteClarification(turn, out.Guidance, req)
 }
 
 // businessStateNote is intentionally outside the optional MCP component so a

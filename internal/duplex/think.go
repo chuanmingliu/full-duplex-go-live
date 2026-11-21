@@ -93,7 +93,8 @@ type backendJob struct {
 	// front marks the conversational model of client-auto mode. Its stream is
 	// the live layer thinking, not a delegation, so none of it is reported in
 	// response.event.
-	front bool
+	front       bool
+	asyncRecall bool
 }
 
 // delegateTool is the one function the conversational model has in client-auto
@@ -285,6 +286,7 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 		delegationID: delegationIDOf(turn),
 		responseID:   fmt.Sprintf("resp_%s_%d", e.opts.SessionID, e.respSeq),
 		front:        front,
+		asyncRecall:  e.workingMemoryRecall.registration.Enabled,
 	}
 	if !front {
 		e.registerDelegation(job.delegationID)
@@ -313,14 +315,17 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 		request.Tools = nil
 		request.ToolChoice = nil
 	}
-	if !front && reason != "tool_result" {
-		e.requireQuoteScopeControl(turn, &request)
-		e.applyQuoteTurnPolicy(turn, &request)
-	}
 	e.wechatTurn = nil
 	latest := job.request
 	if !front && !e.wechatAdded && (strings.Contains(latest, "微信") || strings.Contains(latest, "服务通知")) {
 		e.wechatTurn = turn
+	}
+	if !front && job.asyncRecall && turn.waitingTask == "" {
+		e.injectWorkingMemoryRecall(turn, job.request, &request)
+	}
+	if !front && reason != "tool_result" {
+		e.requireQuoteScopeControl(turn, &request)
+		e.applyQuoteTurnPolicy(turn, &request)
 	}
 	go e.runBackend(ctx, cancel, job, request)
 }
@@ -489,7 +494,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		}, e.deps.Emit)
 	}
 
-	if !job.front && turn.waitingTask == "" {
+	if !job.front && !job.asyncRecall && turn.waitingTask == "" {
 		req = e.prepareSkills(ctx, job, req)
 	}
 	if ctx.Err() != nil {

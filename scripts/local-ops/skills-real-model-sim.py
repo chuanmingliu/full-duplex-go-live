@@ -25,7 +25,9 @@ assert len(pids) == 1, "active engine listener ambiguous"
 process = Path("/proc") / pids.pop()
 paths = [root / "configs/telephony.json", process / "exe", process / "cmdline"]
 phase = sys.argv[3] if len(sys.argv) > 3 else "all"
-assert phase in ("all", "edges", "slot")
+assert phase in ("all", "edges", "slot", "recall")
+if phase == "recall":
+    assert len(sys.argv) > 4 and sys.argv[4] == "fixture", "recall phase requires fixture"
 if phase == "slot":
     assert len(sys.argv) > 4 and sys.argv[4] == "fixture", "slot phase requires fixture"
     paths.append(Path.home() / "golive-last-call.json")
@@ -105,7 +107,7 @@ try:
                 time.sleep(0.1)
         else:
             raise RuntimeError("isolated service did not start")
-    tests = {"slot": "^TestSkillSlotRealModel$", "edges": "^TestSkillsRealModelEdges$", "all": "^TestSkillsRealModel"}[phase]
+    tests = {"recall": "^TestWorkingMemoryRecallRealModel$", "slot": "^TestSkillSlotRealModel$", "edges": "^TestSkillsRealModelEdges$", "all": "^TestSkillsRealModel"}[phase]
     result = subprocess.run([sys.argv[1], "-test.run", tests,
                              "-test.v", "-test.timeout", "15m"],
                             env=env, cwd=root, timeout=905)

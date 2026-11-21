@@ -19,6 +19,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/provider"
 	_ "github.com/chuanmingliu/golive/internal/provider/deepseek"
 	"github.com/chuanmingliu/golive/internal/provider/mock"
+	"github.com/chuanmingliu/golive/internal/requestlog"
 	"github.com/chuanmingliu/golive/internal/skillsmcp"
 	"github.com/chuanmingliu/golive/internal/tools"
 )
@@ -33,6 +34,7 @@ const skillsSyntheticPrompt = `你是小翠，正在进行纯模拟的中文车�
 客户咨询保险生效时间时，回答以保单载明的时间为准。`
 
 type modelProbeCall struct {
+	SkillHeadings  []string            `json:"skill_headings,omitempty"`
 	Slot           bool                `json:"skill_slot,omitempty"`
 	OriginalPrompt bool                `json:"original_prompt_preserved,omitempty"`
 	Request        string              `json:"rendered_user_request,omitempty"`
@@ -43,6 +45,7 @@ type modelProbeCall struct {
 	Text           string              `json:"text,omitempty"`
 	Error          bool                `json:"error,omitempty"`
 	Elapsed        float64             `json:"elapsed_ms"`
+	Started        time.Time           `json:"started_at"`
 	FirstText      time.Time           `json:"first_text_at,omitempty"`
 	done           time.Time
 }
@@ -56,10 +59,20 @@ type modelProbe struct {
 
 func (p *modelProbe) Name() string { return p.inner.Name() }
 func (p *modelProbe) Stream(ctx context.Context, req provider.LLMRequest) (<-chan provider.LLMDelta, error) {
-	entry := &modelProbeCall{}
+	if requestlog.ScopeFrom(ctx).Purpose == "working_memory_recall" {
+		return p.inner.Stream(ctx, req)
+	}
+	entry := &modelProbeCall{Started: time.Now()}
 	if len(req.Messages) > 0 {
 		entry.Slot = strings.Contains(req.Messages[0].Content, "<additional_skill_instructions>")
 		entry.OriginalPrompt = p.originalPrompt != "" && strings.HasPrefix(req.Messages[0].Content, strings.TrimSpace(p.originalPrompt))
+		if entry.Slot {
+			for _, name := range []string{"motor-quotation", "wechat-service-notification"} {
+				if strings.Contains(req.Messages[0].Content, "\n### "+name+"\n\n") {
+					entry.SkillHeadings = append(entry.SkillHeadings, name)
+				}
+			}
+		}
 	}
 	for _, m := range req.Messages {
 		if m.Role == provider.RoleUser {

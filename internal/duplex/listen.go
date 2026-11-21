@@ -369,6 +369,9 @@ func (e *Engine) onASREvent(ev asrEvent) {
 	// whole, and a transcript cannot be taken back, so nothing is shown for
 	// it. The next event after the hold resolves catches the client up.
 	if e.hold == nil && !e.ignoring() {
+		if !ev.res.Final && text != run.lastText {
+			e.prefetchWorkingMemoryRecall(text)
+		}
 		e.emitInputTranscript(run, text, ev.res.Final)
 	}
 
@@ -541,6 +544,9 @@ func (e *Engine) onEarlyFinal(run *asrRun, text string) {
 		return
 	}
 	if e.hold == nil {
+		if !e.ignoring() && full != cur.lastText {
+			e.prefetchWorkingMemoryRecall(full)
+		}
 		e.emitInputTranscript(cur, full, false)
 	}
 	e.noteWords(cur, full)

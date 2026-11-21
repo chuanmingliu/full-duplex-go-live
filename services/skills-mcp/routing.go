@@ -100,6 +100,8 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog, index *skillIndex) {
 		{Name: "event", Required: true, Description: "A normalized business event such as wechat.notification_help."},
 		{Name: "utterance", Description: "Current user text for event auto; matched using operator-maintained regular expressions."},
 		{Name: "recent_context", Description: "Bounded previous caller text for semantic fallback only."},
+		{Name: "recall_revision", Description: "Published catalog revision for background working-memory preparation."},
+		{Name: "recall_ids", Description: "JSON array of selected working-memory candidate IDs."},
 		{Name: "state", Description: "JSON object of projected string state values, e.g. {\"wechat.status\":\"consented\"}."},
 	}}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		args := req.Params.Arguments
@@ -110,12 +112,22 @@ func registerOutboundPrompt(server *mcp.Server, c Catalog, index *skillIndex) {
 		}
 		messages := []*mcp.PromptMessage{}
 		input := turnInput{Event: event, State: state, Utterance: args["utterance"], RecentContext: args["recent_context"]}
+		recall, err := c.recallSelection(args, supportsPreparedTurn(req))
+		if err != nil {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: err.Error()}
+		}
 		skills, tools, err := c.selectTurn(input)
 		var prepared *preparedTurn
-		if supportsPreparedTurn(req) {
+		if recall != nil && trailingRecallRefusal.MatchString(strings.TrimSpace(input.Utterance)) {
+			skills, tools = nil, nil
+			prepared = &preparedTurn{Version: 1, Resources: []loadedSkill{}, Retrieval: "rules", FallbackReason: "caller_declined"}
+		} else if supportsPreparedTurn(req) {
 			prepared, err = index.prepareTurn(ctx, input, skills, err)
 			if errors.Is(err, errPreparedTooLarge) {
 				prepared, err = nil, nil
+			}
+			if err == nil && prepared != nil && len(recall) > 0 {
+				err = index.mergeWorkingMemoryRecall(ctx, c.WorkingMemoryRecall, input, prepared, recall)
 			}
 			if err == nil && prepared != nil {
 				skills, tools = index.selectedSkills(prepared)

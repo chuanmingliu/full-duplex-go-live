@@ -19,7 +19,15 @@ func fillSkillContentSlot(messages []provider.Message, guidance []skillsmcp.Guid
 	}
 	parts := make([]string, 0, len(guidance))
 	for _, guide := range guidance {
-		parts = append(parts, guide.Text)
+		if len(guidance) == 1 {
+			parts = append(parts, guide.Text)
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(guide.URI, "skill://"), "/SKILL.md")
+		if name == "" {
+			name = "Business guidance"
+		}
+		parts = append(parts, "### "+name+"\n\n"+strings.TrimSpace(guide.Text))
 	}
 	messages[0].Content = strings.NewReplacer(
 		"{{ original_prompt }}", messages[0].Content,

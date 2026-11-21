@@ -119,6 +119,7 @@ type Engine struct {
 	wechatAdded                             bool                  // authoritative completion, owned by the loop
 	eventResponse                           *pendingEventResponse // loop-owned callback speech
 	skills                                  *skillsmcp.Client
+	workingMemoryRecall                     workingMemoryRecall
 	opts                                    Options
 	talkerPending                           *talkerOpener
 	talkerStarted                           time.Time
@@ -501,6 +502,9 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
+	if e.skills != nil && e.deps.LLM != nil {
+		go e.refreshWorkingMemoryRecall()
+	}
 	e.setupTools()
 	e.loadOpeners()
 	e.startFocus(e.ctx)
