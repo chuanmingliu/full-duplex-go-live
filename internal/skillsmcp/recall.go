@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
+	"slices"
 	"strconv"
 )
 
@@ -15,20 +17,136 @@ type RecallRegistration struct {
 	Function       string            `json:"function"`
 	SelectorPrompt string            `json:"selector_prompt"`
 	Candidates     map[string]string `json:"candidates"`
+	rules          []recallRule
+	refusal        *regexp.Regexp
+}
+
+type recallRule struct {
+	include, exclude []*regexp.Regexp
+	guidance         Guidance
+}
+
+type recallRoutes struct {
+	Refusal string `json:"refusal"`
+	Rules   []struct {
+		Match    []string `json:"match"`
+		Exclude  []string `json:"exclude"`
+		Resource struct {
+			Manifest Entry  `json:"manifest"`
+			MIME     string `json:"mimeType"`
+			Text     string `json:"text"`
+		} `json:"resource"`
+	} `json:"rules"`
+}
+
+func compileRecallPatterns(patterns []string) ([]*regexp.Regexp, error) {
+	if len(patterns) > 32 {
+		return nil, errors.New("too many recall patterns")
+	}
+	result := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		if len(pattern) == 0 || len(pattern) > 1024 {
+			return nil, errors.New("invalid recall pattern length")
+		}
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, compiled)
+	}
+	return result, nil
+}
+
+func (cfg *RecallRegistration) setRoutes(routes recallRoutes) error {
+	if len(routes.Rules) == 0 {
+		return nil // older catalogs can still prepare guidance asynchronously
+	}
+	if len(routes.Rules) > 32 {
+		return errors.New("too many recall rules")
+	}
+	veto, err := compileRecallPatterns([]string{routes.Refusal})
+	if err != nil {
+		return err
+	}
+	cfg.refusal = veto[0]
+	for _, rule := range routes.Rules {
+		r := rule.Resource
+		if len(r.Manifest.Resources) != 1 {
+			return errors.New("invalid recall manifest")
+		}
+		if _, ok := cfg.Candidates[r.Manifest.Frontmatter["name"]]; !ok {
+			return errors.New("unexpected direct recall candidate")
+		}
+		guide, err := verifyGuidance(r.Manifest.Resources[0], r.Manifest, r.Manifest.URI, r.MIME, r.Text)
+		if err != nil {
+			return err
+		}
+		match, err := compileRecallPatterns(rule.Match)
+		if err != nil {
+			return err
+		}
+		exclude, err := compileRecallPatterns(rule.Exclude)
+		if err != nil {
+			return err
+		}
+		cfg.rules = append(cfg.rules, recallRule{match, exclude, guide})
+	}
+	return nil
+}
+
+// DirectRecall evaluates the installed revision against current turn text and
+// projected state. No transport or model operation occurs here.
+func (c *Client) DirectRecall(cfg RecallRegistration, raw, routed string, memory json.RawMessage) []Guidance {
+	if len(cfg.rules) == 0 || cfg.refusal.MatchString(raw) {
+		return nil
+	}
+	state := c.projection(memory)
+	var guides []Guidance
+	bytesLeft := 16 << 10
+	for _, rule := range cfg.rules {
+		if !slices.ContainsFunc(rule.include, func(re *regexp.Regexp) bool { return re.MatchString(routed) }) ||
+			slices.ContainsFunc(rule.exclude, func(re *regexp.Regexp) bool { return re.MatchString(raw) }) {
+			continue
+		}
+		eligible := true
+		for key, allowed := range rule.guidance.State {
+			if !slices.Contains(allowed, state[key]) {
+				eligible = false
+				break
+			}
+		}
+		if eligible && len(rule.guidance.Text) <= bytesLeft {
+			guides = append(guides, rule.guidance)
+			bytesLeft -= len(rule.guidance.Text)
+			if len(guides) == 4 {
+				break
+			}
+		}
+	}
+	return guides
 }
 
 func (c *Client) RecallRegistration(ctx context.Context) (RecallRegistration, error) {
 	ctx, cancel := c.deadline(ctx)
 	defer cancel()
 	var result struct {
-		Meta map[string]RecallRegistration `json:"_meta"`
+		Meta map[string]struct {
+			RecallRegistration
+			recallRoutes
+		} `json:"_meta"`
 	}
-	if err := c.rpc(ctx, "prompts/get", map[string]any{"name": "working-memory-recall", "arguments": map[string]string{}}, &result); err != nil {
+	if err := c.rpc(ctx, "prompts/get", map[string]any{"name": "working-memory-recall", "arguments": map[string]string{"route_snapshot": "1"}}, &result); err != nil {
 		return RecallRegistration{}, err
 	}
-	cfg := result.Meta[routeKey]
+	wire := result.Meta[routeKey]
+	cfg := wire.RecallRegistration
 	if cfg.Revision < 1 || (cfg.Enabled && (cfg.Function != RecallFunction || cfg.SelectorPrompt == "" || len(cfg.SelectorPrompt) > 4096 || len(cfg.Candidates) > 32)) {
 		return RecallRegistration{}, errors.New("invalid working-memory recall registration")
+	}
+	if cfg.Enabled {
+		if err := cfg.setRoutes(wire.recallRoutes); err != nil {
+			return RecallRegistration{}, err
+		}
 	}
 	return cfg, nil
 }

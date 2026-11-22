@@ -4,6 +4,7 @@
 <header><span>Xiaocui</span><h1>Skills &amp; tools</h1></header>
 <form id="login"><label>Administrator token<input id="token" type="password" required autocomplete="off"></label><button>Open catalog</button></form>
 <div id="editor" hidden>
+<nav aria-label="Panel sections"><a href="#working-memory-recall">Working-memory recall settings</a></nav>
 <section><h2>Prompt rendering</h2>
 <label>Rendering version<select id="renderingVersion"><option value="1">Version 1 · appended skill guidance (default)</option><option value="2">Version 2 · skill_content prompt slot</option></select></label>
 <p>Version 2 fills the skill_content slot with verified guidance for the current turn. The original prompt component includes the saved GoLive instructions, host rules and working memory. Empty selection or retrieval failure uses the existing fallback. Publish to apply this choice to subsequent turns on a compatible GoLive engine.</p>
@@ -18,9 +19,9 @@
 <label id="recallThresholdField">Auto threshold for enabled skills<input id="recallThreshold" type="number" min="0" max="100000" value="50" required></label>
 <p>On a rule miss, recall ranks skill descriptions with the configured embeddings and loads the selected instructions. The preview uses published settings.</p>
 </section>
-<section><h2>Working-memory recall</h2>
+<section id="working-memory-recall"><h2>Working-memory recall</h2>
 <label><input id="wmRecallOn" type="checkbox"> Enable background LLM recall</label>
-<p>Registered function <code>recall_business_guidance</code>. GoLive puts ready guidance in the skill_content slot when it assembles the prompt. The response starts even if recall is still running. Disabling recall restores the selected rendering version and existing routing.</p>
+<p>Registered function <code>recall_business_guidance</code>. GoLive preloads published rules for these candidates and puts ready guidance in the skill_content slot when it assembles the prompt. The response starts even if recall is still running. Disabling recall restores the selected rendering version and existing routing.</p>
 <label>Candidate IDs (comma-separated skill names or tool:quote_total)<input id="wmCandidates" maxlength="2200"></label>
 <label>Selector prompt<textarea id="wmSelectorPrompt" rows="4" maxlength="4096"></textarea></label>
 </section>

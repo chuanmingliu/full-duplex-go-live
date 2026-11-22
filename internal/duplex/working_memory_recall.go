@@ -3,6 +3,7 @@ package duplex
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"github.com/chuanmingliu/golive/internal/requestlog"
 	"github.com/chuanmingliu/golive/internal/skillsmcp"
 )
+
+// Short spoken revisions can name a limit without repeating a coverage.
+var shortQuoteRevision = regexp.MustCompile(`^(?:(?:嗯|好|那|我|想|再|把)[，, ]*)*(?:改|调|换)(?:为|成|到|一下)?[，, ]*[0-9一二两三四五六七八九十百]+万`)
 
 const (
 	recallRefresh  = 5 * time.Second
@@ -97,7 +101,7 @@ func (e *Engine) queueWorkingMemoryRecall(text string, msgs []provider.Message) 
 	cfg := wm.registration
 	memory, version := e.memorySnapshot()
 	routed := coverageSelectionText(msgs, raw)
-	if e.confirmsQuoteRevisions() && e.tools.quoteRevision != nil && quoteConfirmationFollowup.MatchString(raw) {
+	if e.confirmsQuoteRevisions() && ((e.tools.quoteRevision != nil && quoteConfirmationFollowup.MatchString(raw)) || (e.hasQuotedSelection() && shortQuoteRevision.MatchString(raw))) {
 		routed = "待确认报价。" + raw
 	}
 	input := recallInput{
@@ -172,7 +176,7 @@ func (e *Engine) selectWorkingMemoryCandidates(ctx context.Context, cfg skillsmc
 		{Role: provider.RoleUser, Content: string(data)},
 	}}
 	req.MaxTokens, req.Temperature, req.DisableThinking = 160, 0, true
-	stream, err := e.deps.LLM.Stream(ctx, req)
+	stream, err := e.deps.LLM.Stream(provider.WithoutHedging(ctx), req)
 	if err != nil {
 		return nil
 	}
@@ -212,12 +216,25 @@ func parseRecallCandidates(raw string, candidates map[string]string) []string {
 
 func (e *Engine) injectWorkingMemoryRecall(turn *Turn, request string, req *provider.LLMRequest) {
 	job := e.queueWorkingMemoryRecall(request, req.Messages)
-	if job == nil || len(job.guidance) == 0 {
-		turn.quoteClarification = false
+	turn.quoteClarification = false
+	if job == nil {
 		return
 	}
-	out := skillOutput{Status: "loaded", Scope: skillScope(turn), MemoryVersion: job.input.memoryVersion, Source: job.source, Guidance: job.guidance}
+	guidance, source := job.guidance, job.source
+	if len(guidance) == 0 {
+		memory, _ := e.memorySnapshot()
+		guidance = e.skills.DirectRecall(e.workingMemoryRecall.registration, request, job.input.routed, memory)
+		source = "published_rules"
+	}
+	if len(guidance) == 0 {
+		return
+	}
+	out := skillOutput{Status: "loaded", Scope: skillScope(turn), MemoryVersion: job.input.memoryVersion, Source: source, Guidance: guidance}
 	e.renderSkillOutput(turn, req, out, 2)
-	e.log.Info("skills: working-memory recall injected", "turn", turn.ID, "source", job.source,
-		"catalog_revision", job.input.revision, "skills", len(job.guidance), "elapsed_ms", time.Since(job.started).Milliseconds())
+	ids := make([]string, 0, len(guidance))
+	for _, guide := range guidance {
+		ids = append(ids, guide.URI)
+	}
+	e.log.Info("skills: working-memory recall injected", "turn", turn.ID, "source", source,
+		"catalog_revision", job.input.revision, "skills", len(guidance), "skill_uris", ids, "elapsed_ms", time.Since(job.started).Milliseconds())
 }

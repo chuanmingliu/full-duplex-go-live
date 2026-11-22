@@ -76,6 +76,13 @@ ssh chuanming@192.168.71.9 'cat ~/golive-skills-mcp/secrets/admin' | pbcopy
 3. Preview a positive example and a case that should yield no skill. In the current catalog, the insurance question above selects only the concepts skill; “服务通知在哪里找？” with `{"wechat.status":"consented"}` selects WeChat guidance; repeating it with `{"wechat.status":"added"}` suppresses that skill. Check the returned tools as well as the skill names.
 4. For a change affecting the caller, run the original **call sim** workflow, then inspect **Skills / MCP** in Call Journal. Check the selected URI, digest, catalog revision, render outcome and time for the turn. The panel preview tests routing; the Journal trace shows what reached the engine's prompt preparation. See [call operations](../../CALL-OPERATIONS.md).
 
+**Working-memory recall** sits below **Skill recall** on the authenticated
+**Skills & tools** page. Use the [Mac panel link](http://127.0.0.1:18794/#working-memory-recall),
+enter the administrator token, and open the catalog. If the link cannot connect,
+check the local SSH forward first. This setting publishes candidate IDs and the
+selector prompt. Current engines preload eligible direct rules from the published
+revision when recall is enabled.
+
 The panel also publishes `addV` response templates. The tracking backend sends its authenticated HTTP callback to **GoLive**. GoLive reads the response template from MCP. Moving the catalog therefore changes the guidance and template lookup route; the event producer continues to target GoLive. See [tracking events](../../docs/services/tracking-events.md).
 
 ## 3. Back up and restore state

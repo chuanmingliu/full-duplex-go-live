@@ -834,8 +834,14 @@ The catalog accepts this object as `working_memory_recall`.
 descriptions and the catalog revision in `_meta["ai.liuchuanming.golive/turn"]`.
 It requires the runtime credential. GoLive refreshes this registration in
 the background every five seconds. Only published, enabled candidates appear.
-The selector uses the configured GoLive LLM and receives candidate descriptions
-and bounded caller text. Its output is a JSON array of up to four allowed IDs.
+When requested with argument `route_snapshot="1"`, the response also includes
+bounded direct rules and verified-load inputs for standalone, nonconflicting
+candidates. GoLive verifies the bodies and compiles the rules in the background.
+A direct rule is evaluated against the current transcript and projected state,
+even when a newer ASR revision has invalidated the selector's earlier result.
+The selector uses one request to the configured GoLive LLM per lookup and
+receives candidate descriptions and bounded caller text. Its output is a JSON
+array of up to four allowed IDs.
 
 GoLive prepares rules and embedding guidance in parallel with the selector.
 Both paths use negotiated `outbound-turn`, passing the catalog revision as
@@ -846,7 +852,8 @@ eligible quotation guidance associated with the registered tool. Pricing and
 confirmation still use the existing GoLive tool contract.
 
 The response uses guidance already in memory for the same caller text, context
-and working-memory version. Accepted skills share the default prompt's
+and working-memory version, or uses the preloaded rules against the current
+turn if background guidance is unavailable. Accepted skills share the default prompt's
 `skill_content` slot, with one Markdown heading per skill when several apply.
 If guidance is pending, empty or stale, generation starts with the default
 prompt. Disabling background recall restores the catalog's configured renderer

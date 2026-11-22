@@ -126,6 +126,8 @@ For the async working-memory comparison, run the `recall` phase with the
 isolated fixture. It alternates recall on and off for each paired trial using the
 same synthetic host prompt and v2 renderer. It checks quotation, WeChat,
 multi-skill formatting and response dispatch with a deliberately held selector.
+The paired turns allow about 100 ms between the hypothesis and the final event.
+The combined turn first introduces WeChat in the final transcript.
 The report separates ASR-final-to-request dispatch, mock audio and mock quotation
 calculation.
 

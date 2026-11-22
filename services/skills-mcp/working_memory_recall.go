@@ -48,8 +48,50 @@ func (c Catalog) validateWorkingMemoryRecall() error {
 	return nil
 }
 
-func registerWorkingMemoryRecall(server *mcp.Server, c Catalog) {
-	server.AddPrompt(&mcp.Prompt{Name: recallPromptName, Description: "Discover the published GoLive working-memory recall function and candidate descriptions."}, func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+// A bounded snapshot makes direct rules available without turn-time I/O.
+type recallRule struct {
+	Match    []string    `json:"match"`
+	Exclude  []string    `json:"exclude,omitempty"`
+	Resource loadedSkill `json:"resource"`
+}
+
+func (x *skillIndex) recallRules(cfg *workingMemoryRecall) []recallRule {
+	// Skills with dependency or conflict edges still use the normal resolver.
+	related := make(map[string]bool)
+	for _, item := range x.items {
+		skill := item.skill
+		for _, conflict := range skill.Conflicts {
+			related[skill.Name], related[conflict] = true, true
+		}
+	}
+	var rules []recallRule
+	for _, name := range cfg.Candidates {
+		i, ok := x.byURI[Skill{Name: name}.uri()]
+		if !ok {
+			continue
+		}
+		item := x.items[i]
+		sk := item.skill
+		if !item.available || len(sk.Events) == 0 || len(sk.Requires) > 0 || related[name] || len(sk.Match) == 0 {
+			continue
+		}
+		runtimeRule := recallRule{Match: sk.Match, Exclude: sk.Exclude, Resource: loadedSkill{item.manifest, item.body, "text/markdown"}}
+		candidate := append(rules, runtimeRule)
+		if encoded, err := json.Marshal(candidate); err == nil && len(encoded) <= 240<<10 {
+			rules = candidate
+		}
+	}
+	return rules
+}
+
+func registerWorkingMemoryRecall(server *mcp.Server, c Catalog, index *skillIndex) {
+	var rules []recallRule
+	if cfg := c.WorkingMemoryRecall; cfg != nil && cfg.Enabled {
+		rules = index.recallRules(cfg)
+	}
+	server.AddPrompt(&mcp.Prompt{Name: recallPromptName, Description: "Discover the published GoLive working-memory recall function and candidate descriptions.", Arguments: []*mcp.PromptArgument{
+		{Name: "route_snapshot", Description: "Set to 1 to preload revision-bound direct rules for nonblocking routing."},
+	}}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		meta := map[string]any{"revision": c.Revision, "enabled": false}
 		if cfg := c.WorkingMemoryRecall; cfg != nil && cfg.Enabled {
 			allowed := map[string]string{}
@@ -68,6 +110,10 @@ func registerWorkingMemoryRecall(server *mcp.Server, c Catalog) {
 				}
 			}
 			meta["enabled"], meta["function"], meta["selector_prompt"], meta["candidates"] = true, cfg.Function, cfg.SelectorPrompt, candidates
+			if req.Params.Arguments["route_snapshot"] == "1" {
+				meta["rules"] = rules
+				meta["refusal"] = trailingRecallRefusal.String()
+			}
 		}
 		return &mcp.GetPromptResult{Meta: mcp.Meta{slotKey: meta}, Messages: []*mcp.PromptMessage{}}, nil
 	})

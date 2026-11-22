@@ -102,15 +102,16 @@ func TestWorkingMemoryRecallRealModel(t *testing.T) {
 		CalculationMS float64 `json:"mock_calculation_ms,omitempty"`
 	}
 	var results []result
-	lead := 1500 * time.Millisecond
+	// observeTurn adds 40 ms. Keep the final close to a live ASR update.
+	lead := 60 * time.Millisecond
 	for _, scenario := range []struct {
 		name, input string
 		skills      int
 		quote       bool
 	}{
-		{"quotation", "请重新算一下保费，把三者险改为三百万，其他保障不变", 1, true},
+		{"quotation", "我确认三者险改为三百万，交强险和车损险保持不变，没有其他调整，请按这个方案计算报价", 1, true},
 		{"wechat", "我已经同意加微信，请问微信服务通知在哪里找", 1, false},
-		{"combined", "请重新算一下保费，把三者险改为三百万，其他保障不变。也请告诉我微信服务通知在哪里找", 2, true},
+		{"combined", "我确认三者险改为三百万，交强险和车损险保持不变，没有其他调整，请按这个方案计算报价。也请告诉我微信服务通知在哪里找", 2, true},
 		{"held", "请告诉我微信服务通知在哪里找", 1, false},
 	} {
 		for i := 0; i < n; i++ {
@@ -132,7 +133,11 @@ func TestWorkingMemoryRecallRealModel(t *testing.T) {
 						return <-ready
 					})
 				}
-				feed(s.e, scenario.input, false)
+				partial := scenario.input
+				if scenario.name == "combined" {
+					partial, _, _ = strings.Cut(scenario.input, "。")
+				}
+				feed(s.e, partial, false)
 				if scenario.name == "held" {
 					select {
 					case <-held.started:
@@ -156,6 +161,9 @@ func TestWorkingMemoryRecallRealModel(t *testing.T) {
 					first := row.Trace[0]
 					r.DispatchMS = float64(first.Started.Sub(began).Microseconds()) / 1000
 					row.Checks["original_prompt"] = first.OriginalPrompt
+					if enabled {
+						row.Checks["nonblocking_dispatch"] = r.DispatchMS >= 0 && r.DispatchMS < 50
+					}
 					if scenario.skills == 2 {
 						row.Checks["multiple_skill_headings"] = len(first.SkillHeadings) == 2
 					}
@@ -165,7 +173,7 @@ func TestWorkingMemoryRecallRealModel(t *testing.T) {
 						}
 						row.Checks["skill_injection"] = out.RenderingVersion == 2 && first.Slot && len(out.Guidance) == scenario.skills
 						if enabled {
-							row.Checks["selector_result_used"] = out.Source == skillsmcp.RecallFunction
+							row.Checks["ready_guidance"] = out.Source == "published_rules" || out.Source == "rules_or_embedding" || out.Source == skillsmcp.RecallFunction
 						}
 					}
 					if scenario.name == "held" {
@@ -189,7 +197,13 @@ func TestWorkingMemoryRecallRealModel(t *testing.T) {
 					row.Checks["wechat_direction"] = row.Checks["wechat_direction"] && len(row.Quotes) == 0
 				}
 				s.e.Close()
-				t.Logf("RECALL_SIM %s %s dispatch_ms=%.3f audio_ms=%.3f first_text_ms=%.3f mock_calculation_ms=%.3f checks=%v", scenario.name, mode, r.DispatchMS, row.AudioMS, row.TextMS, r.CalculationMS, row.Checks)
+				var sources []string
+				if len(row.Trace) > 0 {
+					for _, guide := range row.Trace[0].Guides {
+						sources = append(sources, guide.Source)
+					}
+				}
+				t.Logf("RECALL_SIM %s %s dispatch_ms=%.3f audio_ms=%.3f first_text_ms=%.3f mock_calculation_ms=%.3f sources=%v checks=%v", scenario.name, mode, r.DispatchMS, row.AudioMS, row.TextMS, r.CalculationMS, sources, row.Checks)
 				results = append(results, r)
 				for check, ok := range row.Checks {
 					if !ok {

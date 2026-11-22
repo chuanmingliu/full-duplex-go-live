@@ -48,7 +48,7 @@ func (p *recallSimLLM) Stream(ctx context.Context, req provider.LLMRequest) (<-c
 	policy := req.Messages[0].Content
 	if strings.Contains(policy, "simulation selector policy") {
 		payload := req.Messages[1].Content
-		if strings.Contains(payload, "先看看") {
+		if strings.Contains(payload, "先看看") || strings.Contains(payload, "等我看一下") {
 			select {
 			case p.started <- struct{}{}:
 			default:
@@ -125,14 +125,19 @@ func TestWorkingMemoryRecallCallSim(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
-		name, partial, final, state string
-		ready, slow, changeState    bool
-		guidance                    []string
+		name, partial, final, state         string
+		ready, slow, changeState, finalOnly bool
+		guidance                            []string
 	}{
 		{name: "quotation", partial: "三者想调整到三百万", state: "consented", ready: true, guidance: []string{"motor-quotation"}},
 		{name: "wechat", partial: "微信服务通知如何找", final: "微信服务通知如何找？", state: "consented", ready: true, guidance: []string{"wechat-service-notification"}},
 		{name: "multiple", partial: "还有两件事，分别怎么处理", state: "consented", ready: true, guidance: []string{"motor-quotation", "wechat-service-notification"}},
 		{name: "slow", partial: "我想先看看", state: "consented", slow: true},
+		{name: "both-while-blocked", partial: "等我看一下，重新报价，微信服务通知怎么找", state: "consented", slow: true, guidance: []string{"motor-quotation", "wechat-service-notification"}},
+		{name: "final-only-quote", final: "请把三者险改成三百万", state: "consented", finalOnly: true, guidance: []string{"motor-quotation"}},
+		{name: "final-only-wechat", final: "微信服务通知怎么找", state: "consented", finalOnly: true, guidance: []string{"wechat-service-notification"}},
+		{name: "no-consent", final: "微信服务通知怎么找", state: "unknown", finalOnly: true},
+		{name: "already-added", final: "微信服务通知怎么找", state: "added", finalOnly: true},
 		{name: "revised-transcript", partial: "微信服务通知如何找", final: "微信服务通知如何找……先不用了", state: "consented", ready: true},
 		{name: "state-change", partial: "微信服务通知如何找", state: "consented", ready: true, changeState: true},
 	} {
@@ -193,13 +198,15 @@ func TestWorkingMemoryRecallCallSim(t *testing.T) {
 			waitFor(t, "published recall registration", 2*time.Second, func() bool {
 				return loopValue(func() bool { return e.workingMemoryRecall.registration.Enabled })
 			})
-			e.post(func() {
-				// Feed the same hypotheses that the production ASR event path receives.
-				run := &asrRun{id: 1, openedAt: time.Now()}
-				e.asrRun = run
-				e.onASREvent(asrEvent{run: 1, res: provider.ASRResult{Text: c.partial}})
-				e.asrRun = nil
-			})
+			if !c.finalOnly {
+				e.post(func() {
+					// Feed the same hypotheses that the production ASR event path receives.
+					run := &asrRun{id: 1, openedAt: time.Now()}
+					e.asrRun = run
+					e.onASREvent(asrEvent{run: 1, res: provider.ASRResult{Text: c.partial}})
+					e.asrRun = nil
+				})
+			}
 			if c.ready {
 				waitFor(t, "verified selector result", 2*time.Second, func() bool {
 					return loopValue(func() bool {
@@ -260,6 +267,16 @@ func TestWorkingMemoryRecallCallSim(t *testing.T) {
 					t.Fatalf("missing guidance or heading for %s", name)
 				}
 			}
+			if len(c.guidance) > 0 && (c.slow || c.finalOnly) {
+				var local bool
+				for _, message := range req.Messages {
+					local = local || (message.Name == skillsmcp.ToolName && strings.Contains(message.Content, `"source":"published_rules"`))
+				}
+				if !local {
+					t.Fatal("expected a turn routed entirely from the published snapshot")
+				}
+			}
+
 			if c.name == "quotation" {
 				select {
 				case call := <-quote.req:
