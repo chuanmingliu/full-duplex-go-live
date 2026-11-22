@@ -12,13 +12,29 @@ The endpoint is `POST /v1/calls/{call_id}/events` on the GoLive engine. Authenti
 }
 ```
 
-Use the exact call ID returned by the dial operation. Customer IDs or telephone numbers cannot substitute for it. The current implementation supports `addV` only. For a deliberate test, use `source: "simulation"`; the service log records that source. The future tracking service remains responsible for verifying the real customer action and its call correlation.
+Use the exact call ID returned by the dial operation. Customer IDs or telephone numbers cannot substitute for it. Send `addV` after WeChat addition and `product_page.opened` after the tracking backend confirms the product page opened. For a deliberate test, use `source: "simulation"`. The service log records that source. The tracking service is responsible for verifying the customer action and correlating it to a call.
 
 ## Protocol and delivery
 
-This is an authenticated HTTP JSON callback. Internally it invokes the same engine handler as the `golive.business.event` WebSocket extension. MCP remains the protocol for skill discovery, guidance retrieval and tools. The tracking callback uses HTTP JSON.
+This is an authenticated HTTP JSON callback. The `golive.business.event` WebSocket extension also supports the existing `addV` delivery. Product-page events require the dedicated HTTP callback credential. MCP remains the protocol for skill discovery, guidance retrieval and tools.
 
 A 202 response reports that the event was queued to the live session. The resulting `golive.memory` event carries `wechat.status=added` on the session/sideband stream. Repeated `addV` delivery is idempotent for that session, including retries with a different event ID. The event ID is echoed for correlation; it is not a durable deduplication ledger.
+
+## Caller-message guidance
+
+In **Leads → Configs → User prompt**, enable the template and save a version. A new call loads that version at startup. For each caller turn the LLM request keeps the configured system instructions and existing chat history, then adds rendered guidance to the current `user` message. The original caller text remains in the message and in stored history. Skill selection uses the original caller text. Other host guidance and tool messages retain their roles and ordering.
+
+The template supports conditional Jinja syntax and exposes `caller_text`, `events.wechat_added` and `events.product_page_opened`. The event values are booleans for the current call. They reflect backend-confirmed actions at the start of the request. An event received while the assistant is already speaking becomes available to a subsequent caller turn.
+
+```jinja
+{% if events.product_page_opened %}
+用户已打开产品页面。若询问调整保障，引导用户在当前页面选择对应保障并核对保费。
+{% elif events.wechat_added %}
+用户已添加车险管家。根据当前问题说明如何找到产品页面。
+{% endif %}
+```
+
+With this example and no confirmed event, GoLive sends the caller's words with no added guidance. Disabled or unavailable templates and render failures also preserve the original request. The product-page event updates state for future prompts without initiating speech. A real tracking producer must emit the callback for the flag to change during a live call.
 
 ## Configurable callback speech
 

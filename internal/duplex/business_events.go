@@ -6,10 +6,21 @@ import (
 	"github.com/chuanmingliu/golive/internal/live"
 )
 
+const ProductPageOpenedEvent = "product_page.opened"
+
 // ApplyBusinessEvent accepts a trusted, session-scoped backend notification.
 // User transcripts and model tool calls cannot manufacture this state. Repeated
 // addV delivery is idempotent for the lifetime of the session.
 func (e *Engine) ApplyBusinessEvent(name string) bool {
+	if name == ProductPageOpenedEvent {
+		e.post(func() {
+			if !e.productPageOpened {
+				e.productPageOpened = true
+				e.log.Info("business: tracking event applied", "name", name)
+			}
+		})
+		return true
+	}
 	if name != "addV" || e.tools == nil || e.tools.memory == nil {
 		return false
 	}

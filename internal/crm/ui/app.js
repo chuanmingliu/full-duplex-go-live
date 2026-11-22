@@ -174,6 +174,7 @@
     'silence-reaction': 'Silence reminders: enabled toggles the feature. Prefer rounds: an ordered array of 1–3 rounds, each with min_wait_ms, max_wait_ms (1000–120000) and templates (1–10 literal lines, 1–120 characters). All templates must be distinct across the sequence. After each reminder finishes, the next round waits its own random interval. The sequence stops after its last round and resets when accepted caller speech resumes. Do not mix rounds with legacy top-level min_wait_ms/max_wait_ms/max_attempts/templates; those old configs remain supported. Saved settings apply to new calls. Speech, recognition, playback and quotation work postpone reminders; existing hangup rules take priority. Use enabled:false to disable.',
     'streaming-guard': 'Match exact text in streamed model replies before speech synthesis. Leave the replacement empty to remove the phrase. At the same starting point, the longest matching rule wins. Save to apply the new version to new calls.',
     'turn-taking': 'Give the caller the floor on a configured cue. Use one phrase per line. A cue can stand on its own or precede a question separated by punctuation. Leave the acknowledgment blank for silence. Saved versions apply to new calls.',
+    'user-prompt': 'Add business guidance to the current caller message. The caller’s words are included automatically. Use Jinja if/elif/else, set, and simple expressions. Available inputs are caller_text, events.wechat_added, and events.product_page_opened. Saved versions apply to new calls.',
     'hangup-rules': 'When the assistant ends a call. Each rule is a case: kind "model" (the chat model judges "when" and says "farewell" before hanging up — add a case by adding a line), "keyword" (a regular expression on the caller’s words; the engine says the farewell and hangs up), "silence" (no word from the caller for "seconds"), "duration" (the call has run "seconds"). "enabled": false keeps a case without using it. "min_turns" on a model rule (or "model_min_turns" on the set) makes the engine refuse the model’s end_call until the caller has had that many turns — "refused twice" hung up on one garbled line on 10-23. Read by golive at the start of every call; a bad pattern is refused on save. See internal/tools/hangup.go.',
     'openers': 'What the assistant says at the pause, before its answer, keyed by the caller’s words — the Openers page edits this as a form. Each scenario: "keywords" (any one found in the caller’s words matches; scenarios are tried in order), "kind" (question, statement or any), "phrases" (short clauses ending in a comma, at most 4 characters plus the comma — every character is latency: the answer waits for the opener to end). Saving caches every phrase in golive at once. See internal/tools/openers.go.',
     'quote-api': 'Xiaocui mappings include choice_values, value_field (deductibleRate) and tax_field (collectVehicleTax). Use only with a backend implementing that contract. The business’s quotation service: base_url up to and including /intranet, the channel ids, the coverage codes, the phone and vehicle variables and their defaults, and how long to poll. With a base_url set, quote_total goes here. See internal/crm/quoteapi.go.'
@@ -200,7 +201,24 @@
   function configLabel(name) {
     if (name === 'streaming-guard') return 'Streaming guard';
     if (name === 'turn-taking') return 'Turn-taking';
+    if (name === 'user-prompt') return 'User prompt';
     return name;
+  }
+  function userPromptEditor(value) {
+    var enabled = h('input', { type: 'checkbox' });
+    enabled.checked = value.enabled;
+    var template = h('textarea', { class: 'tall', spellcheck: 'false' });
+    template.value = value.template || '';
+    var example = '{% if events.product_page_opened %}\n用户已打开产品页面。若询问调整保障，引导用户在当前页面选择对应保障并核对保费。\n{% elif events.wechat_added %}\n用户已添加车险管家，但后台还未确认打开产品页面。根据当前问题说明下一步。\n{% endif %}';
+    return {
+      view: h('div', null, h('label', null, enabled, ' Enable user prompt'),
+        h('label', null, 'Jinja template', template),
+        h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Insert tracking example', onclick: function () {
+          template.value = template.value ? template.value + '\n\n' + example : example;
+          template.focus();
+        } }))),
+      read: function () { return { enabled: enabled.checked, template: template.value }; }
+    };
   }
   function turnTakingEditor(value) {
     var enabled = h('input', { type: 'checkbox' });
@@ -271,6 +289,7 @@
     var editor = null;
     if (c && c.name === 'streaming-guard') editor = streamingGuardEditor(JSON.parse(body.value));
     if (c && c.name === 'turn-taking') editor = turnTakingEditor(JSON.parse(body.value));
+    if (c && c.name === 'user-prompt') editor = userPromptEditor(JSON.parse(body.value));
     var verIn = h('input', { type: 'number', class: 'short', min: '1', value: c ? c.version : 1 });
     pane.appendChild(h('div', { class: 'card' },
       h('div', { class: 'row' }, h('strong', { text: isNew ? 'New config' : configLabel(c.name) }), c ? h('span', { class: 'chip', text: 'v' + c.version }) : null, c ? h('span', { class: 'chip mono', text: c.sha }) : null, c ? h('span', { class: 'muted', text: when(c.created_at) + ' by ' + c.by + (c.note ? ' · ' + c.note : '') }) : null),

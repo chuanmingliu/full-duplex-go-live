@@ -29,7 +29,9 @@ func (s *Server) handleBusinessCallback(w http.ResponseWriter, r *http.Request) 
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	call := r.PathValue("call")
-	if dec.Decode(&event) != nil || dec.Decode(&struct{}{}) != io.EOF || event.Name != "addV" || strings.TrimSpace(event.EventID) == "" || len(event.EventID) > 128 || call == "" || cleanCallID(call) != call {
+	if dec.Decode(&event) != nil || dec.Decode(&struct{}{}) != io.EOF ||
+		(event.Name != "addV" && event.Name != duplex.ProductPageOpenedEvent) ||
+		strings.TrimSpace(event.EventID) == "" || len(event.EventID) > 128 || call == "" || cleanCallID(call) != call {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_business_event"})
 		return
 	}

@@ -60,6 +60,13 @@ func TestTrackingCallbackTargetsOnlyItsCall(t *testing.T) {
 	if observed.count(live.ExtMemory) != 1 || other.count(live.ExtMemory) != 0 {
 		t.Fatal("duplicate or cross-call state update")
 	}
+	page := `{"name":"product_page.opened","event_id":"page-open","source":"simulation"}`
+	if got := post("first", page, "wrong"); got != 401 {
+		t.Fatalf("unauthorized page event=%d", got)
+	}
+	if got := post("first", page, token); got != 202 {
+		t.Fatalf("accepted page event=%d", got)
+	}
 	duplicate := dialRealtime(t, ts, "/v1/realtime?call=first")
 	duplicate.first("session.created", time.Second)
 	if got := post("first", body, token); got != 409 {

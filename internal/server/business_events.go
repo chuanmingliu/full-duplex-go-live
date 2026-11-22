@@ -15,7 +15,9 @@ func (s *Session) onBusinessEvent(p *peer, data []byte, eventID string) error {
 		Name string `json:"name"`
 	}
 	accepted := false
-	if json.Unmarshal(data, &event) == nil {
+	// Product-page tracking uses the dedicated backend HTTP credential.
+	// Retain the session extension's original addV contract.
+	if json.Unmarshal(data, &event) == nil && event.Name == "addV" {
 		s.withEngine(func(e *duplex.Engine) { accepted = e.ApplyBusinessEvent(event.Name) })
 	}
 	if !accepted {

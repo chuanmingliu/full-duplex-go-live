@@ -203,6 +203,12 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(tools.UserPromptName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.UserPromptName, []byte(tools.DefaultUserPrompt), "optional Jinja guidance for the current caller message", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(tools.OpenersName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(tools.OpenersName, []byte(tools.DefaultOpeners), "openers by scenario: what the assistant says at the pause, keyed by the caller's words", "crm"); err != nil {
 			return nil, err
@@ -954,6 +960,11 @@ func (s *Service) Handler() http.Handler {
 		}
 		if r.PathValue("name") == tools.TurnTakingName {
 			if _, err := tools.ParseTurnTaking(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.UserPromptName {
+			if _, err := tools.ParseUserPrompt(raw); err != nil {
 				return fail(http.StatusBadRequest, "%v", err)
 			}
 		}

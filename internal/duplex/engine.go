@@ -117,11 +117,13 @@ type Engine struct {
 	hasInterrupted                          bool                  // loop-owned; later prompts identify the newest request explicitly
 	wechatTurn                              *Turn                 // current generation giving WeChat guidance
 	wechatAdded                             bool                  // authoritative completion, owned by the loop
+	productPageOpened                       bool                  // backend tracking state for the current call
 	eventResponse                           *pendingEventResponse // loop-owned callback speech
 	skills                                  *skillsmcp.Client
 	workingMemoryRecall                     workingMemoryRecall
 	streamingGuard                          tools.StreamingGuard // initialized before starting the session loop
 	turnTaking                              turnTakingState
+	userPrompt                              tools.UserPrompt
 	opts                                    Options
 	talkerPending                           *talkerOpener
 	talkerStarted                           time.Time
@@ -499,13 +501,18 @@ func New(opts Options, deps Deps) *Engine {
 func (e *Engine) Start(ctx context.Context) {
 	e.startOutputTranscript()
 	e.ctx, e.cancel = context.WithCancel(requestlog.WithScope(ctx, requestlog.Scope{SessionID: e.opts.SessionID}))
-	guardLoaded := make(chan struct{})
+	var promptConfigs sync.WaitGroup
+	promptConfigs.Add(2)
 	go func() {
+		defer promptConfigs.Done()
 		e.loadStreamingGuard()
-		close(guardLoaded)
+	}()
+	go func() {
+		defer promptConfigs.Done()
+		e.loadUserPrompt()
 	}()
 	e.loadTurnTaking()
-	<-guardLoaded
+	promptConfigs.Wait()
 	if d := e.opts.Cfg.Duplex; d.BackchannelDetectorMode != "" {
 		e.detector = backchannel.New(e.ctx, d.BackchannelDetectorURL, e.log)
 		e.detectorReady = e.detector.Updates

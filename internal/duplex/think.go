@@ -12,6 +12,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
 	"github.com/chuanmingliu/golive/internal/requestlog"
+	"github.com/chuanmingliu/golive/internal/tools"
 )
 
 // This file is the think channel: delegation in both of gpt-live-1's modes,
@@ -95,6 +96,7 @@ type backendJob struct {
 	// response.event.
 	front       bool
 	asyncRecall bool
+	userPrompt  *tools.UserPromptInput
 }
 
 // delegateTool is the one function the conversational model has in client-auto
@@ -287,6 +289,12 @@ func (e *Engine) startBackend(turn *Turn, reason string) {
 		responseID:   fmt.Sprintf("resp_%s_%d", e.opts.SessionID, e.respSeq),
 		front:        front,
 		asyncRecall:  e.workingMemoryRecall.registration.Enabled,
+	}
+	if !front && e.userPrompt.Enabled && strings.TrimSpace(turn.Transcript) != "" && turn.waitingTask == "" {
+		job.userPrompt = &tools.UserPromptInput{
+			CallerText: strings.TrimSpace(turn.Transcript), WechatAdded: e.wechatAdded,
+			ProductPageOpened: e.productPageOpened,
+		}
 	}
 	if !front {
 		e.registerDelegation(job.delegationID)
@@ -499,6 +507,9 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	}
 	if ctx.Err() != nil {
 		return
+	}
+	if job.userPrompt != nil {
+		e.renderUserPrompt(req.Messages, *job.userPrompt, turn.ID)
 	}
 	deltas, err := e.deps.LLM.Stream(ctx, req)
 	if err != nil && ctx.Err() == nil && retryable(err) {
