@@ -57,6 +57,7 @@
   }
 
   function askToken(reason) {
+    document.getElementById('skills-nav').hidden = true;
     clear(main);
     var input = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'paste the token' });
     input.value = token();
@@ -437,18 +438,23 @@
     }).catch(function (err) { if (err.status !== 401) host.replaceChildren(errBox(err)); });
   }
 
-  function skills() {
-    setNav('skills');
-    page('Skills & tools', 'Manage published skills, tools, and routing in the Skills MCP panel.');
-    main.appendChild(h('div', { class: 'card' },
-      h('p', { text: 'Open the panel through your local SSH forward and sign in with the Skills MCP administrator token.' }),
-      h('a', { class: 'btn btn-primary', href: 'http://127.0.0.1:18794/', target: '_blank', rel: 'noopener noreferrer', text: 'Open Skills & tools' })));
+  function checkSkillsAccess() {
+    var currentToken = token();
+    var tab = document.getElementById('skills-nav');
+    return api('GET', '/api/skills-tools/access').then(function (access) {
+      if (currentToken === token()) tab.hidden = !access.enabled;
+      return currentToken === token() && access.enabled;
+    }).catch(function () {
+      if (currentToken === token()) tab.hidden = true;
+      return false;
+    });
   }
 
   // ----- routing -----
   function route() {
     health();
     if (!token()) { askToken(''); return; }
+    var skillsAccess = checkSkillsAccess();
     var hash = location.hash.replace(/^#\/?/, '');
     var q = {}, qi = hash.indexOf('?');
     if (qi >= 0) { hash.slice(qi + 1).split('&').forEach(function (kv) { var p = kv.split('='); q[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || ''); }); hash = hash.slice(0, qi); }
@@ -457,7 +463,15 @@
       case '': case 'templates': templates(parts[1] || ''); break;
       case 'configs': configs(parts[1] || ''); break;
       case 'openers': openers(); break;
-      case 'skills': skills(); break;
+      case 'skills':
+        setNav('skills');
+        page('Skills & tools');
+        skillsAccess.then(function (enabled) {
+          if (!/^#\/?skills$/.test(location.hash)) return;
+          if (enabled) location.replace('/skills-tools/');
+          else main.appendChild(h('p', { text: 'Skills & tools is unavailable. Check your Leads sign-in.' }));
+        });
+        break;
       case 'render': render(q); break;
       case 'quote': quote(); break;
       case 'calls': calls(); break;

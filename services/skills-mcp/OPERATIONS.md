@@ -59,7 +59,7 @@ The verified catalog returns `8 1 ['vehicle_insurance_concepts'] []`. After a pu
 
 ## 2. Edit skills and check the result
 
-From the **Mac**, open **Skills & tools** in the Leads panel or use the [local panel](http://127.0.0.1:18794/) directly. If the tunnel is absent, run the following in a terminal and leave it open. In a second terminal, copy the credential. A successful clipboard command produces no terminal output; check the pipeline exit status and paste directly into the panel.
+From the **Mac**, open **Skills & tools** in the signed-in Leads panel. This uses the existing Leads token through a same-origin bridge to the catalog editor. The MCP administrator token stays on the box. The [standalone panel](http://127.0.0.1:18794/) uses the MCP administrator token. If the tunnel is absent, run the following in a terminal and leave it open. In a second terminal, copy the credential. A successful clipboard command produces no terminal output; check the pipeline exit status and paste directly into the panel.
 
 ```sh
 ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
@@ -77,9 +77,9 @@ ssh chuanming@192.168.71.9 'cat ~/golive-skills-mcp/secrets/admin' | pbcopy
 4. For a change affecting the caller, run the original **call sim** workflow, then inspect **Skills / MCP** in Call Journal. Check the selected URI, digest, catalog revision, render outcome and time for the turn. The panel preview tests routing; the Journal trace shows what reached the engine's prompt preparation. See [call operations](../../CALL-OPERATIONS.md).
 
 **Working-memory recall** sits below **Skill recall** on the authenticated
-**Skills & tools** page. Use the [Mac panel link](http://127.0.0.1:18794/#working-memory-recall),
-enter the administrator token, and open the catalog. If the link cannot connect,
-check the local SSH forward first. This setting publishes candidate IDs and the
+**Skills & tools** page. Open the Working-memory recall settings link at the
+top of the editor. On the ThinkPad, the [Leads link](http://192.168.71.9:8791/skills-tools/#working-memory-recall)
+uses the operator’s existing Leads sign-in. This setting publishes candidate IDs and the
 selector prompt. Current engines preload eligible direct rules from the published
 revision when recall is enabled.
 

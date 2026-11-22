@@ -1,10 +1,15 @@
 'use strict';
 const el = id => document.getElementById(id);
+const fromLeads = location.pathname === '/skills-tools/';
 let catalog, selected = 0, token, dirty = false;
 function status(message) { el('status').textContent = message; }
 async function api(method, data, path = '/admin/catalog') {
-  const response = await fetch(path, {method, headers: {Authorization: 'Bearer ' + token, 'Content-Type':'application/json'}, body: data && JSON.stringify(data)});
-  if (!response.ok) throw new Error((await response.text()).trim());
+  const response = await fetch((fromLeads ? '/skills-tools' : '') + path, {method, headers: {Authorization: 'Bearer ' + token, 'Content-Type':'application/json'}, body: data && JSON.stringify(data)});
+  if (!response.ok) {
+    const error = new Error((await response.text()).trim());
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 function updateSkill() {
@@ -53,6 +58,7 @@ async function load() {
   catalog = await api('GET'); selected = 0; dirty = false;
   el('login').hidden = true; el('editor').hidden = false;
   render(); status('');
+  if (location.hash === '#working-memory-recall') el('working-memory-recall').scrollIntoView();
 }
 el('login').onsubmit = async e => {
   e.preventDefault(); token = el('token').value.trim();
@@ -117,3 +123,16 @@ el('preview').onclick = async () => {
     el('output').textContent = slots.join('\n\n');
   } catch (err) { el('output').textContent = err.message; }
 };
+
+
+if (fromLeads) {
+  el('backToLeads').hidden = false;
+  try { token = localStorage.getItem('crm.token') || ''; } catch { token = ''; }
+  if (token) {
+    load().catch(err => status(err.status === 401 ? 'Open Skills & tools from a signed-in Leads tab.' : err.message));
+  } else {
+    status('Open Skills & tools from a signed-in Leads tab.');
+  }
+} else {
+  el('login').hidden = false;
+}

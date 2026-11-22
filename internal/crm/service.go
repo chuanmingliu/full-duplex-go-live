@@ -46,6 +46,8 @@ type Config struct {
 	// including /intranet) and overrides the quote-api config's base_url: the
 	// address is the deployment's, the rest of the config the business's.
 	QuoteAPIBase string
+	// SkillsAdminTokenFile enables the same-origin Skills & tools editor.
+	SkillsAdminTokenFile string
 	// Location is the time zone a render's nowDateTime is written in.
 	Location *time.Location
 	Log      *slog.Logger
@@ -1132,6 +1134,9 @@ func (s *Service) Handler() http.Handler {
 		_, _ = io.WriteString(w, text)
 		return nil
 	}))
+	if s.cfg.SkillsAdminTokenFile != "" {
+		s.registerSkillsPanel(mux, skillsPanelBase)
+	}
 	// The panel: a page over this API, served from the copy built in. The
 	// files are public; everything they ask for carries the token.
 	if sub, err := fs.Sub(uiFiles, "ui"); err == nil {
