@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 const RecallFunction = "recall_business_guidance"
@@ -22,16 +23,19 @@ type RecallRegistration struct {
 }
 
 type recallRule struct {
-	include, exclude []*regexp.Regexp
-	guidance         Guidance
+	include, exclude         []*regexp.Regexp
+	orderMatch, orderExclude *regexp.Regexp
+	guidance                 Guidance
 }
 
 type recallRoutes struct {
 	Refusal string `json:"refusal"`
 	Rules   []struct {
-		Match    []string `json:"match"`
-		Exclude  []string `json:"exclude"`
-		Resource struct {
+		Match        []string `json:"match"`
+		Exclude      []string `json:"exclude"`
+		OrderMatch   string   `json:"order_match"`
+		OrderExclude string   `json:"order_exclude"`
+		Resource     struct {
 			Manifest Entry  `json:"manifest"`
 			MIME     string `json:"mimeType"`
 			Text     string `json:"text"`
@@ -89,7 +93,15 @@ func (cfg *RecallRegistration) setRoutes(routes recallRoutes) error {
 		if err != nil {
 			return err
 		}
-		cfg.rules = append(cfg.rules, recallRule{match, exclude, guide})
+		compiled := recallRule{include: match, exclude: exclude, guidance: guide}
+		if rule.OrderMatch != "" {
+			patterns, err := compileRecallPatterns([]string{rule.OrderMatch, rule.OrderExclude})
+			if err != nil || r.Manifest.Frontmatter["name"] != "wechat-service-notification" {
+				return errors.New("invalid checkout recall rule")
+			}
+			compiled.orderMatch, compiled.orderExclude = patterns[0], patterns[1]
+		}
+		cfg.rules = append(cfg.rules, compiled)
 	}
 	return nil
 }
@@ -104,13 +116,21 @@ func (c *Client) DirectRecall(cfg RecallRegistration, raw, routed string, memory
 	var guides []Guidance
 	bytesLeft := 16 << 10
 	for _, rule := range cfg.rules {
-		if !slices.ContainsFunc(rule.include, func(re *regexp.Regexp) bool { return re.MatchString(routed) }) ||
+		checkout := rule.orderMatch != nil && rule.orderMatch.MatchString(strings.TrimSpace(raw)) && !rule.orderExclude.MatchString(raw)
+		if (!checkout && !slices.ContainsFunc(rule.include, func(re *regexp.Regexp) bool { return re.MatchString(routed) })) ||
 			slices.ContainsFunc(rule.exclude, func(re *regexp.Regexp) bool { return re.MatchString(raw) }) {
+			continue
+		}
+		if checkout && (state["wechat.status"] == "declined" || state["wechat.status"] == "added") {
 			continue
 		}
 		eligible := true
 		for key, allowed := range rule.guidance.State {
-			if !slices.Contains(allowed, state[key]) {
+			value := state[key]
+			if checkout && key == "wechat.status" && (value == "" || value == "unknown") {
+				continue
+			}
+			if !slices.Contains(allowed, value) {
 				eligible = false
 				break
 			}

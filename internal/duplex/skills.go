@@ -3,6 +3,7 @@ package duplex
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,6 +105,11 @@ func (e *Engine) renderSkillOutput(turn *Turn, req *provider.LLMRequest, out ski
 	for _, guide := range out.Guidance {
 		if _, guarded := guide.State["wechat.status"]; guarded {
 			e.wechatTurn = turn
+			memory, _ := e.memorySnapshot()
+			if note := wechatBootstrapNote(memory, "微信"); note != "" && !slices.ContainsFunc(req.Messages, func(message provider.Message) bool { return message.Content == note }) {
+				req.Messages = append(req.Messages, provider.Message{Role: provider.RoleSystem, Content: note})
+			}
+			break
 		}
 	}
 	if renderingVersion == 2 && len(out.Guidance) > 0 && fillSkillContentSlot(req.Messages, out.Guidance) {

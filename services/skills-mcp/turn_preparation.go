@@ -112,7 +112,7 @@ func (x *skillIndex) prepareTurn(ctx context.Context, in turnInput, matched []Sk
 			}
 		}
 		if len(uris) > 0 {
-			loaded, err := x.load(ctx, skillRequest{URIs: uris, Revision: x.revision, State: in.State, MaxSkills: 4, MaxBytes: maxSelectionBytes})
+			loaded, err := x.load(ctx, skillRequest{checkout: in.purchaseIntent(), URIs: uris, Revision: x.revision, State: in.State, MaxSkills: 4, MaxBytes: maxSelectionBytes})
 			if err != nil {
 				return nil, err
 			}

@@ -52,17 +52,6 @@ func (s Skill) validateBindings() error {
 	return nil
 }
 func (c Catalog) available(s Skill) bool { return s.Enabled && (s.Tool == "" || c.Quote.Enabled) }
-func (s Skill) matches(event string, state map[string]string) bool {
-	if !slices.Contains(s.Events, event) {
-		return false
-	}
-	for key, allowed := range s.State {
-		if !slices.Contains(allowed, state[key]) {
-			return false
-		}
-	}
-	return true
-}
 
 type turnInput struct {
 	Event         string            `json:"event"`
@@ -76,16 +65,20 @@ func (c Catalog) selectTurn(t turnInput) ([]Skill, []string, error) {
 		return nil, nil, errors.New("invalid business event")
 	}
 	skills := []Skill{}
+	checkout := t.purchaseIntent()
 	tools := []string{}
 	for _, sk := range c.Skills {
 		event := t.Event
 		if event == "auto" {
-			if !sk.matchesText(t.Utterance) || len(sk.Events) == 0 {
+			if len(sk.Events) == 0 || sk.excludesText(t.Utterance) {
+				continue
+			}
+			if !sk.matchesPositiveRule(t.Utterance) && !(checkout && sk.Name == wechatNotificationSkill) {
 				continue
 			}
 			event = sk.Events[0]
 		}
-		if !c.available(sk) || !sk.matches(event, t.State) {
+		if !c.available(sk) || !slices.Contains(sk.Events, event) || !sk.stateAllowed(t.State, checkout) {
 			continue
 		}
 		skills = append(skills, sk)
@@ -152,10 +145,6 @@ func (s Skill) excludesText(text string) bool {
 		}
 	}
 	return false
-}
-
-func (s Skill) matchesText(text string) bool {
-	return !s.excludesText(text) && s.matchesPositiveRule(text)
 }
 
 func (s Skill) matchesPositiveRule(text string) bool {

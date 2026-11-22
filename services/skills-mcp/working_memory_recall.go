@@ -50,9 +50,11 @@ func (c Catalog) validateWorkingMemoryRecall() error {
 
 // A bounded snapshot makes direct rules available without turn-time I/O.
 type recallRule struct {
-	Match    []string    `json:"match"`
-	Exclude  []string    `json:"exclude,omitempty"`
-	Resource loadedSkill `json:"resource"`
+	Match        []string    `json:"match"`
+	Exclude      []string    `json:"exclude,omitempty"`
+	Resource     loadedSkill `json:"resource"`
+	OrderMatch   string      `json:"order_match,omitempty"`
+	OrderExclude string      `json:"order_exclude,omitempty"`
 }
 
 func (x *skillIndex) recallRules(cfg *workingMemoryRecall) []recallRule {
@@ -76,6 +78,9 @@ func (x *skillIndex) recallRules(cfg *workingMemoryRecall) []recallRule {
 			continue
 		}
 		runtimeRule := recallRule{Match: sk.Match, Exclude: sk.Exclude, Resource: loadedSkill{item.manifest, item.body, "text/markdown"}}
+		if sk.Name == wechatNotificationSkill {
+			runtimeRule.OrderMatch, runtimeRule.OrderExclude = purchaseIntent.String(), purchaseRefusal.String()
+		}
 		candidate := append(rules, runtimeRule)
 		if encoded, err := json.Marshal(candidate); err == nil && len(encoded) <= 240<<10 {
 			rules = candidate
@@ -159,7 +164,7 @@ func (x *skillIndex) mergeWorkingMemoryRecall(ctx context.Context, cfg *workingM
 		if !ok || (tool != "" && x.items[i].skill.Tool != tool) || len(x.items[i].skill.Events) == 0 {
 			return
 		}
-		closure, reason := x.closure(ctx, uri, in.State)
+		closure, reason := x.closure(ctx, uri, in.State, in.purchaseIntent())
 		if reason == "" && !slices.ContainsFunc(closure, func(id int) bool {
 			return x.items[id].skill.excludesText(in.Utterance)
 		}) {
@@ -179,7 +184,7 @@ func (x *skillIndex) mergeWorkingMemoryRecall(ctx context.Context, cfg *workingM
 	if len(uris) == 0 {
 		return nil
 	}
-	resolved, err := x.resolve(ctx, skillRequest{URIs: uris, Revision: x.revision, State: in.State, MaxSkills: 4, MaxBytes: maxSelectionBytes})
+	resolved, err := x.resolve(ctx, skillRequest{checkout: in.purchaseIntent(), URIs: uris, Revision: x.revision, State: in.State, MaxSkills: 4, MaxBytes: maxSelectionBytes})
 	if err != nil {
 		return err
 	}

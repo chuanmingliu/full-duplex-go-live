@@ -36,6 +36,7 @@ type indexedSkill struct {
 }
 
 type skillRequest struct {
+	checkout          bool
 	ExclusionText     string            `json:"-"`
 	RespectExclusions bool              `json:"-"`
 	Context           string            `json:"context,omitempty" jsonschema:"Relevant conversation context or summary, up to 8192 UTF-8 bytes."`
@@ -144,23 +145,12 @@ func newSkillIndex(c Catalog) *skillIndex {
 }
 
 func (x *skillIndex) eligible(i int, state map[string]string) bool {
+	return x.eligibleForTurn(i, state, false)
+}
+
+func (x *skillIndex) eligibleForTurn(i int, state map[string]string, checkout bool) bool {
 	item := x.items[i]
-	if !item.available {
-		return false
-	}
-	for field, allowed := range item.skill.State {
-		found := false
-		for _, value := range allowed {
-			if state[field] == value {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
+	return item.available && item.skill.stateAllowed(state, checkout)
 }
 
 func selectionLimit(in skillRequest, requireRevision bool, revision int) (int, error) {
