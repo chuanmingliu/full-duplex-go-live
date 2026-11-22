@@ -52,7 +52,7 @@ func (e *Engine) prepareEventResponse(event string, resume *Turn) {
 }
 
 func (e *Engine) resumeBusinessResponse(turn *Turn) {
-	if turn != nil && e.tracker.IsCurrent(turn) && !e.userOpen && e.hold == nil && !e.hangingUp() {
+	if turn != nil && e.tracker.IsCurrent(turn) && !e.userOpen && e.hold == nil && !e.hangingUp() && !e.waitingForCallerCue() {
 		e.startBackend(turn, "business_event")
 	}
 }

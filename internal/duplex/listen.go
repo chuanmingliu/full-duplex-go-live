@@ -178,6 +178,9 @@ func (e *Engine) conclude(run *asrRun, text string) {
 		e.uttVerdict = uttUnjudged
 		return
 	}
+	if e.deferCallerCue(run, text) {
+		return
+	}
 	if e.hold == nil && text != "" {
 		e.emitInputTranscript(run, text, true)
 	}
@@ -365,11 +368,16 @@ func (e *Engine) onASREvent(ev asrEvent) {
 		e.noteWords(run, text)
 		return
 	}
+	if ev.res.Final && e.deferCallerCue(run, text) {
+		e.noteWords(run, text)
+		return
+	}
+	e.cutForCallerCue(run, text)
 	// While the hold is still undecided the utterance may yet be swallowed
 	// whole, and a transcript cannot be taken back, so nothing is shown for
 	// it. The next event after the hold resolves catches the client up.
 	if e.hold == nil && !e.ignoring() {
-		if !ev.res.Final && text != run.lastText {
+		if !ev.res.Final && !run.cueSeen && text != run.lastText {
 			e.prefetchWorkingMemoryRecall(text)
 		}
 		e.emitInputTranscript(run, text, ev.res.Final)
@@ -543,8 +551,9 @@ func (e *Engine) onEarlyFinal(run *asrRun, text string) {
 		e.noteWords(cur, full)
 		return
 	}
+	e.cutForCallerCue(cur, full)
 	if e.hold == nil {
-		if !e.ignoring() && full != cur.lastText {
+		if !e.ignoring() && !cur.cueSeen && full != cur.lastText {
 			e.prefetchWorkingMemoryRecall(full)
 		}
 		e.emitInputTranscript(cur, full, false)
@@ -1081,6 +1090,9 @@ func (e *Engine) startSpeculativeTurn(text string) {
 	if e.openingProtected() || e.openingInput != nil {
 		return
 	}
+	if _, cue := e.turnTaking.config.SplitCue(text); cue || (e.waitingForCallerCue() && e.bcSet.Matches(text)) {
+		return
+	}
 	if e.hangingUp() {
 		// Nothing after the farewell is answered, and a turn begun here
 		// would become the current one and abort the farewell's speech
@@ -1162,6 +1174,10 @@ func (e *Engine) onFinalTranscript(run *asrRun, text string) {
 		// A rule is ending the call; the farewell is being said and nothing
 		// else should be answered.
 		e.abandonSpeculation("the call is ending")
+		return
+	}
+	text, consumed := e.acceptCallerCue(run, text)
+	if consumed {
 		return
 	}
 	if spec := e.liveSpeculation(); spec != nil {

@@ -172,6 +172,8 @@
     'quote-speech': 'What the assistant says around a quotation, as preset lines instead of the model’s improvisation. "prehook": said the moment the premium is being worked out (not for a missing field); "posthook": the first words of the reply that delivers the result; "template": a Jinja2 template over the result (total, lines[].coverage / choice / premium, skipped) read out right after the posthook, before the model speaks — leave it empty to let the model read the figures; "posthook_status": the result status these are for ("quote"). A template that does not render is refused on save. Optional "confirm_revisions": true collects changes after the first quote, waits for caller confirmation, and uses contextual model-generated confirmation and waiting speech. Existing configs default to false. Read by golive at the start of every call; see internal/tools/quotespeech.go.',
     'quote-plans': 'The full motor draft adds coverage_details (kind, parent, label), strict validation and all 18 selections. It keeps the current default until you change it. Amounts, percentages and shared limits remain distinct. What a quotation needs before it runs. Named plans; "default" picks one, a call can name another in its working memory (quote_plan — a lead’s own plan, once leads exist). A plan lists its coverages, their tiers ("options": {"驾乘险": ["0","30万","50万","80万"]} — a coverage chosen without one is asked for, "0" means none) and its fields: name, "for" (the coverages that need it, ["*"] for all), "question" (what the assistant asks when it is unknown), "if_unknown" (skip the coverages or stop), "source" (rules, api or any — the business service looks a car up by its plate and does not need the price). With a must field missing the tool answers status=need and the assistant asks one question at a time; only with every field known is a quotation made. "default_selection" is the fixed default quotation (coverage → true or a tier) worked out for the lead while the phone rings and read out without a question; "default_vars" stand in for a lead’s variables on a call placed without one (the test line). See internal/crm/plans.go, prefetch.go.',
     'silence-reaction': 'Silence reminders: enabled toggles the feature. Prefer rounds: an ordered array of 1–3 rounds, each with min_wait_ms, max_wait_ms (1000–120000) and templates (1–10 literal lines, 1–120 characters). All templates must be distinct across the sequence. After each reminder finishes, the next round waits its own random interval. The sequence stops after its last round and resets when accepted caller speech resumes. Do not mix rounds with legacy top-level min_wait_ms/max_wait_ms/max_attempts/templates; those old configs remain supported. Saved settings apply to new calls. Speech, recognition, playback and quotation work postpone reminders; existing hangup rules take priority. Use enabled:false to disable.',
+    'streaming-guard': 'Match exact text in streamed model replies before speech synthesis. Leave the replacement empty to remove the phrase. At the same starting point, the longest matching rule wins. Save to apply the new version to new calls.',
+    'turn-taking': 'Give the caller the floor on a configured cue. Use one phrase per line. A cue can stand on its own or precede a question separated by punctuation. Leave the acknowledgment blank for silence. Saved versions apply to new calls.',
     'hangup-rules': 'When the assistant ends a call. Each rule is a case: kind "model" (the chat model judges "when" and says "farewell" before hanging up — add a case by adding a line), "keyword" (a regular expression on the caller’s words; the engine says the farewell and hangs up), "silence" (no word from the caller for "seconds"), "duration" (the call has run "seconds"). "enabled": false keeps a case without using it. "min_turns" on a model rule (or "model_min_turns" on the set) makes the engine refuse the model’s end_call until the caller has had that many turns — "refused twice" hung up on one garbled line on 10-23. Read by golive at the start of every call; a bad pattern is refused on save. See internal/tools/hangup.go.',
     'openers': 'What the assistant says at the pause, before its answer, keyed by the caller’s words — the Openers page edits this as a form. Each scenario: "keywords" (any one found in the caller’s words matches; scenarios are tried in order), "kind" (question, statement or any), "phrases" (short clauses ending in a comma, at most 4 characters plus the comma — every character is latency: the answer waits for the opener to end). Saving caches every phrase in golive at once. See internal/tools/openers.go.',
     'quote-api': 'Xiaocui mappings include choice_values, value_field (deductibleRate) and tax_field (collectVehicleTax). Use only with a backend implementing that contract. The business’s quotation service: base_url up to and including /intranet, the channel ids, the coverage codes, the phone and vehicle variables and their defaults, and how long to poll. With a base_url set, quote_total goes here. See internal/crm/quoteapi.go.'
@@ -189,11 +191,68 @@
       var cs = d.configs || [];
       cs.forEach(function (c) {
         list.appendChild(h('button', { type: 'button', 'aria-current': String(c.name === name), onclick: function () { location.hash = '#/configs/' + encodeURIComponent(c.name); } },
-          c.name, h('span', { class: 'meta' }, 'v' + c.version + ' · ' + c.chars + ' chars · ' + when(c.created_at))));
+          configLabel(c.name), h('span', { class: 'meta' }, 'v' + c.version + ' · ' + c.chars + ' chars · ' + when(c.created_at))));
       });
       if (name) loadConfig(pane, name, 0);
       else if (cs.length) location.hash = '#/configs/' + encodeURIComponent(cs[0].name);
     }).catch(function (err) { if (err.status !== 401) pane.appendChild(errBox(err)); });
+  }
+  function configLabel(name) {
+    if (name === 'streaming-guard') return 'Streaming guard';
+    if (name === 'turn-taking') return 'Turn-taking';
+    return name;
+  }
+  function turnTakingEditor(value) {
+    var enabled = h('input', { type: 'checkbox' });
+    enabled.checked = value.enabled;
+    var wait = h('input', { type: 'number', class: 'short', min: '500', max: '30000', step: '1', value: value.wait_ms || 5000 });
+    var phrases = h('textarea', { spellcheck: 'false' });
+    phrases.value = (value.phrases || []).join('\n');
+    var ack = h('input', { type: 'text', maxlength: '60', value: value.acknowledgment || '' });
+    return {
+      view: h('div', null,
+        h('label', null, enabled, ' Enable turn-taking'),
+        h('label', null, 'Wait after the cue (milliseconds)', wait),
+        h('label', null, 'Caller cue phrases', phrases),
+        h('label', null, 'Assistant acknowledgment (optional)', ack)),
+      read: function () {
+        if (!wait.value || !wait.checkValidity()) throw new Error('Enter a wait of 500–30000 milliseconds.');
+        return { enabled: enabled.checked, wait_ms: Number(wait.value),
+          phrases: phrases.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean),
+          acknowledgment: ack.value };
+      }
+    };
+  }
+  function streamingGuardEditor(value) {
+    var enabled = h('input', { type: 'checkbox' });
+    enabled.checked = value.enabled;
+    var list = h('div');
+    var rules = [];
+    function add(rule) {
+      var match = h('input', { type: 'text', value: rule.match || '' });
+      var replacement = h('input', { type: 'text', value: rule.replacement || '' });
+      var row = { match: match, replacement: replacement };
+      var card = h('div', { class: 'card' },
+        h('label', null, 'Blocked phrase', match),
+        h('label', null, 'Replacement (optional)', replacement),
+        h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Remove rule', onclick: function () {
+          rules.splice(rules.indexOf(row), 1);
+          card.remove();
+        } })));
+      rules.push(row);
+      list.appendChild(card);
+      return match;
+    }
+    (value.rules || []).forEach(add);
+    return {
+      view: h('div', null, h('label', null, enabled, ' Enable streaming guard'), list,
+        h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Add rule', onclick: function () { add({}).focus(); } }))),
+      read: function () {
+        return { enabled: enabled.checked, rules: rules.map(function (row) {
+          return { match: row.match.value, replacement: row.replacement.value };
+        }) };
+      }
+    };
   }
   function loadConfig(pane, name, version) {
     clear(pane); pane.appendChild(h('p', { class: 'muted', text: 'Loading…' }));
@@ -209,23 +268,28 @@
     var note = h('input', { type: 'text', placeholder: 'what changed (optional)' });
     var msg = h('div');
     if (c) { nameIn.value = c.name; nameIn.readOnly = true; body.value = pretty(c.body); }
+    var editor = null;
+    if (c && c.name === 'streaming-guard') editor = streamingGuardEditor(JSON.parse(body.value));
+    if (c && c.name === 'turn-taking') editor = turnTakingEditor(JSON.parse(body.value));
     var verIn = h('input', { type: 'number', class: 'short', min: '1', value: c ? c.version : 1 });
     pane.appendChild(h('div', { class: 'card' },
-      h('div', { class: 'row' }, h('strong', { text: isNew ? 'New config' : c.name }), c ? h('span', { class: 'chip', text: 'v' + c.version }) : null, c ? h('span', { class: 'chip mono', text: c.sha }) : null, c ? h('span', { class: 'muted', text: when(c.created_at) + ' by ' + c.by + (c.note ? ' · ' + c.note : '') }) : null),
+      h('div', { class: 'row' }, h('strong', { text: isNew ? 'New config' : configLabel(c.name) }), c ? h('span', { class: 'chip', text: 'v' + c.version }) : null, c ? h('span', { class: 'chip mono', text: c.sha }) : null, c ? h('span', { class: 'muted', text: when(c.created_at) + ' by ' + c.by + (c.note ? ' · ' + c.note : '') }) : null),
       c && CONFIG_HELP[c.name] ? h('p', { class: 'muted', text: CONFIG_HELP[c.name] }) : null,
       c ? h('div', { class: 'row' }, h('span', { class: 'muted', text: 'Open another version:' }), verIn, h('button', { class: 'btn', type: 'button', text: 'Open', onclick: function () { loadConfig(pane, c.name, +verIn.value); } })) : null));
     pane.appendChild(h('div', { class: 'card' },
       isNew ? h('label', { text: 'Name' }) : null, isNew ? nameIn : null,
       window.GoLiveMotorCatalog.editor({h:h,api:api,errBox:errBox}, c ? c.name : '', body, note, msg),
-      h('label', { text: 'JSON' }), body,
+      editor ? editor.view : [h('label', { text: 'JSON' }), body],
       h('label', { text: 'Note' }), note,
       h('div', { class: 'row' },
-        h('button', { class: 'btn', type: 'button', text: 'Tidy', onclick: function () { try { body.value = pretty(body.value); } catch (e) { /* leave as is */ } } }),
+        editor ? null : h('button', { class: 'btn', type: 'button', text: 'Tidy', onclick: function () { try { body.value = pretty(body.value); } catch (e) { /* leave as is */ } } }),
         h('button', { class: 'btn btn-primary', type: 'button', text: isNew ? 'Save v1' : 'Save as v' + (c.version + 1), onclick: function () {
           var name = isNew ? nameIn.value.trim() : c.name;
           if (!name) { msg.replaceChildren(errBox(new Error('a name is needed'))); return; }
           var parsed;
-          try { parsed = JSON.parse(body.value); } catch (e) { msg.replaceChildren(errBox(new Error('not JSON: ' + e.message))); return; }
+          try { parsed = editor ? editor.read() : JSON.parse(body.value); } catch (e) {
+            msg.replaceChildren(errBox(editor ? e : new Error('not JSON: ' + e.message))); return;
+          }
           guard(api('PUT', '/api/configs/' + encodeURIComponent(name) + '?note=' + encodeURIComponent(note.value), parsed)).then(function (d) {
             tip('Saved ' + d.config.name + ' v' + d.config.version);
             location.hash = '#/configs/' + encodeURIComponent(name);

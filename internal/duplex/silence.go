@@ -35,7 +35,7 @@ func (e *Engine) loadSilenceReaction() tools.SilenceReaction {
 
 func (e *Engine) silenceReactionBusy() bool {
 	ts := e.tools
-	return e.userOpen || e.vad.CandidateMS() > 0 || e.awaitingFinal() || e.hold != nil ||
+	return e.userOpen || e.vad.CandidateMS() > 0 || e.awaitingFinal() || e.hold != nil || e.waitingForCallerCue() ||
 		e.assistantHasFloor() || e.playbackReceiptPending() || e.liveSpeculation() != nil ||
 		len(e.pending) > 0 || len(ts.tasks) > 0 || len(ts.deliveries) > 0 || len(ts.ackPending) > 0
 }

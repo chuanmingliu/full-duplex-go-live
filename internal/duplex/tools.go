@@ -717,6 +717,8 @@ func (e *Engine) checkHangupRules(callerWords string) {
 	if floorHeld {
 		ts.floorHeldAt = time.Now()
 	}
+	_, callerCue := e.turnTaking.config.SplitCue(callerWords)
+	waitForCaller := e.waitingForCallerCue() || (callerCue && e.hold == nil && !e.ignoring() && !e.muted)
 	for _, r := range ts.engine {
 		switch r.Kind {
 		case "keyword":
@@ -728,12 +730,12 @@ func (e *Engine) checkHangupRules(callerWords string) {
 				continue
 			}
 			// At a quiet moment, not over the caller.
-			if e.userOpen || floorHeld {
+			if e.userOpen || floorHeld || waitForCaller {
 				continue
 			}
 		case "silence":
 			since := e.silenceClockStart()
-			if time.Since(since) < time.Duration(r.Seconds)*time.Second || e.userOpen || floorHeld {
+			if time.Since(since) < time.Duration(r.Seconds)*time.Second || e.userOpen || floorHeld || waitForCaller {
 				continue
 			}
 		default:
@@ -986,7 +988,7 @@ func (e *Engine) maybeDeliver() {
 	}
 	// Leave continuations in order until the caller releases the floor.
 	// In particular, repeated tool requests may still be joining their result.
-	if e.userOpen || e.awaitingFinal() || e.hold != nil {
+	if e.userOpen || e.awaitingFinal() || e.hold != nil || e.waitingForCallerCue() {
 		return
 	}
 	delivery := ts.deliveries[0]

@@ -544,6 +544,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 	// continuation when this backend completes.
 	fixedBytes := full.Len()
 	repeatedReadout := newReadoutRepeatFilter(turn.Readout)
+	guard := e.streamingGuard.Stream()
 	pushText := func(text string) {
 		if text == "" {
 			return
@@ -595,7 +596,7 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 				"model", req.Model,
 				"ms", time.Since(started).Milliseconds())
 		}
-		pushText(repeatedReadout.Push(d.Text))
+		pushText(guard.Push(repeatedReadout.Push(d.Text)))
 	}
 
 	// A stream that ended because it was cancelled did not complete, and what
@@ -605,7 +606,10 @@ func (e *Engine) runBackend(ctx context.Context, cancel context.CancelFunc, job 
 		return
 	}
 
-	pushText(repeatedReadout.Flush())
+	pushText(guard.Push(repeatedReadout.Flush()))
+	if !failed {
+		pushText(guard.Flush())
+	}
 	if !failed && len(calls) == 0 && e.opts.Cfg.Duplex.QuoteInterruptionRecovery {
 		pushText(e.finishQuoteClarification(ctx, turn, full.String()))
 	}
@@ -942,7 +946,7 @@ func (e *Engine) sayAck(p *pendingResponse) {
 	if e.hangingUp() {
 		return
 	}
-	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() {
+	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.waitingForCallerCue() {
 		// Somebody is speaking — the model's own sentence, as often as not
 		// ("好的，我帮您算一下" on the 22:39 call of 10-24, and the ack was
 		// dropped). The ack waits for the floor, as long as the task runs.
@@ -1187,7 +1191,7 @@ func (e *Engine) drainDeferred() {
 	if len(e.continuations) == 0 && len(e.commentary) == 0 {
 		return
 	}
-	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() {
+	if e.userOpen || e.awaitingFinal() || e.assistantHasFloor() || e.waitingForCallerCue() {
 		return
 	}
 	if len(e.continuations) > 0 {

@@ -120,6 +120,8 @@ type Engine struct {
 	eventResponse                           *pendingEventResponse // loop-owned callback speech
 	skills                                  *skillsmcp.Client
 	workingMemoryRecall                     workingMemoryRecall
+	streamingGuard                          tools.StreamingGuard // initialized before starting the session loop
+	turnTaking                              turnTakingState
 	opts                                    Options
 	talkerPending                           *talkerOpener
 	talkerStarted                           time.Time
@@ -380,6 +382,8 @@ type asrRun struct {
 	// finalSeen is set once the utterance has been concluded, by the
 	// recognizer's final transcript or by giving up on one.
 	finalSeen bool
+	cueSeen   bool // a recognized partial already yielded the floor
+	cueFinal  bool // this run's standalone cue already started a wait
 
 	// prevHyp is the hypothesis before lastText; committed is how much of the
 	// utterance has gone out on the append-only transcript; shown is the last
@@ -467,6 +471,7 @@ func New(opts Options, deps Deps) *Engine {
 		recordedUser: map[string]bool{},
 		startAt:      time.Now(),
 	}
+	e.streamingGuard = tools.BuiltinStreamingGuard()
 	e.tracker = NewTracker(&e.gen)
 	e.player = NewPlayer(PlayerConfig{
 		Rate:    opts.ClientRate,
@@ -494,6 +499,13 @@ func New(opts Options, deps Deps) *Engine {
 func (e *Engine) Start(ctx context.Context) {
 	e.startOutputTranscript()
 	e.ctx, e.cancel = context.WithCancel(requestlog.WithScope(ctx, requestlog.Scope{SessionID: e.opts.SessionID}))
+	guardLoaded := make(chan struct{})
+	go func() {
+		e.loadStreamingGuard()
+		close(guardLoaded)
+	}()
+	e.loadTurnTaking()
+	<-guardLoaded
 	if d := e.opts.Cfg.Duplex; d.BackchannelDetectorMode != "" {
 		e.detector = backchannel.New(e.ctx, d.BackchannelDetectorURL, e.log)
 		e.detectorReady = e.detector.Updates
@@ -834,6 +846,8 @@ func (e *Engine) onAudio(pcm []byte) {
 func (e *Engine) handleDecision(d audio.Decision) {
 	switch d.Kind {
 	case audio.DecisionStarted:
+		e.turnTaking.ackPending = false
+		e.turnTaking.deferred = nil
 		// A guess still unconfirmed here belongs to the utterance before this
 		// one — a new utterance cannot open inside the pause of an old one — and
 		// that utterance did end; only its final transcript is outstanding, and
@@ -952,6 +966,8 @@ func (e *Engine) handleDecision(d audio.Decision) {
 func (e *Engine) onTick() {
 	e.publishState()
 	e.expireHold()
+	e.settleCallerCue()
+	e.expireCallerWait()
 	e.expireStandby()
 	e.expireFinalWait()
 	e.expireEarlyFinal()
@@ -961,6 +977,7 @@ func (e *Engine) onTick() {
 	e.judgeUtteranceFocus()
 	e.judgeFocus()
 	e.checkHangupRules("")
+	e.maybeTurnTakingAck()
 	e.maybeDeliver()
 	e.drainDeferred()
 	e.maybeEventResponse()
@@ -2090,6 +2107,7 @@ func (e *Engine) expireHold() {
 		// Let go by; cleared by the utterance's final, or a moment after
 		// its close if no final ever comes.
 		if !e.userOpen && time.Now().After(e.hold.until) {
+			e.turnTaking.deferred = nil
 			e.hold = nil
 		}
 		return
@@ -2529,7 +2547,7 @@ func (e *Engine) maybeBackchannel() {
 	if !e.opts.Backchannel || !d.Backchannel || len(d.BackchannelPhrases) == 0 {
 		return
 	}
-	if !e.userOpen || e.muted || e.speaking.Load() {
+	if !e.userOpen || e.muted || e.speaking.Load() || e.waitingForCallerCue() {
 		return
 	}
 	if time.Since(e.userSince) < time.Duration(d.BackchannelAfterMS)*time.Millisecond {
@@ -2592,7 +2610,7 @@ func (e *Engine) maybeHoldingFiller() {
 	if e.filled || e.delegatedTurn == nil || e.delegatedAt.IsZero() {
 		return
 	}
-	if e.muted || e.userOpen || e.player.Active() {
+	if e.muted || e.userOpen || e.player.Active() || e.waitingForCallerCue() {
 		return
 	}
 	turn := e.delegatedTurn

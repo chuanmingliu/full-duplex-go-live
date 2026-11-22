@@ -514,9 +514,18 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	// Seven configs are seeded in name order, including silence-reaction.
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 {
 		t.Fatalf("configs: %d %s", code, body)
+	}
+	wantConfigs := []string{tools.HangupRulesName, tools.OpenersName, QuoteAPIName, QuotePlansName,
+		QuoteRulesName, tools.QuoteSpeechName, tools.SilenceReactionName, tools.StreamingGuardName, tools.TurnTakingName}
+	if len(list.Configs) != len(wantConfigs) {
+		t.Fatalf("seeded %d configs, want %d", len(list.Configs), len(wantConfigs))
+	}
+	for i, name := range wantConfigs {
+		if got := list.Configs[i]; got.Name != name || got.Version != 1 {
+			t.Fatalf("seed %d: got %s v%d, want %s v1", i, got.Name, got.Version, name)
+		}
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
 		Vars: map[string]any{"vehiclePrice": "12.8万", "seats": 5, "vehicleAge": 2, "ncd": 1}, MemoryVersion: 7, Call: "out-test"}
@@ -757,12 +766,8 @@ func TestThePanelIsServedAndTheAPIStaysGated(t *testing.T) {
 // coverages and the quotation says so.
 func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	fx := newFixture(t)
-	// The configuration list now carries quote-plans too.
-	var list struct {
-		Configs []ConfigVersion `json:"configs"`
-	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 {
-		t.Fatalf("configs: %d %s", code, body)
+	if code, body := fx.do("GET", "/api/configs/"+QuotePlansName, nil, nil); code != 200 {
+		t.Fatalf("quote plans config: %d %s", code, body)
 	}
 	// As golive's tool call: the plan in memory, no vehicle price, no seats.
 	call := map[string]any{"tool": "quote_total", "call_id": "c1", "session": "out-test", "memory_version": 3,

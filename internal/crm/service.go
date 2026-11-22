@@ -191,6 +191,18 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(tools.StreamingGuardName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.StreamingGuardName, []byte(tools.DefaultStreamingGuard), "literal rules for streamed model speech", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(tools.TurnTakingName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.TurnTakingName, []byte(tools.DefaultTurnTaking), "caller phrases that ask for the floor", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(tools.OpenersName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(tools.OpenersName, []byte(tools.DefaultOpeners), "openers by scenario: what the assistant says at the pause, keyed by the caller's words", "crm"); err != nil {
 			return nil, err
@@ -932,6 +944,16 @@ func (s *Service) Handler() http.Handler {
 		}
 		if r.PathValue("name") == tools.SilenceReactionName {
 			if _, err := tools.ParseSilenceReaction(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.StreamingGuardName {
+			if _, err := tools.ParseStreamingGuard(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.TurnTakingName {
+			if _, err := tools.ParseTurnTaking(raw); err != nil {
 				return fail(http.StatusBadRequest, "%v", err)
 			}
 		}
