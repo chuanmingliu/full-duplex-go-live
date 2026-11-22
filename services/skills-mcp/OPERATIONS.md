@@ -59,7 +59,7 @@ The verified catalog returns `8 1 ['vehicle_insurance_concepts'] []`. After a pu
 
 ## 2. Edit skills and check the result
 
-From the **Mac**, open the existing [local panel](http://127.0.0.1:18794/). If the tunnel is absent, run the following in a terminal and leave it open. In a second terminal, copy the credential. A successful clipboard command produces no terminal output; check the pipeline exit status and paste directly into the panel.
+From the **Mac**, open **Skills & tools** in the Leads panel or use the [local panel](http://127.0.0.1:18794/) directly. If the tunnel is absent, run the following in a terminal and leave it open. In a second terminal, copy the credential. A successful clipboard command produces no terminal output; check the pipeline exit status and paste directly into the panel.
 
 ```sh
 ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \

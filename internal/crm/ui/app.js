@@ -437,6 +437,14 @@
     }).catch(function (err) { if (err.status !== 401) host.replaceChildren(errBox(err)); });
   }
 
+  function skills() {
+    setNav('skills');
+    page('Skills & tools', 'Manage published skills, tools, and routing in the Skills MCP panel.');
+    main.appendChild(h('div', { class: 'card' },
+      h('p', { text: 'Open the panel through your local SSH forward and sign in with the Skills MCP administrator token.' }),
+      h('a', { class: 'btn btn-primary', href: 'http://127.0.0.1:18794/', target: '_blank', rel: 'noopener noreferrer', text: 'Open Skills & tools' })));
+  }
+
   // ----- routing -----
   function route() {
     health();
@@ -449,6 +457,7 @@
       case '': case 'templates': templates(parts[1] || ''); break;
       case 'configs': configs(parts[1] || ''); break;
       case 'openers': openers(); break;
+      case 'skills': skills(); break;
       case 'render': render(q); break;
       case 'quote': quote(); break;
       case 'calls': calls(); break;

@@ -114,9 +114,13 @@ func TestWorkingMemoryRecallCallSim(t *testing.T) {
 		return catalog
 	}
 	catalog := admin(http.MethodGet, nil)
+	catalog["skills"] = append(catalog["skills"].([]any), map[string]any{
+		"name": "place-order", "description": "Guide checkout on the product page.",
+		"body": "Published checkout instructions.", "enabled": true, "events": []string{"order.requested"},
+	})
 	catalog["working_memory_recall"] = map[string]any{
 		"enabled": true, "function": skillsmcp.RecallFunction, "selector_prompt": "simulation selector policy",
-		"candidates": []string{"motor-quotation", "wechat-service-notification", "tool:quote_total"},
+		"candidates": []string{"motor-quotation", "wechat-service-notification", "tool:quote_total", "place-order"},
 	}
 	body, _ := json.Marshal(catalog)
 	admin(http.MethodPut, body)
@@ -137,11 +141,9 @@ func TestWorkingMemoryRecallCallSim(t *testing.T) {
 		{name: "final-only-quote", final: "请把三者险改成三百万", state: "consented", finalOnly: true, guidance: []string{"motor-quotation"}},
 		{name: "final-only-wechat", final: "微信服务通知怎么找", state: "consented", finalOnly: true, guidance: []string{"wechat-service-notification"}},
 		{name: "no-consent", final: "微信服务通知怎么找", state: "unknown", finalOnly: true},
-		{name: "purchase-before-consent", final: "我就按这，怎么下单", state: "unknown", finalOnly: true, guidance: []string{"wechat-service-notification"}},
-		{name: "purchase-and-quote", final: "请把三者险改成三百万。也告诉我怎么下单", state: "unknown", finalOnly: true, guidance: []string{"motor-quotation", "wechat-service-notification"}},
-		{name: "purchase-declined-wechat", final: "我就按这，怎么下单", state: "declined", finalOnly: true},
-		{name: "purchase-wechat-completed", final: "我就按这，怎么下单", state: "added", finalOnly: true},
-		{name: "refused-purchase", final: "我暂时不想下单", state: "unknown", finalOnly: true},
+		{name: "checkout", final: "我就按这，怎么下单", state: "unknown", finalOnly: true, guidance: []string{"place-order"}},
+		{name: "edit-on-product-page", final: "怎么在产品页修改保障组合", state: "added", finalOnly: true, guidance: []string{"place-order"}},
+		{name: "checkout-refusal", final: "我暂时不想下单", state: "consented", finalOnly: true},
 		{name: "already-added", final: "微信服务通知怎么找", state: "added", finalOnly: true},
 		{name: "revised-transcript", partial: "微信服务通知如何找", final: "微信服务通知如何找……先不用了", state: "consented", ready: true},
 		{name: "state-change", partial: "微信服务通知如何找", state: "consented", ready: true, changeState: true},

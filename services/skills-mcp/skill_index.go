@@ -36,7 +36,6 @@ type indexedSkill struct {
 }
 
 type skillRequest struct {
-	checkout          bool
 	ExclusionText     string            `json:"-"`
 	RespectExclusions bool              `json:"-"`
 	Context           string            `json:"context,omitempty" jsonschema:"Relevant conversation context or summary, up to 8192 UTF-8 bytes."`
@@ -145,12 +144,23 @@ func newSkillIndex(c Catalog) *skillIndex {
 }
 
 func (x *skillIndex) eligible(i int, state map[string]string) bool {
-	return x.eligibleForTurn(i, state, false)
-}
-
-func (x *skillIndex) eligibleForTurn(i int, state map[string]string, checkout bool) bool {
 	item := x.items[i]
-	return item.available && item.skill.stateAllowed(state, checkout)
+	if !item.available {
+		return false
+	}
+	for field, allowed := range item.skill.State {
+		found := false
+		for _, value := range allowed {
+			if state[field] == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func selectionLimit(in skillRequest, requireRevision bool, revision int) (int, error) {
@@ -277,7 +287,9 @@ func (x *skillIndex) searchEligible(id int, in skillRequest) bool {
 	if text == "" {
 		text = in.Query + "\n" + in.Context
 	}
-	if !x.eligible(id, in.State) || (in.RespectExclusions && x.items[id].skill.excludesText(text)) {
+	skill := x.items[id].skill
+	if !x.eligible(id, in.State) || (in.RespectExclusions && (skill.excludesText(text) ||
+		(skill.Name == placeOrderSkill && !hasOrderContext(text, in.Context)))) {
 		return false
 	}
 	if in.Event == "" {

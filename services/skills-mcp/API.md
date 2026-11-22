@@ -395,14 +395,8 @@ Operator edits can change these default outcomes.
 | `请按现有方案给我报个价` with `auto` | Any | `motor-quotation` |
 | `微信服务通知在哪里找？` with `auto` | `consented` | `wechat-service-notification` |
 | `接下来呢？` with `auto` | `consented` | `wechat-service-notification` |
-| `我就按这，怎么下单？` with `auto` | May be unknown. Suppressed after refusal or confirmed addition. | `wechat-service-notification` |
+| Explicit checkout or coverage edits on the product page with `auto` | Published skill guards | `place-order` |
 | `不要给我报价了` with `auto` | Any | Empty selection |
-
-Explicit purchase intent can select the same published notification skill before
-consent is recorded. Selection does not write memory, send a notification, or
-authorize the WeChat workflow. GoLive still requires explicit consent before
-guiding the addition. Operators continue editing the existing skill body in
-the panel.
 
 The short continuation pattern is state-gated and can match without an explicit WeChat word. Evaluate new routing rules against unrelated conversation as well as intended matches.
 

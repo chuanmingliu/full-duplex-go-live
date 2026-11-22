@@ -59,7 +59,7 @@ func validateSkillRelations(c Catalog) error {
 	return nil
 }
 
-func (x *skillIndex) closure(ctx context.Context, uri string, state map[string]string, checkout bool) ([]int, string) {
+func (x *skillIndex) closure(ctx context.Context, uri string, state map[string]string) ([]int, string) {
 	ids := []int{}
 	seen := map[int]bool{}
 	var visit func(string) string
@@ -68,7 +68,7 @@ func (x *skillIndex) closure(ctx context.Context, uri string, state map[string]s
 			return "cancelled"
 		}
 		id, ok := x.byURI[uri]
-		if !ok || !x.eligibleForTurn(id, state, checkout) {
+		if !ok || !x.eligible(id, state) {
 			return "unavailable_dependency"
 		}
 		if seen[id] {
@@ -151,7 +151,7 @@ func (x *skillIndex) resolve(ctx context.Context, in skillRequest) (skillReply, 
 			continue
 		}
 		seenRoots[uri] = true
-		closure, reason := x.closure(ctx, uri, in.State, in.checkout)
+		closure, reason := x.closure(ctx, uri, in.State)
 		next := append([]int{}, selected...)
 		included := map[int]bool{}
 		for _, id := range next {

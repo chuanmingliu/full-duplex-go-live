@@ -62,7 +62,7 @@ func (x *skillIndex) prepareTurn(ctx context.Context, in turnInput, matched []Sk
 			uris = append(uris, x.items[id].skill.uri())
 		}
 		if len(uris) == 0 && in.Event == "auto" && strings.TrimSpace(in.Utterance) != "" {
-			if nonWorkflowTurn.MatchString(strings.TrimSpace(in.Utterance)) {
+			if nonWorkflowTurn.MatchString(strings.TrimSpace(in.Utterance)) || purchaseRefusal.MatchString(in.Utterance) {
 				out.FallbackReason = "non_workflow_turn"
 				return out, nil
 			}
@@ -112,7 +112,7 @@ func (x *skillIndex) prepareTurn(ctx context.Context, in turnInput, matched []Sk
 			}
 		}
 		if len(uris) > 0 {
-			loaded, err := x.load(ctx, skillRequest{checkout: in.purchaseIntent(), URIs: uris, Revision: x.revision, State: in.State, MaxSkills: 4, MaxBytes: maxSelectionBytes})
+			loaded, err := x.load(ctx, skillRequest{URIs: uris, Revision: x.revision, State: in.State, MaxSkills: 4, MaxBytes: maxSelectionBytes})
 			if err != nil {
 				return nil, err
 			}
