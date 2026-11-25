@@ -20,7 +20,7 @@ a { color: inherit; }
 .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; text-decoration: none; }
 .brand-mark { fill: var(--ink); }
-.nav { display: flex; gap: 2px; }
+.nav { display: flex; flex-wrap: wrap; gap: 2px; }
 .nav a { padding: 4px 10px; border-radius: 5px; text-decoration: none; color: var(--ink-2); }
 .nav a:hover { background: var(--wash); }
 .nav a[aria-current="page"] { background: var(--accent-wash); color: var(--ink); }

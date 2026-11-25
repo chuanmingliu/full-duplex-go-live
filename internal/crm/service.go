@@ -69,6 +69,7 @@ type Service struct {
 	quoteClient *http.Client
 
 	mu       sync.Mutex
+	leads    map[string]*Lead
 	calls    []CallRecord // newest last
 	dialing  bool
 	greeting string
@@ -147,10 +148,16 @@ func Open(cfg Config) (*Service, error) {
 	if err := os.Chmod(cfg.Dir, 0o700); err != nil {
 		return nil, fmt.Errorf("crm: %w", err)
 	}
-	s := &Service{cfg: cfg, log: cfg.Log}
+	if err := os.MkdirAll(filepath.Join(cfg.Dir, registrationDir), 0700); err != nil {
+		return nil, err
+	}
+	s := &Service{cfg: cfg, log: cfg.Log, leads: make(map[string]*Lead)}
 	s.prompts = &Prompts{dir: cfg.Dir, templates: map[string][]*Template{}, parsed: map[string]*jinja.Template{}}
 	s.configs = &Configs{dir: cfg.Dir, versions: map[string][]*ConfigVersion{}}
 	events, torn, err := OpenLog(cfg.Dir, func(ev Event) error {
+		if ev.Type == "lead.put" && ev.LeadRec != nil {
+			s.leads[ev.LeadRec.ID] = ev.LeadRec
+		}
 		s.prompts.apply(ev)
 		s.configs.apply(ev)
 		if ev.Type == "call.placed" && ev.Call != nil {
@@ -876,6 +883,7 @@ var uiFiles embed.FS
 // carry the token: Authorization: Bearer <token>.
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerLeadRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "events": s.events.Seq(), "templates": len(s.prompts.List())})
 	})
