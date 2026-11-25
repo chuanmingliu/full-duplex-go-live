@@ -165,6 +165,167 @@
     pane.appendChild(head); pane.appendChild(edit);
   }
 
+  var businessPurposes = ['follow-up', 'reminder', 'survey'];
+
+  function businessContent(pane) {
+    clear(pane);
+    var card = h('section', { class: 'card' }, h('h2', { text: 'Business content' }),
+      h('p', { text: 'Scheduled calls use the instructions saved for their purpose. Leave a field empty to use the standard call prompt.' }));
+    pane.appendChild(card);
+    businessPurposes.forEach(function (purpose) {
+      var path = '/api/call-purposes/' + purpose;
+      var field = h('textarea', { rows: 4, disabled: '', placeholder: 'What should the assistant explain or ask?' });
+      var msg = h('div', { role: 'status' });
+      var save = h('button', { class: 'btn', type: 'button', disabled: '', text: 'Save ' + purpose,
+        onclick: function () {
+          save.disabled = field.disabled = true;
+          guard(api('PUT', path, { content: field.value })).then(function (result) {
+            field.value = result.content;
+            msg.textContent = 'Saved.';
+          }).catch(function (err) { if (err.status !== 401) msg.replaceChildren(errBox(err)); })
+            .finally(function () { save.disabled = field.disabled = false; });
+        } });
+      card.appendChild(h('div', null, h('label', null, purpose, field), save, msg));
+      guard(api('GET', path)).then(function (result) {
+        field.value = result.content;
+        save.disabled = field.disabled = false;
+      }).catch(function (err) { if (err.status !== 401) msg.replaceChildren(errBox(err)); });
+    });
+  }
+
+  function uploadLeads(pane) {
+    var file = h('input', { type: 'file', accept: '.csv,text/csv', required: '' });
+    var msg = h('div', { role: 'status' });
+    var submit = h('button', { type: 'submit', class: 'btn btn-primary', text: 'Import leads' });
+    pane.replaceChildren(h('form', { class: 'card', onsubmit: function (event) {
+      event.preventDefault();
+      var selected = file.files[0];
+      if (!selected) return;
+      if (selected.size > 2 * 1024 * 1024) { msg.textContent = 'CSV exceeds 2 MiB.'; return; }
+      submit.disabled = true;
+      msg.textContent = 'Importing…';
+      guard(api('POST', '/api/leads/import', selected, true)).then(function (d) {
+        tip('Imported ' + d.created + ' · Duplicates skipped ' + d.skipped + ' · Registrations queued ' + d.registration_queued, 8000);
+        if (pane.isConnected) route();
+      }).catch(function (err) { if (err.status !== 401) msg.replaceChildren(errBox(err)); })
+        .finally(function () { submit.disabled = false; });
+    } }, h('h2', { text: 'Import leads from CSV' }),
+    h('p', null, 'Use a UTF-8 CSV with name and phone. Replace the example row in the ',
+      h('a', { href: 'lead-template.csv', download: 'lead-template.csv', text: 'CSV template' }), '.'),
+    h('p', { text: 'Optional columns are purpose, call_time, repeat_days and outbound_consent. Use 24-hour Shanghai time and repeat days such as Mon|Wed|Fri. Consent defaults to false.' }),
+    h('p', { text: 'Existing phone numbers are skipped. Up to 1,000 rows and 2 MiB per upload.' }),
+    h('label', null, 'CSV file', file), submit, msg));
+  }
+
+  function schedule(tag) {
+    setNav('schedule');
+    page('Schedule');
+    var list = h('div', { class: 'list' });
+    var pane = h('div');
+    var filter = h('select', { onchange: function () {
+      location.hash = '#/schedule' + (filter.value ? '?tag=' + encodeURIComponent(filter.value) : '');
+    } }, h('option', { value: '', text: 'All leads' }));
+    var add = h('button', { class: 'btn', text: 'New lead', disabled: '' });
+    main.appendChild(h('div', { class: 'grid' }, h('div', null,
+      h('label', null, 'Filter by tag', filter), list,
+      add, h('button', { class: 'btn', type: 'button', text: 'Upload CSV', onclick: function () { uploadLeads(pane); } }),
+      h('button', { class: 'btn', type: 'button', text: 'Business content', onclick: function () { businessContent(pane); } })), pane));
+    guard(api('GET', '/api/leads' + (tag ? '?tag=' + encodeURIComponent(tag) : ''))).then(function (d) {
+      filter.appendChild(h('option', { value: d.outbound_tag, text: d.outbound_tag }));
+      filter.appendChild(h('option', { value: d.schedule_tag, text: d.schedule_tag }));
+      filter.value = tag;
+      add.onclick = function () { editLead(pane, d.outbound_tag, d.schedule_tag, d.schedule_timezone); };
+      add.disabled = false;
+      d.leads.forEach(function (lead) {
+        list.appendChild(h('button', { type: 'button', onclick: function () { editLead(pane, d.outbound_tag, d.schedule_tag, d.schedule_timezone, lead); } },
+          lead.values.name, h('span', { class: 'meta', text: (lead.tags || []).join(', ') }),
+          lead.call_plan ? h('span', { class: 'meta', text: planSummary(lead.call_plan) }) : null));
+      });
+      if (!d.leads.length) list.textContent = 'No matching leads.';
+    }).catch(function (err) { if (err.status !== 401) list.replaceChildren(errBox(err)); });
+  }
+
+  var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function zoneLabel(zone) {
+    return zone === 'Asia/Shanghai' ? 'Shanghai, UTC+8' : zone;
+  }
+
+  function planSummary(plan) {
+    var days = plan.days.length === 7 ? 'Every day' : plan.days.map(function (day) { return dayNames[day]; }).join(', ');
+    return days + ' at ' + plan.time + ' (' + zoneLabel(plan.timezone) + ')';
+  }
+
+  function callPlanFields(toggle, plan, timezone) {
+    var time = h('input', { type: 'time', value: plan ? plan.time : '' });
+    var weekdayInputs = [];
+    var days = h('div', { class: 'row' });
+    [1, 2, 3, 4, 5, 6, 0].forEach(function (day) {
+      var box = h('input', { type: 'checkbox' });
+      box.checked = plan ? plan.days.includes(day) : day > 0 && day < 6;
+      weekdayInputs[day] = box;
+      days.appendChild(h('label', null, box, ' ' + dayNames[day]));
+    });
+    var field = h('fieldset', null, h('legend', { text: 'Outbound call time' }),
+      h('label', null, 'Local time (' + zoneLabel(timezone) + ')', time),
+      h('fieldset', null, h('legend', { text: 'Repeat on' }), days),
+      h('button', { type: 'button', class: 'btn', text: 'Clear time', onclick: function () { time.value = ''; refresh(); } }));
+    function selectedDays() {
+      return [0, 1, 2, 3, 4, 5, 6].filter(function (day) { return weekdayInputs[day].checked; });
+    }
+    function refresh() {
+      field.hidden = field.disabled = !toggle.checked;
+      time.setCustomValidity(toggle.checked && time.value && !selectedDays().length ? 'Choose at least one repeat day.' : '');
+    }
+    field.addEventListener('input', refresh);
+    toggle.addEventListener('change', refresh);
+    refresh();
+    return { field: field, read: function () {
+      return toggle.checked && time.value ? { time: time.value, days: selectedDays() } : {};
+    } };
+  }
+
+  function editLead(pane, outboundTag, scheduleTag, timezone, lead) {
+    var values = lead ? lead.values : {};
+    var id = lead ? lead.id : Array.from(crypto.getRandomValues(new Uint8Array(16)), function (n) {
+      return n.toString(16).padStart(2, '0');
+    }).join('');
+    var name = h('input', { type: 'text', required: '', value: values.name || '' });
+    var phone = h('input', { type: 'text', inputmode: 'tel', required: '', value: values.phone || '' });
+    var purpose = h('select', null, h('option', { value: 'normal', text: 'Normal call' }), businessPurposes.map(function (v) {
+      return h('option', { value: v, text: v });
+    }));
+    purpose.value = values.purpose || 'follow-up';
+    var tagged = h('input', { type: 'checkbox' });
+    tagged.checked = !lead || (lead.tags || []).includes(outboundTag);
+    var scheduleBox = h('input', { type: 'checkbox' });
+    scheduleBox.checked = !!(lead && (lead.tags || []).includes(scheduleTag));
+    var plan = callPlanFields(scheduleBox, lead && lead.call_plan, timezone);
+    var consent = h('input', { type: 'checkbox' });
+    consent.checked = !!(lead && lead.outbound_consent);
+    var save = h('button', { class: 'btn btn-primary', type: 'submit', text: 'Save lead' });
+    var msg = h('div');
+    pane.replaceChildren(h('form', { class: 'card', onsubmit: function (event) {
+      event.preventDefault();
+      save.disabled = true;
+      guard(api('PUT', '/api/leads/' + encodeURIComponent(id), {
+        version: lead ? lead.version : 0, name: name.value, phone: phone.value,
+        purpose: purpose.value, tagged: tagged.checked, schedule: scheduleBox.checked, call_plan: plan.read(), outbound_consent: consent.checked
+      })).then(function (result) {
+        tip(result.registration_queued ? 'Lead saved. Registration queued.' : 'Lead saved');
+        if (pane.isConnected) route();
+      }).catch(function (err) {
+        save.disabled = err.status === 409;
+        if (err.status !== 401) msg.replaceChildren(errBox(err));
+        if (err.status === 409) msg.appendChild(h('button', { class: 'btn', type: 'button', text: 'Reload leads', onclick: route }));
+      });
+    } }, h('h2', { text: lead ? 'Edit lead' : 'New lead' }),
+    h('label', null, 'Name', name), h('label', null, 'Phone number', phone),
+    h('label', null, 'Call purpose', purpose), h('label', null, tagged, ' ' + outboundTag),
+    h('label', null, scheduleBox, ' ' + scheduleTag), plan.field,
+    h('label', null, consent, ' Agreed to outbound calls'), save, msg));
+  }
+
   // ----- configs -----
   var CONFIG_HELP = {
     'quote-rules': 'Placeholder rules for a quote when no business service is configured: coverages with base premiums, discounts, a simulated delay. See internal/crm/quote.go.',
@@ -444,6 +605,7 @@
     var parts = hash.split('/').map(decodeURIComponent);
     switch (parts[0]) {
       case '': case 'templates': templates(parts[1] || ''); break;
+      case 'leads': case 'schedule': schedule(q.tag || ''); break;
       case 'configs': configs(parts[1] || ''); break;
       case 'openers': openers(); break;
       case 'render': render(q); break;

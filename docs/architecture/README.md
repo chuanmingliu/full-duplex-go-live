@@ -20,6 +20,8 @@ This documentation describes `codex/telephony-latency` at **9547d22**, inspected
 
 Each component has its own section with responsibility, deployment boundary, location, inputs, outputs, operation, limitations and implementation/runbook links. The explorer contains the same component descriptions. Select a view and a node to highlight its incoming and outgoing relationships. The whole-system view also shows the other connections faintly. Source links in the explorer point to the inspected commit; Markdown links open the local checkout.
 
+For the CRM scheduling extension deployed in November 2026, see the save-triggered registration flow and the separate minute-based dispatcher. [Scheduled outbound calls](../services/scheduled-outbound-calls.md)
+
 ## System at a glance
 
 ```mermaid

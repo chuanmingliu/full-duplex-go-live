@@ -58,7 +58,10 @@ type Lead struct {
 	// 2006-01-02, a bool "true" or "false", a number or money plain digits.
 	Values map[string]string `json:"values"`
 	// Import is the import that created or last changed the lead, if one did.
-	Import string `json:"import,omitempty"`
+	Import          string    `json:"import,omitempty"`
+	Tags            []string  `json:"tags,omitempty"`
+	CallPlan        *CallPlan `json:"call_plan,omitempty"`
+	OutboundConsent bool      `json:"outbound_consent,omitempty"`
 }
 
 // Contact is one reach to a lead, by any channel, and what came of it.

@@ -1,0 +1,7 @@
+[Unit]
+Description=Place due, consented CRM calls on the GoLive line
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/golive-telephony/scripts/scheduled-calls.py
+UMask=0077

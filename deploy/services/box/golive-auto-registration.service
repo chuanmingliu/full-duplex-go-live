@@ -1,0 +1,16 @@
+[Unit]
+Description=Register consented scheduled GoLive recipients
+After=aria.service docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/golive-auto-registration.py --saved-leads
+Restart=on-failure
+RestartSec=30s
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/etc/golive /var/backups /home/chuanming/telephony/rustpbx /home/chuanming/golive-crm/registration-queue
+PrivateTmp=yes

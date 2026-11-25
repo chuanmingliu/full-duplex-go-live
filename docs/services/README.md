@@ -6,6 +6,7 @@ This is the maintenance entry point for the golive ecosystem. The inventory was 
 | --- | --- |
 | [Mac services](mac.md) | Native Aria, Metal Talker, runner, health and local source trees |
 | [ThinkPad services](box.md) | Phone stack, models, telephony, simulator and existing experimental containers |
+| [Scheduled outbound calls](scheduled-outbound-calls.md) | Lead saves, CSV import, automatic recipient registration and Shanghai-time dialing |
 | [Codebase guide](codebases.md) | Responsibilities, interfaces, source identity, build and lifecycle |
 | [Compose deployment models](../../deploy/services/README.md) | Separate core, telephony, staged PBX and optional Mac development configurations |
 | [Machine-readable catalog](catalog.json) | 21 logical services, current ownership and observed container identities |
