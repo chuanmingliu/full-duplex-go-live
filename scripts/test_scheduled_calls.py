@@ -61,6 +61,14 @@ class ScheduledCallsTest(unittest.TestCase):
     def tick(self):
         scheduler.dispatch(self.home, self.db, self.request, lambda: self.minute)
 
+    def test_publishes_only_confirmed_call_owners(self):
+        self.tick()
+        self.db.execute("INSERT INTO attempts VALUES('unknown','other','pending',NULL)")
+        scheduler.publish_call_owners(self.home, self.db)
+        scheduler.publish_call_owners(self.home, self.db)
+        files = list((self.home / "golive-crm/scheduled-owners").iterdir())
+        self.assertEqual([f.read_text() for f in files], ["fixture"])
+
     def test_due_once_then_next_week(self):
         self.tick()
         self.tick()

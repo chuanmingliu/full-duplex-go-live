@@ -518,7 +518,7 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	wantConfigs := []string{tools.HangupRulesName, tools.OpenersName, QuoteAPIName, QuotePlansName,
-		QuoteRulesName, tools.QuoteSpeechName, tools.SilenceReactionName, tools.StreamingGuardName, tools.TurnTakingName, tools.UserPromptName}
+		QuoteRulesName, tools.QuoteSpeechName, tools.SilenceReactionName, tools.StreamingGuardName, labelConfigName, tools.TurnTakingName, tools.UserPromptName}
 	if len(list.Configs) != len(wantConfigs) {
 		t.Fatalf("seeded %d configs, want %d", len(list.Configs), len(wantConfigs))
 	}

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/crm"
+	"github.com/chuanmingliu/golive/internal/provider/deepseek"
 )
 
 var version = "dev"
@@ -91,7 +92,16 @@ func run() error {
 	defer lf.Close()
 	log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, lf), &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	svc, err := crm.Open(crm.Config{Dir: *dir, OriginatorURL: *origin, OriginatorEnv: *envFile, GoliveURL: *golive, QuoteAPIBase: *quoteAPI, SkillsAdminTokenFile: *skillsToken, Location: loc, Log: log})
+	cfg := crm.Config{LabelSpoolDir: os.Getenv("CRM_LABEL_SPOOL_DIR"), VikingURL: os.Getenv("OPENVIKING_URL"), VikingAPIKey: os.Getenv("OPENVIKING_API_KEY"), VikingKeysDir: os.Getenv("OPENVIKING_USER_KEYS_DIR"), Dir: *dir, OriginatorURL: *origin, OriginatorEnv: *envFile, GoliveURL: *golive, QuoteAPIBase: *quoteAPI, SkillsAdminTokenFile: *skillsToken, Location: loc, Log: log}
+	if model := strings.TrimSpace(os.Getenv("CRM_LABEL_MODEL")); model != "" {
+		base := strings.TrimSpace(os.Getenv("CRM_LABEL_BASE_URL"))
+		if base == "" {
+			return errors.New("CRM_LABEL_BASE_URL is required with CRM_LABEL_MODEL")
+		}
+		cfg.LabelModel = model
+		cfg.LabelLLM = &deepseek.LLM{BaseURL: base, DefaultModel: model, APIKey: os.Getenv("CRM_LABEL_API_KEY")}
+	}
+	svc, err := crm.Open(cfg)
 	if err != nil {
 		return err
 	}

@@ -73,6 +73,7 @@ generation or a beat of delay, never a wrong answer.
 Explore the [interactive system map and component guides](docs/architecture/README.md),
 including a [detailed ASR → LLM → TTS walkthrough](docs/architecture/07-streaming-coordination.md)
 covering speculative preparation, turn commitment, streamed playback and interruptions.
+The [user memory guide](docs/services/user-memory.md) covers transcript labeling, OpenViking archives and tracing recalled facts to calls.
 
 ```
                         ┌──────────── session (WebSocket) ────────────┐

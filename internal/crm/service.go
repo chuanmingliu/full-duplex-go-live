@@ -26,11 +26,18 @@ import (
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/jinja"
+	"github.com/chuanmingliu/golive/internal/provider"
 )
 
 // Config is where the service keeps its data and how it reaches the things
 // it works with.
 type Config struct {
+	LabelSpoolDir string
+	VikingURL     string
+	VikingAPIKey  string
+	VikingKeysDir string
+	LabelLLM      provider.LLM
+	LabelModel    string
 	// Dir holds everything: the event log, the templates, the rendered
 	// prompts, the token. It is made, and kept, readable by its owner alone.
 	Dir string
@@ -58,17 +65,20 @@ type Config struct {
 
 // Service is the running thing.
 type Service struct {
-	cfg     Config
-	log     *slog.Logger
-	events  *Log
-	prompts *Prompts
-	configs *Configs
-	token   string
+	labelResults []memoryRevision
+	labelJobs    labelJobs
+	cfg          Config
+	log          *slog.Logger
+	events       *Log
+	prompts      *Prompts
+	configs      *Configs
+	token        string
 
 	// quoteClient reaches the quotation service (nil: a default).
 	quoteClient *http.Client
 
 	mu       sync.Mutex
+	memory   map[string]*leadMemory
 	leads    map[string]*Lead
 	calls    []CallRecord // newest last
 	dialing  bool
@@ -151,13 +161,14 @@ func Open(cfg Config) (*Service, error) {
 	if err := os.MkdirAll(filepath.Join(cfg.Dir, registrationDir), 0700); err != nil {
 		return nil, err
 	}
-	s := &Service{cfg: cfg, log: cfg.Log, leads: make(map[string]*Lead)}
+	s := &Service{cfg: cfg, log: cfg.Log, leads: make(map[string]*Lead), memory: make(map[string]*leadMemory)}
 	s.prompts = &Prompts{dir: cfg.Dir, templates: map[string][]*Template{}, parsed: map[string]*jinja.Template{}}
 	s.configs = &Configs{dir: cfg.Dir, versions: map[string][]*ConfigVersion{}}
 	events, torn, err := OpenLog(cfg.Dir, func(ev Event) error {
 		if ev.Type == "lead.put" && ev.LeadRec != nil {
 			s.leads[ev.LeadRec.ID] = ev.LeadRec
 		}
+		s.applyMemory(ev)
 		s.prompts.apply(ev)
 		s.configs.apply(ev)
 		if ev.Type == "call.placed" && ev.Call != nil {
@@ -227,6 +238,17 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(labelConfigName, 0); errors.Is(err, ErrNotFound) {
+		task, err := labelTaskConfig(defaultLabelConfig)
+		if err != nil {
+			events.Close()
+			return nil, err
+		}
+		if _, err := s.configs.Save(labelConfigName, task, "transcript labeling schema", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
 	if torn > 0 {
 		s.log.Warn("crm: the log ended in a line that was never finished; it was cut off", "bytes", torn)
 	}
@@ -237,6 +259,7 @@ func Open(cfg Config) (*Service, error) {
 		events.Close()
 		return nil, err
 	}
+	s.startLabelJobs()
 	s.log.Info("crm: open", "dir", cfg.Dir, "events", events.Seq(), "templates", len(s.prompts.templates), "calls", len(s.calls))
 	return s, nil
 }
@@ -587,6 +610,7 @@ func (s *Service) Configs() *Configs { return s.configs }
 
 // Close finishes with the log.
 func (s *Service) Close() error {
+	s.stopLabelJobs()
 	s.stopSelectionWarming()
 	return s.events.Close()
 }
@@ -666,7 +690,7 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 		return nil, fail(http.StatusBadRequest, "%v", err)
 	}
 	now := time.Now().In(s.cfg.Location)
-	r, err := s.prompts.RenderWith(req.Template, req.Version, vars, now, s.defaults())
+	r, err := s.renderWithMemory(req, vars, now)
 	if err != nil {
 		return nil, renderFailure(err)
 	}
@@ -709,8 +733,8 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 		return nil, err
 	}
 	rec := CallRecord{At: now, Template: r.Template, Version: r.Version, Render: r.SHA, Chars: r.Chars,
-		Vars: r.Supplied, Undefined: r.Undefined, GreetingChars: len([]rune(greeting)), Lead: req.Lead}
-	callID, dialErr := s.dial(ctx, r.Instructions, greeting)
+		Vars: r.Supplied, Undefined: r.Undefined, GreetingChars: len([]rune(greeting)), Lead: req.Lead, MemorySeqs: r.MemorySeqs}
+	callID, dialErr := s.dial(ctx, r, greeting)
 	rec.CallID, rec.OK = callID, dialErr == nil
 	if dialErr != nil {
 		rec.Error = hideNumbers(dialErr.Error())
@@ -824,12 +848,15 @@ func (s *Service) lockedNumber() (string, error) {
 }
 
 // dial hands the prompt and the opening line to the originator.
-func (s *Service) dial(ctx context.Context, instructions, greeting string) (string, error) {
+func (s *Service) dial(ctx context.Context, render *Rendered, greeting string) (string, error) {
 	to, err := s.lockedNumber()
 	if err != nil {
 		return "", err
 	}
-	body, err := json.Marshal(map[string]string{"to": to, "instructions": instructions, "greeting": greeting})
+	if len(render.MemorySeqs) > 0 && (render.memoryPhone == "" || to != render.memoryPhone) {
+		return "", errors.New("the locked recipient does not match the memory owner")
+	}
+	body, err := json.Marshal(map[string]string{"to": to, "instructions": render.Instructions, "greeting": greeting})
 	if err != nil {
 		return "", err
 	}
@@ -884,6 +911,9 @@ var uiFiles embed.FS
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerLeadRoutes(mux)
+	s.registerMemoryRoutes(mux)
+	mux.HandleFunc("POST /api/label-schema/preview", s.authed(previewLabelSchema))
+	mux.HandleFunc("POST /api/leads/{id}/labels", s.authed(s.labelTranscript))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "events": s.events.Seq(), "templates": len(s.prompts.List())})
 	})
@@ -938,6 +968,12 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return renderFailure(err)
 		}
+		if v.Name == labelConfigName {
+			v.Body, err = labelTaskConfig(v.Body)
+			if err != nil {
+				return err
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"config": v})
 		return nil
 	}))
@@ -945,6 +981,23 @@ func (s *Service) Handler() http.Handler {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 		if err != nil {
 			return fail(http.StatusBadRequest, "the config could not be read")
+		}
+		if r.PathValue("name") == labelConfigName {
+			s.labelJobs.taskMu.Lock()
+			defer s.labelJobs.taskMu.Unlock()
+			if prev := r.URL.Query().Get("previous_version"); prev != "" {
+				curr, err := s.configs.Get(labelConfigName, 0)
+				if err != nil {
+					return err
+				}
+				if prev != strconv.Itoa(curr.Version) {
+					return fail(409, "labeling task changed; reload before saving")
+				}
+			}
+			raw, err = labelTaskConfig(raw)
+			if err != nil {
+				return fail(422, "%v", err)
+			}
 		}
 		if r.PathValue("name") == QuotePlansName {
 			if _, err := ParseQuotePlans(raw); err != nil {
@@ -1008,6 +1061,11 @@ func (s *Service) Handler() http.Handler {
 				return fail(http.StatusUnprocessableEntity, "%v", err)
 			}
 			return err
+		}
+		if v.Name == labelConfigName {
+			if err := s.syncLabelSwitch(); err != nil {
+				return err
+			}
 		}
 		s.log.Info("crm: config saved", "config", v.Name, "version", v.Version, "sha", v.SHA, "by", who(r))
 		out := map[string]any{"config": v}
@@ -1113,7 +1171,7 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
-		out, err := s.prompts.RenderWith(req.Template, req.Version, vars, time.Now().In(s.cfg.Location), s.defaults())
+		out, err := s.renderWithMemory(req, vars, time.Now().In(s.cfg.Location))
 		if err != nil {
 			return renderFailure(err)
 		}

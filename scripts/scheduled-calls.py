@@ -2,12 +2,14 @@
 """Dispatch consented CRM calls due in the current Shanghai minute, on the configured line."""
 import datetime as dt
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import sqlite3
 import sys
+import tempfile
 import urllib.request
 
 SHANGHAI = dt.timezone(dt.timedelta(hours=8))
@@ -135,6 +137,31 @@ def dispatch(home, db, request=http, clock=now):
         return
 
 
+def publish_call_owners(home, db):
+    """Mirror confirmed dial receipts for the CRM hangup worker, including after restart."""
+    db.execute("CREATE TABLE IF NOT EXISTS published_owners(slot TEXT PRIMARY KEY)")
+    rows = db.execute("SELECT slot, lead, call_id FROM attempts WHERE state='accepted' "
+                      "AND slot NOT IN (SELECT slot FROM published_owners)").fetchall()
+    directory = home / "golive-crm/scheduled-owners"
+    for slot, lead, call_id in rows:
+        directory.mkdir(mode=0o700, exist_ok=True)
+        destination = directory / hashlib.sha256(call_id.encode()).hexdigest()
+        with tempfile.NamedTemporaryFile(dir=directory, delete=False) as tmp:
+            tmp.write(lead.encode())
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        try:
+            try:
+                os.link(tmp.name, destination)
+            except FileExistsError:
+                if destination.read_text() != lead:
+                    raise ValueError("conflicting owner for accepted call")
+            with db:
+                db.execute("INSERT OR IGNORE INTO published_owners VALUES(?)", (slot,))
+        finally:
+            os.unlink(tmp.name)
+
+
 def run():
     os.umask(0o077)
     home = Path.home()
@@ -146,7 +173,10 @@ def run():
             return
         with sqlite3.connect(home / "golive-crm/scheduled-calls.sqlite") as db:
             db.execute("CREATE TABLE IF NOT EXISTS attempts(slot TEXT PRIMARY KEY, lead TEXT NOT NULL, state TEXT NOT NULL, call_id TEXT)")
-            dispatch(home, db)
+            try:
+                dispatch(home, db)
+            finally:
+                publish_call_owners(home, db)
 
 
 if __name__ == "__main__":

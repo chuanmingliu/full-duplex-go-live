@@ -19,6 +19,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/duplex"
+	"github.com/chuanmingliu/golive/internal/labeljob"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
@@ -44,8 +45,10 @@ type EngineFactory func(duplex.Options, duplex.Deps) *duplex.Engine
 // hands the event to those writers through channels, which is what keeps the
 // wire ordered without a lock on the hot audio path.
 type Session struct {
-	cfg config.Config
-	log *slog.Logger
+	labelMu    sync.Mutex
+	labelTurns []labeljob.Turn
+	cfg        config.Config
+	log        *slog.Logger
 	// baseLog has no session attribute. The engine adds its own, and handing
 	// it s.log instead would stamp every engine line with session= twice.
 	baseLog *slog.Logger
@@ -227,8 +230,9 @@ func (s *Session) Serve(ctx context.Context) {
 	var history []provider.Message
 	var gate []audio.GateSample
 	record := resolved
+	labelOnClose := started && s.cfg.LabelSpoolDir != "" && s.CallID() != ""
 	if engine != nil {
-		if rec != nil {
+		if rec != nil || labelOnClose {
 			// As they stand now, with whatever session.instructions.append
 			// added: a fork continues this conversation, under these rules.
 			record.Instructions = engine.Instructions()
@@ -240,11 +244,13 @@ func (s *Session) Serve(ctx context.Context) {
 			s.log.Info("listen: the line went quiet and was filled with silence", "times", runs, "filled_ms", s.fillMS.Load())
 		}
 		engine.Close()
-		if rec != nil {
+		if rec != nil || labelOnClose {
 			// Close accounts for the final partial reply and pending playback
 			// completions before the stored conversation is snapshotted.
 			history = engine.History()
-			gate = engine.GateTrace()
+			if rec != nil {
+				gate = engine.GateTrace()
+			}
 		}
 	}
 	if rec != nil {
@@ -281,6 +287,15 @@ func (s *Session) Serve(ctx context.Context) {
 	cancel()
 	s.writeClose(s.primary, reason)
 	_ = s.primary.conn.Close()
+	if labelOnClose {
+		s.labelMu.Lock()
+		turns := append([]labeljob.Turn(nil), s.labelTurns...)
+		s.labelMu.Unlock()
+		job := labeljob.Session{ID: s.id, CallID: s.CallID(), CreatedAt: s.createdAt, ClosedAt: time.Now(), Reason: reason, Config: record, Usage: usage, History: history, Turns: turns}
+		if err := job.Enqueue(s.cfg.LabelSpoolDir); err != nil {
+			s.log.Error("could not enqueue closed session for labeling", "err", err)
+		}
+	}
 }
 
 // --- emitting ---
@@ -327,6 +342,14 @@ func (s *Session) reply(to *peer, event any) { s.deliver(to, event) }
 
 func (s *Session) deliver(only *peer, event any) {
 	switch ev := event.(type) {
+	case live.InputTranscriptEvent:
+		if ev.Final {
+			s.recordLabelTurn("user", ev.ItemID, ev.Text, ev.StartMS, ev.EndMS)
+		}
+	case live.TranscriptDelta:
+		if ev.Type == live.ServerOutputTranscriptDelta {
+			s.recordLabelTurn("assistant", ev.ItemID, ev.Delta, ev.StartMS, ev.EndMS)
+		}
 	case live.HangupEvent:
 		// The assistant ended the call. The phone line is hung up by
 		// telling the gateway so (hangupLine); closing the connection alone
@@ -1639,4 +1662,13 @@ func voiceOf(c live.SessionConfig) string {
 		return c.Audio.Output.Voice
 	}
 	return ""
+}
+
+func (s *Session) recordLabelTurn(role, item, text string, start, end int64) {
+	if s.cfg.LabelSpoolDir == "" || s.CallID() == "" || strings.TrimSpace(text) == "" {
+		return
+	}
+	s.labelMu.Lock()
+	defer s.labelMu.Unlock()
+	s.labelTurns = append(s.labelTurns, labeljob.Turn{Role: role, ItemID: item, Content: text, StartMS: start, EndMS: end})
 }

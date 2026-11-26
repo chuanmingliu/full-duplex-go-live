@@ -123,6 +123,7 @@ type CallRecord struct {
 	Chars  int    `json:"chars"`
 	// Vars are the names of the variables supplied. Their values are in the
 	// rendered prompt, which is kept as privately as the leads.
+	MemorySeqs    []int64  `json:"memory_seqs,omitempty"`
 	Vars          []string `json:"vars"`
 	Undefined     []string `json:"undefined,omitempty"`
 	GreetingChars int      `json:"greeting_chars"`
@@ -255,5 +256,7 @@ type Event struct {
 	Quote    *QuoteRecord   `json:"quote,omitempty"`
 	// Chain is a checksum of this event and every one before it: a line
 	// changed, lost or put in by hand breaks it from there on.
-	Chain string `json:"chain"`
+	Chain    string        `json:"chain"`
+	Memory   *memoryFact   `json:"memory,omitempty"`
+	Labeling *labelReceipt `json:"labeling,omitempty"`
 }

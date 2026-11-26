@@ -325,10 +325,203 @@
     h('label', null, 'Call purpose', purpose), h('label', null, tagged, ' ' + outboundTag),
     h('label', null, scheduleBox, ' ' + scheduleTag), plan.field,
     h('label', null, consent, ' Agreed to outbound calls'), save, msg));
+
+  }
+
+  function transcriptLabelForm(lead) {
+    var transcript = h('input', { type: 'text', required: '', pattern: '[A-Za-z0-9_\\-]{1,64}' });
+    var vehicle = h('input', { type: 'text', maxlength: '128' });
+    var turns = h('textarea', { required: '', rows: '6', placeholder: '[{"role":"user","content":"Please call me after five."}]' });
+    var previous = h('input', { type: 'number', min: '0', value: '0' });
+    var output = h('div', { role: 'status' });
+    var submit = h('button', { class: 'btn', type: 'submit', text: 'Label and save' });
+    var form = h('form', { onsubmit: function (event) {
+      event.preventDefault();
+      var messages;
+      try { messages = JSON.parse(turns.value); }
+      catch (err) { output.textContent = 'Enter a JSON array of chat turns.'; return; }
+      submit.disabled = true;
+      output.textContent = 'Labeling transcript…';
+      guard(api('POST', '/api/leads/' + encodeURIComponent(lead.id) + '/labels', {
+        transcript_id: transcript.value.trim(), vehicle_id: vehicle.value.trim(),
+        turns: messages, previous_seq: Number(previous.value)
+      })).then(function (revision) {
+        previous.value = revision.seq;
+        output.replaceChildren(h('p', { text: 'Saved memory revision ' + revision.seq }),
+          h('pre', { text: pretty(revision.value) }), h('details', null,
+            h('summary', { text: 'Source evidence' }), h('pre', { text: pretty(revision.labeling) })));
+      }).catch(function (err) { if (err.status !== 401) output.replaceChildren(errBox(err)); })
+        .finally(function () { submit.disabled = false; });
+    } }, h('label', null, 'Transcript ID', transcript), h('label', null, 'Vehicle ID (optional)', vehicle),
+    h('label', null, 'Chat turns (JSON)', turns), h('label', null, 'Previous memory revision (0 for new)', previous),
+    submit, output);
+    transcript.addEventListener('input', function () { previous.value = '0'; });
+    return h('div', null, form);
+  }
+
+  function labelResultsPanel() {
+    var root = h('section', { class: 'card label-results' });
+    var query = h('input', { type: 'search', placeholder: 'Call, transcript, lead, vehicle or revision ID', 'aria-label': 'Search label results by ID' });
+    var list = h('div');
+    var message = h('div', { role: 'status' });
+    var more = h('button', { class: 'btn', type: 'button', text: 'Load older results', hidden: '' });
+    var filter = '', cursor = 0, generation = 0, expandedPage = false;
+    function row(result) {
+      var content = h('div');
+      var detail = h('details', null, h('summary', null,
+        h('strong', { text: result.call_id || result.transcript_id }), ' · ' + (result.name || result.lead_id),
+        h('span', { class: 'muted', text: ' · ' + when(result.at) + ' · #' + result.revision +
+          ' · ' + (result.by === 'hangup' ? 'Hangup' : 'Manual') + ' · ' + result.observations + ' labels' +
+          (result.current ? '' : ' · Historical revision') })), content);
+      var loaded = false;
+      detail.ontoggle = function () {
+        if (!detail.open || loaded) return;
+        loaded = true;
+        content.textContent = 'Loading result…';
+        guard(api('GET', '/api/label-results/' + result.revision)).then(function (data) {
+          var receipt = data.labeling;
+          content.replaceChildren(h('p', { text: 'Lead ' + result.lead_id + ' · Transcript ' + result.transcript_id +
+            (result.vehicle_id ? ' · Vehicle ' + result.vehicle_id : '') + ' · OpenViking ' + result.archive }),
+            h('pre', { class: 'pre', text: pretty(data.fields) }),
+            h('details', null, h('summary', { text: 'Source evidence and user info' }),
+              h('pre', { class: 'pre', text: pretty({user:receipt.user, model:receipt.model, schema_version:receipt.schema_version, observations:receipt.observations}) })));
+          if (receipt.original_session) content.appendChild(h('details', null, h('summary', { text: 'Original session' }),
+            h('pre', { class: 'pre', text: pretty(receipt.original_session) })));
+        }).catch(function (err) { loaded = false; if (err.status !== 401) content.replaceChildren(errBox(err)); });
+      };
+      return detail;
+    }
+    async function load(append) {
+      var ticket = ++generation;
+      more.disabled = true;
+      try {
+        var params = new URLSearchParams({id:filter});
+        if (append) params.set('before', cursor);
+        var data = await guard(api('GET', '/api/label-results?' + params));
+        if (ticket !== generation || !root.isConnected) return;
+        if (!append) list.replaceChildren();
+        data.results.forEach(function (item) { list.appendChild(row(item)); });
+        expandedPage = append;
+        cursor = data.next_before;
+        more.hidden = !cursor;
+        message.textContent = list.children.length ? '' : (filter ? 'No results match this ID.' : 'No saved label results yet.');
+      } catch (err) {
+        if (ticket === generation && err.status !== 401) message.replaceChildren(errBox(err));
+      } finally { if (ticket === generation) more.disabled = false; }
+    }
+    root.append(h('h2', {text:'Label results'}), h('form', {class:'row', onsubmit:function (e) {
+      e.preventDefault(); filter = query.value.trim(); load(false);
+    }}, query, h('button', {class:'btn', type:'submit', text:'Search'}),
+    h('button', {class:'btn', type:'button', text:'Show all', onclick:function () {query.value = filter = ''; load(false);}})),
+    message,list,more);
+    more.onclick = function () { load(true); };
+    main.appendChild(root);
+    load(false);
+    var timer = setInterval(function () {
+      if (!root.isConnected) {clearInterval(timer);return;}
+      if (!document.hidden && !expandedPage && !more.disabled && !list.querySelector('details[open]') && !list.contains(document.activeElement)) load(false);
+    }, 10000);
+  }
+
+  function labelingPage() {
+    setNav('labeling');
+    page('Memory & label');
+    var layout = h('div', { class: 'label-layout' });
+    main.appendChild(layout);
+    labelResultsPanel();
+    var path = '/api/configs/transcript-labels';
+    var enabled = h('input', { type: 'checkbox', role: 'switch' });
+    var prompt = h('textarea', { class: 'label-prompt', rows: '4', required: '' });
+    var dimensions = h('textarea', { rows: '9', required: '', spellcheck: 'false' });
+    var definition = h('pre', { class: 'pre' });
+    var status = h('div', { role: 'status' });
+    var save = h('button', { type: 'submit', class: 'btn btn-primary', text: 'Save task' });
+    var task = h('fieldset', { disabled: '' },
+      h('legend', { text: 'Task configuration' }),
+      h('label', { class: 'enable-label' }, enabled, 'Enable labeling'),
+      h('label', null, 'Labeling prompt', prompt),
+      h('label', null, 'Return fields (JSON)', dimensions),
+      h('details', null, h('summary', { text: 'Return JSON Schema' }), definition),
+      save, status);
+    var manual = h('fieldset', { disabled: '' });
+    var savedTask, taskVersion;
+    function show(config) {
+      var data = config.body;
+      ++previewRevision;
+      clearTimeout(previewTimer);
+      savedTask = data;
+      taskVersion = config.version;
+      enabled.checked = !!data.enabled;
+      prompt.value = data.prompt;
+      dimensions.value = pretty(data.dimensions);
+      definition.textContent = pretty(data.return_schema);
+      task.disabled = false;
+      manual.disabled = !data.enabled;
+      status.textContent = 'Version ' + config.version + ' · Labeling ' + (data.enabled ? 'on' : 'off');
+    }
+    var previewTimer, previewRevision = 0;
+    dimensions.oninput = function () {
+      var revision = ++previewRevision;
+      clearTimeout(previewTimer);
+      definition.parentElement.open = true;
+      var fields;
+      try {
+        fields = JSON.parse(dimensions.value);
+      } catch (err) {
+        definition.textContent = 'Return fields must be valid JSON.';
+        return;
+      }
+      definition.textContent = 'Generating schema…';
+      previewTimer = setTimeout(function () {
+        guard(api('POST', '/api/label-schema/preview', fields)).then(function (schema) {
+          if (revision === previewRevision) definition.textContent = pretty(schema);
+        }).catch(function (err) {
+          if (revision === previewRevision) definition.textContent = err.message;
+        });
+      }, 200);
+    };
+    enabled.onchange = function () {
+      var desired = enabled.checked;
+      task.disabled = true;
+      guard(api('PUT', path + '?previous_version=' + taskVersion, Object.assign({}, savedTask, { enabled: desired }))).then(function (result) {
+        savedTask.enabled = desired;
+        taskVersion = result.config.version;
+        manual.disabled = !desired;
+        status.textContent = 'Version ' + result.config.version + ' · Labeling ' + (desired ? 'on' : 'off');
+      }).catch(function (err) {
+        enabled.checked = savedTask.enabled;
+        if (err.status !== 401) status.replaceChildren(errBox(err));
+      }).finally(function () { task.disabled = false; });
+    };
+    function load() { return api('GET', path).then(function (result) { show(result.config); }); }
+    layout.appendChild(h('form', { class: 'card', onsubmit: function (event) {
+      event.preventDefault();
+      var fields;
+      try { fields = JSON.parse(dimensions.value); } catch (err) { status.replaceChildren(errBox(err)); return; }
+      task.disabled = true;
+      guard(api('PUT', path + '?previous_version=' + taskVersion, { enabled: enabled.checked, prompt: prompt.value, dimensions: fields }).then(load))
+        .catch(function (err) { task.disabled = false; if (err.status !== 401) status.replaceChildren(errBox(err)); });
+    } }, task));
+    var lead = h('select');
+    var panel = h('div');
+    manual.append(h('legend', { text: 'Label a transcript' }), h('label', null, 'Lead', lead), panel);
+    layout.appendChild(h('section', { class: 'card' }, manual));
+    guard(load()).catch(function (err) { if (err.status !== 401) status.replaceChildren(errBox(err)); });
+    guard(api('GET', '/api/leads')).then(function (data) {
+      data.leads.forEach(function (l) { lead.appendChild(h('option', { value: l.id, text: l.values.name + ' · ' + l.id })); });
+      function select() {
+        var selected = data.leads.find(function (l) { return l.id === lead.value; });
+        if (selected) panel.replaceChildren(transcriptLabelForm(selected));
+        else panel.textContent = 'Create a lead in Schedule to label a transcript.';
+      }
+      lead.onchange = select;
+      select();
+    }).catch(function (err) { if (err.status !== 401) panel.replaceChildren(errBox(err)); });
   }
 
   // ----- configs -----
   var CONFIG_HELP = {
+    'transcript-labels': 'Edit the labeling prompt and dimensions. Each dimension has a key, description, group (labels, user or vehicle) and type (string, number, boolean or enum). Give enum dimensions a list of options.',
     'quote-rules': 'Placeholder rules for a quote when no business service is configured: coverages with base premiums, discounts, a simulated delay. See internal/crm/quote.go.',
     'quote-speech': 'What the assistant says around a quotation, as preset lines instead of the model’s improvisation. "prehook": said the moment the premium is being worked out (not for a missing field); "posthook": the first words of the reply that delivers the result; "template": a Jinja2 template over the result (total, lines[].coverage / choice / premium, skipped) read out right after the posthook, before the model speaks — leave it empty to let the model read the figures; "posthook_status": the result status these are for ("quote"). A template that does not render is refused on save. Optional "confirm_revisions": true collects changes after the first quote, waits for caller confirmation, and uses contextual model-generated confirmation and waiting speech. Existing configs default to false. Read by golive at the start of every call; see internal/tools/quotespeech.go.',
     'quote-plans': 'The full motor draft adds coverage_details (kind, parent, label), strict validation and all 18 selections. It keeps the current default until you change it. Amounts, percentages and shared limits remain distinct. What a quotation needs before it runs. Named plans; "default" picks one, a call can name another in its working memory (quote_plan — a lead’s own plan, once leads exist). A plan lists its coverages, their tiers ("options": {"驾乘险": ["0","30万","50万","80万"]} — a coverage chosen without one is asked for, "0" means none) and its fields: name, "for" (the coverages that need it, ["*"] for all), "question" (what the assistant asks when it is unknown), "if_unknown" (skip the coverages or stop), "source" (rules, api or any — the business service looks a car up by its plate and does not need the price). With a must field missing the tool answers status=need and the assistant asks one question at a time; only with every field known is a quotation made. "default_selection" is the fixed default quotation (coverage → true or a tier) worked out for the lead while the phone rings and read out without a question; "default_vars" stand in for a lead’s variables on a call placed without one (the test line). See internal/crm/plans.go, prefetch.go.',
@@ -706,6 +899,7 @@
     switch (parts[0]) {
       case '': case 'templates': templates(parts[1] || ''); break;
       case 'leads': case 'schedule': schedule(q.tag || ''); break;
+      case 'labeling': labelingPage(); break;
       case 'configs': configs(parts[1] || ''); break;
       case 'openers': openers(); break;
       case 'skills':

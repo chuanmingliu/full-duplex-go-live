@@ -82,7 +82,8 @@ type Config struct {
 	// and their conversation, which is what GET …/content and …/fork read.
 	// Empty disables storage: store:true is then accepted and ignored, and
 	// those two endpoints answer 404.
-	StoreDir string `json:"store_dir"`
+	StoreDir      string `json:"store_dir"`
+	LabelSpoolDir string `json:"label_spool_dir,omitempty"`
 	// LastCallFile, when set, is where the instructions and opening line of the
 	// last answered phone call are kept, readable by the server's user alone.
 	//
@@ -971,6 +972,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Duplex.DelegationMode, "GOLIVE_DELEGATION_MODE")
 	setString(&c.Duplex.ClientDelegation, "GOLIVE_CLIENT_DELEGATION")
 	setString(&c.StoreDir, "GOLIVE_STORE_DIR")
+	setString(&c.LabelSpoolDir, "GOLIVE_LABEL_SPOOL_DIR")
 	setString(&c.LastCallFile, "GOLIVE_LAST_CALL_FILE")
 	setInt(&c.StoreTTLHours, "GOLIVE_STORE_TTL_HOURS")
 	setBool(&c.Realtime.Enabled, "GOLIVE_REALTIME_ENABLED")

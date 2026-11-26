@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "prompt": "Label the customer's stated needs for the next service conversation. Record vehicle and user details only when the speaker identifies them as their own. Preserve names and identifiers in their original language. Omit uncertain fields.",
+  "dimensions": [
+    {"key":"intent","speaker":"user","group":"labels","type":"enum","options":["renewal","quote","callback","decline","other"],"description":"The customer's primary stated intent"},
+    {"key":"preferred_contact_time","speaker":"user","group":"user","type":"string","description":"When the customer asks to be contacted"},
+    {"key":"name","speaker":"user","group":"user","type":"string","description":"Name given by the customer"},
+    {"key":"make_model","speaker":"user","group":"vehicle","type":"string","description":"Make and model of the customer's vehicle"},
+    {"key":"plate","speaker":"user","group":"vehicle","type":"string","description":"The vehicle registration stated by the customer"}
+  ]
+}
