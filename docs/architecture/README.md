@@ -1,5 +1,7 @@
 # golive architecture and component documentation
 
+For the end-to-end dreaming, publication and runtime path, read [Skill lifecycle and dreaming memory](12-skill-mechanism.md) and run its local demonstration.
+
 [Open the interactive architecture explorer](explorer.html)
 
 golive is a concurrent voice-conversation service. It keeps listening while it recognizes speech, reasons about what to say and plays an answer. The current phone implementation combines Tencent recognition, DeepSeek reasoning and MiniMax synthesis with local turn control, quotation tools and retained call evidence.

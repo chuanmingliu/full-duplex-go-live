@@ -1,5 +1,7 @@
 # Active Call prompt rendering with skills over MCP
 
+The [skill lifecycle walkthrough](12-skill-mechanism.md) connects this renderer to dreaming, owner review, MCP publication and a runnable local demonstration.
+
 The [MCP server developer API](../../services/skills-mcp/API.md) specifies transport, authentication, selection parameters, resource formats, publication and callback configuration. The [operator runbook](../../services/skills-mcp/OPERATIONS.md) covers the deployed service and production migration.
 
 The `codex/telephony-latency` integration composes the original GoLive prompt with current business state and operator-published skills. The November 9 revision moves skill selection before the first model completion and adds authoritative WeChat completion handling. The live phone profile remains the deployment restore source. Activation uses a candidate profile and an idle-only engine deployment.
