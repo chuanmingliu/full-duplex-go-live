@@ -1,6 +1,7 @@
 # golive
 
 [![Built with Codex](https://img.shields.io/badge/Built_with-Codex-000000?style=flat)](https://openai.com/codex/)
+[![Built with Antigravity](https://img.shields.io/badge/Built_with-Antigravity-000000?style=flat&logo=google&logoColor=white)](https://antigravity.google/)
 
 `codex/telephony-latency` is the active branch for optimizing the original
 GoLive service through **Active Call**. Shared improvements from the SIP/RTP
