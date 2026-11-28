@@ -514,9 +514,14 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	// Six configs are seeded, listed by name: hangup-rules, openers, quote-api, quote-plans, quote-rules, quote-speech.
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 || list.Configs[0].Name != tools.HangupRulesName || list.Configs[1].Name != tools.OpenersName || list.Configs[4].Name != QuoteRulesName || list.Configs[4].Version != 1 || list.Configs[2].Name != QuoteAPIName || list.Configs[3].Name != QuotePlansName || list.Configs[5].Name != tools.QuoteSpeechName {
+	wantConfigs := []string{tools.BackchannelServiceName, tools.HangupRulesName, tools.OpenersName, QuoteAPIName, QuotePlansName, QuoteRulesName, tools.QuoteSpeechName}
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != len(wantConfigs) {
 		t.Fatalf("configs: %d %s", code, body)
+	}
+	for i, name := range wantConfigs {
+		if list.Configs[i].Name != name || list.Configs[i].Version != 1 {
+			t.Fatalf("config %d: %+v", i, list.Configs[i])
+		}
 	}
 	req := QuoteRequest{Config: map[string]any{"交强险": true, "车损险": true, "三者险": "200万", "座位险": true, "划痕险": false, "玻璃险": true},
 		Vars: map[string]any{"vehiclePrice": "12.8万", "seats": 5, "vehicleAge": 2, "ncd": 1}, MemoryVersion: 7, Call: "out-test"}
@@ -761,7 +766,7 @@ func TestAQuotationAsksForItsMustFieldsBeforeItRuns(t *testing.T) {
 	var list struct {
 		Configs []ConfigVersion `json:"configs"`
 	}
-	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 6 {
+	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 || len(list.Configs) != 7 {
 		t.Fatalf("configs: %d %s", code, body)
 	}
 	// As golive's tool call: the plan in memory, no vehicle price, no seats.
@@ -1283,5 +1288,33 @@ func TestSeveralOptionsAreComparedInOneAnswer(t *testing.T) {
 	}
 	if out.Variants[0].Error != "" || out.Variants[1].Error == "" {
 		t.Fatalf("errors: %+v", out.Variants)
+	}
+}
+
+func TestPanelBackchannelConfigIsEnabledByDefaultAndVersioned(t *testing.T) {
+	fx := newFixture(t)
+	path := "/api/configs/" + tools.BackchannelServiceName
+	var stored struct {
+		Config ConfigVersion `json:"config"`
+	}
+	if code, body := fx.do("GET", path, nil, &stored); code != 200 {
+		t.Fatalf("read: %d %s", code, body)
+	}
+	first, err := tools.ParseBackchannelService(stored.Config.Body)
+	if err != nil || !first.Enabled || first.Prompt == "" {
+		t.Fatalf("default: %+v, %v", first, err)
+	}
+	if code, _ := fx.do("PUT", path, json.RawMessage(`{"enabled":true,"prompt":" "}`), nil); code != 400 {
+		t.Fatalf("empty prompt: %d", code)
+	}
+	if code, body := fx.do("PUT", path, json.RawMessage(`{"enabled":false,"prompt":"Listen quietly. Only acknowledge a continuing thought."}`), &stored); code != 200 || stored.Config.Version != 2 {
+		t.Fatalf("save: %d %s", code, body)
+	}
+	if code, body := fx.do("GET", path, nil, &stored); code != 200 {
+		t.Fatalf("read saved config: %d %s", code, body)
+	}
+	saved, err := tools.ParseBackchannelService(stored.Config.Body)
+	if err != nil || saved.Enabled || stored.Config.Version != 2 {
+		t.Fatalf("saved opt-out: %+v, %v", saved, err)
 	}
 }

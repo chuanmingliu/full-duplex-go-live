@@ -348,6 +348,13 @@ func (t *telSession) observe(event any, cfg config.Config) {
 			t.emit("llm", "first_token", "llm.first_token", "turn", turn, nil)
 		}
 
+	case live.BackchannelStageEvent:
+		t.mu.Lock()
+		turn := t.turn
+		t.mu.Unlock()
+		t.emit("backchannel", ev.Stage, "backchannel."+ev.Stage, "backchannel", turn, map[string]any{
+			"item_id": ev.ItemID, "at_ms": ev.AtMS, "reason": ev.Reason, "config_version": ev.ConfigVersion,
+		})
 	case live.OutputAudioDelta:
 		if duplex.IsBackchannel(ev.ItemID) {
 			return // an acknowledgement is not the answer

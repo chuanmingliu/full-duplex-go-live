@@ -191,6 +191,12 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(tools.BackchannelServiceName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.BackchannelServiceName, []byte(tools.DefaultBackchannelService), "Listener acknowledgment prompt and enable switch", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(tools.OpenersName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(tools.OpenersName, []byte(tools.DefaultOpeners), "openers by scenario: what the assistant says at the pause, keyed by the caller's words", "crm"); err != nil {
 			return nil, err
@@ -918,6 +924,11 @@ func (s *Service) Handler() http.Handler {
 		}
 		if r.PathValue("name") == tools.QuoteSpeechName {
 			if _, err := tools.ParseQuoteSpeech(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.BackchannelServiceName {
+			if _, err := tools.ParseBackchannelService(raw); err != nil {
 				return fail(http.StatusBadRequest, "%v", err)
 			}
 		}

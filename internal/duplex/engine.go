@@ -59,6 +59,8 @@ type Deps struct {
 	LLM           provider.LLM
 	TTS           provider.TTS
 	BackgroundTTS *provider.BackgroundTTSFactory
+	ListenerTTS   provider.TTS
+	ListenerPool  *provider.BackgroundTTSFactory
 	Emit          Emit
 	Log           *slog.Logger
 }
@@ -194,6 +196,12 @@ type Engine struct {
 	history             []provider.Message
 	instrMu             sync.RWMutex
 	instr               string
+	listenerConfig      tools.BackchannelService
+	listener            *listenerCandidate
+	listenerNext        time.Time
+	listenerTimer       *time.Timer
+	listenerClock       <-chan time.Time
+	outputMu            sync.Mutex
 	lastBC              time.Time
 	bcSeq               int
 	// lastAck and lastFiller keep a phrase from being chosen twice running.
@@ -457,6 +465,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(2)
 	go func() { defer e.wg.Done(); e.player.Run(&e.gen) }()
 	go func() { defer e.wg.Done(); e.loop() }()
+	e.loadListenerConfig()
 	e.setupTools()
 	e.loadOpeners()
 	e.startFocus(e.ctx)
@@ -649,6 +658,7 @@ func (e *Engine) SetMuted(muted bool, clientEventID string) {
 			e.closeStandby()
 			e.vad.Reset()
 			e.userOpen = false
+			e.stopListener("muted")
 			e.patience = 0
 			e.hold = nil
 		}
@@ -704,6 +714,7 @@ func (e *Engine) loop() {
 	defer tick.Stop()
 	defer e.closeASR(true)
 	defer e.closeStandby()
+	defer e.stopListener("session_closed")
 
 	for {
 		select {
@@ -715,6 +726,8 @@ func (e *Engine) loop() {
 			e.onASREvent(ev)
 		case <-e.ctrlSig:
 			e.runPosted()
+		case <-e.listenerClock:
+			e.playListenerFrame()
 		case <-tick.C:
 			e.onTick()
 		}
@@ -755,6 +768,7 @@ func (e *Engine) onAudio(pcm []byte) {
 	e.maybeSettle()
 	e.maybeCloseOnCallerQuiet()
 	e.maybeOpenDuringPatience()
+	e.releaseListener()
 }
 
 func (e *Engine) handleDecision(d audio.Decision) {
@@ -820,6 +834,7 @@ func (e *Engine) handleDecision(d audio.Decision) {
 
 	case audio.DecisionStopped:
 		e.userOpen = false
+		e.stopListener("caller_finished")
 		e.patience = 0
 		if e.hold != nil {
 			// The final transcript is now imminent — closing the recognizer is
@@ -2112,6 +2127,12 @@ func (e *Engine) interrupt() {
 // emitAudio hands one chunk of output to the session, which encodes it for the
 // wire in whatever format the client negotiated.
 func (e *Engine) emitAudio(itemID string, pcm []byte, playAt time.Time) {
+	e.outputMu.Lock()
+	defer e.outputMu.Unlock()
+	e.emitPCM(itemID, pcm, playAt)
+}
+
+func (e *Engine) emitPCM(itemID string, pcm []byte, playAt time.Time) {
 	ms := audio.PCM16(e.opts.ClientRate).DurationMS(pcm)
 	e.outputMS.Add(int64(ms))
 
@@ -2416,6 +2437,10 @@ func (e *Engine) lineSummary() {
 // floor. It is the one place golive speaks and listens at literally the same
 // moment, and it is what a real full-duplex model does for free.
 func (e *Engine) maybeBackchannel() {
+	if e.listenerConfig.Enabled {
+		e.prepareListener()
+		return
+	}
 	d := e.opts.Cfg.Duplex
 	if !e.opts.Backchannel || !d.Backchannel || len(d.BackchannelPhrases) == 0 {
 		return
