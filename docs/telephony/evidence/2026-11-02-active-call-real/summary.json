@@ -1,0 +1,105 @@
+{
+  "call": "out-mvykfqfn-wibn",
+  "session": "sess_749754e3759ab2f59f2c1816",
+  "build": "f1fd9a6",
+  "started_at": "2026-11-02T09:13:58.945+08:00",
+  "ended_at": "2026-11-02T09:15:59.266+08:00",
+  "audio_seconds": 120.6208125,
+  "audio_rate": 16000,
+  "archive_files_verified": 5,
+  "channels_with_signal": 2,
+  "transcript_lines": {
+    "assistant": 14,
+    "caller": 14
+  },
+  "normal_excluding_quote_origins": {
+    "n": 8,
+    "p50_ms": 1641.5,
+    "p90_ms": 2149,
+    "p95_ms": 2149,
+    "max_ms": 2149,
+    "at_or_above_target": 6
+  },
+  "quotation_acknowledgments": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 8,
+    "p50_ms": 1641.5,
+    "p90_ms": 2149,
+    "p95_ms": 2149,
+    "max_ms": 2149,
+    "at_or_above_target": 6
+  },
+  "first_audio": {
+    "n": 10,
+    "p50_ms": 380.0,
+    "p90_ms": 380,
+    "p95_ms": 383,
+    "max_ms": 383,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 2,
+    "p50_ms": 2328.5,
+    "p90_ms": 2787,
+    "p95_ms": 2787,
+    "max_ms": 2787,
+    "at_or_above_target": 2
+  },
+  "counts": {
+    "records": 13,
+    "answered": 10,
+    "non_speech": 3,
+    "cancelled": 0,
+    "interrupted_answers": 2,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 2,
+    "tool_results_joined": 2,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 2
+  },
+  "gate": {
+    "enabled": true,
+    "passed": false,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "reasons": [
+      "first_audio: 10 samples, need 20",
+      "conversational_first_content: 8 samples, need 20",
+      "conversational_first_content: p95 2149 ms is not below 1200 ms"
+    ]
+  },
+  "interruptions": {
+    "n": 2,
+    "p50_ms": 235.0,
+    "p95_ms": 358.0,
+    "max_ms": 358.0
+  },
+  "unpaired_cuts": 0,
+  "opener_enqueues": {
+    "preset": 11
+  },
+  "service_health": {
+    "model": "golive-1",
+    "sessions": 0,
+    "status": "ok",
+    "version": "f1fd9a6"
+  },
+  "acoustic_handset_verified": false,
+  "focus_wakeup_078a4a9_deployed": false
+}

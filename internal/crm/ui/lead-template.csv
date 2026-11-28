@@ -1,0 +1,2 @@
+name,phone,purpose,call_time,repeat_days,outbound_consent
+Alex Chen,+12025550101,normal,14:30,Mon|Wed|Fri,false

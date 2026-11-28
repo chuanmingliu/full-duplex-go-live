@@ -116,3 +116,47 @@ func TestMetricsTokenIsNeverLoadedFromAProfile(t *testing.T) {
 		t.Error("metrics_public should still apply")
 	}
 }
+
+func TestTalkerOpenerConfigIsOptInAndBounded(t *testing.T) {
+	if Default().Duplex.TalkerOpenerURL != "" {
+		t.Fatal("Talker must be opt-in")
+	}
+	for _, url := range []string{"http://user:secret@localhost:18081", "file:///tmp/model", "http://localhost:18081?key=secret", "http://localhost:18081/#fragment", "not-a-url"} {
+		cfg := Default()
+		cfg.Duplex.TalkerOpenerURL = url
+		if cfg.Validate() == nil {
+			t.Fatal("invalid Talker URL accepted")
+		}
+	}
+	for _, n := range []int{-1, 1501} {
+		cfg := Default()
+		cfg.Duplex.TalkerOpenerTimeoutMS = n
+		if cfg.Validate() == nil {
+			t.Fatal("unbounded timeout accepted")
+		}
+	}
+	cfg := Default()
+	cfg.Duplex.TalkerOpenerURL = "http://127.0.0.1:18081"
+	cfg.Duplex.TalkerOpenerTimeoutMS = 800
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackchannelDetectorIsOptInAndLoopbackOnly(t *testing.T) {
+	c := Default()
+	if c.Duplex.BackchannelDetectorMode != "" || c.Duplex.BackchannelDetectorURL != "" {
+		t.Fatal("must default off")
+	}
+	c.Duplex.BackchannelDetectorMode = "asr_assist"
+	for _, raw := range []string{"", "ws://remote:18087/v1/stream", "http://127.0.0.1:18087/v1/stream", "ws://user:pass@127.0.0.1:18087/v1/stream", "ws://127.0.0.1:18087/v1/stream?key=x"} {
+		c.Duplex.BackchannelDetectorURL = raw
+		if c.Validate() == nil {
+			t.Fatalf("accepted %q", raw)
+		}
+	}
+	c.Duplex.BackchannelDetectorURL = "ws://127.0.0.1:18087/v1/stream"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

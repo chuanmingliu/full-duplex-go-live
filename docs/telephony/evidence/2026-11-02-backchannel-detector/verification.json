@@ -1,0 +1,31 @@
+{
+  "container_health": "healthy",
+  "running": true,
+  "non_root": true,
+  "read_only": true,
+  "cpus": 1,
+  "memory_limit_mib": 384,
+  "binding": "127.0.0.1:18087",
+  "detector": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 0,
+    "errors": 0
+  },
+  "original_engine": {
+    "model": "golive-1",
+    "sessions": 0,
+    "status": "ok",
+    "version": "f1fd9a6"
+  },
+  "no_live_control_hook": true
+}

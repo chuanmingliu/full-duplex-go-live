@@ -56,33 +56,30 @@ func (e *Engine) ensureUserRecorded(turn *Turn) {
 	e.noteContext()
 }
 
-// recordTurn commits what was actually heard to conversation history. Turns
-// that were cut off contribute only their audible prefix; anything else would
-// have the model reasoning from sentences the user never received.
-func (e *Engine) recordTurn(turnID, spoken string) {
+// recordTurn runs on the engine loop and commits what was actually heard to
+// conversation history. Turns that were cut off contribute only their audible
+// prefix; otherwise the model reasons from sentences the user never received.
+func (e *Engine) recordTurn(turn *Turn, turnID, spoken string) {
 	spoken = strings.TrimSpace(spoken)
-	e.post(func() {
-		if IsBackchannel(turnID) {
-			return // backchannels are not conversation
+	if IsBackchannel(turnID) {
+		return // backchannels are not conversation
+	}
+	if turn != nil && turn.ID == turnID {
+		turn.SetSpoken(spoken)
+		// A guess that was never confirmed was made on a prefix of what
+		// the caller is still saying. The whole of it arrives with the
+		// turn that replaces this one; the prefix is not a message.
+		if turn.Committed() {
+			e.ensureUserRecorded(turn)
 		}
-		turn := e.tracker.Current()
-		if turn != nil && turn.ID == turnID {
-			turn.SetSpoken(spoken)
-			// A guess that was never confirmed was made on a prefix of what
-			// the caller is still saying. The whole of it arrives with the
-			// turn that replaces this one; the prefix is not a message.
-			if turn.Committed() {
-				e.ensureUserRecorded(turn)
-			}
-		}
-		if spoken != "" {
-			e.history = append(e.history, provider.Message{
-				Role:    provider.RoleAssistant,
-				Content: spoken,
-			})
-		}
-		e.trimHistory()
-	})
+	}
+	if spoken != "" {
+		e.history = append(e.history, provider.Message{
+			Role:    provider.RoleAssistant,
+			Content: spoken,
+		})
+	}
+	e.trimHistory()
 }
 
 // trimHistory bounds what is sent to the backend, by turns and by size.
@@ -249,8 +246,10 @@ func (e *Engine) History() []provider.Message {
 		return nil
 	}
 	// The loop has exited. If it ran the request on its way out, that is the
-	// answer; otherwise nothing owns the state any more and it can be read
-	// here.
+	// answer; otherwise read the stopped state under the shutdown lock,
+	// since Close may still be committing its final playback receipt.
+	e.stoppedStateMu.RLock()
+	defer e.stoppedStateMu.RUnlock()
 	select {
 	case h := <-done:
 		return h
@@ -283,4 +282,34 @@ func (e *Engine) historySnapshot() []provider.Message {
 		out = append(out, provider.Message{Role: provider.RoleAssistant, Content: strings.TrimSpace(heard)})
 	}
 	return out
+}
+
+// scopeInterruptedRequest keeps unfinished context available while giving the
+// new request its own message. A rendering-only boundary preserves stored
+// history and prevents two independent requests being presented as one task.
+func scopeInterruptedRequest(messages []provider.Message, current string) []provider.Message {
+	if current == "" {
+		return messages
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != provider.RoleUser {
+			continue
+		}
+		if !strings.HasSuffix(messages[i].Content, current) {
+			return messages
+		}
+		context := strings.TrimSpace(strings.TrimSuffix(messages[i].Content, current))
+		if context == "" {
+			return messages
+		}
+		prior := messages[i]
+		prior.Content = context
+		out := make([]provider.Message, 0, len(messages)+2)
+		out = append(out, messages[:i]...)
+		out = append(out, prior,
+			provider.Message{Role: provider.RoleSystem, Content: "上一轮回答被来电人打断。先前未完成的任务已暂停。下面的用户消息是当前唯一待回答的请求。若是补充、指代或继续请求，可结合先前上下文；若换了话题，只回答新问题，不附带旧任务或主动恢复旧流程。已提交工具结果仍按原规则处理。"},
+			provider.Message{Role: provider.RoleUser, Content: current})
+		return append(out, messages[i+1:]...)
+	}
+	return messages
 }

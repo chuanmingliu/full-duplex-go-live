@@ -59,12 +59,15 @@ const (
 	ExtAudioTruncated   = "golive.output_audio.truncated"
 	ExtTurnMetrics      = "golive.turn.metrics"
 	ExtBackchannel      = "golive.backchannel"
+	ExtBackchannelStage = "golive.backchannel.stage"
 	ExtInputBackchannel = "golive.input_backchannel"
 	// ExtMemory is golive.memory: the call's working memory was edited
 	// (Version after the edit, Patch what was merged). ExtTask is
 	// golive.task: a slow tool call was submitted, finished, or delivered.
-	ExtMemory = "golive.memory"
-	ExtTask   = "golive.task"
+	// ClientBusinessEvent carries a trusted backend notification on the session connection.
+	ClientBusinessEvent = "golive.business.event"
+	ExtMemory           = "golive.memory"
+	ExtTask             = "golive.task"
 	// ExtFocus says whose voice an answered utterance was, by the speaker-
 	// activity model, and whether its answer was dropped for it. See FocusEvent.
 	ExtFocus        = "golive.focus"
@@ -721,6 +724,17 @@ type BackchannelEvent struct {
 	Envelope
 	Kind string `json:"kind,omitempty"`
 	Text string `json:"text"`
+}
+
+// BackchannelStageEvent locates a generated candidate on the output session clock.
+type BackchannelStageEvent struct {
+	Envelope
+	ItemID        string `json:"item_id"`
+	Stage         string `json:"stage"`
+	AtMS          int64  `json:"at_ms"`
+	Text          string `json:"text,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+	ConfigVersion int    `json:"config_version,omitempty"`
 }
 
 // MemoryEvent is golive.memory.

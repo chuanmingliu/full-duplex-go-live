@@ -1,0 +1,67 @@
+{
+  "call": "out-mvxlfkke-kr5y",
+  "scope": "Server VAD utterance-open to cut decision while playback was active; excludes pre-detection voice time, transport and audible playout stop. One cut per latest open; unpaired events retained separately.",
+  "barge_in_opens": 1,
+  "paired_playback_cuts": 1,
+  "unpaired_playback_cuts": 0,
+  "p50_ms": 336.0,
+  "p95_ms": 336.0,
+  "max_ms": 336.0,
+  "rows": [
+    {
+      "detection_to_cut_ms": 336.0,
+      "vad_active_ms": "320"
+    }
+  ],
+  "focus_decisions": [
+    {
+      "verdict": "yield",
+      "primary_ms": "600",
+      "voiced_ms": "600",
+      "coverage": "0.89",
+      "waited_ms": "295"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "500",
+      "voiced_ms": "500",
+      "coverage": "0.95",
+      "waited_ms": "305"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "580",
+      "voiced_ms": "580",
+      "coverage": "0.9",
+      "waited_ms": "418"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "400",
+      "voiced_ms": "400",
+      "coverage": "0.99",
+      "waited_ms": "327"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "400",
+      "voiced_ms": "500",
+      "coverage": "0.94",
+      "waited_ms": "335"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "500",
+      "voiced_ms": "500",
+      "coverage": "0.81",
+      "waited_ms": "229"
+    },
+    {
+      "verdict": "yield",
+      "primary_ms": "600",
+      "voiced_ms": "600",
+      "coverage": "0.98",
+      "waited_ms": "396"
+    }
+  ]
+}

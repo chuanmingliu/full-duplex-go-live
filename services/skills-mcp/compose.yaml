@@ -1,0 +1,21 @@
+name: xiaocui-skills
+services:
+  catalog:
+    build: .
+    image: xiaocui-skills:${RELEASE:?set release identifier}
+    restart: unless-stopped
+    network_mode: host
+    user: "${SERVICE_UID:?}:${SERVICE_GID:?}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ${STACK_DIR:?}/data:/data
+      - ${STACK_DIR}/secrets/admin:/run/secrets/admin:ro
+      - ${STACK_DIR}/secrets/runtime:/run/secrets/runtime:ro
+      - ${CRM_TOKEN_FILE:?}:/run/secrets/crm:ro
+    healthcheck:
+      test: [CMD, /skills-mcp, health]
+      interval: 15s
+      timeout: 3s
+      retries: 3

@@ -1,0 +1,386 @@
+[
+  {
+    "scenario": "车损险",
+    "mode": "skills",
+    "first_text_ms": 832.189,
+    "first_audio_ms": 954.234,
+    "checks": {
+      "boolean_options": true,
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "划痕险",
+    "mode": "skills",
+    "first_text_ms": 709.13,
+    "first_audio_ms": 895.746,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_1万": true,
+      "option_2000": true,
+      "option_2万": true,
+      "option_5000": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "绝对免赔率-车损",
+    "mode": "skills",
+    "first_text_ms": 638.05,
+    "first_audio_ms": 845.107,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10%": true,
+      "option_15%": true,
+      "option_20%": true,
+      "option_5%": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "三者险",
+    "mode": "skills",
+    "first_text_ms": 912.9,
+    "first_audio_ms": 1091.559,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_100万": true,
+      "option_150万": true,
+      "option_200万": true,
+      "option_300万": true,
+      "option_400万": true,
+      "option_50万": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "精神损害险-三者",
+    "mode": "skills",
+    "first_text_ms": 799.001,
+    "first_audio_ms": 974.799,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_1万": true,
+      "option_2万": true,
+      "option_5万": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "假日三者翻倍险",
+    "mode": "skills",
+    "first_text_ms": 594.566,
+    "first_audio_ms": 718.292,
+    "checks": {
+      "boolean_options": true,
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "original_prompt_preserved": true,
+      "response": true,
+      "unconfigured_holiday_rules_not_asserted": true,
+      "weekends_included": true
+    }
+  },
+  {
+    "scenario": "绝对免赔率-三者",
+    "mode": "skills",
+    "first_text_ms": 924.47,
+    "first_audio_ms": 1118.065,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10%": true,
+      "option_15%": true,
+      "option_20%": true,
+      "option_5%": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "医保外用药责任险-三者",
+    "mode": "skills",
+    "first_text_ms": 1714.906,
+    "first_audio_ms": 1906.49,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_100万": true,
+      "option_10万": true,
+      "option_150万": true,
+      "option_15万": true,
+      "option_200万": true,
+      "option_20万": true,
+      "option_300万": true,
+      "option_30万": true,
+      "option_400万": true,
+      "option_50万": true,
+      "option_共享保额": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "司机责任险",
+    "mode": "skills",
+    "first_text_ms": 866.559,
+    "first_audio_ms": 1037.325,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_20万": true,
+      "option_2万": true,
+      "option_3万": true,
+      "option_4万": true,
+      "option_5万": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "精神损害险-司机",
+    "mode": "skills",
+    "first_text_ms": 798.288,
+    "first_audio_ms": 1019.111,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_1万": true,
+      "option_2万": true,
+      "option_5万": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "绝对免赔率-司机",
+    "mode": "skills",
+    "first_text_ms": 762.704,
+    "first_audio_ms": 888.572,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10%": true,
+      "option_15%": true,
+      "option_20%": true,
+      "option_5%": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "医保外用药责任险-司机",
+    "mode": "skills",
+    "first_text_ms": 764.994,
+    "first_audio_ms": 986.056,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_1万": true,
+      "option_20万": true,
+      "option_2万": true,
+      "option_5万": true,
+      "option_共享保额": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "乘客责任险",
+    "mode": "skills",
+    "first_text_ms": 1006.541,
+    "first_audio_ms": 1143.816,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_20万": true,
+      "option_2万": true,
+      "option_3万": true,
+      "option_4万": true,
+      "option_5万": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "精神损害险-乘客",
+    "mode": "skills",
+    "first_text_ms": 999.964,
+    "first_audio_ms": 1085.192,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_1万": true,
+      "option_2万": true,
+      "option_5万": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "绝对免赔率-乘客",
+    "mode": "skills",
+    "first_text_ms": 579.465,
+    "first_audio_ms": 684.993,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10%": true,
+      "option_15%": true,
+      "option_20%": true,
+      "option_5%": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "医保外用药责任险-乘客",
+    "mode": "skills",
+    "first_text_ms": 928.57,
+    "first_audio_ms": 1145.27,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_10万": true,
+      "option_1万": true,
+      "option_20万": true,
+      "option_2万": true,
+      "option_5万": true,
+      "option_共享保额": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "交强险",
+    "mode": "skills",
+    "first_text_ms": 958.22,
+    "first_audio_ms": 1156.473,
+    "checks": {
+      "boolean_options": true,
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "车船税",
+    "mode": "skills",
+    "first_text_ms": 679.453,
+    "first_audio_ms": 861.958,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "option_代缴": true,
+      "original_prompt_preserved": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "shared-cost",
+    "mode": "skills",
+    "first_text_ms": 884.079,
+    "first_audio_ms": 1079.894,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_automatic_charge_claim": true,
+      "no_population_claim": true,
+      "no_quotation": true,
+      "original_prompt_preserved": true,
+      "response": true,
+      "shared_cost_requires_quote": true
+    }
+  },
+  {
+    "scenario": "unconfigured-product",
+    "mode": "skills",
+    "first_text_ms": 772.21,
+    "first_audio_ms": 915.204,
+    "checks": {
+      "bounded_model_steps": true,
+      "concept_skill_loaded": true,
+      "memory_unchanged": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "no_unconfigured_product_offer": true,
+      "original_prompt_preserved": true,
+      "response": true,
+      "unconfigured_product_unavailable": true
+    }
+  }
+]

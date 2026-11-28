@@ -1,0 +1,11 @@
+{
+  "stopped": [
+    "quotesvc",
+    "catalog.test",
+    "crm",
+    "golive",
+    "aria"
+  ],
+  "journal_retained": "http://192.168.71.9:18870",
+  "archives_retained": true
+}

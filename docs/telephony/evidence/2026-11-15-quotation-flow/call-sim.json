@@ -1,0 +1,1418 @@
+{
+  "boundary": "Last caller sound to server content output, endpoint pause included. Interruptions measure server utterance opening to cut decision.",
+  "calls": [
+    {
+      "name": "baseline-conversation",
+      "call_id": "e1797713-23d3-4c8c-a107-e0e1b8adebd3",
+      "build": "b1aed5a-quote-skill",
+      "normal_content_ms": {
+        "n": 7,
+        "p50": 956,
+        "p95": 1137,
+        "max": 1137
+      },
+      "quote_ack_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "quotation_result_ms": {
+        "n": 4,
+        "p50_ms": 2962.0,
+        "p90_ms": 7957,
+        "p95_ms": 7957,
+        "max_ms": 7957,
+        "at_or_above_target": 3
+      },
+      "quotation_readout_ms": {
+        "n": 4,
+        "p50_ms": 4113.0,
+        "p90_ms": 9118,
+        "p95_ms": 9118,
+        "max_ms": 9118,
+        "at_or_above_target": 3
+      },
+      "counts": {
+        "records": 28,
+        "answered": 11,
+        "non_speech": 10,
+        "cancelled": 0,
+        "interrupted_answers": 4,
+        "missing": 7,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 4,
+        "tool_results_joined": 4,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 4,
+        "continuations_joined": 0
+      },
+      "interruptions_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "interruptions": [],
+      "skill_timings": {
+        "n": 3,
+        "p50": 2.782,
+        "p95": 3.145,
+        "max": 3.145
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 10.557,
+          "status": "no_match",
+          "us": 1623,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 11.26,
+          "status": "no_match",
+          "us": 2157,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 29.815,
+          "status": "loaded",
+          "us": 3145,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_5",
+          "t_s": 45.365,
+          "status": "no_match",
+          "us": 2108,
+          "skills": []
+        },
+        {
+          "turn": "item_6",
+          "t_s": 46.057,
+          "status": "no_match",
+          "us": 2815,
+          "skills": []
+        },
+        {
+          "turn": "item_7",
+          "t_s": 54.421,
+          "status": "no_match",
+          "us": 1573,
+          "skills": []
+        },
+        {
+          "turn": "item_8",
+          "t_s": 55.208,
+          "status": "no_match",
+          "us": 1818,
+          "skills": []
+        },
+        {
+          "turn": "item_9",
+          "t_s": 63.17,
+          "status": "no_match",
+          "us": 2257,
+          "skills": []
+        },
+        {
+          "turn": "item_10",
+          "t_s": 64.187,
+          "status": "no_match",
+          "us": 1240,
+          "skills": []
+        },
+        {
+          "turn": "item_11",
+          "t_s": 65.957,
+          "status": "no_match",
+          "us": 2256,
+          "skills": []
+        },
+        {
+          "turn": "item_12",
+          "t_s": 67.959,
+          "status": "no_match",
+          "us": 1340,
+          "skills": []
+        },
+        {
+          "turn": "item_13",
+          "t_s": 69.217,
+          "status": "no_match",
+          "us": 2008,
+          "skills": []
+        },
+        {
+          "turn": "item_14",
+          "t_s": 70.312,
+          "status": "no_match",
+          "us": 2213,
+          "skills": []
+        },
+        {
+          "turn": "item_15",
+          "t_s": 70.883,
+          "status": "cancelled",
+          "us": 88,
+          "skills": []
+        },
+        {
+          "turn": "item_16",
+          "t_s": 70.885,
+          "status": "no_match",
+          "us": 1585,
+          "skills": []
+        },
+        {
+          "turn": "item_17",
+          "t_s": 87.93,
+          "status": "no_match",
+          "us": 1885,
+          "skills": []
+        },
+        {
+          "turn": "item_18",
+          "t_s": 88.959,
+          "status": "no_match",
+          "us": 1339,
+          "skills": []
+        },
+        {
+          "turn": "item_19",
+          "t_s": 96.046,
+          "status": "loaded",
+          "us": 2782,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_20",
+          "t_s": 97.03,
+          "status": "no_match",
+          "us": 1508,
+          "skills": []
+        },
+        {
+          "turn": "item_21",
+          "t_s": 97.623,
+          "status": "no_match",
+          "us": 2348,
+          "skills": []
+        },
+        {
+          "turn": "item_22",
+          "t_s": 106.284,
+          "status": "no_match",
+          "us": 1748,
+          "skills": []
+        },
+        {
+          "turn": "item_23",
+          "t_s": 107.459,
+          "status": "no_match",
+          "us": 2424,
+          "skills": []
+        },
+        {
+          "turn": "item_24",
+          "t_s": 108.285,
+          "status": "no_match",
+          "us": 1644,
+          "skills": []
+        },
+        {
+          "turn": "item_25",
+          "t_s": 109.798,
+          "status": "no_match",
+          "us": 1939,
+          "skills": []
+        },
+        {
+          "turn": "item_26",
+          "t_s": 127.353,
+          "status": "no_match",
+          "us": 2104,
+          "skills": []
+        },
+        {
+          "turn": "item_27",
+          "t_s": 129.055,
+          "status": "no_match",
+          "us": 2092,
+          "skills": []
+        },
+        {
+          "turn": "item_28",
+          "t_s": 130.386,
+          "status": "no_match",
+          "us": 2105,
+          "skills": []
+        },
+        {
+          "turn": "item_29",
+          "t_s": 131.087,
+          "status": "no_match",
+          "us": 1538,
+          "skills": []
+        },
+        {
+          "turn": "item_30",
+          "t_s": 141.006,
+          "status": "no_match",
+          "us": 2063,
+          "skills": []
+        },
+        {
+          "turn": "item_31",
+          "t_s": 141.666,
+          "status": "no_match",
+          "us": 1648,
+          "skills": []
+        },
+        {
+          "turn": "item_32",
+          "t_s": 142.408,
+          "status": "no_match",
+          "us": 2111,
+          "skills": []
+        },
+        {
+          "turn": "item_33",
+          "t_s": 144.239,
+          "status": "no_match",
+          "us": 1475,
+          "skills": []
+        },
+        {
+          "turn": "item_34",
+          "t_s": 166.009,
+          "status": "no_match",
+          "us": 2047,
+          "skills": []
+        },
+        {
+          "turn": "item_35",
+          "t_s": 168.137,
+          "status": "loaded",
+          "us": 2508,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        }
+      ],
+      "continuation_rows": [],
+      "revision_events": [
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_5",
+          "revision": "revision-1",
+          "coverages": "1",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_7",
+          "revision": "revision-2",
+          "coverages": "2",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision confirmed",
+          "turn": "item_9",
+          "revision": "revision-2",
+          "coverages": "2",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_19",
+          "revision": "revision-3",
+          "coverages": "1",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision confirmed",
+          "turn": "item_23",
+          "revision": "revision-3",
+          "coverages": "1",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_27",
+          "revision": "revision-4",
+          "coverages": "0",
+          "variants": "2"
+        },
+        {
+          "msg": "quote: revision confirmed",
+          "turn": "item_30",
+          "revision": "revision-4",
+          "coverages": "0",
+          "variants": "2"
+        }
+      ],
+      "workers": [
+        {
+          "worker_ms": 4158,
+          "background": false
+        },
+        {
+          "worker_ms": 3988,
+          "background": true
+        },
+        {
+          "worker_ms": 3254,
+          "background": true
+        },
+        {
+          "worker_ms": 3744,
+          "background": true
+        },
+        {
+          "worker_ms": 2972,
+          "background": true
+        },
+        {
+          "worker_ms": 3046,
+          "background": true
+        },
+        {
+          "worker_ms": 2946,
+          "background": true
+        },
+        {
+          "worker_ms": 3824,
+          "background": true
+        },
+        {
+          "worker_ms": 2894,
+          "background": true
+        },
+        {
+          "worker_ms": 2534,
+          "background": false
+        },
+        {
+          "worker_ms": 3803,
+          "background": true
+        },
+        {
+          "worker_ms": 3202,
+          "background": true
+        },
+        {
+          "worker_ms": 4112,
+          "background": true
+        },
+        {
+          "worker_ms": 2590,
+          "background": true
+        },
+        {
+          "worker_ms": 2782,
+          "background": true
+        },
+        {
+          "worker_ms": 4386,
+          "background": true
+        },
+        {
+          "worker_ms": 4260,
+          "background": true
+        },
+        {
+          "worker_ms": 4200,
+          "background": true
+        }
+      ],
+      "cache_hits": 5,
+      "verification": {
+        "call_id": "e1797713-23d3-4c8c-a107-e0e1b8adebd3",
+        "run_id": "sim-a7b3a555a637b62868affadd",
+        "phase": "completed",
+        "build": "b1aed5a-quote-skill",
+        "duration_s": 179.6,
+        "transcript_turns": {
+          "assistant": 29,
+          "caller": 19
+        },
+        "audio_channels_with_signal": [
+          true,
+          true
+        ],
+        "archive_verified": true,
+        "original_profile_and_saved_prompt_preserved": true,
+        "journal_url": "http://192.168.71.9:19970/#/call/e1797713-23d3-4c8c-a107-e0e1b8adebd3"
+      }
+    },
+    {
+      "name": "candidate-r4",
+      "call_id": "13bf1c97-dd6e-467d-918a-962cc9413767",
+      "build": "quote-flow-r4",
+      "normal_content_ms": {
+        "n": 13,
+        "p50": 1058,
+        "p95": 3606,
+        "max": 3606
+      },
+      "quote_ack_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "quotation_result_ms": {
+        "n": 4,
+        "p50_ms": 1202.5,
+        "p90_ms": 6125,
+        "p95_ms": 6125,
+        "max_ms": 6125,
+        "at_or_above_target": 2
+      },
+      "quotation_readout_ms": {
+        "n": 4,
+        "p50_ms": 1202.5,
+        "p90_ms": 7126,
+        "p95_ms": 7126,
+        "max_ms": 7126,
+        "at_or_above_target": 2
+      },
+      "counts": {
+        "records": 26,
+        "answered": 17,
+        "non_speech": 9,
+        "cancelled": 0,
+        "interrupted_answers": 4,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 4,
+        "tool_results_joined": 4,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 4,
+        "continuations_joined": 3
+      },
+      "interruptions_ms": {
+        "n": 1,
+        "p50": 267,
+        "p95": 267,
+        "max": 267
+      },
+      "interruptions": [
+        267
+      ],
+      "skill_timings": {
+        "n": 12,
+        "p50": 2.5505,
+        "p95": 3.246,
+        "max": 3.246
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 8.193,
+          "status": "no_match",
+          "us": 2236,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 21.584,
+          "status": "no_match",
+          "us": 1525,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 23.043,
+          "status": "no_match",
+          "us": 2331,
+          "skills": []
+        },
+        {
+          "turn": "item_5",
+          "t_s": 23.585,
+          "status": "no_match",
+          "us": 3394,
+          "skills": []
+        },
+        {
+          "turn": "item_6",
+          "t_s": 24.046,
+          "status": "no_match",
+          "us": 9861,
+          "skills": []
+        },
+        {
+          "turn": "item_7",
+          "t_s": 45.645,
+          "status": "loaded",
+          "us": 2218,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_8",
+          "t_s": 60.287,
+          "status": "loaded",
+          "us": 2518,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_9",
+          "t_s": 61.107,
+          "status": "loaded",
+          "us": 2583,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_10",
+          "t_s": 67.371,
+          "status": "loaded",
+          "us": 2299,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_11",
+          "t_s": 68.96,
+          "status": "loaded",
+          "us": 3246,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_12",
+          "t_s": 69.656,
+          "status": "loaded",
+          "us": 2045,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_13",
+          "t_s": 78.057,
+          "status": "loaded",
+          "us": 3136,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_14",
+          "t_s": 79.878,
+          "status": "no_match",
+          "us": 1801,
+          "skills": []
+        },
+        {
+          "turn": "item_15",
+          "t_s": 80.59,
+          "status": "no_match",
+          "us": 1741,
+          "skills": []
+        },
+        {
+          "turn": "item_16",
+          "t_s": 83.979,
+          "status": "no_match",
+          "us": 1625,
+          "skills": []
+        },
+        {
+          "turn": "item_17",
+          "t_s": 99.701,
+          "status": "no_match",
+          "us": 5154,
+          "skills": []
+        },
+        {
+          "turn": "item_18",
+          "t_s": 100.566,
+          "status": "no_match",
+          "us": 1758,
+          "skills": []
+        },
+        {
+          "turn": "item_19",
+          "t_s": 101.756,
+          "status": "no_match",
+          "us": 5084,
+          "skills": []
+        },
+        {
+          "turn": "item_20",
+          "t_s": 111.529,
+          "status": "loaded",
+          "us": 2593,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_21",
+          "t_s": 119.74,
+          "status": "loaded",
+          "us": 2897,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_22",
+          "t_s": 120.414,
+          "status": "no_match",
+          "us": 1377,
+          "skills": []
+        },
+        {
+          "turn": "item_23",
+          "t_s": 138.359,
+          "status": "loaded",
+          "us": 2325,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_24",
+          "t_s": 139.411,
+          "status": "no_match",
+          "us": 1258,
+          "skills": []
+        },
+        {
+          "turn": "item_25",
+          "t_s": 145.291,
+          "status": "no_match",
+          "us": 2008,
+          "skills": []
+        },
+        {
+          "turn": "item_26",
+          "t_s": 153.889,
+          "status": "loaded",
+          "us": 1901,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_27",
+          "t_s": 154.549,
+          "status": "no_match",
+          "us": 2785,
+          "skills": []
+        },
+        {
+          "turn": "item_28",
+          "t_s": 171.833,
+          "status": "no_match",
+          "us": 1720,
+          "skills": []
+        },
+        {
+          "turn": "item_29",
+          "t_s": 174.124,
+          "status": "loaded",
+          "us": 2811,
+          "skills": [
+            "motor-quotation",
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_30",
+          "t_s": 189.359,
+          "status": "no_match",
+          "us": 1743,
+          "skills": []
+        }
+      ],
+      "continuation_rows": [
+        {
+          "origin_turn": "item_11",
+          "result_turn": "item_12",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 491,
+          "child_first_content_ms": 729,
+          "total_ms": 1600,
+          "quotation": false,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "origin_turn": "item_8",
+          "result_turn": "item_9",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 521,
+          "child_first_content_ms": 644,
+          "total_ms": 1545,
+          "quotation": false,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "origin_turn": "item_14",
+          "result_turn": "item_15",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 541,
+          "child_first_content_ms": 635,
+          "total_ms": 1556,
+          "quotation": false,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        },
+        {
+          "origin_turn": "item_24",
+          "result_turn": "item_25",
+          "end_silence_ms": 380,
+          "origin_to_result_start_ms": 5767,
+          "child_first_content_ms": 696,
+          "total_ms": 6843,
+          "quotation": false,
+          "interrupted": false,
+          "origin_evidence": "caller_input_v1"
+        }
+      ],
+      "revision_events": [
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_8",
+          "revision": "revision-1",
+          "coverages": "1",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_11",
+          "revision": "revision-2",
+          "coverages": "2",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision confirmed",
+          "turn": "item_13",
+          "revision": "revision-2",
+          "coverages": "2",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_20",
+          "revision": "revision-3",
+          "coverages": "1",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision confirmed",
+          "turn": "item_21",
+          "revision": "revision-3",
+          "coverages": "1",
+          "variants": "0"
+        },
+        {
+          "msg": "quote: revision awaiting confirmation",
+          "turn": "item_23",
+          "revision": "revision-4",
+          "coverages": "0",
+          "variants": "2"
+        },
+        {
+          "msg": "quote: revision confirmed",
+          "turn": "item_26",
+          "revision": "revision-4",
+          "coverages": "0",
+          "variants": "2"
+        }
+      ],
+      "workers": [
+        {
+          "worker_ms": 2770,
+          "background": false
+        },
+        {
+          "worker_ms": 3526,
+          "background": true
+        },
+        {
+          "worker_ms": 3889,
+          "background": true
+        },
+        {
+          "worker_ms": 2954,
+          "background": true
+        },
+        {
+          "worker_ms": 2672,
+          "background": true
+        },
+        {
+          "worker_ms": 4454,
+          "background": true
+        },
+        {
+          "worker_ms": 3080,
+          "background": true
+        },
+        {
+          "worker_ms": 2545,
+          "background": true
+        },
+        {
+          "worker_ms": 3524,
+          "background": true
+        },
+        {
+          "worker_ms": 3863,
+          "background": false
+        },
+        {
+          "worker_ms": 4166,
+          "background": true
+        },
+        {
+          "worker_ms": 3652,
+          "background": true
+        },
+        {
+          "worker_ms": 4342,
+          "background": true
+        },
+        {
+          "worker_ms": 2604,
+          "background": true
+        },
+        {
+          "worker_ms": 3142,
+          "background": true
+        },
+        {
+          "worker_ms": 4482,
+          "background": true
+        },
+        {
+          "worker_ms": 3896,
+          "background": true
+        },
+        {
+          "worker_ms": 2558,
+          "background": true
+        }
+      ],
+      "cache_hits": 5,
+      "verification": {
+        "call_id": "13bf1c97-dd6e-467d-918a-962cc9413767",
+        "run_id": "sim-1763e77d93ab28dcaf77ec58",
+        "phase": "completed",
+        "build": "quote-flow-r4",
+        "duration_s": 193.3,
+        "transcript_turns": {
+          "assistant": 26,
+          "caller": 19
+        },
+        "audio_channels_with_signal": [
+          true,
+          true
+        ],
+        "archive_verified": true,
+        "original_profile_and_saved_prompt_preserved": true,
+        "journal_url": "http://192.168.71.9:19970/#/call/13bf1c97-dd6e-467d-918a-962cc9413767"
+      }
+    },
+    {
+      "name": "baseline-barge",
+      "call_id": "152e9d07-f0b2-4c0e-b1cd-be3e5dd8ffe7",
+      "build": "b1aed5a-quote-skill",
+      "normal_content_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "quote_ack_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "quotation_result_ms": {
+        "n": 1,
+        "p50_ms": 1390,
+        "p90_ms": 1390,
+        "p95_ms": 1390,
+        "max_ms": 1390,
+        "at_or_above_target": 1
+      },
+      "quotation_readout_ms": {
+        "n": 1,
+        "p50_ms": 1390,
+        "p90_ms": 1390,
+        "p95_ms": 1390,
+        "max_ms": 1390,
+        "at_or_above_target": 1
+      },
+      "counts": {
+        "records": 3,
+        "answered": 0,
+        "non_speech": 3,
+        "cancelled": 0,
+        "interrupted_answers": 0,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 1,
+        "tool_results_joined": 0,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 0,
+        "continuations_joined": 0
+      },
+      "interruptions_ms": {
+        "n": 1,
+        "p50": 457,
+        "p95": 457,
+        "max": 457
+      },
+      "interruptions": [
+        457
+      ],
+      "skill_timings": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 8.296,
+          "status": "no_match",
+          "us": 1914,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 8.834,
+          "status": "no_match",
+          "us": 2235,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 15.533,
+          "status": "no_match",
+          "us": 1401,
+          "skills": []
+        }
+      ],
+      "continuation_rows": [],
+      "revision_events": [],
+      "workers": [
+        {
+          "worker_ms": 2825,
+          "background": false
+        },
+        {
+          "worker_ms": 3994,
+          "background": true
+        },
+        {
+          "worker_ms": 3332,
+          "background": true
+        },
+        {
+          "worker_ms": 4072,
+          "background": true
+        },
+        {
+          "worker_ms": 3440,
+          "background": true
+        },
+        {
+          "worker_ms": 2710,
+          "background": true
+        },
+        {
+          "worker_ms": 4042,
+          "background": true
+        },
+        {
+          "worker_ms": 2671,
+          "background": true
+        },
+        {
+          "worker_ms": 3820,
+          "background": true
+        }
+      ],
+      "cache_hits": 1,
+      "verification": {
+        "call_id": "152e9d07-f0b2-4c0e-b1cd-be3e5dd8ffe7",
+        "run_id": "sim-28d22010beebbfc57ffb77e3",
+        "phase": "completed",
+        "build": "b1aed5a-quote-skill",
+        "duration_s": 18.9,
+        "transcript_turns": {
+          "assistant": 3,
+          "caller": 4
+        },
+        "audio_channels_with_signal": [
+          true,
+          true
+        ],
+        "archive_verified": true,
+        "original_profile_and_saved_prompt_preserved": true,
+        "journal_url": "http://192.168.71.9:19970/#/call/152e9d07-f0b2-4c0e-b1cd-be3e5dd8ffe7"
+      }
+    },
+    {
+      "name": "candidate-barge-r4",
+      "call_id": "171cc103-cc6f-4147-9dc4-6554ff578a82",
+      "build": "quote-flow-r4",
+      "normal_content_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "quote_ack_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "quotation_result_ms": {
+        "n": 1,
+        "p50_ms": 1522,
+        "p90_ms": 1522,
+        "p95_ms": 1522,
+        "max_ms": 1522,
+        "at_or_above_target": 1
+      },
+      "quotation_readout_ms": {
+        "n": 1,
+        "p50_ms": 1522,
+        "p90_ms": 1522,
+        "p95_ms": 1522,
+        "max_ms": 1522,
+        "at_or_above_target": 1
+      },
+      "counts": {
+        "records": 4,
+        "answered": 1,
+        "non_speech": 3,
+        "cancelled": 0,
+        "interrupted_answers": 1,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 1,
+        "tool_results_joined": 1,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 1,
+        "continuations_joined": 0
+      },
+      "interruptions_ms": {
+        "n": 1,
+        "p50": 176,
+        "p95": 176,
+        "max": 176
+      },
+      "interruptions": [
+        176
+      ],
+      "skill_timings": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 8.093,
+          "status": "no_match",
+          "us": 1865,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 8.644,
+          "status": "no_match",
+          "us": 1730,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 12.222,
+          "status": "no_match",
+          "us": 2645,
+          "skills": []
+        },
+        {
+          "turn": "item_5",
+          "t_s": 13.098,
+          "status": "no_match",
+          "us": 1289,
+          "skills": []
+        }
+      ],
+      "continuation_rows": [],
+      "revision_events": [],
+      "workers": [
+        {
+          "worker_ms": 4376,
+          "background": false
+        },
+        {
+          "worker_ms": 2982,
+          "background": true
+        },
+        {
+          "worker_ms": 3652,
+          "background": true
+        },
+        {
+          "worker_ms": 4382,
+          "background": true
+        },
+        {
+          "worker_ms": 3504,
+          "background": true
+        },
+        {
+          "worker_ms": 4418,
+          "background": true
+        },
+        {
+          "worker_ms": 2763,
+          "background": true
+        },
+        {
+          "worker_ms": 4114,
+          "background": true
+        },
+        {
+          "worker_ms": 4216,
+          "background": true
+        }
+      ],
+      "cache_hits": 1,
+      "verification": {
+        "call_id": "171cc103-cc6f-4147-9dc4-6554ff578a82",
+        "run_id": "sim-04d315b40383e9e64f7f40d7",
+        "phase": "completed",
+        "build": "quote-flow-r4",
+        "duration_s": 16.1,
+        "transcript_turns": {
+          "assistant": 4,
+          "caller": 4
+        },
+        "audio_channels_with_signal": [
+          true,
+          true
+        ],
+        "archive_verified": true,
+        "original_profile_and_saved_prompt_preserved": true,
+        "journal_url": "http://192.168.71.9:19970/#/call/171cc103-cc6f-4147-9dc4-6554ff578a82"
+      }
+    }
+  ],
+  "semantic_checks": {
+    "implicit_300w_adjustment_skill_loaded": true,
+    "removal_skill_loaded": true,
+    "300w_and_no_damage_staged_before_confirmation": true,
+    "repeated_confirmation_did_not_duplicate_quote": true,
+    "400w_revision_confirmed": true,
+    "50w_and_300w_comparison_confirmed": true,
+    "comparison_retained_400w_selected_policy": true,
+    "repeated_confirmation_wait_phrase_finished_before_result": true,
+    "chat_and_both_audio_directions_verified": true
+  },
+  "preserved": {
+    "profile": true,
+    "saved_call": true,
+    "running_binary": true,
+    "quote-plans": true,
+    "quote-api": true,
+    "quote-speech": true,
+    "openers": true,
+    "hangup-rules": true,
+    "silence-reaction": true,
+    "mcp_catalog": true
+  },
+  "limitations": [
+    "Single scenario runs with different generated dialogue and incomplete baseline timing coverage do not establish a statistical speedup.",
+    "The final run has 13 observed conversational samples; 3606 ms initial response dominates p95.",
+    "No acoustic handset measurement.",
+    "An earlier dedicated interruption attempt failed during caller TTS preparation because of provider RPM limiting; it is excluded."
+  ],
+  "intermediate_findings": [
+    {
+      "call_id": "54adeec2-6bf8-4e9c-bb17-2a19e4b4b0d5",
+      "finding": "Removal routed but was not staged. Updated host and skill guidance to stage each added change before describing the saved scope."
+    },
+    {
+      "call_id": "6ffc0369-5734-4a2a-902d-9ac4612b62ec",
+      "finding": "A reply to a repeated confirmation was cut by a ready quotation. Quotation handoff now finishes the speaking segment."
+    }
+  ],
+  "final_content_samples": [
+    {
+      "turn": "item_2",
+      "content_ms": 3606,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_4",
+      "content_ms": 730,
+      "continuation": false,
+      "quote_result": true
+    },
+    {
+      "turn": "item_6",
+      "content_ms": 737,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_7",
+      "content_ms": 808,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_8",
+      "content_ms": 1545,
+      "continuation": true,
+      "quote_result": false
+    },
+    {
+      "turn": "item_11",
+      "content_ms": 1600,
+      "continuation": true,
+      "quote_result": false
+    },
+    {
+      "turn": "item_13",
+      "content_ms": 6125,
+      "continuation": false,
+      "quote_result": true
+    },
+    {
+      "turn": "item_14",
+      "content_ms": 1556,
+      "continuation": true,
+      "quote_result": false
+    },
+    {
+      "turn": "item_18",
+      "content_ms": 1058,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_19",
+      "content_ms": 657,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_20",
+      "content_ms": 780,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_21",
+      "content_ms": 1252,
+      "continuation": false,
+      "quote_result": true
+    },
+    {
+      "turn": "item_23",
+      "content_ms": 1117,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_24",
+      "content_ms": 983,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_26",
+      "content_ms": 1153,
+      "continuation": false,
+      "quote_result": true
+    },
+    {
+      "turn": "item_29",
+      "content_ms": 798,
+      "continuation": false,
+      "quote_result": false
+    },
+    {
+      "turn": "item_30",
+      "content_ms": 1240,
+      "continuation": false,
+      "quote_result": false
+    }
+  ],
+  "cleanup": {
+    "stopped_isolated_services": [
+      "quotesvc",
+      "crm",
+      "catalog.test",
+      "golive",
+      "aria"
+    ],
+    "retained_services": [
+      "journal"
+    ],
+    "original_profile_saved_call_and_binary_preserved": true,
+    "live_version": "b1aed5a-quote-skill"
+  }
+}

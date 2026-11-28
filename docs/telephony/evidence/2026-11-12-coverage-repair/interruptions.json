@@ -1,0 +1,61 @@
+{
+  "baseline": {
+    "passed": true,
+    "rows": [
+      {
+        "kind": "caller",
+        "vad_open_ms": "314",
+        "onset_to_cut_ms": "314",
+        "detection_to_cut_ms": "0"
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": "312",
+        "onset_to_cut_ms": "-1",
+        "detection_to_cut_ms": "-1"
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": "309",
+        "onset_to_cut_ms": "-1",
+        "detection_to_cut_ms": "-1"
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": "310",
+        "onset_to_cut_ms": "-1",
+        "detection_to_cut_ms": "-1"
+      }
+    ]
+  },
+  "current": {
+    "passed": true,
+    "rows": [
+      {
+        "kind": "caller",
+        "vad_open_ms": "309",
+        "onset_to_cut_ms": "310",
+        "detection_to_cut_ms": "1"
+      },
+      {
+        "kind": "background",
+        "vad_open_ms": "312",
+        "onset_to_cut_ms": "-1",
+        "detection_to_cut_ms": "-1"
+      },
+      {
+        "kind": "echo",
+        "vad_open_ms": "311",
+        "onset_to_cut_ms": "-1",
+        "detection_to_cut_ms": "-1"
+      },
+      {
+        "kind": "backchannel",
+        "vad_open_ms": "310",
+        "onset_to_cut_ms": "-1",
+        "detection_to_cut_ms": "-1"
+      }
+    ]
+  },
+  "scope": "Paced synthetic ASR/PCM simulation; not a measured handset or provider speedup."
+}

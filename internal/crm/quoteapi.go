@@ -32,6 +32,8 @@ const QuoteAPIName = "quote-api"
 
 // QuoteAPI is that config.
 type QuoteAPI struct {
+	// TaxField names an explicit boolean tax-collection field in our backend contract.
+	TaxField string `json:"tax_field,omitempty"`
 	// BaseURL is the service, up to and including /intranet.
 	BaseURL string `json:"base_url"`
 	// BizSource (or BizOrigin) is the marketing channel the inquiry runs as.
@@ -59,11 +61,13 @@ type QuoteAPI struct {
 
 // CoverageCode is how one coverage is asked for.
 type CoverageCode struct {
-	Code          string `json:"code"`
-	Name          string `json:"name"`
-	BaseRiderType string `json:"base_rider_type"` // 0 main, 1 rider
-	CoverageType  string `json:"coverage_type"`   // 0 single amount, 1 percentage, 2 rider
-	ParentCode    string `json:"parent_code,omitempty"`
+	ValueField    string            `json:"value_field,omitempty"`
+	ChoiceValues  map[string]string `json:"choice_values,omitempty"`
+	Code          string            `json:"code"`
+	Name          string            `json:"name"`
+	BaseRiderType string            `json:"base_rider_type"` // 0 main, 1 rider
+	CoverageType  string            `json:"coverage_type"`   // 0 single amount, 1 percentage, 2 rider
+	ParentCode    string            `json:"parent_code,omitempty"`
 	// SumInsured is sent when the selection is just "true"; a choice like
 	// "300万" is converted to yuan and sent instead. "1" means the parent's.
 	SumInsured string `json:"sum_insured,omitempty"`
@@ -111,6 +115,8 @@ func (a *QuoteAPI) timeout() time.Duration {
 
 // apiCoverage is coverageList[] on the inquiry.
 type apiCoverage struct {
+	valueField         string
+	value              string
 	CoverageCode       string `json:"coverageCode"`
 	CoverageName       string `json:"coverageName"`
 	BaseRiderType      string `json:"baseRiderType"`
@@ -122,6 +128,8 @@ type apiCoverage struct {
 
 // apiInquiry is the inquiry's body.
 type apiInquiry struct {
+	taxField                  string
+	taxCollection             *bool
 	Phone                     string        `json:"phone"`
 	VehicleNo                 string        `json:"vehicleNo"`
 	NotSilentLogin            bool          `json:"notSilentLogin,omitempty"`
@@ -258,6 +266,14 @@ func (a *QuoteAPI) inquiry(req QuoteRequest) (apiInquiry, []string, error) {
 	in := apiInquiry{Phone: phone, VehicleNo: vehicle, NotSilentLogin: a.NotSilentLogin, BizOrigin: a.BizOrigin, BizSource: a.BizSource,
 		InsurePlaceProvinceCode: a.ProvinceCode, InsurePlaceCityCode: a.CityCode, NeedSelectInsure: true,
 		IsInsureBusinessInsurance: false, IsInsureCompelInsurance: false}
+	if tax, ok := req.Config["车船税"]; ok {
+		if a.TaxField == "" {
+			return in, nil, errors.New("quote-api has no tax_field mapping for 车船税")
+		}
+		collect := selected(tax)
+		in.taxField = a.TaxField
+		in.taxCollection = &collect
+	}
 	var skipped []string
 	names := make([]string, 0, len(req.Config))
 	for n := range req.Config {
@@ -269,21 +285,33 @@ func (a *QuoteAPI) inquiry(req QuoteRequest) (apiInquiry, []string, error) {
 		if !selected(choice) {
 			continue
 		}
+		if name == "车船税" {
+			continue
+		}
 		if name == "交强险" {
 			in.IsInsureCompelInsurance = true
 			continue
 		}
 		cc, ok := a.Coverages[name]
-		if !ok {
+		if !ok || cc.Code == "" {
+			if req.Strict {
+				return in, nil, fmt.Errorf("quote-api has no mapping for requested coverage %s", name)
+			}
 			skipped = append(skipped, name)
 			continue
 		}
 		sum := cc.SumInsured
-		if s, isStr := choice.(string); isStr && s != "true" && s != "是" && s != "要" {
+		mapped, explicit := cc.ChoiceValues[fmt.Sprint(choice)]
+		if explicit {
+			sum = mapped
+		} else if req.Strict && (strings.Contains(fmt.Sprint(choice), "%") || fmt.Sprint(choice) == "共享保额") {
+			return in, nil, fmt.Errorf("quote-api has no explicit choice mapping for %s", name)
+		}
+		if s, isStr := choice.(string); !explicit && isStr && s != "true" && s != "是" && s != "要" {
 			if y, ok := yuan(s); ok {
 				sum = y
 			}
-		} else if _, isNum := choice.(float64); isNum {
+		} else if _, isNum := choice.(float64); !explicit && isNum {
 			if y, ok := yuan(choice); ok {
 				sum = y
 			}
@@ -293,10 +321,10 @@ func (a *QuoteAPI) inquiry(req QuoteRequest) (apiInquiry, []string, error) {
 			nd = "1"
 		}
 		in.CoverageList = append(in.CoverageList, apiCoverage{CoverageCode: cc.Code, CoverageName: cc.Name, BaseRiderType: cc.BaseRiderType,
-			CoverageType: cc.CoverageType, IsNonDeductible: nd, ParentCoverageCode: cc.ParentCode, SumInsured: sum})
+			CoverageType: cc.CoverageType, IsNonDeductible: nd, ParentCoverageCode: cc.ParentCode, SumInsured: sum, valueField: cc.ValueField, value: sum})
 		in.IsInsureBusinessInsurance = true
 	}
-	if !in.IsInsureBusinessInsurance && !in.IsInsureCompelInsurance {
+	if !in.IsInsureBusinessInsurance && !in.IsInsureCompelInsurance && (in.taxCollection == nil || !*in.taxCollection) {
 		return in, skipped, errors.New("nothing selected that the service can price")
 	}
 	return in, skipped, nil
@@ -308,7 +336,7 @@ func selected(choice any) bool {
 		return x
 	case string:
 		s := strings.TrimSpace(x)
-		return s != "" && s != "false" && s != "否" && s != "不要" && s != "无" && s != "0"
+		return s != "" && s != "false" && s != "否" && s != "不要" && s != "无" && s != "0" && s != "不投保" && s != "不代缴"
 	case nil:
 		return false
 	}
@@ -324,7 +352,13 @@ func valueOr(vars map[string]any, key, fallback string) any {
 
 // Quote runs the whole thing: what was there before, the inquiry, the poll.
 func (a *QuoteAPI) Quote(ctx context.Context, client *http.Client, req QuoteRequest) (*APIQuote, json.RawMessage, error) {
+	return a.quoteTimed(ctx, client, req, &quoteAPITiming{})
+}
+
+func (a *QuoteAPI) quoteTimed(ctx context.Context, client *http.Client, req QuoteRequest, timing *quoteAPITiming) (*APIQuote, json.RawMessage, error) {
 	began := time.Now()
+	defer func() { timing.Total = time.Since(began) }()
+	timing.Phase = "validate"
 	in, skipped, err := a.inquiry(req)
 	if err != nil {
 		return nil, nil, err
@@ -335,47 +369,83 @@ func (a *QuoteAPI) Quote(ctx context.Context, client *http.Client, req QuoteRequ
 	ctx, cancel := context.WithTimeout(ctx, a.timeout())
 	defer cancel()
 	// The quote that is there now, so a stale one is not mistaken for ours.
-	before, _ := a.query(ctx, client, in)
+	timing.Phase = "before"
+	phaseStart := time.Now()
+	before, beforeErr := a.query(ctx, client, in)
+	timing.Before = time.Since(phaseStart)
+	timing.BeforeFailed = beforeErr != nil
 	var beforeID int64 = -1
 	beforeFlow := ""
 	if before != nil && len(before.QuotePriceInfos) > 0 {
 		beforeID, beforeFlow = before.QuotePriceInfos[0].QuotePriceID, before.QuotePriceInfos[0].InsureFlowCode
 	}
-	if err := a.submit(ctx, client, in); err != nil {
+	timing.Phase = "submit"
+	phaseStart = time.Now()
+	err = a.submit(ctx, client, in)
+	timing.Submit = time.Since(phaseStart)
+	if err != nil {
 		return nil, nil, err
 	}
+	// Check once immediately after submission: a synchronous/fast inquiry
+	// may already be complete. Subsequent query starts remain at least one
+	// configured interval apart; HTTP time counts toward that interval.
+	// Keep requests serialized and retain the old-quote identity checks.
+	nextQuery := time.Now()
 	for {
+		timing.Phase = "poll_wait"
+		phaseStart = time.Now()
+		timer := time.NewTimer(max(time.Until(nextQuery), 0))
 		select {
-		case <-time.After(a.pollEvery()):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
+			timing.PollWait += time.Since(phaseStart)
 			return nil, nil, fmt.Errorf("the quotation service did not answer within %s", a.timeout())
 		}
+		timing.PollWait += time.Since(phaseStart)
+		nextQuery = time.Now().Add(a.pollEvery())
+		timing.Phase = "poll_http"
+		phaseStart = time.Now()
 		d, err := a.query(ctx, client, in)
+		timing.PollHTTP += time.Since(phaseStart)
+		timing.Polls++
 		if err != nil {
+			timing.PollErrors++
 			if ctx.Err() != nil {
 				return nil, nil, fmt.Errorf("the quotation service did not answer within %s", a.timeout())
 			}
 			continue
 		}
 		if len(d.QuotePriceInfos) == 0 {
+			timing.Unpriced++
 			continue
 		}
 		info := d.QuotePriceInfos[0]
 		if info.QuotePriceID == beforeID && info.InsureFlowCode == beforeFlow && beforeID != -1 {
+			timing.Stale++
 			continue // still the old one
 		}
 		if info.Result == "" && info.SumPremium == "" {
+			timing.Unpriced++
 			continue // a record, nothing priced yet
 		}
 		q := a.normalize(d, info, skipped)
 		q.MemoryVersion, q.ComputedAt, q.ComputeMS = req.MemoryVersion, began, time.Since(began).Milliseconds()
 		if info.Result != "0" {
+			timing.Phase = "quote_failed"
 			msg := info.ResultMessage
 			if msg == "" {
 				msg = d.ResultMessage
 			}
 			return q, d.raw, fmt.Errorf("the quotation failed: %s", msg)
 		}
+		if req.Strict {
+			if err := a.validateComplete(in, info); err != nil {
+				return nil, d.raw, err
+			}
+			a.labelStrictLines(q, req)
+		}
+		timing.Phase = "complete"
 		return q, d.raw, nil
 	}
 }

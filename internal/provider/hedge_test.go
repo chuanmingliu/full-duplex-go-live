@@ -406,3 +406,19 @@ func TestHedgeOnTheClauseTakesAnAnswerThatEndsShort(t *testing.T) {
 		t.Fatalf("got %q after %v; wanted the short answer at once", text, first)
 	}
 }
+
+func TestUnhedgedAuxiliaryStreamUsesOneCopy(t *testing.T) {
+	inner := &scriptedLLM{scripts: []hedgeScript{{words: []string{"[]"}}}}
+	llm := HedgeLLM(inner, 8, 0, nil)
+	stream, err := llm.Stream(WithoutHedging(context.Background()), LLMRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range stream {
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	if inner.calls != 1 {
+		t.Fatalf("started %d auxiliary copies, want 1", inner.calls)
+	}
+}

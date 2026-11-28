@@ -1,0 +1,12 @@
+{
+  "engine_version": "f1fd9a6",
+  "status": "ok",
+  "sessions": 0,
+  "aria_backend": "local",
+  "aria_revision": 13,
+  "endpoint": "ws://127.0.0.1:8765/v1/realtime",
+  "recording": true,
+  "retention_hours": 8760,
+  "restore_version": "45b5564",
+  "restore_binary_sha256": "0af8a624053a706bc4f2f20ec2b9f847409eef2e6f502e21520cca60a8ec8a29"
+}

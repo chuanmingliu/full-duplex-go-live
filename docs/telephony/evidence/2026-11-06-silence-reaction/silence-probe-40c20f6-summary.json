@@ -1,0 +1,95 @@
+{
+  "call_id": "sim-silence-ws-40c20f6",
+  "elapsed_ms": 60605,
+  "end": "server_closed",
+  "event_counts": {
+    "response.audio.delta": 453,
+    "response.audio.done": 4,
+    "response.audio_transcript.delta": 8,
+    "response.created": 4,
+    "response.done": 4,
+    "session.created": 1,
+    "session.updated": 1
+  },
+  "events": [
+    {
+      "ms": 11,
+      "type": "response.created"
+    },
+    {
+      "ms": 6683,
+      "type": "response.done"
+    },
+    {
+      "ms": 15479,
+      "type": "response.created"
+    },
+    {
+      "ms": 18500,
+      "type": "response.done"
+    },
+    {
+      "ms": 28205,
+      "type": "response.created"
+    },
+    {
+      "ms": 31233,
+      "type": "response.done"
+    },
+    {
+      "ms": 56515,
+      "type": "response.created"
+    },
+    {
+      "ms": 59847,
+      "type": "response.done"
+    }
+  ],
+  "handset": false,
+  "input": "paced PCM16 zeros; no caller speech",
+  "kind": "deployed_engine_websocket_silence_probe",
+  "output_audio_bytes": 513754,
+  "output_nonzero": true,
+  "session": "sess_69990a1f2a359d94172b0dac",
+  "sip_rtp": false,
+  "reminders": [
+    {
+      "time": "2026-11-06T19:20:10.666+08:00",
+      "attempt": "1",
+      "wait_ms": "8300",
+      "template_index": "1",
+      "config_version": "1"
+    },
+    {
+      "time": "2026-11-06T19:20:23.745+08:00",
+      "attempt": "2",
+      "wait_ms": "9553",
+      "template_index": "1",
+      "config_version": "1"
+    }
+  ],
+  "config_loads": [
+    {
+      "enabled": "true",
+      "version": "1"
+    }
+  ],
+  "hangup_messages": [
+    {
+      "time": "2026-11-06T19:19:55.545+08:00",
+      "msg": "hangup: rules from the lead service"
+    },
+    {
+      "time": "2026-11-06T19:20:51.825+08:00",
+      "msg": "hangup: a rule applies"
+    },
+    {
+      "time": "2026-11-06T19:20:56.145+08:00",
+      "msg": "session: the gateway was told to hang up"
+    }
+  ],
+  "settings_preserved": false,
+  "stored_session_closed": true,
+  "stored_output_bytes": 1914970,
+  "passed": false
+}

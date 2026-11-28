@@ -149,8 +149,10 @@ func (p *Prompts) Get(name string, version int) (*Template, error) {
 
 // Rendered is a prompt made from a template for one set of variables.
 type Rendered struct {
-	Template string `json:"template"`
-	Version  int    `json:"version"`
+	MemorySeqs  []int64 `json:"memory_seqs,omitempty"`
+	memoryPhone string
+	Template    string `json:"template"`
+	Version     int    `json:"version"`
 	// TemplateSHA names the template's text, and SHA the rendered prompt's.
 	TemplateSHA  string `json:"template_sha"`
 	SHA          string `json:"sha"`
@@ -187,11 +189,16 @@ func (p *Prompts) RenderWith(name string, version int, vars map[string]any, now 
 	if err != nil {
 		return nil, err
 	}
+	return p.renderTemplate(t, vars, now, defaults)
+}
+
+func (p *Prompts) renderTemplate(t *Template, vars map[string]any, now time.Time, defaults map[string]any) (*Rendered, error) {
 	p.mu.Lock()
 	key := fmt.Sprintf("%s/%d", t.Name, t.Version)
 	parsed := p.parsed[key]
 	p.mu.Unlock()
 	if parsed == nil {
+		var err error
 		if parsed, err = jinja.Parse(t.Body); err != nil {
 			return nil, err
 		}

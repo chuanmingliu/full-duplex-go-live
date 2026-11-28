@@ -1,0 +1,2210 @@
+{
+  "calls": [
+    {
+      "name": "baseline-recorded",
+      "call_id": "402cafab-d280-40bc-b427-5e5d56c2de55",
+      "build": "7a3d3ac",
+      "latency": {
+        "version": 5,
+        "first_audio": {
+          "n": 16,
+          "p50_ms": 380,
+          "p95_ms": 380,
+          "max_ms": 380,
+          "at_or_above_target": 0
+        },
+        "first_content": {
+          "n": 16,
+          "p50_ms": 954.5,
+          "p95_ms": 20642,
+          "max_ms": 20642,
+          "at_or_above_target": 6
+        },
+        "conversational_first_content": {
+          "n": 14,
+          "p50_ms": 954.5,
+          "p95_ms": 1226,
+          "max_ms": 1226,
+          "at_or_above_target": 5
+        },
+        "quote_only_responses": 2,
+        "tool_result": {
+          "n": 4,
+          "p50_ms": 18502,
+          "p95_ms": 20642,
+          "max_ms": 20642,
+          "at_or_above_target": 3
+        },
+        "tool_result_rows": [
+          {
+            "task": "t1",
+            "origin_turn": "item_13",
+            "result_turn": "item_14",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 409,
+            "child_first_content_ms": 3,
+            "total_ms": 792,
+            "interrupted": true,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_17",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 20260,
+            "child_first_content_ms": 2,
+            "total_ms": 20642,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_18",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 18890,
+            "child_first_content_ms": 2,
+            "total_ms": 19272,
+            "interrupted": false,
+            "coalesced": true,
+            "primary_origin_turn": "item_17",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_19",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 17350,
+            "child_first_content_ms": 2,
+            "total_ms": 17732,
+            "interrupted": false,
+            "coalesced": true,
+            "primary_origin_turn": "item_17",
+            "origin_evidence": "caller_input_v1"
+          }
+        ],
+        "quote_readout": {
+          "n": 4,
+          "p50_ms": 19504,
+          "p95_ms": 21644,
+          "max_ms": 21644,
+          "at_or_above_target": 3
+        },
+        "quote_readout_rows": [
+          {
+            "task": "t1",
+            "origin_turn": "item_13",
+            "result_turn": "item_14",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 409,
+            "child_first_readout_ms": 3,
+            "total_ms": 792,
+            "status": "observed",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_17",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 20260,
+            "child_first_readout_ms": 1004,
+            "total_ms": 21644,
+            "status": "observed",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_18",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 18890,
+            "child_first_readout_ms": 1004,
+            "total_ms": 20274,
+            "status": "observed",
+            "coalesced": true,
+            "primary_origin_turn": "item_17",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_19",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 17350,
+            "child_first_readout_ms": 1004,
+            "total_ms": 18734,
+            "status": "observed",
+            "coalesced": true,
+            "primary_origin_turn": "item_17",
+            "origin_evidence": "caller_input_v1"
+          }
+        ],
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "cancelled": 0,
+        "tool_results_joined": 2,
+        "invalid_tool_links": 0
+      },
+      "skill_timings": {
+        "n": 9,
+        "p50": 4.324,
+        "p95": 5.685,
+        "max": 5.685
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 10.203,
+          "status": "no_match",
+          "us": 1834,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 11.482,
+          "status": "no_match",
+          "us": 2330,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 14.139,
+          "status": "loaded",
+          "us": 4918,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_5",
+          "t_s": 27.443,
+          "status": "no_match",
+          "us": 1394,
+          "skills": []
+        },
+        {
+          "turn": "item_6",
+          "t_s": 30.079,
+          "status": "no_match",
+          "us": 1283,
+          "skills": []
+        },
+        {
+          "turn": "item_7",
+          "t_s": 31.078,
+          "status": "no_match",
+          "us": 1664,
+          "skills": []
+        },
+        {
+          "turn": "item_8",
+          "t_s": 51.501,
+          "status": "no_match",
+          "us": 1326,
+          "skills": []
+        },
+        {
+          "turn": "item_9",
+          "t_s": 53.086,
+          "status": "no_match",
+          "us": 1080,
+          "skills": []
+        },
+        {
+          "turn": "item_10",
+          "t_s": 56.312,
+          "status": "loaded",
+          "us": 3419,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_11",
+          "t_s": 79.071,
+          "status": "loaded",
+          "us": 3969,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_12",
+          "t_s": 81.41,
+          "status": "loaded",
+          "us": 3761,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_13",
+          "t_s": 106.455,
+          "status": "no_match",
+          "us": 1542,
+          "skills": []
+        },
+        {
+          "turn": "item_14",
+          "t_s": 107.024,
+          "status": "no_match",
+          "us": 3074,
+          "skills": []
+        },
+        {
+          "turn": "item_15",
+          "t_s": 107.46,
+          "status": "no_match",
+          "us": 1553,
+          "skills": []
+        },
+        {
+          "turn": "item_16",
+          "t_s": 108.239,
+          "status": "no_match",
+          "us": 1664,
+          "skills": []
+        },
+        {
+          "turn": "item_17",
+          "t_s": 127.236,
+          "status": "no_match",
+          "us": 1184,
+          "skills": []
+        },
+        {
+          "turn": "item_18",
+          "t_s": 128.639,
+          "status": "no_match",
+          "us": 1866,
+          "skills": []
+        },
+        {
+          "turn": "item_19",
+          "t_s": 130.042,
+          "status": "no_match",
+          "us": 1914,
+          "skills": []
+        },
+        {
+          "turn": "item_21",
+          "t_s": 141.054,
+          "status": "no_match",
+          "us": 1254,
+          "skills": []
+        },
+        {
+          "turn": "item_22",
+          "t_s": 147.693,
+          "status": "no_match",
+          "us": 1603,
+          "skills": []
+        },
+        {
+          "turn": "item_23",
+          "t_s": 177.246,
+          "status": "no_match",
+          "us": 1843,
+          "skills": []
+        },
+        {
+          "turn": "item_24",
+          "t_s": 180.115,
+          "status": "loaded",
+          "us": 3461,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_25",
+          "t_s": 191.325,
+          "status": "loaded",
+          "us": 4324,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_26",
+          "t_s": 208.012,
+          "status": "loaded",
+          "us": 4508,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_27",
+          "t_s": 209.924,
+          "status": "loaded",
+          "us": 4648,
+          "skills": [
+            "motor-quotation",
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_28",
+          "t_s": 210.969,
+          "status": "loaded",
+          "us": 5685,
+          "skills": [
+            "motor-quotation",
+            "vehicle_insurance_concepts"
+          ]
+        }
+      ],
+      "interruptions_ms": {
+        "n": 2,
+        "p50": 124.5,
+        "p95": 191,
+        "max": 191
+      },
+      "interruptions": [
+        191,
+        58
+      ],
+      "workers": [
+        {
+          "worker_ms": 4004,
+          "background": false
+        },
+        {
+          "worker_ms": 3998,
+          "background": true
+        },
+        {
+          "worker_ms": 3404,
+          "background": true
+        },
+        {
+          "worker_ms": 3520,
+          "background": true
+        },
+        {
+          "worker_ms": 4418,
+          "background": true
+        },
+        {
+          "worker_ms": 4178,
+          "background": true
+        },
+        {
+          "worker_ms": 4104,
+          "background": true
+        },
+        {
+          "worker_ms": 4098,
+          "background": true
+        },
+        {
+          "worker_ms": 3582,
+          "background": true
+        },
+        {
+          "worker_ms": 3076,
+          "background": false
+        },
+        {
+          "worker_ms": 3762,
+          "background": false
+        },
+        {
+          "worker_ms": 3370,
+          "background": false
+        },
+        {
+          "worker_ms": 3898,
+          "background": false
+        },
+        {
+          "worker_ms": 4170,
+          "background": false
+        }
+      ],
+      "background_coverages": [
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "绝对免赔率-车损",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "绝对免赔率-车损",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "绝对免赔率-车损",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "绝对免赔率-车损",
+          "车损险",
+          "车船税"
+        ]
+      ],
+      "cache_hits": 2,
+      "quote_phases": [
+        {
+          "ahead": "false",
+          "total_ms": "4011",
+          "polls": "9",
+          "poll_wait_ms": "4003",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4007",
+          "polls": "9",
+          "poll_wait_ms": "4003",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3506",
+          "polls": "8",
+          "poll_wait_ms": "3501",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4007",
+          "polls": "9",
+          "poll_wait_ms": "4002",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4505",
+          "polls": "10",
+          "poll_wait_ms": "4499",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4508",
+          "polls": "10",
+          "poll_wait_ms": "4503",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4507",
+          "polls": "10",
+          "poll_wait_ms": "4501",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4508",
+          "polls": "10",
+          "poll_wait_ms": "4503",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4004",
+          "polls": "9",
+          "poll_wait_ms": "3999",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "false",
+          "total_ms": "3504",
+          "polls": "8",
+          "poll_wait_ms": "3499",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "false",
+          "total_ms": "4009",
+          "polls": "9",
+          "poll_wait_ms": "4005",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "false",
+          "total_ms": "3507",
+          "polls": "8",
+          "poll_wait_ms": "3503",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "false",
+          "total_ms": "4007",
+          "polls": "9",
+          "poll_wait_ms": "4002",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "false",
+          "total_ms": "4510",
+          "polls": "10",
+          "poll_wait_ms": "4505",
+          "submit_ms": "0"
+        }
+      ],
+      "tool_events": [
+        {
+          "msg": "tools: task done",
+          "task": "t1",
+          "tool": "quote_total",
+          "took_ms": "2"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t1",
+          "tool": "quote_total",
+          "turn": "item_14",
+          "waited_for_gap_ms": "0",
+          "origin_turn": "item_13",
+          "origin_to_result_start_ms": "409"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t2",
+          "tool": "quote_total",
+          "took_ms": "19626"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t2",
+          "tool": "quote_total",
+          "turn": "item_22",
+          "waited_for_gap_ms": "0",
+          "origin_turn": "item_17",
+          "origin_to_result_start_ms": "20260"
+        }
+      ],
+      "normal_content_ms": {
+        "n": 12,
+        "p50": 959.0,
+        "p95": 1226,
+        "max": 1226
+      },
+      "quote_ack_ms": {
+        "n": 2,
+        "p50": 874.0,
+        "p95": 881,
+        "max": 881
+      },
+      "counts": {
+        "records": 20,
+        "answered": 16,
+        "non_speech": 4,
+        "cancelled": 0,
+        "interrupted_answers": 5,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 4,
+        "tool_results_joined": 2,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 2
+      },
+      "analyzer_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50"
+    },
+    {
+      "name": "candidate-call",
+      "call_id": "19f4ce2a-d7c4-41d7-9009-e5245a841d45",
+      "build": "coverage-followup-a",
+      "latency": {
+        "version": 5,
+        "first_audio": {
+          "n": 17,
+          "p50_ms": 995,
+          "p95_ms": 1490,
+          "max_ms": 1490,
+          "at_or_above_target": 8
+        },
+        "first_content": {
+          "n": 17,
+          "p50_ms": 995,
+          "p95_ms": 1490,
+          "max_ms": 1490,
+          "at_or_above_target": 8
+        },
+        "conversational_first_content": {
+          "n": 17,
+          "p50_ms": 995,
+          "p95_ms": 1490,
+          "max_ms": 1490,
+          "at_or_above_target": 8
+        },
+        "quote_only_responses": 0,
+        "tool_result": {
+          "n": 6,
+          "p50_ms": 4489.5,
+          "p95_ms": 8851,
+          "max_ms": 8851,
+          "at_or_above_target": 6
+        },
+        "tool_result_rows": [
+          {
+            "task": "t2",
+            "origin_turn": "item_19",
+            "result_turn": "item_24",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 7670,
+            "child_first_content_ms": 801,
+            "total_ms": 8851,
+            "interrupted": true,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t3",
+            "origin_turn": "item_27",
+            "result_turn": "item_29",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 5577,
+            "child_first_content_ms": 1046,
+            "total_ms": 7003,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t5",
+            "origin_turn": "item_31",
+            "result_turn": "item_32",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 3250,
+            "child_first_content_ms": 1,
+            "total_ms": 3631,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t6",
+            "origin_turn": "item_34",
+            "result_turn": "item_37",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 4451,
+            "child_first_content_ms": 12,
+            "total_ms": 4843,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_21",
+            "result_turn": "item_24",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 2955,
+            "child_first_content_ms": 801,
+            "total_ms": 4136,
+            "interrupted": true,
+            "coalesced": true,
+            "primary_origin_turn": "item_19",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_22",
+            "result_turn": "item_24",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 1516,
+            "child_first_content_ms": 801,
+            "total_ms": 2697,
+            "interrupted": true,
+            "coalesced": true,
+            "primary_origin_turn": "item_19",
+            "origin_evidence": "caller_input_v1"
+          }
+        ],
+        "quote_readout": {
+          "n": 2,
+          "p50_ms": 5626,
+          "p95_ms": 6232,
+          "max_ms": 6232,
+          "at_or_above_target": 2
+        },
+        "quote_readout_rows": [
+          {
+            "task": "t2",
+            "origin_turn": "item_19",
+            "result_turn": "item_24",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 7670,
+            "child_first_readout_ms": null,
+            "total_ms": null,
+            "status": "unverified",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t3",
+            "origin_turn": "item_27",
+            "result_turn": "item_29",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 5577,
+            "child_first_readout_ms": null,
+            "total_ms": null,
+            "status": "missing",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t5",
+            "origin_turn": "item_31",
+            "result_turn": "item_32",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 3250,
+            "child_first_readout_ms": 1390,
+            "total_ms": 5020,
+            "status": "observed",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t6",
+            "origin_turn": "item_34",
+            "result_turn": "item_37",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 4451,
+            "child_first_readout_ms": 1401,
+            "total_ms": 6232,
+            "status": "observed",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_21",
+            "result_turn": "item_24",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 2955,
+            "child_first_readout_ms": null,
+            "total_ms": null,
+            "status": "unverified",
+            "coalesced": true,
+            "primary_origin_turn": "item_19",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_22",
+            "result_turn": "item_24",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 1516,
+            "child_first_readout_ms": null,
+            "total_ms": null,
+            "status": "unverified",
+            "coalesced": true,
+            "primary_origin_turn": "item_19",
+            "origin_evidence": "caller_input_v1"
+          }
+        ],
+        "quote_readouts_missing": 1,
+        "quote_readouts_unverified": 3,
+        "missing": 0,
+        "unverified": 2,
+        "duplicates": 0,
+        "cancelled": 0,
+        "tool_results_joined": 0,
+        "invalid_tool_links": 2
+      },
+      "skill_timings": {
+        "n": 14,
+        "p50": 3.9745,
+        "p95": 5.274,
+        "max": 5.274
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 10.735,
+          "status": "no_match",
+          "us": 1342,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 12.124,
+          "status": "no_match",
+          "us": 1413,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 13.195,
+          "status": "loaded",
+          "us": 3983,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_5",
+          "t_s": 29.541,
+          "status": "loaded",
+          "us": 3737,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_6",
+          "t_s": 31.754,
+          "status": "no_match",
+          "us": 1249,
+          "skills": []
+        },
+        {
+          "turn": "item_7",
+          "t_s": 33.015,
+          "status": "no_match",
+          "us": 1071,
+          "skills": []
+        },
+        {
+          "turn": "item_8",
+          "t_s": 33.882,
+          "status": "no_match",
+          "us": 1451,
+          "skills": []
+        },
+        {
+          "turn": "item_9",
+          "t_s": 47.869,
+          "status": "no_match",
+          "us": 1666,
+          "skills": []
+        },
+        {
+          "turn": "item_10",
+          "t_s": 50.102,
+          "status": "no_match",
+          "us": 1163,
+          "skills": []
+        },
+        {
+          "turn": "item_11",
+          "t_s": 51.464,
+          "status": "no_match",
+          "us": 1698,
+          "skills": []
+        },
+        {
+          "turn": "item_12",
+          "t_s": 69.631,
+          "status": "loaded",
+          "us": 3510,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_13",
+          "t_s": 71.87,
+          "status": "no_match",
+          "us": 989,
+          "skills": []
+        },
+        {
+          "turn": "item_14",
+          "t_s": 88.81,
+          "status": "loaded",
+          "us": 4117,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_15",
+          "t_s": 89.358,
+          "status": "loaded",
+          "us": 3959,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_16",
+          "t_s": 90.492,
+          "status": "loaded",
+          "us": 3894,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_17",
+          "t_s": 91.183,
+          "status": "loaded",
+          "us": 4180,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_18",
+          "t_s": 91.846,
+          "status": "loaded",
+          "us": 3966,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_19",
+          "t_s": 93.339,
+          "status": "no_match",
+          "us": 1191,
+          "skills": []
+        },
+        {
+          "turn": "item_20",
+          "t_s": 96.658,
+          "status": "loaded",
+          "us": 3778,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_21",
+          "t_s": 98.053,
+          "status": "no_match",
+          "us": 1550,
+          "skills": []
+        },
+        {
+          "turn": "item_22",
+          "t_s": 99.386,
+          "status": "no_match",
+          "us": 1247,
+          "skills": []
+        },
+        {
+          "turn": "item_23",
+          "t_s": 101.158,
+          "status": "cancelled",
+          "us": 111,
+          "skills": []
+        },
+        {
+          "turn": "item_24",
+          "t_s": 101.16,
+          "status": "no_match",
+          "us": 2006,
+          "skills": []
+        },
+        {
+          "turn": "item_25",
+          "t_s": 102.796,
+          "status": "no_match",
+          "us": 2245,
+          "skills": []
+        },
+        {
+          "turn": "item_26",
+          "t_s": 112.964,
+          "status": "no_match",
+          "us": 1395,
+          "skills": []
+        },
+        {
+          "turn": "item_27",
+          "t_s": 113.888,
+          "status": "loaded",
+          "us": 4427,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_28",
+          "t_s": 117.754,
+          "status": "loaded",
+          "us": 4901,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_29",
+          "t_s": 119.639,
+          "status": "loaded",
+          "us": 4397,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_30",
+          "t_s": 122.38,
+          "status": "loaded",
+          "us": 5274,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_31",
+          "t_s": 162.374,
+          "status": "no_match",
+          "us": 1934,
+          "skills": []
+        },
+        {
+          "turn": "item_32",
+          "t_s": 165.773,
+          "status": "no_match",
+          "us": 1318,
+          "skills": []
+        },
+        {
+          "turn": "item_33",
+          "t_s": 183.815,
+          "status": "no_match",
+          "us": 1729,
+          "skills": []
+        },
+        {
+          "turn": "item_34",
+          "t_s": 186.868,
+          "status": "loaded",
+          "us": 3895,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_35",
+          "t_s": 188.723,
+          "status": "no_match",
+          "us": 1910,
+          "skills": []
+        },
+        {
+          "turn": "item_36",
+          "t_s": 189.88,
+          "status": "no_match",
+          "us": 1619,
+          "skills": []
+        },
+        {
+          "turn": "item_37",
+          "t_s": 191.517,
+          "status": "no_match",
+          "us": 1175,
+          "skills": []
+        },
+        {
+          "turn": "item_38",
+          "t_s": 214.374,
+          "status": "no_match",
+          "us": 1516,
+          "skills": []
+        },
+        {
+          "turn": "item_39",
+          "t_s": 215.068,
+          "status": "no_match",
+          "us": 1353,
+          "skills": []
+        }
+      ],
+      "interruptions_ms": {
+        "n": 2,
+        "p50": 275.5,
+        "p95": 343,
+        "max": 343
+      },
+      "interruptions": [
+        208,
+        343
+      ],
+      "workers": [
+        {
+          "worker_ms": 2638,
+          "background": false
+        },
+        {
+          "worker_ms": 3184,
+          "background": true
+        },
+        {
+          "worker_ms": 3386,
+          "background": true
+        },
+        {
+          "worker_ms": 3762,
+          "background": true
+        },
+        {
+          "worker_ms": 3980,
+          "background": true
+        },
+        {
+          "worker_ms": 4244,
+          "background": true
+        },
+        {
+          "worker_ms": 3616,
+          "background": true
+        },
+        {
+          "worker_ms": 3922,
+          "background": true
+        },
+        {
+          "worker_ms": 3482,
+          "background": true
+        }
+      ],
+      "background_coverages": [
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ]
+      ],
+      "cache_hits": 21,
+      "quote_phases": [
+        {
+          "ahead": "false",
+          "total_ms": "3007",
+          "polls": "7",
+          "poll_wait_ms": "2998",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3504",
+          "polls": "8",
+          "poll_wait_ms": "3499",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3505",
+          "polls": "8",
+          "poll_wait_ms": "3501",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4006",
+          "polls": "9",
+          "poll_wait_ms": "4001",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4004",
+          "polls": "9",
+          "poll_wait_ms": "4000",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4509",
+          "polls": "10",
+          "poll_wait_ms": "4505",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4006",
+          "polls": "9",
+          "poll_wait_ms": "4000",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4007",
+          "polls": "9",
+          "poll_wait_ms": "4003",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3506",
+          "polls": "8",
+          "poll_wait_ms": "3502",
+          "submit_ms": "0"
+        }
+      ],
+      "tool_events": [
+        {
+          "msg": "tools: task done",
+          "task": "t1",
+          "tool": "quote_total",
+          "took_ms": "11"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t2",
+          "tool": "quote_total",
+          "took_ms": "11"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t1",
+          "tool": "quote_total",
+          "turn": "item_23",
+          "waited_for_gap_ms": "8546",
+          "origin_turn": "item_18",
+          "origin_to_result_start_ms": "9137"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t2",
+          "tool": "quote_total",
+          "turn": "item_24",
+          "waited_for_gap_ms": "7090",
+          "origin_turn": "item_19",
+          "origin_to_result_start_ms": "7670"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t3",
+          "tool": "quote_total",
+          "took_ms": "3"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t3",
+          "tool": "quote_total",
+          "turn": "item_29",
+          "waited_for_gap_ms": "4969",
+          "origin_turn": "item_27",
+          "origin_to_result_start_ms": "5577"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t4",
+          "tool": "quote_total",
+          "took_ms": "7"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t4",
+          "tool": "quote_total",
+          "turn": "item_30",
+          "waited_for_gap_ms": "1820"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t5",
+          "tool": "quote_total",
+          "took_ms": "2"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t5",
+          "tool": "quote_total",
+          "turn": "item_32",
+          "waited_for_gap_ms": "2561",
+          "origin_turn": "item_31",
+          "origin_to_result_start_ms": "3250"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t6",
+          "tool": "quote_total",
+          "took_ms": "5"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t6",
+          "tool": "quote_total",
+          "turn": "item_37",
+          "waited_for_gap_ms": "4021",
+          "origin_turn": "item_34",
+          "origin_to_result_start_ms": "4451"
+        }
+      ],
+      "normal_content_ms": {
+        "n": 15,
+        "p50": 920,
+        "p95": 1176,
+        "max": 1176
+      },
+      "quote_ack_ms": {
+        "n": 2,
+        "p50": 1277.5,
+        "p95": 1490,
+        "max": 1490
+      },
+      "counts": {
+        "records": 23,
+        "answered": 17,
+        "non_speech": 6,
+        "cancelled": 0,
+        "interrupted_answers": 10,
+        "missing": 0,
+        "unverified": 2,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 8,
+        "tool_results_joined": 0,
+        "invalid_tool_links": 2,
+        "quote_readouts_missing": 1,
+        "quote_readouts_unverified": 3,
+        "missing_output_records": 0,
+        "quote_only_responses": 0
+      },
+      "analyzer_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50"
+    },
+    {
+      "name": "final-recorded",
+      "call_id": "859201e6-a2c5-45bb-bf0f-3c7e4afab309",
+      "build": "coverage-followup-b",
+      "latency": {
+        "version": 5,
+        "first_audio": {
+          "n": 19,
+          "p50_ms": 380,
+          "p95_ms": 381,
+          "max_ms": 381,
+          "at_or_above_target": 0
+        },
+        "first_content": {
+          "n": 19,
+          "p50_ms": 1024,
+          "p95_ms": 4606,
+          "max_ms": 4606,
+          "at_or_above_target": 11
+        },
+        "conversational_first_content": {
+          "n": 16,
+          "p50_ms": 1001.5,
+          "p95_ms": 1542,
+          "max_ms": 1542,
+          "at_or_above_target": 8
+        },
+        "quote_only_responses": 3,
+        "tool_result": {
+          "n": 4,
+          "p50_ms": 3310.5,
+          "p95_ms": 4606,
+          "max_ms": 4606,
+          "at_or_above_target": 4
+        },
+        "tool_result_rows": [
+          {
+            "task": "t1",
+            "origin_turn": "item_19",
+            "result_turn": "item_21",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 2462,
+            "child_first_content_ms": 219,
+            "total_ms": 3061,
+            "interrupted": true,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_20",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 2332,
+            "child_first_content_ms": 848,
+            "total_ms": 3560,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t3",
+            "origin_turn": "item_23",
+            "result_turn": "item_26",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 4212,
+            "child_first_content_ms": 14,
+            "total_ms": 4606,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t4",
+            "origin_turn": "item_32",
+            "result_turn": "item_33",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 669,
+            "child_first_content_ms": 191,
+            "total_ms": 1240,
+            "interrupted": false,
+            "origin_evidence": "caller_input_v1"
+          }
+        ],
+        "quote_readout": {
+          "n": 2,
+          "p50_ms": 3405.5,
+          "p95_ms": 5571,
+          "max_ms": 5571,
+          "at_or_above_target": 2
+        },
+        "quote_readout_rows": [
+          {
+            "task": "t1",
+            "origin_turn": "item_19",
+            "result_turn": "item_21",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 2462,
+            "child_first_readout_ms": null,
+            "total_ms": null,
+            "status": "missing",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t2",
+            "origin_turn": "item_20",
+            "result_turn": "item_22",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 2332,
+            "child_first_readout_ms": null,
+            "total_ms": null,
+            "status": "unverified",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t3",
+            "origin_turn": "item_23",
+            "result_turn": "item_26",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 4212,
+            "child_first_readout_ms": 979,
+            "total_ms": 5571,
+            "status": "observed",
+            "origin_evidence": "caller_input_v1"
+          },
+          {
+            "task": "t4",
+            "origin_turn": "item_32",
+            "result_turn": "item_33",
+            "end_silence_ms": 380,
+            "origin_to_result_start_ms": 669,
+            "child_first_readout_ms": 191,
+            "total_ms": 1240,
+            "status": "observed",
+            "origin_evidence": "caller_input_v1"
+          }
+        ],
+        "quote_readouts_missing": 1,
+        "quote_readouts_unverified": 1,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "cancelled": 0,
+        "tool_results_joined": 3,
+        "invalid_tool_links": 0
+      },
+      "skill_timings": {
+        "n": 12,
+        "p50": 4.3525,
+        "p95": 6.468,
+        "max": 6.468
+      },
+      "skill_traces": [
+        {
+          "turn": "item_2",
+          "t_s": 9.564,
+          "status": "no_match",
+          "us": 1505,
+          "skills": []
+        },
+        {
+          "turn": "item_3",
+          "t_s": 11.892,
+          "status": "no_match",
+          "us": 1329,
+          "skills": []
+        },
+        {
+          "turn": "item_4",
+          "t_s": 25.136,
+          "status": "no_match",
+          "us": 1591,
+          "skills": []
+        },
+        {
+          "turn": "item_5",
+          "t_s": 28.041,
+          "status": "loaded",
+          "us": 4448,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_6",
+          "t_s": 29.379,
+          "status": "loaded",
+          "us": 4221,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_7",
+          "t_s": 30.415,
+          "status": "loaded",
+          "us": 4098,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_8",
+          "t_s": 31.935,
+          "status": "no_match",
+          "us": 1188,
+          "skills": []
+        },
+        {
+          "turn": "item_9",
+          "t_s": 33.014,
+          "status": "no_match",
+          "us": 1530,
+          "skills": []
+        },
+        {
+          "turn": "item_10",
+          "t_s": 64.427,
+          "status": "loaded",
+          "us": 3556,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_11",
+          "t_s": 65.352,
+          "status": "no_match",
+          "us": 941,
+          "skills": []
+        },
+        {
+          "turn": "item_12",
+          "t_s": 81.524,
+          "status": "no_match",
+          "us": 1115,
+          "skills": []
+        },
+        {
+          "turn": "item_13",
+          "t_s": 91.051,
+          "status": "no_match",
+          "us": 1520,
+          "skills": []
+        },
+        {
+          "turn": "item_14",
+          "t_s": 94.59,
+          "status": "loaded",
+          "us": 3593,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_15",
+          "t_s": 95.681,
+          "status": "no_match",
+          "us": 1281,
+          "skills": []
+        },
+        {
+          "turn": "item_16",
+          "t_s": 117.035,
+          "status": "no_match",
+          "us": 1040,
+          "skills": []
+        },
+        {
+          "turn": "item_17",
+          "t_s": 131.004,
+          "status": "no_match",
+          "us": 1624,
+          "skills": []
+        },
+        {
+          "turn": "item_18",
+          "t_s": 133.765,
+          "status": "no_match",
+          "us": 1425,
+          "skills": []
+        },
+        {
+          "turn": "item_19",
+          "t_s": 134.764,
+          "status": "no_match",
+          "us": 1569,
+          "skills": []
+        },
+        {
+          "turn": "item_20",
+          "t_s": 135.63,
+          "status": "no_match",
+          "us": 1231,
+          "skills": []
+        },
+        {
+          "turn": "item_21",
+          "t_s": 137.398,
+          "status": "no_match",
+          "us": 1314,
+          "skills": []
+        },
+        {
+          "turn": "item_22",
+          "t_s": 138.117,
+          "status": "no_match",
+          "us": 2006,
+          "skills": []
+        },
+        {
+          "turn": "item_23",
+          "t_s": 145.02,
+          "status": "no_match",
+          "us": 1429,
+          "skills": []
+        },
+        {
+          "turn": "item_24",
+          "t_s": 146.541,
+          "status": "no_match",
+          "us": 1460,
+          "skills": []
+        },
+        {
+          "turn": "item_25",
+          "t_s": 147.665,
+          "status": "no_match",
+          "us": 2104,
+          "skills": []
+        },
+        {
+          "turn": "item_26",
+          "t_s": 149.398,
+          "status": "no_match",
+          "us": 1681,
+          "skills": []
+        },
+        {
+          "turn": "item_27",
+          "t_s": 176.223,
+          "status": "no_match",
+          "us": 1421,
+          "skills": []
+        },
+        {
+          "turn": "item_28",
+          "t_s": 178.61,
+          "status": "no_match",
+          "us": 2919,
+          "skills": []
+        },
+        {
+          "turn": "item_29",
+          "t_s": 180.161,
+          "status": "loaded",
+          "us": 4339,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_30",
+          "t_s": 181.403,
+          "status": "loaded",
+          "us": 4439,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_31",
+          "t_s": 182.86,
+          "status": "loaded",
+          "us": 4050,
+          "skills": [
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_32",
+          "t_s": 184.268,
+          "status": "loaded",
+          "us": 5637,
+          "skills": [
+            "motor-quotation",
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_33",
+          "t_s": 185.258,
+          "status": "loaded",
+          "us": 6249,
+          "skills": [
+            "motor-quotation",
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_34",
+          "t_s": 228.697,
+          "status": "no_match",
+          "us": 2114,
+          "skills": []
+        },
+        {
+          "turn": "item_35",
+          "t_s": 229.933,
+          "status": "no_match",
+          "us": 1629,
+          "skills": []
+        },
+        {
+          "turn": "item_36",
+          "t_s": 236.34,
+          "status": "loaded",
+          "us": 4366,
+          "skills": [
+            "motor-quotation"
+          ]
+        },
+        {
+          "turn": "item_37",
+          "t_s": 238.182,
+          "status": "loaded",
+          "us": 6468,
+          "skills": [
+            "motor-quotation",
+            "vehicle_insurance_concepts"
+          ]
+        },
+        {
+          "turn": "item_38",
+          "t_s": 251.615,
+          "status": "no_match",
+          "us": 1796,
+          "skills": []
+        },
+        {
+          "turn": "item_39",
+          "t_s": 252.408,
+          "status": "no_match",
+          "us": 1711,
+          "skills": []
+        }
+      ],
+      "interruptions_ms": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "interruptions": [],
+      "workers": [
+        {
+          "worker_ms": 4210,
+          "background": false
+        },
+        {
+          "worker_ms": 2568,
+          "background": true
+        },
+        {
+          "worker_ms": 3060,
+          "background": true
+        },
+        {
+          "worker_ms": 3712,
+          "background": true
+        },
+        {
+          "worker_ms": 3870,
+          "background": true
+        },
+        {
+          "worker_ms": 3620,
+          "background": true
+        },
+        {
+          "worker_ms": 3457,
+          "background": true
+        },
+        {
+          "worker_ms": 3442,
+          "background": true
+        },
+        {
+          "worker_ms": 4259,
+          "background": true
+        }
+      ],
+      "background_coverages": [
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ],
+        [
+          "三者险",
+          "乘客责任险",
+          "交强险",
+          "划痕险",
+          "司机责任险",
+          "车损险",
+          "车船税"
+        ]
+      ],
+      "cache_hits": 15,
+      "quote_phases": [
+        {
+          "ahead": "false",
+          "total_ms": "4510",
+          "polls": "10",
+          "poll_wait_ms": "4504",
+          "submit_ms": "1"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3006",
+          "polls": "7",
+          "poll_wait_ms": "3003",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3505",
+          "polls": "8",
+          "poll_wait_ms": "3500",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4004",
+          "polls": "9",
+          "poll_wait_ms": "3999",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4005",
+          "polls": "9",
+          "poll_wait_ms": "4001",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4007",
+          "polls": "9",
+          "poll_wait_ms": "4003",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3507",
+          "polls": "8",
+          "poll_wait_ms": "3503",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "3505",
+          "polls": "8",
+          "poll_wait_ms": "3500",
+          "submit_ms": "0"
+        },
+        {
+          "ahead": "true",
+          "total_ms": "4505",
+          "polls": "10",
+          "poll_wait_ms": "4499",
+          "submit_ms": "0"
+        }
+      ],
+      "tool_events": [
+        {
+          "msg": "tools: task done",
+          "task": "t1",
+          "tool": "quote_total",
+          "took_ms": "10"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t2",
+          "tool": "quote_total",
+          "took_ms": "6"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t1",
+          "tool": "quote_total",
+          "turn": "item_21",
+          "waited_for_gap_ms": "1988",
+          "origin_turn": "item_19",
+          "origin_to_result_start_ms": "2462"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t2",
+          "tool": "quote_total",
+          "turn": "item_22",
+          "waited_for_gap_ms": "1515",
+          "origin_turn": "item_20",
+          "origin_to_result_start_ms": "2332"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t3",
+          "tool": "quote_total",
+          "took_ms": "3"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t3",
+          "tool": "quote_total",
+          "turn": "item_26",
+          "waited_for_gap_ms": "3625",
+          "origin_turn": "item_23",
+          "origin_to_result_start_ms": "4212"
+        },
+        {
+          "msg": "tools: task done",
+          "task": "t4",
+          "tool": "quote_total",
+          "took_ms": "8"
+        },
+        {
+          "msg": "tools: delivering a task's result",
+          "task": "t4",
+          "tool": "quote_total",
+          "turn": "item_33",
+          "waited_for_gap_ms": "0",
+          "origin_turn": "item_32",
+          "origin_to_result_start_ms": "669"
+        }
+      ],
+      "normal_content_ms": {
+        "n": 15,
+        "p50": 985,
+        "p95": 1542,
+        "max": 1542
+      },
+      "quote_ack_ms": {
+        "n": 1,
+        "p50": 1075,
+        "p95": 1075,
+        "max": 1075
+      },
+      "counts": {
+        "records": 24,
+        "answered": 19,
+        "non_speech": 5,
+        "cancelled": 0,
+        "interrupted_answers": 9,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 4,
+        "tool_results_joined": 3,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 1,
+        "quote_readouts_unverified": 1,
+        "missing_output_records": 0,
+        "quote_only_responses": 3
+      },
+      "analyzer_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50"
+    }
+  ],
+  "preserved": {
+    "profile": true,
+    "saved_call": true,
+    "running_binary": true,
+    "quote-plans": true,
+    "quote-api": true,
+    "quote-speech": true,
+    "openers": true,
+    "hangup-rules": true,
+    "silence-reaction": true,
+    "mcp_catalog": true
+  }
+}

@@ -20,7 +20,7 @@ a { color: inherit; }
 .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; text-decoration: none; }
 .brand-mark { fill: var(--ink); }
-.nav { display: flex; gap: 2px; }
+.nav { display: flex; flex-wrap: wrap; gap: 2px; }
 .nav a { padding: 4px 10px; border-radius: 5px; text-decoration: none; color: var(--ink-2); }
 .nav a:hover { background: var(--wash); }
 .nav a[aria-current="page"] { background: var(--accent-wash); color: var(--ink); }
@@ -76,3 +76,22 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
 .ok { color: var(--accent); }
 .warn { color: #a15c00; }
+
+.label-layout { display: grid; grid-template-columns: 1.2fr 1fr; align-items: start; gap: 16px; margin-top: 12px; }
+.label-layout .card { margin: 0; min-width: 0; }
+.label-layout fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.label-layout legend { font-weight: 600; padding: 0; }
+.label-layout fieldset:disabled { opacity: .65; }
+.label-layout textarea { white-space: pre-wrap; }
+.label-layout .label-prompt { min-height: 86px; font-family: inherit; }
+.label-layout details { margin: 10px 0; }
+.enable-label { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
+.enable-label input { appearance: none; width: 36px; height: 21px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--page); cursor: pointer; }
+.enable-label input::before { content: ""; display: block; width: 13px; height: 13px; margin: 3px; border-radius: 50%; background: var(--ink-2); }
+.enable-label input:checked { background: var(--accent); }
+.enable-label input:checked::before { transform: translateX(15px); background: white; }
+@media (max-width: 800px) { .label-layout { grid-template-columns: 1fr; } }
+.label-results { margin-top: 16px; }
+.label-results h2 { margin-top: 0; }
+.label-results input[type=search] { font: inherit; min-width: min(100%, 300px); padding: 6px 8px; border: 1px solid var(--line); background: var(--page); color: var(--ink); border-radius: 6px; }
+.label-results summary { cursor: pointer; padding: 8px 0; }

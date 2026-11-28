@@ -19,6 +19,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/audio"
 	"github.com/chuanmingliu/golive/internal/config"
 	"github.com/chuanmingliu/golive/internal/duplex"
+	"github.com/chuanmingliu/golive/internal/labeljob"
 	"github.com/chuanmingliu/golive/internal/live"
 	"github.com/chuanmingliu/golive/internal/metrics"
 	"github.com/chuanmingliu/golive/internal/provider"
@@ -44,8 +45,10 @@ type EngineFactory func(duplex.Options, duplex.Deps) *duplex.Engine
 // hands the event to those writers through channels, which is what keeps the
 // wire ordered without a lock on the hot audio path.
 type Session struct {
-	cfg config.Config
-	log *slog.Logger
+	labelMu    sync.Mutex
+	labelTurns []labeljob.Turn
+	cfg        config.Config
+	log        *slog.Logger
 	// baseLog has no session attribute. The engine adds its own, and handing
 	// it s.log instead would stamp every engine line with session= twice.
 	baseLog *slog.Logger
@@ -96,11 +99,12 @@ type Session struct {
 	// the server has somewhere to send them.
 	tel *telSession
 
-	newEngine   EngineFactory
-	closeMsg    atomic.Pointer[string]
-	audioEvents atomic.Int64
-	audioOut    atomic.Int64
-	lastActive  atomic.Int64
+	newEngine       EngineFactory
+	quoteAudioClaim func(string) bool
+	closeMsg        atomic.Pointer[string]
+	audioEvents     atomic.Int64
+	audioOut        atomic.Int64
+	lastActive      atomic.Int64
 	// The line filler (vad.line_fill_ms): when the last client frame came
 	// in, and how much silence has been put on the line in its place.
 	lastAudio atomic.Int64
@@ -137,6 +141,8 @@ type SessionOptions struct {
 	Log     *slog.Logger
 	ID      string
 	Factory EngineFactory
+	// QuoteAudioClaim grants at most one bounded preparation budget per call.
+	QuoteAudioClaim func(string) bool
 	// Store is where a session that asks for store:true is kept. Nil means
 	// nowhere, and the request is ignored.
 	Store *store.Store
@@ -160,18 +166,19 @@ func NewSession(opts SessionOptions) *Session {
 		factory = duplex.New
 	}
 	s := &Session{
-		cfg:       opts.Cfg,
-		log:       log.With("session", opts.ID),
-		baseLog:   log,
-		id:        opts.ID,
-		primary:   newPeer(opts.Conn, false),
-		sides:     map[*peer]struct{}{},
-		stopRead:  make(chan struct{}),
-		stopWrite: make(chan struct{}),
-		newEngine: factory,
-		store:     opts.Store,
-		seed:      opts.Seed,
-		createdAt: time.Now(),
+		cfg:             opts.Cfg,
+		log:             log.With("session", opts.ID),
+		baseLog:         log,
+		id:              opts.ID,
+		primary:         newPeer(opts.Conn, false),
+		sides:           map[*peer]struct{}{},
+		stopRead:        make(chan struct{}),
+		stopWrite:       make(chan struct{}),
+		newEngine:       factory,
+		quoteAudioClaim: opts.QuoteAudioClaim,
+		store:           opts.Store,
+		seed:            opts.Seed,
+		createdAt:       time.Now(),
 	}
 	s.lastActive.Store(time.Now().UnixNano())
 	if opts.Realtime != nil {
@@ -223,9 +230,9 @@ func (s *Session) Serve(ctx context.Context) {
 	var history []provider.Message
 	var gate []audio.GateSample
 	record := resolved
+	labelOnClose := started && s.cfg.LabelSpoolDir != "" && s.CallID() != ""
 	if engine != nil {
-		if rec != nil {
-			history = engine.History()
+		if rec != nil || labelOnClose {
 			// As they stand now, with whatever session.instructions.append
 			// added: a fork continues this conversation, under these rules.
 			record.Instructions = engine.Instructions()
@@ -237,8 +244,13 @@ func (s *Session) Serve(ctx context.Context) {
 			s.log.Info("listen: the line went quiet and was filled with silence", "times", runs, "filled_ms", s.fillMS.Load())
 		}
 		engine.Close()
-		if rec != nil {
-			gate = engine.GateTrace()
+		if rec != nil || labelOnClose {
+			// Close accounts for the final partial reply and pending playback
+			// completions before the stored conversation is snapshotted.
+			history = engine.History()
+			if rec != nil {
+				gate = engine.GateTrace()
+			}
 		}
 	}
 	if rec != nil {
@@ -275,6 +287,15 @@ func (s *Session) Serve(ctx context.Context) {
 	cancel()
 	s.writeClose(s.primary, reason)
 	_ = s.primary.conn.Close()
+	if labelOnClose {
+		s.labelMu.Lock()
+		turns := append([]labeljob.Turn(nil), s.labelTurns...)
+		s.labelMu.Unlock()
+		job := labeljob.Session{ID: s.id, CallID: s.CallID(), CreatedAt: s.createdAt, ClosedAt: time.Now(), Reason: reason, Config: record, Usage: usage, History: history, Turns: turns}
+		if err := job.Enqueue(s.cfg.LabelSpoolDir); err != nil {
+			s.log.Error("could not enqueue closed session for labeling", "err", err)
+		}
+	}
 }
 
 // --- emitting ---
@@ -321,6 +342,14 @@ func (s *Session) reply(to *peer, event any) { s.deliver(to, event) }
 
 func (s *Session) deliver(only *peer, event any) {
 	switch ev := event.(type) {
+	case live.InputTranscriptEvent:
+		if ev.Final {
+			s.recordLabelTurn("user", ev.ItemID, ev.Text, ev.StartMS, ev.EndMS)
+		}
+	case live.TranscriptDelta:
+		if ev.Type == live.ServerOutputTranscriptDelta {
+			s.recordLabelTurn("assistant", ev.ItemID, ev.Delta, ev.StartMS, ev.EndMS)
+		}
 	case live.HangupEvent:
 		// The assistant ended the call. The phone line is hung up by
 		// telling the gateway so (hangupLine); closing the connection alone
@@ -771,6 +800,8 @@ func (s *Session) handleEvent(ctx context.Context, p *peer, data []byte) error {
 	switch eventType {
 	case live.ClientSessionStart:
 		return s.onSessionStart(ctx, p, data, eventID)
+	case live.ClientBusinessEvent:
+		return s.onBusinessEvent(p, data, eventID)
 	case live.ClientSessionUpdate:
 		return s.onSessionUpdate(p, data, eventID)
 	case live.ClientInputAudioAppend:
@@ -899,10 +930,16 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		s.reply(p, live.NewError("server_error", "tts_unavailable", err.Error(), eventID))
 		return err
 	}
+	listenerTTS := tts
 	tts = provider.HedgeTTSPool(tts, s.cfg.TTSHedge, s.cfg.TTSHedgeRPM,
 		time.Duration(s.cfg.TTSHedgeAfterMS)*time.Millisecond,
 		provider.TTSPool{AccountRPM: s.cfg.TTSAccountRPM, After: time.Duration(s.cfg.TTSPoolAfterMS) * time.Millisecond},
 		s.log)
+	listenerPool, _ := provider.BackgroundTTSFor(tts)
+	var backgroundTTS *provider.BackgroundTTSFactory
+	if s.cfg.Duplex.QuoteReadoutWarmMax > 0 || s.cfg.Duplex.TalkerOpenerURL != "" {
+		backgroundTTS = listenerPool
+	}
 	if s.cfg.TTSFallback != "" && s.cfg.TTSFallback != ttsName {
 		if second, err := provider.OpenTTS(s.cfg.TTSFallback); err != nil {
 			s.log.Warn("tts fallback: not available; this session has none", "provider", s.cfg.TTSFallback, "err", err)
@@ -1008,6 +1045,9 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		}
 	}
 
+	if backgroundTTS != nil && (s.quoteAudioClaim == nil || !s.quoteAudioClaim(s.CallID())) {
+		backgroundTTS = nil
+	}
 	engine := s.newEngine(duplex.Options{
 		Cfg:              cfg,
 		SessionID:        s.id,
@@ -1025,11 +1065,14 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		History:          history,
 		Backend:          backend,
 	}, duplex.Deps{
-		ASR:  asr,
-		LLM:  llm,
-		TTS:  tts,
-		Emit: s.Emit,
-		Log:  s.baseLog,
+		ASR:           asr,
+		LLM:           llm,
+		TTS:           tts,
+		BackgroundTTS: backgroundTTS,
+		ListenerTTS:   listenerTTS,
+		ListenerPool:  listenerPool,
+		Emit:          s.Emit,
+		Log:           s.baseLog,
 	})
 
 	s.mu.Lock()
@@ -1623,4 +1666,13 @@ func voiceOf(c live.SessionConfig) string {
 		return c.Audio.Output.Voice
 	}
 	return ""
+}
+
+func (s *Session) recordLabelTurn(role, item, text string, start, end int64) {
+	if s.cfg.LabelSpoolDir == "" || s.CallID() == "" || strings.TrimSpace(text) == "" {
+		return
+	}
+	s.labelMu.Lock()
+	defer s.labelMu.Unlock()
+	s.labelTurns = append(s.labelTurns, labeljob.Turn{Role: role, ItemID: item, Content: text, StartMS: start, EndMS: end})
 }

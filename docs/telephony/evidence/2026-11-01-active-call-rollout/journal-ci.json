@@ -1,0 +1,1 @@
+{"conclusion":"success","databaseId":41289836788,"headSha":"0c2ba1804e8bbd790883a427732412c9efb0390d","jobs":[{"conclusion":"success","name":"quality","status":"completed"},{"conclusion":"success","name":"Go tests (race)","status":"completed"},{"conclusion":"success","name":"Go tests (normal)","status":"completed"}],"status":"completed"}

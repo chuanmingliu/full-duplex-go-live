@@ -174,27 +174,40 @@ func (o Openers) Phrases() []string {
 
 // FetchOpeners reads the config from the lead service.
 func FetchOpeners(base, token string, timeout time.Duration) (Openers, error) {
-	if base == "" {
-		return Openers{}, fmt.Errorf("no base url")
-	}
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/api/configs/"+OpenersName, nil)
+	raw, version, err := fetchPanelConfig(base, token, OpenersName, timeout)
 	if err != nil {
 		return Openers{}, err
+	}
+	o, err := ParseOpeners(raw)
+	if err != nil {
+		return Openers{}, err
+	}
+	o.Version = version
+	return o, nil
+}
+
+func fetchPanelConfig(base, token, name string, timeout time.Duration) (json.RawMessage, int, error) {
+	if base == "" {
+		return nil, 0, fmt.Errorf("no base url")
+	}
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/api/configs/"+name, nil)
+	if err != nil {
+		return nil, 0, err
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
-		return Openers{}, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return Openers{}, err
+		return nil, 0, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Openers{}, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	var env struct {
 		Config struct {
@@ -203,12 +216,7 @@ func FetchOpeners(base, token string, timeout time.Duration) (Openers, error) {
 		} `json:"config"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil || len(env.Config.Body) == 0 {
-		return Openers{}, fmt.Errorf("the config is not readable")
+		return nil, 0, fmt.Errorf("the config is not readable")
 	}
-	o, err := ParseOpeners(env.Config.Body)
-	if err != nil {
-		return Openers{}, err
-	}
-	o.Version = env.Config.Version
-	return o, nil
+	return env.Config.Body, env.Config.Version, nil
 }

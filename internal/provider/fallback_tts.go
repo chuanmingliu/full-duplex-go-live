@@ -198,38 +198,54 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 		return s.primary.Synthesize(ctx, text)
 	}
 	pctx, pcancel := context.WithCancel(ctx)
-	pch, err := s.primary.Synthesize(pctx, text)
-	if err != nil {
-		pcancel()
-		// Failed before it began: the second vendor is the request itself.
-		second := s.takeSecond()
-		if second == nil {
-			return nil, err
-		}
-		s.tts.log.Warn("tts fallback: the primary failed the segment; asking the second vendor", "err", err)
-		return s.speakOn(ctx, second, text, time.Now()), nil
-	}
-	out := make(chan TTSChunk, 64)
 	began := time.Now()
+	timer := time.NewTimer(wait)
+	// Starting a segment can wait on a connection's previous work or a
+	// reconnect. Count that wait too: the fallback deadline must not start
+	// only after Synthesize returns its audio channel.
+	primaryStart := make(chan ttsStarted, 1)
+	go func() {
+		ch, err := s.primary.Synthesize(pctx, text)
+		primaryStart <- ttsStarted{ch: ch, err: err}
+	}()
+	out := make(chan TTSChunk, 64)
 	go func() {
 		defer close(out)
-		timer := time.NewTimer(wait)
 		defer timer.Stop()
+		var pch <-chan TTSChunk
+		var pstart <-chan ttsStarted = primaryStart
+		// A losing primary may still be inside Synthesize. Cancel it now,
+		// then drain its eventual channel so its connection can be reused.
+		stopPrimary := func() {
+			pcancel()
+			ch, start := pch, pstart
+			pch, pstart = nil, nil
+			go func() {
+				if start != nil {
+					ch = (<-start).ch
+				}
+				if ch != nil {
+					drainTTS(ch)
+				}
+			}()
+		}
 		var sch <-chan TTSChunk
 		var sstart chan ttsStarted // the second vendor's Synthesize, when asked
 		var scancel context.CancelFunc
 		var second TTSStream
+		asked := false
 		// ask puts the segment to the second vendor, once, in the background:
 		// its Synthesize returns when the vendor has answered the request,
 		// which is a round trip, and the primary's audio must not wait on it.
 		ask := func(why string) {
-			if second != nil {
+			if asked {
 				return
 			}
 			second = s.takeSecond()
 			if second == nil {
 				return
 			}
+			asked = true
 			var sctx context.Context
 			sctx, scancel = context.WithCancel(ctx)
 			sstart = make(chan ttsStarted, 1)
@@ -264,20 +280,37 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 		for {
 			select {
 			case <-ctx.Done():
-				pcancel()
+				stopPrimary()
 				finish()
 				return
 			case <-timer.C:
 				ask("no audio from the primary yet")
+			case st := <-pstart:
+				pstart = nil
+				if st.err != nil {
+					pcancel()
+					pErr = st.err
+					ask("the primary failed the segment")
+					if second == nil {
+						select {
+						case out <- TTSChunk{Err: pErr}:
+						case <-ctx.Done():
+						}
+						return
+					}
+					continue
+				}
+				pch = st.ch
 			case st := <-sstart:
 				sstart = nil
 				if st.err != nil {
 					if ctx.Err() == nil {
 						s.tts.log.Warn("tts fallback: the second vendor refused the segment", "err", st.err)
 					}
+					scancel()
 					s.release()
 					second, scancel = nil, nil
-					if pch == nil {
+					if pch == nil && pstart == nil {
 						pcancel()
 						if pErr != nil {
 							select {
@@ -310,6 +343,7 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 				}
 				if c.Err != nil {
 					pErr = c.Err
+					stopPrimary()
 					if second == nil {
 						ask("the primary failed the segment")
 						if second == nil {
@@ -321,7 +355,6 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 							return
 						}
 					}
-					pch = nil
 					continue
 				}
 				// The primary spoke. The second vendor, if asked, is dropped.
@@ -333,9 +366,9 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 					if c.Err != nil {
 						s.tts.log.Warn("tts fallback: the second vendor failed the segment", "err", c.Err)
 					}
-					s.release()
-					second, sch = nil, nil
-					if pch == nil {
+					finish()
+					second, sch, scancel = nil, nil, nil
+					if pch == nil && pstart == nil {
 						// Both are gone.
 						pcancel()
 						if pErr != nil {
@@ -350,8 +383,7 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 				}
 				// The second vendor spoke first. The primary is abandoned for
 				// this segment; it resynchronizes itself.
-				pcancel()
-				go drainTTS(pch)
+				stopPrimary()
 				s.mu.Lock()
 				s.spoke++
 				s.mu.Unlock()
@@ -363,36 +395,6 @@ func (s *fallbackStream) Synthesize(ctx context.Context, text string) (<-chan TT
 		}
 	}()
 	return out, nil
-}
-
-// speakOn is the segment on the second vendor alone.
-func (s *fallbackStream) speakOn(ctx context.Context, second TTSStream, text string, began time.Time) <-chan TTSChunk {
-	sctx, cancel := context.WithCancel(ctx)
-	ch, err := second.Synthesize(sctx, text)
-	out := make(chan TTSChunk, 64)
-	if err != nil {
-		cancel()
-		s.release()
-		out <- TTSChunk{Err: err}
-		close(out)
-		return out
-	}
-	go func() {
-		defer close(out)
-		for c := range ch {
-			select {
-			case out <- c:
-			case <-ctx.Done():
-				cancel()
-				go drainTTS(ch)
-				s.release()
-				return
-			}
-		}
-		cancel()
-		s.release()
-	}()
-	return out
 }
 
 // relay passes first and the rest of ch to out, and runs done at the end.

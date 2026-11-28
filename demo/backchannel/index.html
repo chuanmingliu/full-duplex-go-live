@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  />
+  <title>GoLive · Backchannel replay</title>
+  <style>
+    :root {
+      font-family:
+        Inter,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      color: #172e2c;
+      background: #f4f3ed;
+      --line: #cbd1c9;
+      --green: #147552;
+      --teal: #267288;
+      --gold: #ab7017;
+      --orange: #ad4a32;
+      --purple: #705baa;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    main {
+      max-width: 1240px;
+      margin: auto;
+      padding: 32px 4vw 40px;
+    }
+    h1 {
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: -0.05em;
+      margin: 10px 0;
+    }
+    h2 {
+      font-size: 20px;
+      margin: 0;
+    }
+    p {
+      color: #4d625c;
+      line-height: 1.5;
+    }
+    header small,
+    .time,
+    .meta {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    header small {
+      color: var(--green);
+    }
+    .panel {
+      background: #fffef9;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 16px;
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .time {
+      margin-left: auto;
+      font-size: 20px;
+    }
+    .track {
+      display: grid;
+      grid-template-columns: 135px minmax(0, 1fr);
+      align-items: center;
+      border-bottom: 1px solid #e0e3dc;
+    }
+    .track label {
+      font-weight: 650;
+    }
+    .track small {
+      display: block;
+      font-weight: 400;
+      color: #61716b;
+      margin-top: 4px;
+      font-size: 11px;
+    }
+    .plot {
+      position: relative;
+      height: 60px;
+      cursor: crosshair;
+      overflow: hidden;
+    }
+    .track canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .cursor {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: #183e34;
+      width: 1.5px;
+      pointer-events: none;
+    }
+    .scale {
+      margin-left: 135px;
+      display: flex;
+      justify-content: space-between;
+      color: #627369;
+      font:
+        11px ui-monospace,
+        monospace;
+      padding: 6px 0;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 14px;
+    }
+    audio {
+      width: 100%;
+      height: 36px;
+    }
+    button,
+    select {
+      border: 1px solid #96a79d;
+      border-radius: 5px;
+      padding: 6px 10px;
+      background: white;
+      color: #214636;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #e6eee7;
+    }
+    button:focus-visible {
+      outline: 2px solid #175b41;
+    }
+    .data {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    th,
+    td {
+      text-align: left;
+      padding: 10px 8px;
+      border-top: 1px solid #d8ded5;
+      white-space: nowrap;
+    }
+    th {
+      font-size: 12px;
+      color: #53685f;
+    }
+    .legend {
+      font-size: 12px;
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .legend span:before {
+      content: "";
+      display: inline-block;
+      background: var(--swatch);
+      width: 11px;
+      height: 8px;
+      margin-right: 5px;
+    }
+    .captions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      min-height: 74px;
+      padding-top: 16px;
+    }
+    .captions small {
+      display: block;
+      color: #66766d;
+      margin-bottom: 5px;
+    }
+    .note {
+      font-size: 13px;
+      margin-bottom: 0;
+    }
+    .meta {
+      font-size: 12px;
+      color: #5c6f65;
+    }
+    .eventlist {
+      max-height: 260px;
+      overflow: auto;
+    }
+    .eventlist button {
+      border: 0;
+      padding: 3px;
+      background: transparent;
+      font-family: monospace;
+    }
+    .eventlist li {
+      margin: 4px 0;
+    }
+    .detail {
+      font-size: 13px;
+      min-height: 19px;
+      color: #486157;
+    }
+    @media (max-width: 700px) {
+      main {
+        padding: 16px 10px;
+      }
+      .panel {
+        padding: 12px;
+      }
+      .track {
+        grid-template-columns: 88px minmax(0, 1fr);
+      }
+      .track label {
+        font-size: 13px;
+      }
+      .scale {
+        margin-left: 88px;
+      }
+      .captions {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .time {
+        font-size: 15px;
+      }
+    }
+  </style>
+  <main>
+    <header>
+      <small>GoLive / Full duplex</small>
+      <h1>Backchannel replay</h1>
+      <p>
+        A simulated caller explains a concern about education costs. Listen to
+        the exchange and follow each acknowledgment from the first generated
+        word to receiver playback.
+      </p>
+    </header>
+    <section class="panel">
+      <div class="top">
+        <h2>Call timeline</h2>
+        <span class="meta" id="run"></span
+        ><strong class="time" id="clock"></strong>
+      </div>
+      <div class="legend">
+        <span style="--swatch: #ab7017">Backchannel generation</span
+        ><span style="--swatch: #ada48b">Main response generation</span
+        ><span style="--swatch: #8065a6">Backchannel audio</span>
+      </div>
+      <div id="tracks"></div>
+      <div class="scale" id="scale"></div>
+      <div class="controls">
+        <audio controls preload="auto" src="exchange.flac"></audio
+        ><select id="speed" aria-label="Playback speed">
+          <option value="1">1×</option>
+          <option value=".5">0.5×</option>
+          <option value=".25">0.25×</option>
+        </select>
+      </div>
+      <div class="captions">
+        <div>
+          <small>Caller · latest ASR hypothesis</small
+          ><strong id="caller"></strong>
+        </div>
+        <div>
+          <small>Backchannel · generation or playback</small
+          ><strong id="candidate"></strong>
+        </div>
+      </div>
+      <div id="detail" class="detail" aria-live="polite"></div>
+    </section>
+    <section class="panel data">
+      <h2>Backchannel candidates</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Candidate</th>
+            <th>First token</th>
+            <th>Words ready</th>
+            <th>TTS ready</th>
+            <th>Released</th>
+            <th>Receiver playback</th>
+            <th>Outcome</th>
+          </tr>
+        </thead>
+        <tbody id="summary"></tbody>
+      </table>
+      <p class="note">
+        Select a timestamp to seek. Playback is the PCM delivered to the
+        simulator media input, including synthesized silence. The waveforms show
+        the sound within those frames. Caller audio is on the left and GoLive
+        audio is on the right.
+      </p>
+    </section>
+    <details class="panel">
+      <summary>Timestamped event log</summary>
+      <ol id="events" class="eventlist"></ol>
+    </details>
+  </main>
+  <script src="trace.js"></script>
+  <script>
+    "use strict";
+    const audio = document.querySelector("audio"),
+      d = window.replay,
+      total = d.duration,
+      byId = (id) => document.getElementById(id);
+    const fmt = (ms) => (ms / 1000).toFixed(3) + "s",
+      tracks = [
+        ["caller", "Listen", "Caller audio", "#147552"],
+        ["asr", "Transcribe", "ASR hypotheses", "#267288"],
+        ["think", "Think", "Main + backchannel", "#ab7017"],
+        ["main", "Speak", "Main audio", "#ad4a32"],
+        ["backchannel", "Backchannel", "Dedicated audio", "#8065a6"],
+      ];
+    const plots = [];
+    function make(tag, text) {
+      const el = document.createElement(tag);
+      if (text !== undefined) el.textContent = text;
+      return el;
+    }
+    function seek(ms) {
+      audio.currentTime = Math.max(0, Math.min(total, ms)) / 1000;
+      update();
+    }
+    function stamp(ms) {
+      if (ms == null) return make("span", "—");
+      const b = make("button", fmt(ms));
+      b.onclick = () => seek(ms);
+      return b;
+    }
+    byId("run").textContent = d.run;
+    for (const [key, name, sub, color] of tracks) {
+      const row = make("div");
+      row.className = "track";
+      const label = make("label", name);
+      label.append(make("small", sub));
+      const plot = make("div");
+      plot.className = "plot";
+      const canvas = make("canvas"),
+        cursor = make("div");
+      cursor.className = "cursor";
+      plot.append(canvas, cursor);
+      row.append(label, plot);
+      byId("tracks").append(row);
+      const at = (e) =>
+        Math.max(
+          0,
+          Math.min(
+            total,
+            ((e.clientX - plot.getBoundingClientRect().left) /
+              plot.clientWidth) *
+              total,
+          ),
+        );
+      plot.onclick = (e) => seek(at(e));
+      plot.onmousemove = (e) => {
+        const near = d.events
+          .filter((v) => v.lane === key)
+          .sort((a, b) => Math.abs(a.at - at(e)) - Math.abs(b.at - at(e)))[0];
+        byId("detail").textContent =
+          near && Math.abs(near.at - at(e)) < 600
+            ? fmt(near.at) + " · " + near.label
+            : fmt(at(e)) + " · " + name;
+      };
+      plot.onmouseleave = () => (byId("detail").textContent = "");
+      plots.push({ key, color, plot, canvas, cursor });
+    }
+    function draw() {
+      for (const { key, color, plot, canvas } of plots) {
+        const w = plot.clientWidth,
+          h = plot.clientHeight,
+          r = devicePixelRatio || 1;
+        canvas.width = w * r;
+        canvas.height = h * r;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(r, r);
+        const x = (t) => (t / total) * w;
+        for (let i = 0; i <= 5; i++) {
+          ctx.fillStyle = "#e2e6df";
+          ctx.fillRect((w * i) / 5, 0, 1, h);
+        }
+        ctx.fillStyle = color;
+        if (d.peaks[key]) {
+          if (key === "backchannel") {
+            ctx.fillStyle = "#efe9f6";
+            for (const c of d.candidates) {
+              if (c.playStart != null)
+                ctx.fillRect(
+                  x(c.playStart),
+                  3,
+                  x(c.playEnd - c.playStart),
+                  h - 6,
+                );
+            }
+          }
+          const peaks = d.peaks[key];
+          ctx.fillStyle = "#c3cfc6";
+          ctx.fillRect(0, h / 2, w, 1);
+          ctx.fillStyle = color;
+          for (let i = 0; i < w; i++) {
+            const a = Math.floor((i * peaks.length) / w),
+              b = Math.max(a + 1, Math.ceil(((i + 1) * peaks.length) / w));
+            let p = 0;
+            for (let j = a; j < b; j++) p = Math.max(p, peaks[j] || 0);
+            const y = Math.sqrt(p / 255) * h * 0.46;
+            ctx.fillRect(i, h / 2 - y, 1, 2 * y);
+          }
+        } else if (key === "think") {
+          for (const ev of d.events.filter((ev) =>
+            ev.label.startsWith("Main · speculative"),
+          )) {
+            ctx.fillStyle = "#ada48b";
+            ctx.fillRect(x(ev.at), 5, 2, 16);
+          }
+          for (const span of d.mainThinking) {
+            ctx.fillStyle = "#ada48b";
+            ctx.fillRect(x(span[0]), 10, Math.max(2, x(span[1] - span[0])), 7);
+          }
+          for (const c of d.candidates) {
+            ctx.fillStyle = "#ab7017";
+            ctx.fillRect(
+              x(c.start),
+              33,
+              Math.max(2, x((c.words ?? c.skipped ?? c.start) - c.start)),
+              9,
+            );
+            if (c.first != null) {
+              ctx.fillStyle = "#6f470a";
+              ctx.fillRect(x(c.first), 32, 2, 12);
+            }
+            if (c.words != null) {
+              ctx.fillStyle = "#64400a";
+              ctx.font = "12px system-ui";
+              ctx.fillText(c.text, x(c.words) + 3, 32, Math.max(70, w / 6));
+            }
+          }
+        } else {
+          for (const ev of d.events.filter((e) => e.lane === key)) {
+            ctx.fillRect(x(ev.at), 23, 2, 14);
+          }
+        }
+      }
+    }
+    for (let i = 0; i <= 5; i++)
+      byId("scale").append(make("span", ((i * total) / 5000).toFixed(1) + "s"));
+    for (const c of d.candidates) {
+      const row = make("tr");
+      row.append(make("td", c.text || c.id));
+      for (const k of ["first", "words", "ready", "released"]) {
+        const td = make("td");
+        td.append(stamp(c[k]));
+        row.append(td);
+      }
+      const td = make("td");
+      td.append(stamp(c.playStart));
+      if (c.playEnd != null) {
+        td.append(" – ", stamp(c.playEnd));
+      }
+      row.append(td, make("td", c.outcome));
+      byId("summary").append(row);
+    }
+    for (const ev of d.events) {
+      const li = make("li");
+      li.append(stamp(ev.at), " " + ev.label);
+      byId("events").append(li);
+    }
+    function update() {
+      const t = audio.currentTime * 1000;
+      byId("clock").textContent = fmt(t) + " / " + fmt(total);
+      for (const p of plots) p.cursor.style.left = (100 * t) / total + "%";
+      const latest = (events) => events.filter((e) => e.at <= t).at(-1);
+      byId("caller").textContent =
+        latest(d.events.filter((e) => e.lane === "asr"))?.text || "—";
+      byId("candidate").textContent =
+        latest(d.events.filter((e) => e.bc))?.label || "—";
+    }
+    let frame;
+    function animate() {
+      update();
+      if (!audio.paused) frame = requestAnimationFrame(animate);
+    }
+    audio.onplay = animate;
+    audio.onpause = () => {
+      cancelAnimationFrame(frame);
+      update();
+    };
+    audio.ontimeupdate = update;
+    audio.onseeked = update;
+    byId("speed").onchange = (e) =>
+      (audio.playbackRate = Number(e.target.value));
+    new ResizeObserver(draw).observe(byId("tracks"));
+    draw();
+    update();
+  </script>
+</html>

@@ -1,0 +1,12 @@
+#timeout 45
+#push backchannel-burst.test /home/chuanming/golive/backchannel-burst.test
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib,subprocess,os,json
+p=Path.home()/'golive/backchannel-burst.test'
+assert hashlib.sha256(p.read_bytes()).hexdigest()=='4ec4f41120f3a3fcba04ee7489d68e557467f593bd42492e4e2584bdb7f7cbe3'
+p.chmod(0o700)
+r=subprocess.run([str(p),'-test.run=^TestDeployedModelStream$','-test.v'],env=dict(os.environ,GOLIVE_TEST_BACKCHANNEL_URL='ws://127.0.0.1:18087/v1/stream'),capture_output=True,text=True,timeout=15)
+print(json.dumps({'real_model_stream_test_passed':r.returncode==0}));print(r.stdout);assert r.returncode==0
+PY

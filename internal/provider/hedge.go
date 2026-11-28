@@ -151,7 +151,18 @@ func (h *hedgedLLM) streamEvery(ctx context.Context, req LLMRequest) (<-chan LLM
 	return out, nil
 }
 
+type unhedgedKey struct{}
+
+// WithoutHedging prevents auxiliary work from racing the voice request for
+// several provider connections. Each normal voice request keeps its settings.
+func WithoutHedging(ctx context.Context) context.Context {
+	return context.WithValue(ctx, unhedgedKey{}, true)
+}
+
 func (h *hedgedLLM) Stream(ctx context.Context, req LLMRequest) (<-chan LLMDelta, error) {
+	if unhedged, _ := ctx.Value(unhedgedKey{}).(bool); unhedged {
+		return h.inner.Stream(WithLane(ctx, h.lane), req)
+	}
 	if EveryCopy(ctx) {
 		return h.streamEvery(ctx, req)
 	}

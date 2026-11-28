@@ -26,11 +26,18 @@ import (
 	"time"
 
 	"github.com/chuanmingliu/golive/internal/jinja"
+	"github.com/chuanmingliu/golive/internal/provider"
 )
 
 // Config is where the service keeps its data and how it reaches the things
 // it works with.
 type Config struct {
+	LabelSpoolDir string
+	VikingURL     string
+	VikingAPIKey  string
+	VikingKeysDir string
+	LabelLLM      provider.LLM
+	LabelModel    string
 	// Dir holds everything: the event log, the templates, the rendered
 	// prompts, the token. It is made, and kept, readable by its owner alone.
 	Dir string
@@ -46,6 +53,8 @@ type Config struct {
 	// including /intranet) and overrides the quote-api config's base_url: the
 	// address is the deployment's, the rest of the config the business's.
 	QuoteAPIBase string
+	// SkillsAdminTokenFile enables the same-origin Skills & tools editor.
+	SkillsAdminTokenFile string
 	// Location is the time zone a render's nowDateTime is written in.
 	Location *time.Location
 	Log      *slog.Logger
@@ -56,17 +65,21 @@ type Config struct {
 
 // Service is the running thing.
 type Service struct {
-	cfg     Config
-	log     *slog.Logger
-	events  *Log
-	prompts *Prompts
-	configs *Configs
-	token   string
+	labelResults []memoryRevision
+	labelJobs    labelJobs
+	cfg          Config
+	log          *slog.Logger
+	events       *Log
+	prompts      *Prompts
+	configs      *Configs
+	token        string
 
 	// quoteClient reaches the quotation service (nil: a default).
 	quoteClient *http.Client
 
 	mu       sync.Mutex
+	memory   map[string]*leadMemory
+	leads    map[string]*Lead
 	calls    []CallRecord // newest last
 	dialing  bool
 	greeting string
@@ -77,8 +90,13 @@ type Service struct {
 	// apiGate admits one inquiry to the business service at a time;
 	// apiDemand counts callers' asks waiting for it, which go ahead of the
 	// quotations priced ahead (prequote.go).
-	apiGate   chan struct{}
-	apiDemand atomic.Int32
+	apiGate                 chan struct{}
+	apiDemand               atomic.Int32
+	followDemand            atomic.Int32
+	selectionWarms          map[string]*selectionWarmState
+	selectionWarmWG         sync.WaitGroup
+	selectionWarmClosed     bool
+	selectionWarmFullLogged bool
 }
 
 const tokenFile = "api.token"
@@ -140,10 +158,17 @@ func Open(cfg Config) (*Service, error) {
 	if err := os.Chmod(cfg.Dir, 0o700); err != nil {
 		return nil, fmt.Errorf("crm: %w", err)
 	}
-	s := &Service{cfg: cfg, log: cfg.Log}
+	if err := os.MkdirAll(filepath.Join(cfg.Dir, registrationDir), 0700); err != nil {
+		return nil, err
+	}
+	s := &Service{cfg: cfg, log: cfg.Log, leads: make(map[string]*Lead), memory: make(map[string]*leadMemory)}
 	s.prompts = &Prompts{dir: cfg.Dir, templates: map[string][]*Template{}, parsed: map[string]*jinja.Template{}}
 	s.configs = &Configs{dir: cfg.Dir, versions: map[string][]*ConfigVersion{}}
 	events, torn, err := OpenLog(cfg.Dir, func(ev Event) error {
+		if ev.Type == "lead.put" && ev.LeadRec != nil {
+			s.leads[ev.LeadRec.ID] = ev.LeadRec
+		}
+		s.applyMemory(ev)
 		s.prompts.apply(ev)
 		s.configs.apply(ev)
 		if ev.Type == "call.placed" && ev.Call != nil {
@@ -179,6 +204,35 @@ func Open(cfg Config) (*Service, error) {
 			return nil, err
 		}
 	}
+	if _, err := s.configs.Get(tools.SilenceReactionName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.SilenceReactionName, []byte(tools.DefaultSilenceReaction), "bounded reminders after a randomized quiet interval", "crm"); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(tools.StreamingGuardName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.StreamingGuardName, []byte(tools.DefaultStreamingGuard), "literal rules for streamed model speech", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(tools.TurnTakingName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.TurnTakingName, []byte(tools.DefaultTurnTaking), "caller phrases that ask for the floor", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(tools.UserPromptName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.UserPromptName, []byte(tools.DefaultUserPrompt), "optional Jinja guidance for the current caller message", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(tools.BackchannelServiceName, 0); errors.Is(err, ErrNotFound) {
+		if _, err := s.configs.Save(tools.BackchannelServiceName, []byte(tools.DefaultBackchannelService), "Listener acknowledgment prompt and enable switch", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
 	if _, err := s.configs.Get(tools.OpenersName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(tools.OpenersName, []byte(tools.DefaultOpeners), "openers by scenario: what the assistant says at the pause, keyed by the caller's words", "crm"); err != nil {
 			return nil, err
@@ -186,6 +240,17 @@ func Open(cfg Config) (*Service, error) {
 	}
 	if _, err := s.configs.Get(QuoteAPIName, 0); errors.Is(err, ErrNotFound) {
 		if _, err := s.configs.Save(QuoteAPIName, []byte(DefaultQuoteAPI), "no base_url yet: quotes go to the rules", "crm"); err != nil {
+			events.Close()
+			return nil, err
+		}
+	}
+	if _, err := s.configs.Get(labelConfigName, 0); errors.Is(err, ErrNotFound) {
+		task, err := labelTaskConfig(defaultLabelConfig)
+		if err != nil {
+			events.Close()
+			return nil, err
+		}
+		if _, err := s.configs.Save(labelConfigName, task, "transcript labeling schema", "crm"); err != nil {
 			events.Close()
 			return nil, err
 		}
@@ -200,6 +265,7 @@ func Open(cfg Config) (*Service, error) {
 		events.Close()
 		return nil, err
 	}
+	s.startLabelJobs()
 	s.log.Info("crm: open", "dir", cfg.Dir, "events", events.Seq(), "templates", len(s.prompts.templates), "calls", len(s.calls))
 	return s, nil
 }
@@ -209,6 +275,20 @@ func Open(cfg Config) (*Service, error) {
 // it stands in for a real rating service's time, so that the assistant's
 // handling of a slow answer can be exercised.
 func (s *Service) Quote(req QuoteRequest) (any, error) {
+	return s.quote(req, nil)
+}
+
+func (s *Service) quote(req QuoteRequest, follow *selectionWarmSeed) (any, error) {
+	if _, _, err := s.namedDefault(req); err != nil {
+		return nil, err
+	}
+	readyPricing := s.currentReadyPricing()
+	if req.Config == nil {
+		req.Config = map[string]any{}
+	}
+	if req.Vars == nil {
+		req.Vars = map[string]any{}
+	}
 	// The intake: no quotation on a plan with a must field missing.
 	need, skipped, plan, planned := s.intake(req)
 	if need != nil {
@@ -221,13 +301,54 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 		}
 		req.Skipped = append(req.Skipped, skipped...)
 	}
+	req.Strict = plan.Strict
+	var heldAPI *QuoteAPI
+	var heldVersion *ConfigVersion
+	if follow != nil {
+		if !s.selectionWarmCurrent(follow) {
+			return nil, nil
+		}
+		key := selectionKey(req.Call, follow.pricing, plan, req.Config, req.Vars)
+		if p, _ := s.prequoteFor(key, false); p != nil && usablePrequote(p) {
+			return nil, nil
+		}
+		if api, version := s.quoteAPI(); api != nil {
+			if fmt.Sprintf("api:%d", version.Version) != follow.pricing {
+				return nil, nil
+			}
+			s.followDemand.Add(1)
+			defer s.followDemand.Add(-1)
+			if !s.takeSelectionAPITurn(follow) {
+				return nil, nil
+			}
+			defer s.releaseAPITurn()
+			heldAPI, heldVersion = api, version
+		} else if follow.pricing != fmt.Sprintf("rules:%d", req.RulesVersion) {
+			// An API seed cannot become a rules computation when its API
+			// is disabled between the current-version check and this read.
+			return nil, nil
+		}
+	}
 	// The same selection on the same variables, priced already — ahead of
 	// the ask, or for an earlier ask — is answered from the cache.
 	var kept *prequoted
 	if planned && req.Call != "" {
-		key := selectionKey(req.Call, s.pricingVersion(req), plan, req.Config, req.Vars)
-		p, claimed := s.prequoteFor(key, true)
-		if !claimed {
+		pricing := s.pricingVersion(req)
+		if follow != nil {
+			pricing = follow.pricing
+		}
+		key := selectionKey(req.Call, pricing, plan, req.Config, req.Vars)
+		var p *prequoted
+		var claimed bool
+		if follow == nil {
+			p, claimed = s.prequoteFor(key, true)
+		} else {
+			p, claimed = s.claimSelectionPrequote(key, follow)
+			if !claimed {
+				return nil, nil
+			}
+		}
+		for !claimed {
 			select {
 			case <-p.done:
 			case <-time.After(60 * time.Second):
@@ -235,23 +356,23 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 			}
 			if p.err == nil && p.quote != nil && p.fresh() {
 				s.log.Info("crm: quotation answered from the cache", "call", req.Call, "ahead", p.ahead, "priced_ms", p.took.Milliseconds(), "waited_ms", time.Since(p.started).Milliseconds())
-				return markPrequoted(p.quote, p, req.MemoryVersion), nil
+				return markPrequoted(quoteWithSkipped(p.quote, req.Skipped), p, req.MemoryVersion), nil
 			}
 			// It failed for whoever asked first, or has expired; price it afresh.
-			s.forgetPrequote(key)
-			p, _ = s.prequoteFor(key, true)
+			s.forgetPrequote(key, p)
+			p, claimed = s.prequoteFor(key, true)
 		}
 		p.ahead = req.prequote
 		kept = p
 		defer func() {
 			if kept.quote == nil {
-				s.forgetPrequote(key)
+				s.forgetPrequote(key, kept)
 			}
 			kept.took = time.Since(kept.started)
 			close(kept.done)
 		}()
 	}
-	q, err := s.quoteNow(req)
+	q, err := s.priceClaimedQuote(req, follow, heldAPI, heldVersion)
 	if err == nil {
 		switch x := q.(type) {
 		case *Quote:
@@ -263,16 +384,35 @@ func (s *Service) Quote(req QuoteRequest) (any, error) {
 	if kept != nil && err == nil {
 		if _, isNeed := q.(*Need); !isNeed && q != nil {
 			kept.quote = q
+			kept.ready = s.completedReadyQuote(req.Call, kept.started, readyPricing, quoteWithSkipped(q, req.Skipped))
 		}
 	}
-	return q, err
+	return quoteWithSkipped(q, req.Skipped), err
+}
+
+// priceClaimedQuote dispatches after a cache claim. A follow-up keeps the
+// pricing source named by its claim even if configuration changes meanwhile.
+func (s *Service) priceClaimedQuote(req QuoteRequest, follow *selectionWarmSeed, heldAPI *QuoteAPI, heldVersion *ConfigVersion) (any, error) {
+	if heldAPI != nil {
+		if follow != nil && (heldVersion == nil || follow.pricing != fmt.Sprintf("api:%d", heldVersion.Version)) {
+			return nil, nil
+		}
+		return s.quoteViaAPINow(heldAPI, heldVersion, req)
+	}
+	if follow != nil {
+		if follow.pricing != fmt.Sprintf("rules:%d", req.RulesVersion) {
+			return nil, nil
+		}
+		return s.quoteViaRules(req)
+	}
+	return s.quoteNow(req)
 }
 
 // selectedConfig is the selection with the declined coverages left out.
 func selectedConfig(config map[string]any) map[string]any {
 	out := map[string]any{}
 	for c, v := range config {
-		if selected(v) {
+		if selected(v) || (c == "车船税" && v == false) {
 			out[c] = v
 		}
 	}
@@ -285,17 +425,13 @@ func (s *Service) quoteNow(req QuoteRequest) (any, error) {
 	if api, v := s.quoteAPI(); api != nil {
 		return s.quoteViaAPI(api, v, req)
 	}
-	q, err := s.quoteViaRules(req)
-	if err == nil && q != nil && len(req.Skipped) > 0 {
-		q.Skipped = append(q.Skipped, req.Skipped...)
-	}
-	return q, err
+	return s.quoteViaRules(req)
 }
 
 // intake checks the request against the quote plan it runs on, and says
 // which plan that was.
 func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
-	v, err := s.configs.Get(QuotePlansName, 0)
+	v, err := s.configs.Get(QuotePlansName, req.PlanVersion)
 	if err != nil {
 		return nil, nil, QuotePlan{}, false
 	}
@@ -307,7 +443,7 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
 	plan.NormalizeCoverages(req.Config)
 	// A coverage declined ("0", "不要", false) is not in the selection.
 	for c, v := range req.Config {
-		if !selected(v) {
+		if !selected(v) && !(plan.Strict && c == "车船税") {
 			delete(req.Config, c)
 		}
 	}
@@ -321,7 +457,7 @@ func (s *Service) intake(req QuoteRequest) (*Need, []string, QuotePlan, bool) {
 				break
 			}
 		}
-		if !inPlan && chosen(req.Config, c) {
+		if !plan.Strict && !inPlan && chosen(req.Config, c) {
 			outside = append(outside, c)
 		}
 	}
@@ -361,8 +497,15 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 	// phone", so two in flight for the same vehicle read each other's result
 	// (the 11:53 probe on 10-26: neighbours priced two at a time came back in
 	// identical pairs). A caller's own ask goes next; the neighbours wait.
+	waitBegan := time.Now()
 	s.takeAPITurn(req.prequote)
 	defer s.releaseAPITurn()
+	s.log.Info("crm: quote gate acquired", "call", req.Call, "memory_version", req.MemoryVersion,
+		"ahead", req.prequote, "waited_ms", time.Since(waitBegan).Milliseconds())
+	return s.quoteViaAPINow(api, v, req)
+}
+
+func (s *Service) quoteViaAPINow(api *QuoteAPI, v *ConfigVersion, req QuoteRequest) (any, error) {
 	began := time.Now()
 	rec := &QuoteRecord{At: began, Call: req.Call, MemoryVersion: req.MemoryVersion, Source: "quote-api", APIVersion: v.Version, Prequote: req.prequote}
 	for name, choice := range req.Config {
@@ -371,13 +514,13 @@ func (s *Service) quoteViaAPI(api *QuoteAPI, v *ConfigVersion, req QuoteRequest)
 		}
 	}
 	sort.Strings(rec.Coverages)
-	q, _, err := api.Quote(context.Background(), s.quoteClient, req)
+	var timing quoteAPITiming
+	q, _, err := api.quoteTimed(context.Background(), s.quoteClient, req, &timing)
+	s.log.Info("crm: quote phases", append([]any{"call", req.Call, "memory_version", req.MemoryVersion,
+		"ahead", req.prequote, "failed", err != nil}, timing.fields()...)...)
 	rec.ComputeMS = time.Since(began).Milliseconds()
 	if q != nil {
 		rec.Total, rec.InsureFlowCode, rec.QuotePriceID = q.Total, q.InsureFlowCode, q.QuotePriceID
-		// What the intake left out (outside the plan, or unanswered) is
-		// named beside what the service has no code for.
-		q.Skipped = append(q.Skipped, req.Skipped...)
 	}
 	if err != nil {
 		rec.Error = err.Error()
@@ -409,12 +552,12 @@ func (s *Service) takeAPITurn(ahead bool) {
 		return
 	}
 	for {
-		for s.apiDemand.Load() > 0 {
+		for s.apiDemand.Load() > 0 || s.followDemand.Load() > 0 {
 			time.Sleep(50 * time.Millisecond)
 		}
 		select {
 		case gate <- struct{}{}:
-			if s.apiDemand.Load() == 0 {
+			if s.apiDemand.Load() == 0 && s.followDemand.Load() == 0 {
 				return
 			}
 			<-gate // a caller arrived meanwhile; let them through first
@@ -472,7 +615,11 @@ func (s *Service) quoteViaRules(req QuoteRequest) (*Quote, error) {
 func (s *Service) Configs() *Configs { return s.configs }
 
 // Close finishes with the log.
-func (s *Service) Close() error { return s.events.Close() }
+func (s *Service) Close() error {
+	s.stopLabelJobs()
+	s.stopSelectionWarming()
+	return s.events.Close()
+}
 
 // Prompts is the service's templates.
 func (s *Service) Prompts() *Prompts { return s.prompts }
@@ -549,7 +696,7 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 		return nil, fail(http.StatusBadRequest, "%v", err)
 	}
 	now := time.Now().In(s.cfg.Location)
-	r, err := s.prompts.RenderWith(req.Template, req.Version, vars, now, s.defaults())
+	r, err := s.renderWithMemory(req, vars, now)
 	if err != nil {
 		return nil, renderFailure(err)
 	}
@@ -592,8 +739,8 @@ func (s *Service) Call(ctx context.Context, req CallRequest, by string) (*CallRe
 		return nil, err
 	}
 	rec := CallRecord{At: now, Template: r.Template, Version: r.Version, Render: r.SHA, Chars: r.Chars,
-		Vars: r.Supplied, Undefined: r.Undefined, GreetingChars: len([]rune(greeting)), Lead: req.Lead}
-	callID, dialErr := s.dial(ctx, r.Instructions, greeting)
+		Vars: r.Supplied, Undefined: r.Undefined, GreetingChars: len([]rune(greeting)), Lead: req.Lead, MemorySeqs: r.MemorySeqs}
+	callID, dialErr := s.dial(ctx, r, greeting)
 	rec.CallID, rec.OK = callID, dialErr == nil
 	if dialErr != nil {
 		rec.Error = hideNumbers(dialErr.Error())
@@ -707,12 +854,15 @@ func (s *Service) lockedNumber() (string, error) {
 }
 
 // dial hands the prompt and the opening line to the originator.
-func (s *Service) dial(ctx context.Context, instructions, greeting string) (string, error) {
+func (s *Service) dial(ctx context.Context, render *Rendered, greeting string) (string, error) {
 	to, err := s.lockedNumber()
 	if err != nil {
 		return "", err
 	}
-	body, err := json.Marshal(map[string]string{"to": to, "instructions": instructions, "greeting": greeting})
+	if len(render.MemorySeqs) > 0 && (render.memoryPhone == "" || to != render.memoryPhone) {
+		return "", errors.New("the locked recipient does not match the memory owner")
+	}
+	body, err := json.Marshal(map[string]string{"to": to, "instructions": render.Instructions, "greeting": greeting})
 	if err != nil {
 		return "", err
 	}
@@ -766,6 +916,10 @@ var uiFiles embed.FS
 // carry the token: Authorization: Bearer <token>.
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerLeadRoutes(mux)
+	s.registerMemoryRoutes(mux)
+	mux.HandleFunc("POST /api/label-schema/preview", s.authed(previewLabelSchema))
+	mux.HandleFunc("POST /api/leads/{id}/labels", s.authed(s.labelTranscript))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "events": s.events.Seq(), "templates": len(s.prompts.List())})
 	})
@@ -820,6 +974,12 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return renderFailure(err)
 		}
+		if v.Name == labelConfigName {
+			v.Body, err = labelTaskConfig(v.Body)
+			if err != nil {
+				return err
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"config": v})
 		return nil
 	}))
@@ -828,6 +988,23 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "the config could not be read")
 		}
+		if r.PathValue("name") == labelConfigName {
+			s.labelJobs.taskMu.Lock()
+			defer s.labelJobs.taskMu.Unlock()
+			if prev := r.URL.Query().Get("previous_version"); prev != "" {
+				curr, err := s.configs.Get(labelConfigName, 0)
+				if err != nil {
+					return err
+				}
+				if prev != strconv.Itoa(curr.Version) {
+					return fail(409, "labeling task changed; reload before saving")
+				}
+			}
+			raw, err = labelTaskConfig(raw)
+			if err != nil {
+				return fail(422, "%v", err)
+			}
+		}
 		if r.PathValue("name") == QuotePlansName {
 			if _, err := ParseQuotePlans(raw); err != nil {
 				return fail(http.StatusBadRequest, "quote plans: %v", err)
@@ -835,6 +1012,31 @@ func (s *Service) Handler() http.Handler {
 		}
 		if r.PathValue("name") == tools.QuoteSpeechName {
 			if _, err := tools.ParseQuoteSpeech(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.SilenceReactionName {
+			if _, err := tools.ParseSilenceReaction(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.StreamingGuardName {
+			if _, err := tools.ParseStreamingGuard(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.TurnTakingName {
+			if _, err := tools.ParseTurnTaking(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.UserPromptName {
+			if _, err := tools.ParseUserPrompt(raw); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+		}
+		if r.PathValue("name") == tools.BackchannelServiceName {
+			if _, err := tools.ParseBackchannelService(raw); err != nil {
 				return fail(http.StatusBadRequest, "%v", err)
 			}
 		}
@@ -871,6 +1073,11 @@ func (s *Service) Handler() http.Handler {
 			}
 			return err
 		}
+		if v.Name == labelConfigName {
+			if err := s.syncLabelSwitch(); err != nil {
+				return err
+			}
+		}
 		s.log.Info("crm: config saved", "config", v.Name, "version", v.Version, "sha", v.SHA, "by", who(r))
 		out := map[string]any{"config": v}
 		if v.Name == tools.OpenersName {
@@ -882,15 +1089,19 @@ func (s *Service) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, out)
 		return nil
 	}))
+	mux.HandleFunc("GET /api/quote/catalog", s.authed(s.handleMotorCatalog))
+	mux.HandleFunc("GET /api/quote/selection-catalog", s.authed(s.handleSelectedCatalog))
 	mux.HandleFunc("POST /api/tools/quote", s.authed(func(w http.ResponseWriter, r *http.Request) error {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 		if err != nil {
 			return fail(http.StatusBadRequest, "the request could not be read")
 		}
-		req, err := quoteRequestFrom(raw)
+		req, err := quoteRequestFrom(s.normalizeQuoteEnvelope(raw))
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
+		requestedDefault := len(req.Config) == 0 && len(req.Variants) == 0
+		selectionTicket := s.beginSelectionQuote(req)
 		if len(req.Variants) > 0 {
 			// Several options at once: each priced over the plan, answered
 			// as one comparison (compare.go).
@@ -900,6 +1111,17 @@ func (s *Service) Handler() http.Handler {
 			}
 			writeJSON(w, http.StatusOK, out)
 			return nil
+		}
+		if len(req.Config) == 0 {
+			if named, ok, err := s.namedDefault(req); err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			} else if ok {
+				req.Config, req.Vars = named.Config, named.Vars
+				if len(req.Config) == 0 {
+					return fail(http.StatusBadRequest, "named plan has no default selection")
+				}
+				req.PlanInMemory = true
+			}
 		}
 		if len(req.Config) == 0 {
 			// Nothing chosen: the default plan, worked out while the phone
@@ -915,7 +1137,11 @@ func (s *Service) Handler() http.Handler {
 		// default plan: laid over the default selection (the 13:55 simulated
 		// call of 10-26 priced the one changed coverage alone).
 		if !req.PlanInMemory {
-			if base := s.DefaultSelection(req.Call); len(base) > 0 {
+			base, err := s.defaultForRequest(req)
+			if err != nil {
+				return fail(http.StatusBadRequest, "%v", err)
+			}
+			if len(base) > 0 {
 				merged := copyVars(base)
 				for k, v := range req.Config {
 					merged[k] = v
@@ -933,10 +1159,20 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusUnprocessableEntity, "%v", err)
 		}
+		if requestedDefault {
+			raw, _ := json.Marshal(q)
+			var result map[string]any
+			if json.Unmarshal(raw, &result) == nil && result["status"] == "quote" {
+				result["default"] = true
+				q = result
+			}
+		}
+		s.scheduleSelectionWarming(req, q, selectionTicket)
 		writeJSON(w, http.StatusOK, q)
 		return nil
 	}))
 	mux.HandleFunc("POST /api/quote/prefetch", s.authed(s.handlePrefetch))
+	mux.HandleFunc("GET /api/quote/ready", s.authed(s.handleQuoteReady))
 	mux.HandleFunc("POST /api/render", s.authed(func(w http.ResponseWriter, r *http.Request) error {
 		var req CallRequest
 		if err := readJSON(r, &req); err != nil {
@@ -946,7 +1182,7 @@ func (s *Service) Handler() http.Handler {
 		if err != nil {
 			return fail(http.StatusBadRequest, "%v", err)
 		}
-		out, err := s.prompts.RenderWith(req.Template, req.Version, vars, time.Now().In(s.cfg.Location), s.defaults())
+		out, err := s.renderWithMemory(req, vars, time.Now().In(s.cfg.Location))
 		if err != nil {
 			return renderFailure(err)
 		}
@@ -1008,6 +1244,9 @@ func (s *Service) Handler() http.Handler {
 		_, _ = io.WriteString(w, text)
 		return nil
 	}))
+	if s.cfg.SkillsAdminTokenFile != "" {
+		s.registerSkillsPanel(mux, skillsPanelBase)
+	}
 	// The panel: a page over this API, served from the copy built in. The
 	// files are public; everything they ask for carries the token.
 	if sub, err := fs.Sub(uiFiles, "ui"); err == nil {

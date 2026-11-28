@@ -458,7 +458,7 @@ func isRateLimited(err error) bool {
 func synthesizeWhole(ctx context.Context, stream provider.TTSStream, text string) ([]byte, error) {
 	segCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	chunks, err := stream.Synthesize(segCtx, text)
+	chunks, err := stream.Synthesize(segCtx, textForSynthesis(text))
 	if err != nil {
 		return nil, err
 	}

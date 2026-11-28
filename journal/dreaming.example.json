@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "recorded_at": "2026-01-01T00:00:00Z",
+  "runs": [
+    {
+      "id": "example-dream",
+      "title": "Fictional pacing example",
+      "summary": "Illustrative schema example. Replace with reviewed local records for the panel.",
+      "status": "Illustrative only",
+      "origin": "Entirely fictional example data",
+      "facts": [
+        {
+          "label": "Skill",
+          "value": "example-pacing"
+        }
+      ],
+      "stages": [
+        {
+          "id": "capture",
+          "title": "Capture experience",
+          "status": "Illustrative only",
+          "summary": "A fictional caller requests one question at a time.",
+          "details": [
+            "An operator records completed evidence in the local experience store."
+          ],
+          "facts": [],
+          "checks": [
+            "Mark the source as synthetic."
+          ],
+          "blocks": [
+            {
+              "label": "Example evidence",
+              "text": "Caller: please ask one question at a time.\nAssistant: asks multiple unrelated questions."
+            }
+          ],
+          "call_ids": []
+        },
+        {
+          "id": "review",
+          "title": "Review a lesson",
+          "status": "Illustrative only",
+          "summary": "Review the proposed guidance and its retrieval examples.",
+          "details": [],
+          "facts": [],
+          "checks": [
+            "Resolve evidence references.",
+            "Check positive and negative routing examples."
+          ],
+          "blocks": [
+            {
+              "label": "Example guidance",
+              "text": "When explicitly asked for one question at a time, ask one question and wait for the answer."
+            }
+          ],
+          "call_ids": [
+            "example-call"
+          ]
+        }
+      ]
+    }
+  ]
+}

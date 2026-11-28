@@ -1,0 +1,154 @@
+{
+  "kind": "simulated",
+  "build": "45b5564",
+  "scenario": "set-a-01-barge-in",
+  "scenario_sha256": "3d2f3fbffb27759bf84e551944b99bef19b4489d83035ff734940ef1dd496c1a",
+  "context_sha256": {
+    "instructions": "639dcecf24dddc73274a7412c017e36258b51679c2fd3ad4e72a595453aa8d25",
+    "voice": "65d9d6c5c7c2d5c29e38b777edf8da1dbd764f67deeeaa230724967cafe4e684",
+    "greeting": "fa7c33a6b9c732413d932a7453c5c85d4936fcdd8515822bf92e3fc07e2f4df8"
+  },
+  "stage": "collected_readonly",
+  "run_id": "sim-2b244c1dd4612f1a20113b1b",
+  "call_id": "out-mvxksnvy-4i3q",
+  "failure_type": "RuntimeError",
+  "failure": "recorded greeting changed",
+  "session": "sess_2cc64121f5c59e5e623cce03",
+  "seconds": 16.630875,
+  "archive_files_verified": 5,
+  "channels_with_signal": 2,
+  "caller_lines": 3,
+  "assistant_lines": 4,
+  "counts": {
+    "records": 4,
+    "answered": 1,
+    "non_speech": 3,
+    "cancelled": 0,
+    "interrupted_answers": 1,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 1,
+    "tool_results_joined": 1,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 1
+  },
+  "gate": {
+    "enabled": true,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "passed": false,
+    "reasons": [
+      "first_audio: 1 samples, need 20",
+      "conversational_first_content: 0 samples, need 20"
+    ]
+  },
+  "handset_target_proven": false,
+  "receiver_gap_n": 1,
+  "receiver_gap_p95_ms": 519,
+  "receiver_failure_count": 0,
+  "receiver_warning_count": 0,
+  "first_audio": {
+    "n": 1,
+    "p50_ms": 380,
+    "p90_ms": 380,
+    "p95_ms": 380,
+    "max_ms": 380,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 1,
+    "p50_ms": 844,
+    "p90_ms": 844,
+    "p95_ms": 844,
+    "max_ms": 844,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "tool_result": {
+    "n": 1,
+    "p50_ms": 844,
+    "p90_ms": 844,
+    "p95_ms": 844,
+    "max_ms": 844,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 1,
+    "p50_ms": 844,
+    "p90_ms": 844,
+    "p95_ms": 844,
+    "max_ms": 844,
+    "at_or_above_target": 0
+  },
+  "initial_greeting_verified": true,
+  "journal_greeting_overwritten": true,
+  "opening_event_count": 2,
+  "action_outcomes": [
+    {
+      "id": "cut-in-2",
+      "result": "requested",
+      "at_ms": 1063764520
+    },
+    {
+      "id": "cut-in-2",
+      "result": "started",
+      "at_ms": 1063764521
+    },
+    {
+      "id": "cut-in-2",
+      "result": "completed",
+      "at_ms": 1063766553
+    },
+    {
+      "id": "cut-in-5",
+      "result": "requested",
+      "at_ms": 1063770080
+    },
+    {
+      "id": "cut-in-5",
+      "result": "started",
+      "at_ms": 1063770080
+    },
+    {
+      "id": "cut-in-5",
+      "result": "completed",
+      "at_ms": 1063772112
+    },
+    {
+      "id": "__customer_farewell",
+      "result": "requested",
+      "at_ms": 1063772112
+    },
+    {
+      "id": "__customer_farewell",
+      "result": "started",
+      "at_ms": 1063772112
+    },
+    {
+      "id": "__customer_farewell",
+      "result": "completed",
+      "at_ms": 1063773680
+    }
+  ],
+  "termination_reason": "remote_hangup",
+  "limitations": [
+    "Only a short scripted interruption scenario; not twenty normal responses.",
+    "Journal greeting field overwritten by later system utterance; canonical initial opening matches saved greeting.",
+    "Server and application timings do not establish acoustic handset performance."
+  ]
+}

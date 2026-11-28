@@ -1,0 +1,16 @@
+{
+  "base_commit": "9e1b85e",
+  "job": "skills-final-context-8",
+  "prompts": "synthetic",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "tts": "mock",
+  "catalog": "isolated seed catalog on ThinkPad loopback 18795",
+  "payload_sha256": {
+    "duplex.test": "5ea71f66c473a98ed58113e876190f3d4e6868c9e7d9a7369f988255643b1ad5",
+    "catalog.test": "65b9ec586621ee42586d893b9ce44b8af5df8938c9d70fc13c7e87acae347c00",
+    "simulate.py": "7db7b6b09a9556a0ff50bce69f6cc4f28418cd8f0f1ba9e6d426385a7abbc2c4",
+    "bundle": "607fb16105f98be0ced8a2855be655f11402f390a695f2112ab4b5a5b977abf4"
+  },
+  "note": "Intermediate JSON interruption rendering failed recovery. Core benchmark scenarios do not interrupt. Final separated-message rendering is validated by confirmation job 10."
+}

@@ -1,0 +1,13 @@
+{
+  "call": "out-mvxo348d-w5pb",
+  "build": "45b5564",
+  "session": "sess_a52c7ffea23fb1cce1b7d80e",
+  "closed_at": "2026-11-01T18:14:17.489472259+08:00",
+  "files_verified": 5,
+  "duration_seconds": 354.94,
+  "channels_with_signal": 2,
+  "transcript_counts": {
+    "assistant": 40,
+    "caller": 43
+  }
+}

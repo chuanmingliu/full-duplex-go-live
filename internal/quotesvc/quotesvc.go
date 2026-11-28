@@ -57,6 +57,10 @@ type Rating struct {
 // floor, a table on the sum insured (yuan → premium; the next table step
 // at or above the sum is used), or per 万 of the sum insured per seat.
 type CoverageRating struct {
+	Kind       string             `json:"kind,omitempty"`
+	ParentCode string             `json:"parent_code,omitempty"`
+	Flat       float64            `json:"flat,omitempty"`
+	ParentRate float64            `json:"parent_rate,omitempty"`
 	Name       string             `json:"name"`
 	Rate       float64            `json:"rate,omitempty"`
 	Min        float64            `json:"min,omitempty"`
@@ -74,7 +78,7 @@ type Band struct {
 
 // DefaultRating is the placeholder table, the same figures as the lead
 // service's quote-rules where they correspond.
-const DefaultRating = `{
+const legacyDefaultRating = `{
   "coverages": {
     "951": {"name": "车损险", "rate": 0.012, "min": 600},
     "952": {"name": "三者险", "table": {"1000000": 1150, "2000000": 1450, "3000000": 1700, "5000000": 2100}},
@@ -93,6 +97,7 @@ const DefaultRating = `{
 
 // Inquiry is the document's request.
 type Inquiry struct {
+	CollectVehicleTax         *bool      `json:"collectVehicleTax,omitempty"`
 	Phone                     string     `json:"phone"`
 	VehicleNo                 string     `json:"vehicleNo"`
 	BizOrigin                 string     `json:"bizOrigin,omitempty"`
@@ -104,11 +109,13 @@ type Inquiry struct {
 
 // Coverage is coverageList[].
 type Coverage struct {
-	CoverageCode    string `json:"coverageCode"`
-	CoverageName    string `json:"coverageName"`
-	CoverageType    string `json:"coverageType"`
-	IsNonDeductible string `json:"isNonDeductible"`
-	SumInsured      string `json:"sumInsured"`
+	ParentCoverageCode string `json:"parentCoverageCode,omitempty"`
+	DeductibleRate     string `json:"deductibleRate,omitempty"`
+	CoverageCode       string `json:"coverageCode"`
+	CoverageName       string `json:"coverageName"`
+	CoverageType       string `json:"coverageType"`
+	IsNonDeductible    string `json:"isNonDeductible"`
+	SumInsured         string `json:"sumInsured"`
 }
 
 // QuoteInfo is quotePriceInfos[] of the query's answer.
@@ -140,6 +147,7 @@ type QuoteInfo struct {
 
 // LinePriced is coverageList[] of a quote.
 type LinePriced struct {
+	ParentCoverageCode string `json:"parentCoverageCode,omitempty"`
 	CoverageCode       string `json:"coverageCode"`
 	CoverageType       string `json:"coverageType"`
 	CoverageSimpleName string `json:"coverageSimpleName"`
@@ -329,8 +337,11 @@ func (s *Service) Submit(in Inquiry) error {
 	if strings.TrimSpace(in.VehicleNo) == "" {
 		return errors.New("vehicleNo 必填")
 	}
-	if !in.IsInsureCompelInsurance && len(in.CoverageList) == 0 {
+	if !in.IsInsureCompelInsurance && len(in.CoverageList) == 0 && (in.CollectVehicleTax == nil || !*in.CollectVehicleTax) {
 		return errors.New("coverageList 不能为空")
+	}
+	if err := s.rating.validate(in); err != nil {
+		return err
 	}
 	k := key(in.Phone, in.VehicleNo)
 	s.mu.Lock()
@@ -405,53 +416,12 @@ func (s *Service) price(in Inquiry) *QuoteInfo {
 	if f, ok := s.rating.NCDFactors[strconv.Itoa(v.NCD)]; ok {
 		factor *= f
 	}
-	var standard, business float64
-	for _, c := range in.CoverageList {
-		r, ok := s.rating.Coverages[c.CoverageCode]
-		if !ok {
-			continue
-		}
-		sum, _ := strconv.ParseFloat(strings.TrimSpace(c.SumInsured), 64)
-		if c.SumInsured == "1" || sum == 1 {
-			sum = v.Price
-		}
-		var base float64
-		switch {
-		case r.Rate > 0:
-			base = math.Max(sum*r.Rate, r.Min)
-		case len(r.Table) > 0:
-			keys := make([]float64, 0, len(r.Table))
-			for k := range r.Table {
-				f, _ := strconv.ParseFloat(k, 64)
-				keys = append(keys, f)
-			}
-			sort.Float64s(keys)
-			pick := keys[len(keys)-1]
-			for _, k := range keys {
-				if sum <= k {
-					pick = k
-					break
-				}
-			}
-			base = r.Table[strconv.FormatFloat(pick, 'f', -1, 64)]
-			sum = pick
-		case r.PerWan > 0:
-			n := 1.0
-			if r.Passengers {
-				n = math.Max(float64(v.Seats-1), 1)
-			}
-			base = sum / 10000 * r.PerWan * n
-		}
-		premium := base * factor
-		tag := ""
-		if sum >= 10000 {
-			tag = strconv.FormatFloat(sum/10000, 'f', -1, 64) + "万"
-		}
-		q.CoverageList = append(q.CoverageList, LinePriced{CoverageCode: c.CoverageCode, CoverageType: c.CoverageType, CoverageSimpleName: r.Name,
-			Amount: strconv.FormatFloat(sum, 'f', -1, 64), Tag: tag, CoveragePremium: money(premium), StandardPremium: money(base)})
-		standard += base
-		business += premium
+	lines, standard, business, err := s.rating.priceLines(in, v, factor)
+	if err != nil {
+		q.Result, q.ResultMessage = "1", err.Error()
+		return q
 	}
+	q.CoverageList = lines
 	total := 0.0
 	if len(q.CoverageList) > 0 {
 		q.BusinessQuoteResult = "0"
@@ -462,10 +432,18 @@ func (s *Service) price(in Inquiry) *QuoteInfo {
 	}
 	if in.IsInsureCompelInsurance {
 		compel := band(s.rating.Compulsory, float64(v.Seats))
-		tax := band(s.rating.Tax, float64(v.Seats))
+		tax := 0.0
+		if in.CollectVehicleTax == nil || *in.CollectVehicleTax {
+			tax = band(s.rating.Tax, float64(v.Seats))
+		}
 		q.CompelQuoteResult, q.CompelSumPremium, q.TaxPremium = "0", money(compel), money(tax)
 		q.CompelEffective, q.CompelExpire = now.AddDate(0, 0, 1).Format("2006-01-02"), now.AddDate(1, 0, 0).Format("2006-01-02")
 		total += compel + tax
+	}
+	if !in.IsInsureCompelInsurance && in.CollectVehicleTax != nil && *in.CollectVehicleTax {
+		tax := band(s.rating.Tax, float64(v.Seats))
+		q.TaxPremium = money(tax)
+		total += tax
 	}
 	q.Result, q.SumPremium, q.IsEffective = "0", money(total), true
 	return q

@@ -274,6 +274,14 @@ func (rt *realtimeState) translate(event any) []map[string]any {
 			"delta":         ev.Delta,
 		})
 
+	case live.BackchannelStageEvent:
+		if ev.Stage == "playback_end" && rt.respOpen && rt.respItem == ev.ItemID {
+			status := "completed"
+			if ev.Reason != "completed" {
+				status = "cancelled"
+			}
+			return rt.finish(status)
+		}
 	case live.TurnMetricsEvent:
 		if rt.respOpen && rt.respItem == ev.TurnID {
 			return rt.finish("completed")
@@ -521,6 +529,9 @@ func (s *Session) handleRealtimeEvent(ctx context.Context, p *peer, data []byte)
 	}
 
 	switch eventType {
+	case live.ClientBusinessEvent:
+		return s.onBusinessEvent(p, data, eventID)
+
 	case "session.update":
 		var ev realtimeSessionUpdate
 		if err := json.Unmarshal(data, &ev); err != nil {
@@ -769,7 +780,7 @@ func (s *Session) Open(greeting string) bool {
 	if tel := s.tel; tel != nil {
 		tel.released()
 	}
-	s.withEngine(func(e *duplex.Engine) { e.Say(greeting) })
+	s.withEngine(func(e *duplex.Engine) { e.SayOpening(greeting) })
 	return true
 }
 

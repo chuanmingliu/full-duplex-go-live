@@ -1,0 +1,7 @@
+{
+  "runner_home": "~/golive",
+  "remote_staging": "/home/chuanming/golive",
+  "journal_url": "http://192.168.71.9:8790",
+  "allow_real_calls": false,
+  "allow_sim_calls": false
+}

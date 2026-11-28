@@ -1,0 +1,450 @@
+[
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": 312,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 312,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 312,
+    "detection_to_cut_ms": 2
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 307,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 307,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 312,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": 309,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": 310,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 313,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": 310,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 305,
+    "onset_to_cut_ms": 306,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 307,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 312,
+    "detection_to_cut_ms": 2
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": 311,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 310,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "caller",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": 310,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "preset",
+    "kind": "background",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "echo",
+    "vad_open_ms": 308,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "preset",
+    "kind": "backchannel",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "caller",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": 310,
+    "detection_to_cut_ms": 1
+  },
+  {
+    "mode": "talker",
+    "kind": "background",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "echo",
+    "vad_open_ms": 311,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  },
+  {
+    "mode": "talker",
+    "kind": "backchannel",
+    "vad_open_ms": 309,
+    "onset_to_cut_ms": -1,
+    "detection_to_cut_ms": -1
+  }
+]

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "coverage-repair-final",
+  "language": "zh-CN",
+  "answer_delay_ms": 1600,
+  "max_duration_ms": 295000,
+  "max_remote_turns": 50,
+  "idle_timeout_ms": 25000,
+  "actions": [
+    {
+      "id": "ack",
+      "trigger": "remote_speech_started",
+      "occurrence": 2,
+      "after_ms": 1500,
+      "require_remote_speaking": true,
+      "kind": "speak",
+      "text": "嗯",
+      "max_hold_ms": 1500
+    },
+    {
+      "id": "interrupt",
+      "trigger": "remote_speech_started",
+      "occurrence": 4,
+      "after_ms": 700,
+      "require_remote_speaking": true,
+      "kind": "speak",
+      "text": "等一下，请慢一点，把没说完的档位继续说完。",
+      "max_hold_ms": 4000
+    }
+  ],
+  "retain_transcript": true,
+  "retain_audio": false,
+  "expected_outcome": "conversation",
+  "facts": {
+    "车价": "十五万",
+    "车龄": "三年",
+    "去年出险": "没有",
+    "座位": "五座",
+    "车牌": "测试车"
+  },
+  "persona": "你是中文车险电话测试员。严格依序执行下面行为，每个问题只问一次，听完再继续。对方说稍等时耐心等候。不要跳过问题，不要凭空补全对方的回答。",
+  "greeting": "你好，三者险不同档位你帮我都算一下，每档单项保费和整单总价，其他不变。",
+  "goal": "核对三者六档单项保费和总价，完整医保外选项，真实打断后恢复回答。",
+  "behavior": [
+    "先请求三者险不同档位的全部保费，耐心等计算和长回答。必须等六档及其保费总价都讲完才进入下一步。不要把部分答案当完整；如果被打断，要求继续把剩下各档讲完。",
+    "再问：三者医保外用药有多少个选项？共享保额和每个固定档都完整列一下。只介绍，不要计算。",
+    "然后问：司机医保外用药的全部档位呢？只介绍不要报价。",
+    "之后说：我同意加微信，你说的是服务通知还是公众号？",
+    "最后说：谢谢今天就到这里再见。不要提前告别。"
+  ],
+  "expectations": [],
+  "hangup_after_goal": false
+}

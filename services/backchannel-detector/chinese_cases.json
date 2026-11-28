@@ -1,0 +1,14 @@
+[
+  {"id":"ack_mm","text":"嗯嗯。","expected":"backchannel"},
+  {"id":"ack_right","text":"对对。","expected":"backchannel"},
+  {"id":"ack_ok","text":"好的。","expected":"backchannel"},
+  {"id":"ack_understood","text":"明白了。","expected":"backchannel"},
+  {"id":"ack_continue","text":"你继续说。","expected":"backchannel"},
+  {"id":"floor_wait","text":"等一下，我想问个问题。","expected":"floor"},
+  {"id":"floor_correction","text":"不对，我说的是三百万。","expected":"floor"},
+  {"id":"floor_stop","text":"先停一下，不用继续介绍了。","expected":"floor"},
+  {"id":"floor_mm_then_question","text":"嗯，但是车损险包含什么？","expected":"floor"},
+  {"id":"floor_ok_then_change","text":"好的，不过我想改一下保额。","expected":"floor"},
+  {"id":"floor_question","text":"理赔需要哪些手续？","expected":"floor"},
+  {"id":"floor_repeat","text":"我没听清，请再说一遍。","expected":"floor"}
+]

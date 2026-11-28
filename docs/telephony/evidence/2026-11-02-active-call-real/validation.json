@@ -1,0 +1,15 @@
+{
+  "call": "out-mvykfqfn-wibn",
+  "archive_files_verified": 5,
+  "analysis_scripts_compile": true,
+  "test_only_change": "Wait for asynchronous first-output transcript before asserting filler content",
+  "targeted_race_command": "go test -race ./internal/duplex -run '^TestSpokenFillersReachTheTranscript$' -count=100 -timeout=3m",
+  "targeted_race_result": "passed, 100 repetitions",
+  "production_runtime_changed": false,
+  "prior_head_ci": {
+    "head": "078a4a9",
+    "passed_run": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41311707167",
+    "failed_run": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41311711622",
+    "failure": "TestSpokenFillersReachTheTranscript asserted before player emitted transcript; normal and quality jobs passed"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "stage": "verified",
+  "release": "/home/chuanming/golive-backchannel/releases/20261102-4896f47",
+  "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+  "default_controller": "legacy",
+  "live_engine_hook_enabled": false,
+  "phone_build": "f1fd9a6",
+  "health": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 0,
+    "errors": 0
+  },
+  "smoke": {
+    "source": "synthetic_silence",
+    "mode": "shadow",
+    "controller": "legacy",
+    "control_actions": 0,
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "chunks": 100,
+    "audio_seconds": 4.0,
+    "elapsed_seconds": 0.161,
+    "inference": {
+      "n": 100,
+      "p50_ms": 0.72,
+      "p95_ms": 0.894,
+      "max_ms": 1.08
+    },
+    "queue": {
+      "n": 100,
+      "p50_ms": 0.071,
+      "p95_ms": 0.142,
+      "max_ms": 0.318
+    },
+    "roundtrip": {
+      "n": 100,
+      "p50_ms": 1.463,
+      "p95_ms": 1.761,
+      "max_ms": 2.202
+    },
+    "estimated_bot_speaking_frames": 0,
+    "raw_floor_probability_ge_0_7_frames": 0,
+    "raw_backchannel_probability_ge_0_7_frames": 0,
+    "accuracy_measured": false,
+    "latency_saving_measured": false,
+    "aec_verified": false,
+    "language_supported": false,
+    "bot_state_source": "recording_energy_approximation; filler flag unavailable",
+    "service_errors_after": 0
+  },
+  "replay": {
+    "source": "local_private_stereo_replay",
+    "mode": "shadow",
+    "controller": "legacy",
+    "control_actions": 0,
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "chunks": 3015,
+    "audio_seconds": 120.60000000000001,
+    "elapsed_seconds": 4.853,
+    "inference": {
+      "n": 3015,
+      "p50_ms": 0.72,
+      "p95_ms": 0.94,
+      "max_ms": 31.206
+    },
+    "queue": {
+      "n": 3015,
+      "p50_ms": 0.067,
+      "p95_ms": 0.143,
+      "max_ms": 0.237
+    },
+    "roundtrip": {
+      "n": 3015,
+      "p50_ms": 1.461,
+      "p95_ms": 1.821,
+      "max_ms": 46.566
+    },
+    "estimated_bot_speaking_frames": 2903,
+    "raw_floor_probability_ge_0_7_frames": 24,
+    "raw_backchannel_probability_ge_0_7_frames": 120,
+    "accuracy_measured": false,
+    "latency_saving_measured": false,
+    "aec_verified": false,
+    "language_supported": false,
+    "bot_state_source": "recording_energy_approximation; filler flag unavailable",
+    "service_errors_after": 0
+  },
+  "legacy_healthy_with_observer_stopped": true,
+  "health_after_restart": {
+    "status": "ready",
+    "model_revision": "4896f4774cdf1a9c5b581b0cd4a0c4000e8bb854",
+    "mode": "shadow",
+    "default_controller": "legacy",
+    "supported_languages": [
+      "en"
+    ],
+    "sample_rate": 16000,
+    "chunk_samples": 640,
+    "active_sessions": 0,
+    "capacity": 4,
+    "processed_chunks": 0,
+    "errors": 0
+  },
+  "container_id": "fd6a5416fd8af36f507a8ac1974e8b533daa6dd16e13aba91e875078691121fe",
+  "image_id": "sha256:da33c33ac70a17f98c06f4278fa024a8c055540249e7c6f5c79c68f01285c0d2",
+  "port_bindings": {
+    "18087/tcp": [
+      {
+        "HostIp": "127.0.0.1",
+        "HostPort": "18087"
+      }
+    ]
+  },
+  "original_runtime_and_configs_preserved": true,
+  "aria_route_preserved": true,
+  "original_containers_preserved": true
+}

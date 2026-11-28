@@ -1,0 +1,99 @@
+{
+  "kind": "simulated",
+  "build": "45b5564",
+  "scenario": "kb-coverage-nerd",
+  "scenario_sha256": "d593352473708774288da31a070686992556e707c0907b41a4c5a6c229b5ceda",
+  "context_sha256": {
+    "instructions": "639dcecf24dddc73274a7412c017e36258b51679c2fd3ad4e72a595453aa8d25",
+    "voice": "65d9d6c5c7c2d5c29e38b777edf8da1dbd764f67deeeaa230724967cafe4e684",
+    "greeting": "fa7c33a6b9c732413d932a7453c5c85d4936fcdd8515822bf92e3fc07e2f4df8"
+  },
+  "stage": "verified",
+  "run_id": "sim-437b48b131514b62dd78a571",
+  "call_id": "out-mvxlfkke-kr5y",
+  "session": "sess_29dbfd746cbe74634e9c636a",
+  "seconds": 296.954,
+  "archive_files_verified": 5,
+  "channels_with_signal": 2,
+  "caller_lines": 31,
+  "assistant_lines": 32,
+  "counts": {
+    "records": 31,
+    "answered": 30,
+    "non_speech": 1,
+    "cancelled": 0,
+    "interrupted_answers": 7,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "malformed": 0,
+    "content_fallbacks": 0,
+    "assumed_pause": 0,
+    "tool_result_links": 0,
+    "tool_results_joined": 0,
+    "invalid_tool_links": 0,
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing_output_records": 0,
+    "quote_only_responses": 0
+  },
+  "gate": {
+    "enabled": true,
+    "metric": "both",
+    "min_turns": 20,
+    "quote_sla": "separate",
+    "passed": true,
+    "reasons": []
+  },
+  "handset_target_proven": false,
+  "receiver_gap_n": 27,
+  "receiver_gap_p95_ms": 620,
+  "receiver_failure_count": 0,
+  "receiver_warning_count": 0,
+  "first_audio": {
+    "n": 30,
+    "p50_ms": 380.0,
+    "p90_ms": 380,
+    "p95_ms": 380,
+    "max_ms": 404,
+    "at_or_above_target": 0
+  },
+  "first_content": {
+    "n": 30,
+    "p50_ms": 787.0,
+    "p90_ms": 1012,
+    "p95_ms": 1049,
+    "max_ms": 1147,
+    "at_or_above_target": 0
+  },
+  "conversational_first_content": {
+    "n": 30,
+    "p50_ms": 787.0,
+    "p90_ms": 1012,
+    "p95_ms": 1049,
+    "max_ms": 1147,
+    "at_or_above_target": 0
+  },
+  "tool_result": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "quote_readout": {
+    "n": 0,
+    "p50_ms": null,
+    "p90_ms": null,
+    "p95_ms": null,
+    "max_ms": null,
+    "at_or_above_target": 0
+  },
+  "limitations": [
+    "Same engine 45b5564 as the previous candidate; the Journal-only change cannot explain a speech-speed improvement.",
+    "Generated dialogue differs between runs; no causal performance improvement or pooling claim.",
+    "No simulator warnings; semantic quality is not independently scored.",
+    "Server output plus assumed 50 ms is an estimate, not acoustic handset verification."
+  ]
+}

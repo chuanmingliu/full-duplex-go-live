@@ -1,0 +1,15 @@
+#timeout 660
+#pull /home/chuanming/golive-telephony/codex-latency/activecall-preset-scheduling-baseline-20261101/summary.json activecall-preset-scheduling-baseline-20261101-summary.json
+#push activecall-preset-baseline-20261101.body.sh /home/chuanming/golive/activecall-preset-baseline-20261101.body.sh
+set -eu
+python3 -B - <<'STAGED_BODY'
+import hashlib,os,stat,subprocess
+p='/home/chuanming/golive/activecall-preset-baseline-20261101.body.sh'
+fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+with os.fdopen(fd,'rb') as stream:
+    info=os.fstat(stream.fileno())
+    if not stat.S_ISREG(info.st_mode): raise SystemExit('staged body is not regular')
+    body=stream.read()
+if len(body)!=10580 or hashlib.sha256(body).hexdigest()!='fb5e67c719afe17779f325e44a0f6111f7dfe2a4d6a0e5271baf244d419f93fd': raise SystemExit('staged body checksum mismatch')
+subprocess.run(['/bin/bash'],input=body,check=True)
+STAGED_BODY

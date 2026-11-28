@@ -1,0 +1,23 @@
+#timeout 45
+#push backchannel-real-retro.md /home/chuanming/golive/backchannel-real-retro.md
+#pull /home/chuanming/golive-telephony/codex-latency/review-out-mvzfq218-qbqy/published.json review-out-mvzfq218-qbqy-published.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib,json,os,urllib.request
+os.umask(0o077)
+call='out-mvzfq218-qbqy';root=Path.home()/'golive-telephony'
+raw=(Path.home()/'golive/backchannel-real-retro.md').read_bytes()
+assert hashlib.sha256(raw).hexdigest()=='cc4caaa3fb4398b51876be7127c45309b24a42573b09710002f0ec0799caa6ba'
+def get():
+    with urllib.request.urlopen('http://192.168.71.9:8790/api/calls/'+call,timeout=12) as f:return json.load(f)
+d=get()
+assert d['call']['id']==call and d['call']['build']=='b51e959' and d['call']['ended_at'] and d['archive']['archived']
+p=root/'journal/retros'/f'{call}.md'
+assert not p.exists(), 'Retrospective exists; do not overwrite'
+with p.open('xb') as f:f.write(raw);f.flush();os.fsync(f.fileno())
+assert get().get('retrospective'), 'Journal has not loaded the review'
+receipt={'call':call,'stage':'verified','retrospective_sha256':hashlib.sha256(raw).hexdigest(),'runtime_changed':False}
+(root/'codex-latency'/('review-'+call)/'published.json').write_text(json.dumps(receipt,indent=2)+'\n')
+print(json.dumps(receipt))
+PY

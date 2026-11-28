@@ -1,0 +1,28 @@
+name: Outbound skills MCP
+on:
+  push:
+    branches: [codex/telephony-latency]
+    paths: ['services/skills-mcp/**', '.github/workflows/skills-mcp.yml']
+  pull_request:
+    paths: ['services/skills-mcp/**', '.github/workflows/skills-mcp.yml']
+permissions:
+  contents: read
+jobs:
+  service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/skills-mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/skills-mcp/go.mod
+          cache-dependency-path: services/skills-mcp/go.sum
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: node --check panel/panel.js
+      - run: python3 -B -m unittest -v test_turn_renderer test_memory_import
+      - run: CGO_ENABLED=0 go build -trimpath -o skills-mcp .
+      - run: docker build -t xiaocui-skills:test .

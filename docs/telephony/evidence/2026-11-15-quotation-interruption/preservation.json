@@ -1,0 +1,33 @@
+{
+  "preserved": {
+    "production_profile": true,
+    "saved_call": true,
+    "production_binary": true,
+    "crm_quote-plans": true,
+    "crm_quote-api": true,
+    "crm_quote-speech": true,
+    "crm_openers": true,
+    "crm_hangup-rules": true,
+    "crm_silence-reaction": true,
+    "mcp_catalog": true
+  },
+  "stopped_isolated_services": [
+    "quotesvc",
+    "crm",
+    "catalog.test",
+    "golive",
+    "aria"
+  ],
+  "production_health": {
+    "model": "golive-1",
+    "sessions": 0,
+    "status": "ok",
+    "vad_backend": "energy",
+    "version": "26e0bd7-quote-flow"
+  },
+  "journal": "http://192.168.71.9:18872",
+  "own_runs_archived_in_simulator": [
+    "sim-373479c0e29db82507ac395c",
+    "sim-1275de6256c6e30dd8ccc9e6"
+  ]
+}

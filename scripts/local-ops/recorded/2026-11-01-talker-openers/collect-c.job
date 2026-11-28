@@ -1,0 +1,12 @@
+#timeout 120
+#push talker-collect-c.py /home/chuanming/golive/talker-collect-c.py
+#push talker-call-latency.py /home/chuanming/golive/talker-call-latency.py
+#pull /home/chuanming/golive-telephony/codex-latency/talker-ab-20261101-c/sanitized-comparison.json talker-ab-20261101-c-comparison.json
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import hashlib
+for name,want in [('talker-collect-c.py','ac7e22e4f3495e052506da78265a8bacb71bc05ad1c293cfc9834d1329fb6714'),('talker-call-latency.py','c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50')]:
+ assert hashlib.sha256((Path.home()/'golive'/name).read_bytes()).hexdigest()==want
+PY
+python3 -B /home/chuanming/golive/talker-collect-c.py

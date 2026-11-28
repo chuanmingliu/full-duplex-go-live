@@ -4,7 +4,7 @@
 // has gone wrong and been fixed.
 //
 // It reads golive's log and store and takes no part in a call. It has no
-// login, and the page can change nothing but the owner's notes on a call: it
+// login, and the page supports owner notes and dreaming controls. It
 // is meant for a home network, where it listens, and not for a public address.
 package main
 
@@ -22,20 +22,25 @@ import (
 
 func main() {
 	var (
-		addr   = flag.String("addr", "127.0.0.1:8790", "address to listen on; the home-network address, never one a tunnel publishes")
-		target = flag.Int("target", journal.TargetMS, "the latency goal in ms, caller's last sound to first audio at p95")
-		logp   = flag.String("log", "golive-telephony.log", "golive's log")
-		store  = flag.String("store", "", "golive's store_dir, where recorded calls are kept; empty when calls are not recorded")
-		data   = flag.String("data", "journal-data", "where the journal keeps calls as last read and the owner's notes")
-		notes  = flag.String("notes", "journal", "retros/<call id>.md, issues.json and decisions.json")
-		repo   = flag.String("repo", "", "repository URL, for turning a commit hash into a link")
-		keep   = flag.Int("retention-hours", 0, "how long golive keeps a recorded call, for the page to say")
-		ui     = flag.String("ui", "", "serve the page from this directory instead of the one built in (for working on it)")
-		arch   = flag.String("archive", "", "where finished calls are kept for good: recording, conversation, measurements, log; empty archives nothing")
-		last   = flag.String("last-call", "", "golive's last_call_file; the archive keeps a copy of each distinct set of instructions")
-		dials  = flag.String("sim-dials", "", "the record of calls placed to the simulated customer (phone-brain.sh call sim writes it); such calls are marked, the rest are real")
-		check  = flag.Bool("verify", false, "read every archived file again, compare it with its manifest, print what is wrong, and exit")
-		list   = flag.Bool("archive-status", false, "print what the archive holds, in numbers, and exit")
+		addr       = flag.String("addr", "127.0.0.1:8790", "address to listen on; the home-network address, never one a tunnel publishes")
+		target     = flag.Int("target", journal.TargetMS, "the latency goal in ms, caller's last sound to first audio at p95")
+		logp       = flag.String("log", "golive-telephony.log", "golive's log")
+		requests   = flag.String("request-log-dir", os.Getenv("GOLIVE_REQUEST_LOG_DIR"), "persistent rendered-request directory to view by session")
+		store      = flag.String("store", "", "golive's store_dir, where recorded calls are kept; empty when calls are not recorded")
+		data       = flag.String("data", "journal-data", "where the journal keeps calls as last read and the owner's notes")
+		notes      = flag.String("notes", "journal", "retros/<call id>.md, issues.json, decisions.json and dreaming.json")
+		repo       = flag.String("repo", "", "repository URL, for turning a commit hash into a link")
+		keep       = flag.Int("retention-hours", 0, "how long golive keeps a recorded call, for the page to say")
+		ui         = flag.String("ui", "", "serve the page from this directory instead of the one built in (for working on it)")
+		arch       = flag.String("archive", "", "where finished calls are kept for good: recording, conversation, measurements, log; empty archives nothing")
+		last       = flag.String("last-call", "", "golive's last_call_file; the archive keeps a copy of each distinct set of instructions")
+		dials      = flag.String("sim-dials", "", "the record of calls placed to the simulated customer (phone-brain.sh call sim writes it); such calls are marked, the rest are real")
+		talker     = flag.String("talker", "", "fixed local Talker URL for current status checks; empty disables checks")
+		playground = flag.String("talker-playground", "", "existing desk Talker page; empty hides the link")
+		dreamURL   = flag.String("dream-memory", dreamMemoryURL(), "skills service origin for live dreaming status and settings")
+		dreamToken = flag.String("dream-admin-token-file", os.Getenv("GOLIVE_DREAM_ADMIN_TOKEN_FILE"), "skills admin token file, read only by the Journal backend")
+		check      = flag.Bool("verify", false, "read every archived file again, compare it with its manifest, print what is wrong, and exit")
+		list       = flag.Bool("archive-status", false, "print what the archive holds, in numbers, and exit")
 	)
 	flag.Parse()
 	journal.TargetMS = *target
@@ -44,8 +49,10 @@ func main() {
 		os.Exit(archiveReport(*arch, *check))
 	}
 	srv := journal.NewServer(journal.Config{
-		LogPath: *logp, StoreDir: *store, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
+		LogPath: *logp, StoreDir: *store, RequestLogDir: *requests, DataDir: *data, NotesDir: *notes, RepoURL: *repo, UIDir: *ui, RetentionHours: *keep,
 		ArchiveDir: *arch, LastCallFile: *last, SimDials: *dials, Log: log,
+		TalkerURL: *talker, TalkerPlayground: *playground,
+		DreamMemoryURL: *dreamURL, DreamAdminTokenFile: *dreamToken,
 	})
 	// The archive is fed on a clock, not by whoever opens the page.
 	go srv.Watch(context.Background(), 20*time.Second)
@@ -84,4 +91,12 @@ func archiveReport(dir string, verify bool) int {
 	}
 	fmt.Println("every file matches its manifest")
 	return 0
+}
+
+// The admin token still has to be configured explicitly on the server.
+func dreamMemoryURL() string {
+	if value := os.Getenv("GOLIVE_DREAM_MEMORY_URL"); value != "" {
+		return value
+	}
+	return "http://127.0.0.1:8794"
 }

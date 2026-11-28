@@ -1,0 +1,18 @@
+#timeout 40
+set -eu
+python3 -B - <<'PY'
+from pathlib import Path
+import json,urllib.request
+h=Path.home()
+def get(url):
+ with urllib.request.urlopen(url,timeout=6) as r:return json.load(r)
+print(json.dumps({'engine':get('http://127.0.0.1:8765/healthz'),'detector':get('http://127.0.0.1:18087/healthz')}))
+candidates=[]
+for p in (h/'golive-archive/calls/2026/11').glob('*/manifest.json'):
+ m=json.loads(p.read_text())
+ if m.get('build')!='f1fd9a6' or not m.get('audio'):continue
+ c=json.loads((p.parent/'call.json').read_text())
+ if not c.get('ended_at') or c.get('session')!=m.get('session'):continue
+ candidates.append({'call':m['id'],'dir':str(p.parent),'started':str(m.get('started_at','')),'audio_s':m.get('audio_s'),'build':m.get('build')})
+print(json.dumps({'eligible_archives':sorted(candidates,key=lambda r:r['dir'],reverse=True)[:12]}))
+PY

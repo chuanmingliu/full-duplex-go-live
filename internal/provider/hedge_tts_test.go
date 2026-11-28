@@ -18,6 +18,8 @@ type fakeTTS struct {
 	openErr  []error // per connection
 	name     string
 	synthErr []error // per connection, on its first synthesis
+	// synthStart can hold or fail a connection's first Synthesize call.
+	synthStart func(context.Context, int) error
 	// accounts, above one, makes this a pool: a connection is opened on the
 	// account its context's lane names, the first when it names none.
 	accounts int
@@ -102,6 +104,12 @@ func (s *fakeTTSStream) Synthesize(ctx context.Context, text string) (<-chan TTS
 		s.overlaps.Add(1)
 	}
 	call := int(s.calls.Add(1)) - 1
+	if call == 0 && s.tts.synthStart != nil {
+		if err := s.tts.synthStart(ctx, s.n); err != nil {
+			s.active.Add(-1)
+			return nil, err
+		}
+	}
 	if call == 0 && s.n < len(s.tts.synthErr) && s.tts.synthErr[s.n] != nil {
 		s.active.Add(-1)
 		return nil, s.tts.synthErr[s.n]
@@ -189,6 +197,12 @@ func TestHedgedFirstSegmentIsTheConnectionThatSpokeFirst(t *testing.T) {
 	}
 	if first > 200*time.Millisecond {
 		t.Errorf("first audio after %v; the faster connection had it at 20 ms", first)
+	}
+	// Cancellation precedes winner audio, but the losing fake observes it on
+	// its own goroutine. Draining the winner does not wait for that observation.
+	deadline := time.Now().Add(time.Second)
+	for f.stream(0).cancelled.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
 	if f.stream(0).cancelled.Load() != 1 {
 		t.Error("the connection that lost was not told to stop")
@@ -317,6 +331,112 @@ func TestHedgedSynthesisStopsWhenTheCallerDoes(t *testing.T) {
 		if f.stream(i).cancelled.Load() != 1 {
 			t.Errorf("connection %d was left synthesizing", i)
 		}
+	}
+}
+
+func TestHedgeKeepsConnectionsCancelledDuringSynthesisStart(t *testing.T) {
+	for _, cancelled := range []string{"losing primary", "losing spare", "caller"} {
+		t.Run(cancelled, func(t *testing.T) {
+			started := make(chan struct{}, 2)
+			release := make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			t.Cleanup(unblock)
+			f := &fakeTTS{accounts: 2, rpms: []int{20, 20}, name: t.Name() + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
+			f.synthStart = func(ctx context.Context, n int) error {
+				if cancelled == "losing primary" && n == 1 || cancelled == "losing spare" && n == 0 {
+					return nil
+				}
+				started <- struct{}{}
+				<-ctx.Done()
+				<-release
+				return ctx.Err()
+			}
+			s := openHedged(t, f).(*hedgedTTSStream)
+			s.mu.Lock()
+			slots := [2]*ttsSlot{s.primary, s.spare}
+			s.mu.Unlock()
+			ctx, cancel := context.WithCancel(WithUrgent(context.Background()))
+			defer cancel()
+			ch, err := s.Synthesize(ctx, "第一句。")
+			if err != nil {
+				t.Fatal(err)
+			}
+			waiting := 1
+			if cancelled == "caller" {
+				waiting = 2
+			}
+			for range waiting {
+				select {
+				case <-started:
+				case <-time.After(time.Second):
+					t.Fatal("the synthesis did not start")
+				}
+			}
+			if cancelled == "caller" {
+				cancel()
+			}
+			if _, _, err := heard(t, ch); err != nil {
+				t.Fatal(err)
+			}
+			unblock()
+			deadline := time.Now().Add(time.Second)
+			for (slots[0].busy.Load() || slots[1].busy.Load()) && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if slots[0].busy.Load() || slots[1].busy.Load() {
+				t.Fatal("cancelled connections stayed busy")
+			}
+			// Replacement runs immediately after releasing busy. Give that
+			// goroutine time to expose an incorrect close or redial.
+			time.Sleep(30 * time.Millisecond)
+			if f.opened() != 2 || f.stream(0).closed.Load() || f.stream(1).closed.Load() {
+				t.Fatalf("a cancelled start replaced a healthy connection; opened %d", f.opened())
+			}
+			for _, slot := range slots {
+				if s.tts.account(accountOf(slot)).full() {
+					t.Error("cancellation was counted as an account refusal")
+				}
+			}
+			ch, err = s.Synthesize(WithUrgent(context.Background()), "第二句。")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if from, _, err := heard(t, ch); err != nil || len(from) != 3 {
+				t.Fatalf("next synthesis = %v, err %v", from, err)
+			}
+		})
+	}
+}
+
+func TestHedgeReplacesStartupFailureThatRacesCancellation(t *testing.T) {
+	for _, startupErr := range []error{errors.New("connection lost"), context.DeadlineExceeded} {
+		t.Run(startupErr.Error(), func(t *testing.T) {
+			f := &fakeTTS{synthStart: func(ctx context.Context, n int) error {
+				if n == 0 {
+					return nil
+				}
+				// The other copy won, but this error is not the copy's
+				// context.Canceled. It must still replace the failed stream.
+				<-ctx.Done()
+				return startupErr
+			}}
+			s := openHedged(t, f)
+			ch, err := s.Synthesize(WithUrgent(context.Background()), "第一句。")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if from, _, err := heard(t, ch); err != nil || len(from) != 3 || from[0] != 0 {
+				t.Fatalf("synthesis = %v, err %v", from, err)
+			}
+			deadline := time.Now().Add(time.Second)
+			for f.opened() < 3 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if !f.stream(1).closed.Load() || f.opened() != 3 {
+				t.Fatal("a real startup failure was hidden by cancellation")
+			}
+		})
 	}
 }
 

@@ -1,0 +1,118 @@
+{
+  "request_id": "0da75465-b3d4-4efa-b0f6-d1f1f94c99b9",
+  "state": "completed",
+  "result": {
+    "request_id": "0da75465-b3d4-4efa-b0f6-d1f1f94c99b9",
+    "ok": true,
+    "data": {
+      "call_id": "out-mw557y82-p3ft",
+      "build": "40c20f6",
+      "archive": {
+        "files_verified": 5,
+        "channels_with_signal": 2,
+        "seconds": 75.04,
+        "caller_lines": 1,
+        "assistant_lines": 6
+      },
+      "boundary": "server output",
+      "acoustic_handset_verified": false,
+      "analyzer_sha256": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50",
+      "normal_first_content": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "max_ms": null
+      },
+      "quotation_acknowledgment": {
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "max_ms": null
+      },
+      "quotation_result": {
+        "n": 1,
+        "p50_ms": 901,
+        "p95_ms": 901,
+        "max_ms": 901
+      },
+      "quotation_readout": {
+        "n": 1,
+        "p50_ms": 901,
+        "p90_ms": 901,
+        "p95_ms": 901,
+        "max_ms": 901,
+        "at_or_above_target": 0
+      },
+      "first_audio_including_openers": {
+        "n": 1,
+        "p50_ms": 380,
+        "p90_ms": 380,
+        "p95_ms": 380,
+        "max_ms": 380,
+        "at_or_above_target": 0
+      },
+      "counts": {
+        "records": 6,
+        "answered": 1,
+        "non_speech": 5,
+        "cancelled": 0,
+        "interrupted_answers": 0,
+        "missing": 0,
+        "unverified": 0,
+        "duplicates": 0,
+        "malformed": 0,
+        "content_fallbacks": 0,
+        "assumed_pause": 0,
+        "tool_result_links": 1,
+        "tool_results_joined": 1,
+        "invalid_tool_links": 0,
+        "quote_readouts_missing": 0,
+        "quote_readouts_unverified": 0,
+        "missing_output_records": 0,
+        "quote_only_responses": 1
+      },
+      "canonical_conversational_content": {
+        "n": 0,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null,
+        "max_ms": null,
+        "at_or_above_target": 0
+      },
+      "gate": {
+        "passed": false,
+        "failure_count": 2,
+        "target_ms": 1200,
+        "minimum_caller_turns": 20,
+        "quote_sla": "separate",
+        "metric": "both"
+      },
+      "normal_gate": {
+        "passed": false,
+        "minimum_normal_turns": 20,
+        "target_ms": 1200
+      },
+      "interruptions": {
+        "boundary": "VAD utterance open to server playback cut",
+        "summary": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "max_ms": null
+        },
+        "samples_ms": [],
+        "unpaired": 0,
+        "opened_during_playback": {
+          "n": 0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "max_ms": null
+        },
+        "non_barge_cancellations": 0,
+        "kept_acknowledgments": 0,
+        "detector_assists": 0,
+        "detector_fallbacks": 0
+      }
+    }
+  }
+}

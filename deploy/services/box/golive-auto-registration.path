@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for saved GoLive lead registration requests
+
+[Path]
+PathExistsGlob=/home/chuanming/golive-crm/registration-queue/*.job
+Unit=golive-auto-registration.service
+
+[Install]
+WantedBy=multi-user.target

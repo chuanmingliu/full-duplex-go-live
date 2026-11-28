@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -17,7 +18,7 @@ func secondVendor(delays ...time.Duration) *fakeTTS {
 	return f
 }
 
-func openFallback(t *testing.T, primary, second *fakeTTS, wait time.Duration) TTSStream {
+func openFallback(t *testing.T, primary TTS, second *fakeTTS, wait time.Duration) TTSStream {
 	t.Helper()
 	s, err := FallbackTTS(primary, second, wait, nil).Open(context.Background(), TTSOptions{})
 	if err != nil {
@@ -25,10 +26,60 @@ func openFallback(t *testing.T, primary, second *fakeTTS, wait time.Duration) TT
 	}
 	t.Cleanup(func() { s.Close() })
 	deadline := time.Now().Add(time.Second)
-	for second.stream(10) == nil && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
+		f := s.(*fallbackStream)
+		f.mu.Lock()
+		ready := f.second != nil
+		f.mu.Unlock()
+		if ready {
+			return s
+		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	t.Fatal("fallback connection did not become ready")
 	return s
+}
+
+// Startup models a reconnect or a lock that cannot return until released.
+// Its eventual audio must be drained even when cancellation won meanwhile.
+type blockedStartupTTS struct {
+	TTS
+	started chan context.Context
+	unblock chan struct{}
+	drained chan struct{}
+}
+
+type blockedStartupStream struct {
+	TTSStream
+	tts *blockedStartupTTS
+}
+
+func blockedStartup(t *testing.T) (*blockedStartupTTS, func()) {
+	t.Helper()
+	f := &blockedStartupTTS{TTS: &fakeTTS{name: "primary"}, started: make(chan context.Context, 1), unblock: make(chan struct{}), drained: make(chan struct{})}
+	unblock := sync.OnceFunc(func() { close(f.unblock) })
+	t.Cleanup(unblock)
+	return f, unblock
+}
+
+func (f *blockedStartupTTS) Open(ctx context.Context, opts TTSOptions) (TTSStream, error) {
+	s, err := f.TTS.Open(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &blockedStartupStream{TTSStream: s, tts: f}, nil
+}
+
+func (s *blockedStartupStream) Synthesize(ctx context.Context, _ string) (<-chan TTSChunk, error) {
+	s.tts.started <- ctx
+	<-s.tts.unblock
+	ch := make(chan TTSChunk)
+	go func() {
+		defer close(ch)
+		defer close(s.tts.drained)
+		ch <- TTSChunk{PCM: []byte{0, 0}}
+	}()
+	return ch, nil
 }
 
 // An ordinary segment: the primary answers inside the wait, the second vendor
@@ -74,6 +125,128 @@ func TestFallbackSpeaksWhenThePrimaryStalls(t *testing.T) {
 	}
 }
 
+// A reconnect or a previous segment's cleanup can block Synthesize itself.
+// That time belongs to the fallback deadline, just like waiting for audio.
+func TestFallbackDeadlineIncludesPrimaryStartup(t *testing.T) {
+	primary, unblock := blockedStartup(t)
+	second := secondVendor(10 * time.Millisecond)
+	s := openFallback(t, primary, second, 40*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result := make(chan TTSChunk, 1)
+	started := time.Now()
+	go func() {
+		ch, err := s.Synthesize(WithUrgent(ctx), "好的")
+		if err != nil {
+			result <- TTSChunk{Err: err}
+			return
+		}
+		result <- <-ch
+		drainTTS(ch)
+	}()
+	select {
+	case c := <-result:
+		if c.Err != nil || len(c.PCM) == 0 || c.PCM[0] != 10 {
+			t.Fatalf("wanted fallback audio while primary startup is blocked, got %v", c)
+		}
+		if time.Since(started) < 40*time.Millisecond {
+			t.Fatal("fallback was asked before its deadline")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("fallback deadline waited for the primary's Synthesize to return")
+	}
+	select {
+	case pctx := <-primary.started:
+		if pctx.Err() == nil {
+			t.Fatal("the losing primary startup was not cancelled")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("primary synthesis never started")
+	}
+	unblock()
+	select {
+	case <-primary.drained:
+	case <-time.After(time.Second):
+		t.Fatal("the losing primary's late audio was not drained")
+	}
+}
+
+func TestFallbackCancellationWhilePrimaryIsStarting(t *testing.T) {
+	primary, unblock := blockedStartup(t)
+	s := openFallback(t, primary, secondVendor(), time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	returned := make(chan ttsStarted, 1)
+	go func() {
+		ch, err := s.Synthesize(WithUrgent(ctx), "好的")
+		returned <- ttsStarted{ch: ch, err: err}
+	}()
+	var result ttsStarted
+	select {
+	case result = <-returned:
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Synthesize blocked on primary startup")
+	}
+	cancel()
+	select {
+	case _, ok := <-result.ch:
+		if ok {
+			t.Fatal("audio after cancellation")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("cancellation waited for primary startup")
+	}
+	unblock()
+	select {
+	case <-primary.drained:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled primary's late audio was not drained")
+	}
+}
+
+func TestFallbackFailureDoesNotDiscardAStartingPrimary(t *testing.T) {
+	primary, unblock := blockedStartup(t)
+	second := secondVendor()
+	second.synthErr = make([]error, 11)
+	second.synthErr[10] = errors.New("fallback refused")
+	s := openFallback(t, primary, second, 20*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := s.Synthesize(WithUrgent(ctx), "好的")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	failed := false
+	for time.Now().Before(deadline) {
+		f := s.(*fallbackStream)
+		f.mu.Lock()
+		failed = f.asked == 1 && !f.busy
+		f.mu.Unlock()
+		if failed {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !failed {
+		t.Fatal("the fallback did not finish failing during primary startup")
+	}
+	unblock()
+	select {
+	case c, ok := <-ch:
+		if !ok || c.Err != nil || len(c.PCM) == 0 || c.PCM[0] != 0 {
+			t.Fatalf("starting primary was lost after fallback failure: %+v, open=%v", c, ok)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("primary audio was not delivered")
+	}
+	drainTTS(ch)
+}
+
 // Both asked, the primary answers first after all: its audio, the second
 // vendor's dropped, and the second vendor is free again for the next stall.
 func TestFallbackLosesToALatePrimaryAndIsFreeAgain(t *testing.T) {
@@ -117,14 +290,37 @@ func TestFallbackIsPatientWithALaterSegment(t *testing.T) {
 func TestFallbackTakesASegmentThePrimaryFails(t *testing.T) {
 	primary := &fakeTTS{name: "primary", synthErr: []error{errors.New("refused")}}
 	second := secondVendor(10 * time.Millisecond)
-	s := openFallback(t, primary, second, 100*time.Millisecond)
+	s := openFallback(t, primary, second, time.Second)
 	ch, err := s.Synthesize(WithUrgent(context.Background()), "好的")
 	if err != nil {
 		t.Fatalf("the failure should have gone to the second vendor, not the caller: %v", err)
 	}
-	from, _, err := heard(t, ch)
+	from, first, err := heard(t, ch)
 	if err != nil || len(from) != 3 || from[0] != 10 {
 		t.Fatalf("heard %v, %v", from, err)
+	}
+	if first > 500*time.Millisecond {
+		t.Fatalf("primary startup failure waited for the fallback deadline: %v", first)
+	}
+}
+
+func TestFallbackReportsFailureWhenBothStartupsFail(t *testing.T) {
+	want := errors.New("primary refused")
+	primary := &fakeTTS{name: "primary", synthErr: []error{want}}
+	second := secondVendor()
+	second.synthErr = make([]error, 11)
+	second.synthErr[10] = errors.New("fallback refused")
+	s := openFallback(t, primary, second, time.Second)
+	ch, err := s.Synthesize(WithUrgent(context.Background()), "好的")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = heard(t, ch)
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want primary startup failure", err)
+	}
+	if calls := second.stream(10).calls.Load(); calls != 1 {
+		t.Fatalf("fallback asked %d times for the failed segment, want 1", calls)
 	}
 }
 

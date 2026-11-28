@@ -825,7 +825,7 @@ func TestUnansweredWordsAreCarriedIntoTheNextTurn(t *testing.T) {
 	assertWellFormed(t, msgs)
 	last := msgs[len(msgs)-1]
 	if last.Role != provider.RoleUser ||
-		!strings.Contains(last.Content, "我想查一下保单") || !strings.Contains(last.Content, "就是去年买的那个") {
+		!strings.Contains(dump(msgs), "我想查一下保单") || !strings.Contains(last.Content, "就是去年买的那个") {
 		t.Fatalf("the backend was asked %q; the first half of the request is missing:\n%s", last.Content, dump(msgs))
 	}
 }

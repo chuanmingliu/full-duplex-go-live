@@ -1,0 +1,17 @@
+[
+  {
+    "file": "call.sh",
+    "sha256": "245b919e7ac3a0456c7784013f9386ea907833febe639e172da619348789cd0c",
+    "bytes": 4827
+  },
+  {
+    "file": "publish-review.sh",
+    "sha256": "789a523fe580d39a6e378d62b67622e25c1ed154a1ad96207f4baacda471214a",
+    "bytes": 3714
+  },
+  {
+    "file": "review-payload.json",
+    "sha256": "9ce08f390325b7688ba7923f40be55ea97ab8c372cb693ef2b226ed35da99268",
+    "bytes": 5957
+  }
+]

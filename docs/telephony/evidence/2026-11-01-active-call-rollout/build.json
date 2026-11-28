@@ -1,0 +1,36 @@
+{
+  "commit": "45b55649290007c275eb682cbab4d40ea4380fcf",
+  "files": {
+    "CALL-OPERATIONS.md": "93d6f931bcaaca65549dced0880151beeb670bdfe42af521a501be2373c44d1a",
+    "HANDSET-LATENCY.md": "f7d751626c843cb33a78759c736e64c2ef987c4830f11a854543d8edeb1aaf75",
+    "VERSION": "4e88b7909446364ea5427e1050c41151f3ec5f660705f190746e988c5bbc4fc0",
+    "bin/crm-linux-amd64": "863d264d8914317708da62e99135f0791323ce9c266c6159dddc5cad0e5a08d2",
+    "bin/golive-linux-amd64": "0af8a624053a706bc4f2f20ec2b9f847409eef2e6f502e21520cca60a8ec8a29",
+    "bin/journal-linux-amd64": "4b098f57749623de459dd99cd3abb9f0c72e367fec6432eac30bbb7a05231cc1",
+    "scripts/call_latency.py": "c5df3bf2a120d4bcc241f75a1e2c28b3205a903dd94b33516fa21e11ea549a50"
+  },
+  "bundle_sha256": "ac0e79e3f0793044459beea32f9a185d9db821cae573b294974b9a20b4f654c9",
+  "ci": {
+    "commit": "45b55649290007c275eb682cbab4d40ea4380fcf",
+    "conclusion": "success",
+    "run_id": 41287492177,
+    "url": "https://github.com/chuanmingliu/full-duplex-go-live/actions/runs/41287492177",
+    "jobs": [
+      {
+        "name": "Go tests (normal)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "Go tests (race)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "quality",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  }
+}

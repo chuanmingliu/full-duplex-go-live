@@ -32,6 +32,7 @@ import (
 	"github.com/chuanmingliu/golive/internal/benchrec"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -61,6 +62,9 @@ type stack struct {
 }
 
 func parseStack(spec, kind string) (stack, error) {
+	if kind != "golive" && kind != "realtime" {
+		return stack{}, fmt.Errorf("unknown stack protocol %q", kind)
+	}
 	name, url, ok := strings.Cut(spec, "=")
 	if !ok {
 		return stack{}, fmt.Errorf("expected name=url, got %q", spec)
@@ -73,6 +77,9 @@ func parseStack(spec, kind string) (stack, error) {
 
 func run() error {
 	var (
+		callIDs   = flag.Bool("call-ids", false, "assign distinct GoLive call query IDs to realtime benchmark sessions")
+		aKind     = flag.String("a-kind", "golive", "first stack protocol: golive or realtime")
+		bKind     = flag.String("b-kind", "realtime", "second stack protocol: golive or realtime")
 		aSpec     = flag.String("a", "golive=ws://127.0.0.1:8080/v1/live", "first stack, as name=url (gpt-live protocol)")
 		bSpec     = flag.String("b", "", "second stack, as name=url (OpenAI Realtime protocol); empty benchmarks only -a")
 		clipGlob  = flag.String("clips", "", "glob of 16-bit PCM WAV files to speak; empty uses synthetic audio")
@@ -99,14 +106,14 @@ func run() error {
 		*token = os.Getenv("GOLIVE_AUTH_TOKEN")
 	}
 
-	a, err := parseStack(*aSpec, "golive")
+	a, err := parseStack(*aSpec, *aKind)
 	if err != nil {
 		return err
 	}
 	a.token = *token
 	stacks := []stack{a}
 	if *bSpec != "" {
-		b, err := parseStack(*bSpec, "realtime")
+		b, err := parseStack(*bSpec, *bKind)
 		if err != nil {
 			return err
 		}
@@ -115,6 +122,9 @@ func run() error {
 	}
 
 	var clips []clip
+	if *speak != "" && a.kind != "golive" {
+		return fmt.Errorf("-speak requires -a-kind golive; generate clips first, then compare realtime endpoints with -clips")
+	}
 	if *speak != "" {
 		clips, err = speakClips(context.Background(), a, strings.Split(*speak, "|"), *rate)
 		if err == nil && *keepClips != "" {
@@ -143,6 +153,16 @@ func run() error {
 		clip := clips[i%len(clips)]
 		measured := i >= *warmup
 		for _, s := range stacks {
+			if *callIDs && s.kind == "realtime" {
+				u, err := url.Parse(s.url)
+				if err != nil {
+					return err
+				}
+				q := u.Query()
+				q.Set("call", fmt.Sprintf("bench-%d-%d", time.Now().UnixNano(), i))
+				u.RawQuery = q.Encode()
+				s.url = u.String()
+			}
 			r := drive(ctx, s, clip, *rate, *silenceMS, *minSil, time.Duration(*timeout)*time.Second)
 			r.Index = i - *warmup
 			r.Measured = measured

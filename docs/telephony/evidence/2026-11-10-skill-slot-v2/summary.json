@@ -1,0 +1,151 @@
+{
+  "prompt_sha256": "639dcecf24dddc73274a7412c017e36258b51679c2fd3ad4e72a595453aa8d25",
+  "boundary": "text input to mock audio",
+  "groups": {
+    "normal/v1": {
+      "first_audio": {
+        "n": 10,
+        "p50_ms": 792.15,
+        "p95_ms": 1159.638
+      },
+      "first_text": {
+        "n": 10,
+        "p50_ms": 669.226,
+        "p95_ms": 1003.886
+      },
+      "quote_submission": {},
+      "checks_passed": true
+    },
+    "normal/v2": {
+      "first_audio": {
+        "n": 10,
+        "p50_ms": 766.736,
+        "p95_ms": 1081.131
+      },
+      "first_text": {
+        "n": 10,
+        "p50_ms": 635.409,
+        "p95_ms": 890.817
+      },
+      "quote_submission": {},
+      "checks_passed": true
+    },
+    "wechat/v1": {
+      "first_audio": {
+        "n": 10,
+        "p50_ms": 647.01,
+        "p95_ms": 1066.651
+      },
+      "first_text": {
+        "n": 10,
+        "p50_ms": 590.883,
+        "p95_ms": 939.888
+      },
+      "quote_submission": {},
+      "checks_passed": true
+    },
+    "wechat/v2": {
+      "first_audio": {
+        "n": 10,
+        "p50_ms": 624.495,
+        "p95_ms": 928.332
+      },
+      "first_text": {
+        "n": 10,
+        "p50_ms": 561.105,
+        "p95_ms": 836.801
+      },
+      "quote_submission": {},
+      "checks_passed": true
+    },
+    "quotation/v1": {
+      "first_audio": {
+        "n": 10,
+        "p50_ms": 1743.304,
+        "p95_ms": 2312.356
+      },
+      "first_text": {
+        "n": 10,
+        "p50_ms": 1621.234,
+        "p95_ms": 2274.112
+      },
+      "quote_submission": {
+        "n": 10,
+        "p50_ms": 1083.586,
+        "p95_ms": 1275.62
+      },
+      "checks_passed": true
+    },
+    "quotation/v2": {
+      "first_audio": {
+        "n": 10,
+        "p50_ms": 1770.302,
+        "p95_ms": 2815.913
+      },
+      "first_text": {
+        "n": 10,
+        "p50_ms": 1640.099,
+        "p95_ms": 2694.1
+      },
+      "quote_submission": {
+        "n": 10,
+        "p50_ms": 981.949,
+        "p95_ms": 2985.38
+      },
+      "checks_passed": true
+    },
+    "fallback/v2": {
+      "first_audio": {
+        "n": 1,
+        "p50_ms": 1046.54,
+        "p95_ms": 1046.54
+      },
+      "first_text": {
+        "n": 1,
+        "p50_ms": 897.728,
+        "p95_ms": 897.728
+      },
+      "quote_submission": {},
+      "checks_passed": true
+    },
+    "added/v2": {
+      "first_audio": {
+        "n": 1,
+        "p50_ms": 846.564,
+        "p95_ms": 846.564
+      },
+      "first_text": {
+        "n": 1,
+        "p50_ms": 628.24,
+        "p95_ms": 628.24
+      },
+      "quote_submission": {},
+      "checks_passed": true
+    }
+  },
+  "failures": [],
+  "calculation": {
+    "v1": {
+      "n": 10,
+      "p50_ms": 3000.743,
+      "p95_ms": 3001.088
+    },
+    "v2": {
+      "n": 10,
+      "p50_ms": 3000.608,
+      "p95_ms": 3001.133
+    }
+  },
+  "run": {
+    "date": "2026-11-10",
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "runner_exit_code": 0,
+    "original_runtime_and_profile_preserved": true,
+    "archive_sha256": "3cb9edaccf1ed67337224d1600cf506e7ab4cbb716f425c620c55c7696fd9843",
+    "paired_trials_per_scenario": 10,
+    "tts": "mock",
+    "session_data": "synthetic",
+    "prompt_source": "saved-default-instructions"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "call_id": "5c0f68b9-83a5-4a05-aed7-3d73e6bba05e",
+  "run_id": "sim-f30fb0574682a07c2c9b18b9",
+  "phase": "completed",
+  "build": "coveragefix-20261112-e",
+  "duration_s": 171.1,
+  "transcript_turns": {
+    "assistant": 19,
+    "caller": 19
+  },
+  "audio_channels_with_signal": [
+    true,
+    true
+  ],
+  "archive_verified": true,
+  "original_profile_and_saved_prompt_preserved": true,
+  "journal_url": "http://192.168.71.9:18770/#/call/5c0f68b9-83a5-4a05-aed7-3d73e6bba05e",
+  "latency": {
+    "version": 5,
+    "first_audio": {
+      "n": 15,
+      "p50_ms": 380,
+      "p95_ms": 2407,
+      "max_ms": 2407,
+      "at_or_above_target": 2
+    },
+    "first_content": {
+      "n": 15,
+      "p50_ms": 1000,
+      "p95_ms": 3179,
+      "max_ms": 3179,
+      "at_or_above_target": 8
+    },
+    "conversational_first_content": {
+      "n": 15,
+      "p50_ms": 1000,
+      "p95_ms": 3179,
+      "max_ms": 3179,
+      "at_or_above_target": 8
+    },
+    "quote_only_responses": 0,
+    "tool_result": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "max_ms": null,
+      "at_or_above_target": 0
+    },
+    "tool_result_rows": [],
+    "quote_readout": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "max_ms": null,
+      "at_or_above_target": 0
+    },
+    "quote_readout_rows": [],
+    "quote_readouts_missing": 0,
+    "quote_readouts_unverified": 0,
+    "missing": 0,
+    "unverified": 0,
+    "duplicates": 0,
+    "cancelled": 0,
+    "tool_results_joined": 0,
+    "invalid_tool_links": 0
+  }
+}

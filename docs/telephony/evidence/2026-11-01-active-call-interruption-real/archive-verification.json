@@ -1,0 +1,13 @@
+{
+  "call": "out-mvxr0ein-wwqh",
+  "session": "sess_22e818c2f3504b94be9df329",
+  "build": "f1fd9a6",
+  "archive_files_verified": 5,
+  "audio_seconds": 273.62,
+  "channels_with_signal": 2,
+  "caller_lines": 34,
+  "assistant_lines": 40,
+  "prompt_voice_greeting_equal_previous": true,
+  "source_log_sha256": "00935443b4df2195def9c33e8ae7a3bccd22778a17ddcfd21ae6a91e41118612",
+  "ended_at": "2026-11-01T19:34:48.454+08:00"
+}

@@ -1,0 +1,29 @@
+name: golive-backchannel-detector
+services:
+  detector:
+    build: .
+    image: golive-backchannel-detector:${BCD_RELEASE:-local}
+    ports:
+      - "127.0.0.1:18087:18087"
+    volumes:
+      - ./models:/models:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 1.0
+    mem_limit: 384m
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18087/healthz', timeout=2).read()"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"

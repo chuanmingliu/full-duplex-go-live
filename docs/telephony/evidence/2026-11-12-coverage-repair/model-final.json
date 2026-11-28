@@ -1,0 +1,70 @@
+[
+  {
+    "scenario": "all-tiers",
+    "mode": "skills",
+    "first_text_ms": 1914.003,
+    "first_audio_ms": 2110.249,
+    "checks": {
+      "bounded_model_steps": true,
+      "exact_tier_count": true,
+      "lowest_tier": true,
+      "model_chain_completed": true,
+      "response": true,
+      "selection_unchanged": true,
+      "skill_loaded": true
+    }
+  },
+  {
+    "scenario": "explicit-subset",
+    "mode": "skills",
+    "first_text_ms": 1506.864,
+    "first_audio_ms": 1689.293,
+    "checks": {
+      "bounded_model_steps": true,
+      "exact_tier_count": true,
+      "explicit_subset": true,
+      "model_chain_completed": true,
+      "response": true,
+      "selection_unchanged": true,
+      "skill_loaded": true
+    }
+  },
+  {
+    "scenario": "options-only",
+    "mode": "skills",
+    "first_text_ms": 588.299,
+    "first_audio_ms": 760.875,
+    "checks": {
+      "bounded_model_steps": true,
+      "model_chain_completed": true,
+      "no_quotation": true,
+      "response": true,
+      "selection_unchanged": true,
+      "skill_loaded": true
+    }
+  },
+  {
+    "scenario": "wechat-followup",
+    "mode": "skills",
+    "first_text_ms": 741.304,
+    "first_audio_ms": 921.713,
+    "checks": {
+      "bounded_model_steps": true,
+      "guarded_skill_loaded": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  },
+  {
+    "scenario": "wechat-first-consent",
+    "mode": "skills",
+    "first_text_ms": 1879.546,
+    "first_audio_ms": 1999.799,
+    "checks": {
+      "bounded_model_steps": true,
+      "consent_recorded": true,
+      "model_chain_completed": true,
+      "response": true
+    }
+  }
+]
