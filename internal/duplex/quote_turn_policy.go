@@ -19,10 +19,24 @@ func (e *Engine) applyQuoteTurnPolicy(turn *Turn, req *provider.LLMRequest) {
 	note := ""
 	force := false
 	pending := e.tools.quoteRevision
+	pairedLimit := e.pairedRiderLimit(text)
 	switch {
-	case pending != nil && pending.TurnID != turn.ID && len(e.tools.unresolvedQuoteRequests) == 0 && quoteApproval.MatchString(text) && e.quoteApprovalInContext(text):
+	case pending != nil && pending.TurnID != turn.ID && len(e.tools.unresolvedQuoteRequests) == 0 && e.callerApprovesQuote(text, pending):
 		note = "来电人明确确认刚才已登记的范围。现在调用 quote_total，revision_action=confirm，revision_id=" + pending.ID + "。只在工具接受任务后说正在计算。"
 		force = true
+	case namesOnlyPairedRiders(text):
+		note = "来电人指的是司机与乘客两项医保外附加险。只问这两项分别或共同要配多少保额；尚未给出档位，不登记或计算，不调整座位主险。"
+	case pairedLimit != "":
+		config := pairedRiderConfig(pairedLimit)
+		schema := e.quoteSchema()
+		if len(schema.Options[driverMedical]) == 0 || len(schema.Options[passengerMedical]) == 0 {
+			return
+		}
+		if note = e.unsupportedRevisionTier(config, nil); note == "" {
+			args, _ := json.Marshal(config)
+			note = "现在调用 quote_total 一次，同时登记两项附加险 config=" + string(args) + "。登记后询问是否确认报价。保留原主险和其他险种。"
+			force = true
+		}
 	default:
 		limit, explicit := medicalLimitRequest(text)
 		if explicit && limit != "" && len(interruptedCoverageNames(text)) == 1 {
@@ -42,6 +56,10 @@ func (e *Engine) applyQuoteTurnPolicy(turn *Turn, req *provider.LLMRequest) {
 	if force && len(req.Tools) > 0 && (req.ToolChoice == nil || req.ToolChoice == "auto") {
 		req.ToolChoice = map[string]any{"type": "function", "function": map[string]string{"name": "quote_total"}}
 	}
+}
+
+func (e *Engine) callerApprovesQuote(text string, pending *pendingQuoteRevision) bool {
+	return directQuoteApproval.MatchString(text) || (quoteApproval.MatchString(text) && e.quoteApprovalInContext(text)) || e.affirmedPairedRiders(text, pending)
 }
 
 // A short "没有" is consent only in response to the no-more-changes question.

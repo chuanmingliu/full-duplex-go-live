@@ -115,6 +115,22 @@ func (e *Engine) prepareQuoteRevision(turn *Turn, call provider.ToolCall) (provi
 	if json.Unmarshal([]byte(call.Arguments), &args) != nil {
 		return call, revisionReply("invalid", "报价参数无法解析，请纠正参数。", nil)
 	}
+	// For a single explicit limit on the two named riders, bind the tool's
+	// arguments to that caller selection. A model can otherwise pick a parent
+	// liability policy or omit one rider despite being routed to quote_total.
+	if e.hasQuotedSelection() {
+		if namesOnlyPairedRiders(turn.Transcript) {
+			return call, revisionReply("needs_limit", "先问清司机和乘客医保外用药要配哪个档位，收到具体额度后再登记。", e.tools.quoteRevision)
+		}
+		if limit := e.pairedRiderLimit(turn.Transcript); limit != "" {
+			schema := e.quoteSchema()
+			if len(schema.Options[driverMedical]) == 0 || len(schema.Options[passengerMedical]) == 0 {
+				return call, revisionReply("unsupported_selection", "当前报价目录没有同时提供司机和乘客医保外附加险。", e.tools.quoteRevision)
+			}
+			args.Config = pairedRiderConfig(limit)
+			args.Configs, args.Action, args.ID = nil, "", ""
+		}
+	}
 	if !e.validResolvedQuoteRequests(args.Resolved) || len(args.Resolved) > 0 && args.Action != "cancel" && (args.Action != "" || len(args.Config)+len(args.Configs) == 0) {
 		return call, revisionReply("invalid", "resolved_request_ids 必须对应尚未处理的要求，并与 config 或 configs 更新一起提交。", e.tools.quoteRevision)
 	}
