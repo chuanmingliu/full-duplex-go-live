@@ -274,6 +274,14 @@ func (rt *realtimeState) translate(event any) []map[string]any {
 			"delta":         ev.Delta,
 		})
 
+	case live.BackchannelStageEvent:
+		if ev.Stage == "playback_end" && rt.respOpen && rt.respItem == ev.ItemID {
+			status := "completed"
+			if ev.Reason != "completed" {
+				status = "cancelled"
+			}
+			return rt.finish(status)
+		}
 	case live.TurnMetricsEvent:
 		if rt.respOpen && rt.respItem == ev.TurnID {
 			return rt.finish("completed")

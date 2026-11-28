@@ -1,0 +1,56 @@
+{
+  "scenario": "Mandarin caller explaining education costs",
+  "receiver": "GoLive inbound-user simulator 5128a8f, local WebSocket media loopback, scripted caller and acknowledgment recognition",
+  "agent": {
+    "asr": "Tencent",
+    "llm": "DeepSeek",
+    "tts": "MiniMax"
+  },
+  "sample_rate_hz": 16000,
+  "duration_ms": 22000,
+  "receiver_frame_ms": 20,
+  "runs": [
+    {
+      "run_id": "sim-e99cd9ee5f1ddb548e46a189",
+      "phase": "completed",
+      "evidence": "application_audio_boundary",
+      "invalid_observations": 0,
+      "failures": [],
+      "overlap_duration_ms": 1142,
+      "enabled": true,
+      "candidates": 3,
+      "acknowledgments_played": 2,
+      "main_replies": [
+        {
+          "turn_id": "item_8",
+          "speech_end_ms": 13940,
+          "first_audio_out_ms": 145
+        }
+      ]
+    },
+    {
+      "run_id": "sim-38227e7203f8b6900ab534fc",
+      "phase": "completed",
+      "evidence": "application_audio_boundary",
+      "invalid_observations": 0,
+      "failures": [],
+      "overlap_duration_ms": 116,
+      "enabled": false,
+      "candidates": 0,
+      "acknowledgments_played": 0,
+      "main_replies": [
+        {
+          "turn_id": "item_7",
+          "speech_end_ms": 11480,
+          "first_audio_out_ms": 571,
+          "truncated": true
+        },
+        {
+          "turn_id": "item_9",
+          "speech_end_ms": 13940,
+          "first_audio_out_ms": 264
+        }
+      ]
+    }
+  ]
+}

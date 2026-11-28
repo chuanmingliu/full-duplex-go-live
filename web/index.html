@@ -693,7 +693,7 @@ function handle(ev) {
       const bytes = b64ToBytes(ev.delta || ev.audio || '');
       outBytes += bytes.byteLength;
       ui.stats.out.textContent = (outBytes / 2 / SESSION_RATE).toFixed(1) + 's';
-      if (!firstAudioAt && turnStart) {
+      if (!firstAudioAt && turnStart && !String(ev.item_id || "").startsWith("bc_")) {
         firstAudioAt = performance.now();
         ui.stats.first.textContent = Math.round(firstAudioAt - turnStart) + ' ms';
       }
@@ -715,6 +715,13 @@ function handle(ev) {
       log('← truncated at ' + ev.played_ms + 'ms of ' + ev.total_ms + 'ms', 'ev-cut');
       break;
     }
+
+    case 'golive.backchannel.stage':
+      if (ev.stage !== 'words_delta') {
+        const detail = ev.text || ev.reason || '';
+        log('← ' + (ev.at_ms / 1000).toFixed(3) + 's · ' + ev.item_id + ' · ' + ev.stage + (detail ? ' · ' + detail : ''));
+      }
+      break;
 
     case 'golive.backchannel':
       // Two different behaviours share this event, and the distinction matters

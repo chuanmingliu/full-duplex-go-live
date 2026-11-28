@@ -930,13 +930,15 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		s.reply(p, live.NewError("server_error", "tts_unavailable", err.Error(), eventID))
 		return err
 	}
+	listenerTTS := tts
 	tts = provider.HedgeTTSPool(tts, s.cfg.TTSHedge, s.cfg.TTSHedgeRPM,
 		time.Duration(s.cfg.TTSHedgeAfterMS)*time.Millisecond,
 		provider.TTSPool{AccountRPM: s.cfg.TTSAccountRPM, After: time.Duration(s.cfg.TTSPoolAfterMS) * time.Millisecond},
 		s.log)
+	listenerPool, _ := provider.BackgroundTTSFor(tts)
 	var backgroundTTS *provider.BackgroundTTSFactory
 	if s.cfg.Duplex.QuoteReadoutWarmMax > 0 || s.cfg.Duplex.TalkerOpenerURL != "" {
-		backgroundTTS, _ = provider.BackgroundTTSFor(tts)
+		backgroundTTS = listenerPool
 	}
 	if s.cfg.TTSFallback != "" && s.cfg.TTSFallback != ttsName {
 		if second, err := provider.OpenTTS(s.cfg.TTSFallback); err != nil {
@@ -1067,6 +1069,8 @@ func (s *Session) onSessionStart(ctx context.Context, p *peer, data []byte, even
 		LLM:           llm,
 		TTS:           tts,
 		BackgroundTTS: backgroundTTS,
+		ListenerTTS:   listenerTTS,
+		ListenerPool:  listenerPool,
 		Emit:          s.Emit,
 		Log:           s.baseLog,
 	})

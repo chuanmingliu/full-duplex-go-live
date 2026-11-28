@@ -67,6 +67,8 @@ func (c *collector) emit(event any) {
 		c.counts[ev.Type]++
 	case live.ResponseEventEnvelope:
 		c.counts[ev.Type]++
+	case live.BackchannelStageEvent:
+		c.counts[ev.Type]++
 	case live.BackchannelEvent:
 		c.counts[ev.Type]++
 	case live.InputBackchannelEvent:

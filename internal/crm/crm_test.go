@@ -517,7 +517,7 @@ func TestAQuoteIsPricedUnderVersionedRules(t *testing.T) {
 	if code, body := fx.do("GET", "/api/configs", nil, &list); code != 200 {
 		t.Fatalf("configs: %d %s", code, body)
 	}
-	wantConfigs := []string{tools.HangupRulesName, tools.OpenersName, QuoteAPIName, QuotePlansName,
+	wantConfigs := []string{tools.BackchannelServiceName, tools.HangupRulesName, tools.OpenersName, QuoteAPIName, QuotePlansName,
 		QuoteRulesName, tools.QuoteSpeechName, tools.SilenceReactionName, tools.StreamingGuardName, labelConfigName, tools.TurnTakingName, tools.UserPromptName}
 	if len(list.Configs) != len(wantConfigs) {
 		t.Fatalf("seeded %d configs, want %d", len(list.Configs), len(wantConfigs))
@@ -1300,5 +1300,33 @@ func TestSeveralOptionsAreComparedInOneAnswer(t *testing.T) {
 	}
 	if out.Variants[0].Error != "" || out.Variants[1].Error == "" {
 		t.Fatalf("errors: %+v", out.Variants)
+	}
+}
+
+func TestPanelBackchannelConfigIsEnabledByDefaultAndVersioned(t *testing.T) {
+	fx := newFixture(t)
+	path := "/api/configs/" + tools.BackchannelServiceName
+	var stored struct {
+		Config ConfigVersion `json:"config"`
+	}
+	if code, body := fx.do("GET", path, nil, &stored); code != 200 {
+		t.Fatalf("read: %d %s", code, body)
+	}
+	first, err := tools.ParseBackchannelService(stored.Config.Body)
+	if err != nil || !first.Enabled || first.Prompt == "" {
+		t.Fatalf("default: %+v, %v", first, err)
+	}
+	if code, _ := fx.do("PUT", path, json.RawMessage(`{"enabled":true,"prompt":" "}`), nil); code != 400 {
+		t.Fatalf("empty prompt: %d", code)
+	}
+	if code, body := fx.do("PUT", path, json.RawMessage(`{"enabled":false,"prompt":"Listen quietly. Only acknowledge a continuing thought."}`), &stored); code != 200 || stored.Config.Version != 2 {
+		t.Fatalf("save: %d %s", code, body)
+	}
+	if code, body := fx.do("GET", path, nil, &stored); code != 200 {
+		t.Fatalf("read saved config: %d %s", code, body)
+	}
+	saved, err := tools.ParseBackchannelService(stored.Config.Body)
+	if err != nil || saved.Enabled || stored.Config.Version != 2 {
+		t.Fatalf("saved opt-out: %+v, %v", saved, err)
 	}
 }
